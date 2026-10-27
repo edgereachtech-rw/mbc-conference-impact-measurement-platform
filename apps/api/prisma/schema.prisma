@@ -1,0 +1,12 @@
+// Prisma schema for the API and worker.
+// The connection URL (DATABASE_URL) is supplied by prisma.config.ts, as Prisma 7 requires.
+// No models yet: tables are introduced per increment with their own migrations.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}

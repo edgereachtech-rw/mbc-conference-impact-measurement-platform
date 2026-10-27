@@ -1,0 +1,11 @@
+node_modules
+dist
+.next
+pnpm-lock.yaml
+apps/api/src/generated
+*.tsbuildinfo
+
+# project documents are hand-written; leave their formatting alone
+CLAUDE.md
+docs/
+apps/web/next-env.d.ts
