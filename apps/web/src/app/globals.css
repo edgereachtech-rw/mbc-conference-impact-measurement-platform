@@ -1,1 +1,210 @@
 @import 'tailwindcss';
+@import 'tw-animate-css';
+@import 'shadcn/tailwind.css';
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Brand tokens
+ * Source: https://itteconference.mbryanconsultinggroup.com/ (theme stylesheet + logo sampling).
+ * Full table with usage and contrast results: docs/design-tokens.md
+ */
+:root {
+  /* Colours taken from the live site */
+  --brand-primary: #002a5e; /* navy: headings, links, nav, footer overlay, logo */
+  --brand-primary-strong: #001d42; /* hover/pressed variant of navy */
+  --brand-secondary: #8b1c1c; /* dark red: .lgx-btn buttons, nav hover, logo */
+  --brand-secondary-strong: #6f1616; /* hover/pressed variant of red */
+  --brand-accent: #ffb703; /* amber: "Hybrid Conference" label background */
+  --brand-accent-deep: #efa506; /* theme amber: countdown, highlights */
+  --brand-green: #3a8c47; /* logo green: "2026" (decorative only, fails AA for text) */
+  --brand-surface: #f1f1f1; /* body background */
+  --brand-surface-raised: #ffffff; /* cards, header, inputs */
+  --brand-surface-tint: #f4f7fb; /* nav hover background */
+  --brand-line: #e3e8ef; /* header/menu borders */
+  --brand-text: #323333; /* body copy (rgba(50,51,51) on the site) */
+  --brand-muted: #5b6672; /* secondary text (site uses #555) */
+
+  /* Semantic state colours (derived, see docs/design-tokens.md) */
+  --brand-success: #2e7a3b; /* darkened logo green so white text passes AA */
+  --brand-warning: #efa506; /* amber surface; always paired with navy text */
+  --brand-warning-text: #7a4f00; /* warning text on light surfaces */
+  --brand-danger: #b42318; /* error red, distinct from the brand CTA red */
+
+  /* Dark footer surface */
+  --brand-footer: #061d3f;
+  --brand-footer-foreground: #d9dfe8;
+  --brand-footer-muted: #9fb0c8;
+
+  /* shadcn/ui semantic variables mapped onto the brand */
+  --background: var(--brand-surface-raised);
+  --foreground: var(--brand-text);
+  --card: var(--brand-surface-raised);
+  --card-foreground: var(--brand-text);
+  --popover: var(--brand-surface-raised);
+  --popover-foreground: var(--brand-text);
+  --primary: var(--brand-primary);
+  --primary-foreground: #ffffff;
+  --secondary: var(--brand-secondary);
+  --secondary-foreground: #ffffff;
+  --muted: var(--brand-surface);
+  --muted-foreground: var(--brand-muted);
+  --accent: #e9eef5;
+  --accent-foreground: var(--brand-primary);
+  --destructive: var(--brand-danger);
+  --border: var(--brand-line);
+  --input: #7f8b9a;
+  --ring: var(--brand-primary);
+  --chart-1: var(--brand-primary);
+  --chart-2: var(--brand-secondary);
+  --chart-3: var(--brand-accent-deep);
+  --chart-4: var(--brand-success);
+  --chart-5: var(--brand-muted);
+  --radius: 1rem;
+  --sidebar: var(--brand-surface-raised);
+  --sidebar-foreground: var(--brand-text);
+  --sidebar-primary: var(--brand-primary);
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #e9eef5;
+  --sidebar-accent-foreground: var(--brand-primary);
+  --sidebar-border: var(--brand-line);
+  --sidebar-ring: var(--brand-primary);
+}
+
+/* Dark surfaces (footer, hero): focus rings and links switch to amber so they stay visible. */
+.on-dark {
+  --ring: var(--brand-accent);
+  --border: rgb(255 255 255 / 0.15);
+}
+
+@theme inline {
+  /* Fonts (loaded with next/font in app/layout.tsx) */
+  --font-sans: var(--font-poppins), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-oswald), var(--font-poppins), sans-serif;
+  --font-heading: var(--font-poppins), ui-sans-serif, system-ui, sans-serif;
+
+  /* Typography scale (mobile first; bump with md: variants) */
+  --text-display: 2.625rem;
+  --text-display--line-height: 1.15;
+  --text-display--font-weight: 800;
+  --text-h1: 2rem;
+  --text-h1--line-height: 1.2;
+  --text-h1--font-weight: 700;
+  --text-h2: 1.5rem;
+  --text-h2--line-height: 1.3;
+  --text-h2--font-weight: 700;
+  --text-h3: 1.25rem;
+  --text-h3--line-height: 1.4;
+  --text-h3--font-weight: 600;
+  --text-eyebrow: 0.875rem;
+  --text-eyebrow--line-height: 1.4;
+  --text-eyebrow--letter-spacing: 0.14em;
+
+  /* Brand colour utilities: bg-brand-primary, text-brand-muted, ... */
+  --color-brand-primary: var(--brand-primary);
+  --color-brand-primary-strong: var(--brand-primary-strong);
+  --color-brand-secondary: var(--brand-secondary);
+  --color-brand-secondary-strong: var(--brand-secondary-strong);
+  --color-brand-accent: var(--brand-accent);
+  --color-brand-accent-deep: var(--brand-accent-deep);
+  --color-brand-green: var(--brand-green);
+  --color-brand-text: var(--brand-text);
+  --color-brand-muted: var(--brand-muted);
+  --color-brand-line: var(--brand-line);
+
+  /* Semantic colour utilities */
+  --color-surface: var(--brand-surface);
+  --color-surface-raised: var(--brand-surface-raised);
+  --color-surface-tint: var(--brand-surface-tint);
+  --color-success: var(--brand-success);
+  --color-success-foreground: #ffffff;
+  --color-warning: var(--brand-warning);
+  --color-warning-foreground: var(--brand-primary);
+  --color-warning-text: var(--brand-warning-text);
+  --color-danger: var(--brand-danger);
+  --color-danger-foreground: #ffffff;
+  --color-footer: var(--brand-footer);
+  --color-footer-foreground: var(--brand-footer-foreground);
+  --color-footer-muted: var(--brand-footer-muted);
+
+  /* shadcn/ui colour utilities */
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+
+  /* Radii: site uses 0/6/8px on controls and 16px on cards */
+  --radius-xs: 0.125rem;
+  --radius-sm: 0.25rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.5rem;
+  --radius-2xl: 2rem;
+  --radius-3xl: 2.5rem;
+  --radius-4xl: 3rem;
+
+  /* Shadows taken from the theme stylesheet */
+  --shadow-card: 0 1px 15px 1px rgb(52 40 104 / 0.1);
+  --shadow-elevated: 0 13px 35px rgb(0 0 0 / 0.1);
+  --shadow-button: 0 8px 6px -6px rgb(50 51 51 / 0.4);
+  --shadow-icon: 0 2px 10px rgb(52 61 71 / 0.2);
+
+  /* Spacing additions (base scale stays Tailwind's 4px grid) */
+  --spacing-gutter: 1rem; /* page side padding on phones */
+  --spacing-tap: 2.75rem; /* 44px minimum tap target */
+  --spacing-action-bar: 5rem; /* reserved space above the sticky action bar */
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    @apply font-sans;
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-surface text-foreground antialiased;
+  }
+  h1,
+  h2,
+  h3,
+  h4 {
+    @apply font-heading text-brand-primary;
+    text-wrap: balance;
+  }
+  a {
+    @apply underline-offset-4;
+  }
+  :focus-visible {
+    outline: 3px solid var(--ring);
+    outline-offset: 2px;
+  }
+}

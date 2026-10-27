@@ -110,3 +110,22 @@ without a bundler, so it consumes shared as ordinary compiled ESM with type decl
 7.x line. Prisma is pinned to 7.10.1 because 8 is still a release candidate. ESLint 10 is in use;
 the Next.js ESLint plugins declare peer support only up to ESLint 9 but run correctly, so pnpm
 prints peer warnings at install time that can be ignored until those plugins update.
+
+## Design foundation (apps/web)
+
+The web app carries the ITTEC brand extracted from the live conference website. The full token
+table, contrast results and asset notes are in [docs/design-tokens.md](docs/design-tokens.md).
+
+- Tokens live in `apps/web/src/app/globals.css` as `--brand-*` CSS variables, exposed to Tailwind
+  (`bg-brand-primary`, `shadow-card`, `min-h-tap`, ...) and mapped onto the shadcn/ui variables.
+- Fonts: Poppins (body, headings) and Oswald (buttons, labels, hero) via `next/font`.
+- shadcn/ui components are in `apps/web/src/components/ui` (Base UI primitives, 44px tap targets).
+  Add more with `pnpm dlx shadcn@4.23.0 add <name>` from `apps/web`, then re-check sizes.
+- App shell: `components/layout/site-header.tsx` and `site-footer.tsx`; event facts come from
+  `apps/web/src/config/event.ts` until E1 moves them to the database.
+- Reusable building blocks in `apps/web/src/components`: PageContainer, SectionHeading,
+  FormSection, StickyActionBar, SaveStatus, StepProgress, RatingGroup, EmptyState, ErrorState.
+- PWA: `app/manifest.ts` serves `/manifest.webmanifest`; icons are generated from the logo in
+  `public/icons`.
+- Screenshots: `pnpm build && pnpm screenshots` writes 360/768/1280px captures of `/`, `/signin`,
+  `/account` and `/admin` to `docs/screenshots/`.
