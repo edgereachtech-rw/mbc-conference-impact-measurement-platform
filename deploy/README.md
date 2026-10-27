@@ -146,3 +146,61 @@ docker system prune -f                                           # old images on
 
 Memory limits per service are set in `docker-compose.yml` (`deploy.resources.limits`). Watch
 `docker stats` after go-live and raise a limit before a service gets OOM-killed.
+
+## CI/CD (GitHub Actions)
+
+| Workflow                                  | Trigger                                       | What it does                                                                                                                                            |
+| ----------------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `.github/workflows/ci.yml`                | every push and pull request                   | `pnpm install` (cached), lint, type-check, Prisma validate + migrate on a PostgreSQL 16 service, test, build                                            |
+| `.github/workflows/deploy-staging.yml`    | push to `main`                                | builds `web` and `api` images tagged with the commit SHA, pushes to GHCR, then calls `deploy.yml` for staging                                           |
+| `.github/workflows/deploy-production.yml` | manual (`workflow_dispatch`) with `image_tag` | verifies the tag is on `main` and both images exist, then calls `deploy.yml` for production after reviewer approval                                     |
+| `.github/workflows/deploy.yml`            | called by the two above                       | SSH to the server, `git checkout <tag>`, `deploy/scripts/deploy.sh <tag>` (pull, migrate one-off, up, smoke test), external smoke test, logs on failure |
+
+Images: `ghcr.io/<owner>/<repo>/web:<sha>` and `ghcr.io/<owner>/<repo>/api:<sha>` (lowercase). The
+`:main` tag always points at the latest staging build; deployments only ever use the SHA tag.
+
+### GitHub environments
+
+Create two environments under Settings > Environments: `staging` and `production`. On
+`production`, enable **Required reviewers** (at least one person from M.Bryan or the dev lead) and
+restrict deployments to the `main` branch. Each environment holds its own variables and secrets:
+
+| Kind     | Name              | Value                                                                                                                               |
+| -------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| variable | `APP_DOMAIN`      | public hostname, e.g. `staging.impact.example.com` / `impact.example.com`                                                           |
+| variable | `DEPLOY_PATH`     | repository checkout on the server, e.g. `/srv/mbc-impact`                                                                           |
+| variable | `GHCR_PULL_USER`  | GitHub username that owns the pull token                                                                                            |
+| secret   | `SSH_HOST`        | server hostname or IP                                                                                                               |
+| secret   | `SSH_USER`        | deploy user on the server (member of the `docker` group, not root)                                                                  |
+| secret   | `SSH_KEY`         | private key (ed25519) whose public key is in the deploy user's `~/.ssh/authorized_keys`                                             |
+| secret   | `SSH_KNOWN_HOSTS` | output of `ssh-keyscan -H <host>` so the runner verifies the server's host key                                                      |
+| secret   | `GHCR_PULL_TOKEN` | classic PAT with `read:packages`, used once per deploy to `docker login ghcr.io` on the server. Optional if the packages are public |
+
+Pushing images uses the workflow's own `GITHUB_TOKEN` (`packages: write`); no extra secret.
+After the first push, open the package on GitHub, link it to the repository and keep it private.
+
+Secrets are never printed: the SSH key is written to a file with mode 600 and deleted at the end of
+the job, the GHCR token travels over the SSH session's stdin, and `deploy.sh` prints image names
+and health output only.
+
+### Server preparation for CI deploys
+
+```bash
+# as the deploy user on the server
+git clone <repo> /srv/mbc-impact && cd /srv/mbc-impact/deploy
+cp .env.example .env && chmod 600 .env     # fill in; set IMAGE_PREFIX=ghcr.io/<owner>/<repo>
+sh scripts/garage-init.sh                  # after the first `docker compose -f docker-compose.yml up -d db garage`
+```
+
+The workflow then performs `git fetch && git checkout <sha>` in `DEPLOY_PATH` so the Compose files
+on the server always match the images being deployed.
+
+### Rollback
+
+```bash
+sh deploy/scripts/rollback.sh <previous-sha>
+```
+
+This re-runs `deploy.sh` with the previous tag and skips migrations. Equivalent from GitHub: run
+`deploy-production.yml` with the previous SHA (that path does run `migrate deploy`, which is a
+no-op when the schema is already current).

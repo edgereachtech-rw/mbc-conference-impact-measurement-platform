@@ -1,0 +1,67 @@
+# Manual production deployment of an image tag that already ran on staging.
+# The "production" GitHub environment must have required reviewers configured: the deploy job
+# waits for their approval before it touches the server (backlog E0-3).
+
+name: Deploy to production
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: Git commit SHA to deploy (must have been built by the staging workflow)
+        required: true
+        type: string
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  verify:
+    name: Verify ${{ inputs.image_tag }} exists and is on main
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out full history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: The tag must be a commit reachable from main
+        env:
+          IMAGE_TAG: ${{ inputs.image_tag }}
+        run: |
+          set -eu
+          git cat-file -e "$IMAGE_TAG^{commit}" || { echo "::error::$IMAGE_TAG is not a commit in this repository"; exit 1; }
+          git merge-base --is-ancestor "$IMAGE_TAG" origin/main || { echo "::error::$IMAGE_TAG is not on main"; exit 1; }
+
+      - name: Log in to GHCR
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Both images must exist for this tag
+        env:
+          IMAGE_TAG: ${{ inputs.image_tag }}
+        run: |
+          set -eu
+          prefix="$(printf 'ghcr.io/%s' "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')"
+          for app in web api; do
+            docker manifest inspect "$prefix/$app:$IMAGE_TAG" > /dev/null \
+              || { echo "::error::image $prefix/$app:$IMAGE_TAG not found; deploy it to staging first"; exit 1; }
+          done
+
+  deploy:
+    name: Deploy to production (requires approval)
+    needs: verify
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment: production
+      image_tag: ${{ inputs.image_tag }}
+    secrets: inherit

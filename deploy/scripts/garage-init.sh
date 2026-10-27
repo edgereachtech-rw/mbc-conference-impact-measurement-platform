@@ -10,8 +10,10 @@ set -eu
 
 cd "$(dirname "$0")/.."
 [ -f .env ] || { echo ".env not found in $(pwd)"; exit 1; }
-# shellcheck disable=SC1091
-set -a; . ./.env; set +a
+set -a
+# shellcheck source=/dev/null
+. ./.env
+set +a
 
 garage() { docker compose exec -T garage /garage "$@"; }
 
