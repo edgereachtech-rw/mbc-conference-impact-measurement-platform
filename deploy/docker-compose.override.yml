@@ -1,0 +1,145 @@
+# Local development overrides. Docker Compose merges this file automatically when you run
+# `docker compose up` from the deploy/ directory, so a laptop gets:
+#   - hot reload: the repo is bind-mounted and web/api/worker run `pnpm dev` (tsx watch / next dev)
+#   - ports on 127.0.0.1 for the web app, API, database, object storage and the Mailpit inbox
+#   - Mailpit instead of a real SMTP relay (UI at http://127.0.0.1:8025)
+#   - Caddy on plain http://localhost (no certificates)
+#
+# For staging/production run with the production file only:
+#   docker compose -f docker-compose.yml up -d
+
+services:
+  caddy:
+    environment:
+      APP_DOMAIN: http://localhost
+      CSP_SCRIPT_EXTRA: " 'unsafe-eval'" # Next.js dev server / HMR needs eval
+
+  # One-off: installs node_modules into shared volumes before the dev servers start, so the three
+  # app containers do not race each other through `pnpm install`.
+  deps:
+    image: node:24.22.1-alpine3.23
+    working_dir: /app
+    command:
+      - sh
+      - -c
+      - npm install -g pnpm@10.18.3 --no-fund --no-audit && pnpm install --frozen-lockfile
+    environment:
+      HUSKY: '0'
+      CI: 'true'
+    volumes: &dev-volumes
+      - ..:/app
+      - root_node_modules:/app/node_modules
+      - web_node_modules:/app/apps/web/node_modules
+      - api_node_modules:/app/apps/api/node_modules
+      - shared_node_modules:/app/packages/shared/node_modules
+      - web_next:/app/apps/web/.next
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '2'
+
+  web:
+    build: !reset null
+    image: node:24.22.1-alpine3.23
+    working_dir: /app
+    command:
+      - sh
+      - -c
+      - npm install -g pnpm@10.18.3 --no-fund --no-audit && pnpm --filter @mbc/shared build && pnpm --filter @mbc/web dev -H 0.0.0.0 -p 3000
+    ports:
+      - '127.0.0.1:3000:3000'
+    environment:
+      NODE_ENV: development
+      HUSKY: '0'
+      NEXT_TELEMETRY_DISABLED: '1'
+      WATCHPACK_POLLING: 'true' # file events do not cross Windows/macOS bind mounts
+      CHOKIDAR_USEPOLLING: 'true'
+    volumes: *dev-volumes
+    depends_on:
+      deps:
+        condition: service_completed_successfully
+    healthcheck:
+      start_period: 10m # first start compiles everything
+
+  api:
+    build: !reset null
+    image: node:24.22.1-alpine3.23
+    working_dir: /app
+    command:
+      - sh
+      - -c
+      - npm install -g pnpm@10.18.3 --no-fund --no-audit && pnpm --filter @mbc/shared build && pnpm --filter @mbc/api dev
+    ports:
+      - '127.0.0.1:4000:4000'
+    environment:
+      NODE_ENV: development
+      HUSKY: '0'
+      SMTP_HOST: mailpit
+      SMTP_PORT: 1025
+      SMTP_USER: ''
+      SMTP_PASSWORD: ''
+    volumes: *dev-volumes
+    depends_on:
+      deps:
+        condition: service_completed_successfully
+    healthcheck:
+      start_period: 10m
+
+  worker:
+    build: !reset null
+    image: node:24.22.1-alpine3.23
+    working_dir: /app
+    command:
+      - sh
+      - -c
+      - npm install -g pnpm@10.18.3 --no-fund --no-audit && pnpm --filter @mbc/shared build && pnpm --filter @mbc/api dev:worker
+    environment:
+      NODE_ENV: development
+      HUSKY: '0'
+      SMTP_HOST: mailpit
+      SMTP_PORT: 1025
+      SMTP_USER: ''
+      SMTP_PASSWORD: ''
+    volumes: *dev-volumes
+    depends_on:
+      deps:
+        condition: service_completed_successfully
+      api:
+        condition: service_started # no image to wait for in dev
+
+  db:
+    ports:
+      - '127.0.0.1:5432:5432'
+
+  garage:
+    ports:
+      - '127.0.0.1:3900:3900'
+      - '127.0.0.1:3903:3903'
+
+  mailpit:
+    image: axllent/mailpit:v1.32.0
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:8025:8025' # web inbox
+    expose:
+      - '1025' # SMTP, reached by api/worker as mailpit:1025
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: '1'
+      MP_SMTP_AUTH_ALLOW_INSECURE: '1'
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '2'
+
+volumes:
+  root_node_modules:
+  web_node_modules:
+  api_node_modules:
+  shared_node_modules:
+  web_next:

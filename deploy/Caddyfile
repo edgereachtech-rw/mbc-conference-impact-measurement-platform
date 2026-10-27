@@ -1,0 +1,52 @@
+# Reverse proxy for the platform (backlog E0-4).
+# One domain serves both apps: /api/* -> Express API, everything else -> Next.js.
+# HTTPS is automatic (Let's Encrypt) when APP_DOMAIN is a public hostname; HTTP redirects to HTTPS.
+# For local development APP_DOMAIN is "http://localhost" (see docker-compose.override.yml).
+
+{
+	# Contact address for the ACME account. Set ACME_EMAIL in .env for production.
+	email {$ACME_EMAIL:ops@example.com}
+	# Caddy's own admin API stays off; configuration is this file only.
+	admin off
+}
+
+{$APP_DOMAIN} {
+	encode zstd gzip
+
+	header {
+		# Two years, preload-ready. Only sent over HTTPS; browsers ignore it on plain HTTP.
+		Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		X-Frame-Options "DENY"
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()"
+		# Conservative policy that works with Next.js (App Router) without nonces:
+		#   - 'unsafe-inline' scripts/styles are needed by Next's inline bootstrap and Tailwind-injected styles
+		#   - CSP_SCRIPT_EXTRA adds " 'unsafe-eval'" in development for HMR
+		#   - CSP_CONNECT_EXTRA adds e.g. " https://o123.ingest.sentry.io" once Sentry is enabled
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'{$CSP_SCRIPT_EXTRA}; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'{$CSP_CONNECT_EXTRA}; manifest-src 'self'; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+		# Do not advertise the server software.
+		-Server
+	}
+
+	# API: the path is forwarded unchanged, so Express serves /api/v1/... and /api/health.
+	handle /api/* {
+		reverse_proxy api:4000 {
+			header_up X-Forwarded-Proto {scheme}
+		}
+	}
+
+	# Everything else: Next.js (pages, static assets, PWA manifest, icons).
+	handle {
+		reverse_proxy web:3000 {
+			header_up X-Forwarded-Proto {scheme}
+		}
+	}
+
+	# Structured access logs to stdout; Docker's json-file driver applies the size/rotation limits.
+	# Caddy logs request headers; it does not log bodies, so form answers never reach the log.
+	log {
+		output stdout
+		format json
+	}
+}

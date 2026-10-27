@@ -1,0 +1,24 @@
+# Keep build contexts small: images are built from the repo root (see deploy/docker-compose.yml).
+.git
+.github
+.husky
+.vscode
+.idea
+node_modules
+**/node_modules
+**/dist
+**/.next
+**/out
+**/coverage
+**/*.tsbuildinfo
+apps/api/src/generated
+apps/web/next-env.d.ts
+docs
+deploy
+scripts
+*.md
+!README.md
+.env
+.env.*
+**/.env
+**/.env.*
