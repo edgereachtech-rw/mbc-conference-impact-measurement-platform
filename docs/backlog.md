@@ -3,7 +3,7 @@
 **First pilot:** ITTEC 2026 (November 12-13, 2026, physical and virtual)
 **Production go-live:** Saturday, November 7, 2026
 **Source:** *M.Bryan ITTEC Measurement Impact Platform: Development Workplan and Requirements* (section numbers below refer to that document)
-**Stack:** Next.js (TypeScript) + Express.js API + PostgreSQL 16, Docker Compose on a VPS, MinIO (S3-compatible) storage, SMTP relay for email, pg-boss worker for jobs
+**Stack:** Next.js (TypeScript) + Express.js API + PostgreSQL 16, Docker Compose on a VPS, Garage (S3-compatible object storage, AGPL-3.0; replaces MinIO, whose Docker repository is no longer available) storage, SMTP relay for email, pg-boss worker for jobs
 **Backlog date:** October 27, 2026
 
 ---
@@ -88,12 +88,12 @@
 | ID | Story | Acceptance criteria | Pri | Inc |
 |---|---|---|---|---|
 | E0-1 | As the dev team, I want a monorepo with `apps/web`, `apps/api`, `packages/shared` so rules are written once | Shared Zod schemas, types and scoring rules imported by both apps; lint, type-check and tests run in CI | P0 | 1 |
-| E0-2 | As the dev team, I want Docker Compose deployment | Services: caddy, web, api, worker, db, minio, backup. Only Caddy publishes ports. Healthchecks on api and db. Images pinned to exact versions. Named volumes never removed in production | P0 | 1 |
+| E0-2 | As the dev team, I want Docker Compose deployment | Services: caddy, web, api, worker, db, garage (S3-compatible, replaces MinIO), backup. Only Caddy publishes ports. Healthchecks on api and db. Images pinned to exact versions. Named volumes never removed in production | P0 | 1 |
 | E0-3 | As the dev team, I want CI/CD | Push to main builds images tagged with the commit, deploys to staging, runs migrations as a one-off command. Rollback = redeploy previous tag | P0 | 1 |
 | E0-4 | As the dev team, I want HTTPS on a dedicated subdomain | Valid certificate, HTTP redirects to HTTPS, one domain for web and `/api` (no CORS) | P0 | 1 |
 | E0-5 | As the dev team, I want a staging environment mirroring production | Separate database, subdomain and credentials. Seeded with test data flagged `is_test` | P0 | 1 |
 | E0-6 | As the dev team, I want error tracking and structured logs | Sentry in web and api; JSON logs (pino) with rotation limits; no personal data in logs | P0 | 1 |
-| E0-7 | As the dev team, I want daily backups | `pg_dump` encrypted and sent off-site; MinIO files synced off-site; heartbeat to Healthchecks.io; hourly dumps on Nov 12-13 | P0 | 1, 6 |
+| E0-7 | As the dev team, I want daily backups | `pg_dump` encrypted and sent off-site; object storage (Garage) files synced off-site; heartbeat to Healthchecks.io; hourly dumps on Nov 12-13 | P0 | 1, 6 |
 | E0-8 | As the dev team, I want uptime and server alerts | Uptime check on sign-in page and a form URL; CPU/memory/disk alerts at 80-85%; failed-job alert; SSL expiry alert | P0 | 5 |
 | E0-9 | As the dev team, I want a worker heartbeat | Worker pings Healthchecks.io every few minutes; alert if missed for 5 minutes | P0 | 5 |
 | E0-10 | As the dev team, I want server hardening | SSH key only, firewall 22/80/443, Fail2ban, automatic security updates, separate sudo users | P0 | 1 |

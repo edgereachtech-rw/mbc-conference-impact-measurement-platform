@@ -45,6 +45,9 @@ x-app-env: &app-env
   APP_URL: https://${APP_DOMAIN}
   SESSION_SECRET: ${SESSION_SECRET}
   SENTRY_DSN: ${SENTRY_DSN:-}
+  SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
+  SENTRY_RELEASE: ${IMAGE_TAG:-local}
+  LOG_LEVEL: ${LOG_LEVEL:-info}
   ADMIN_EMAIL: ${ADMIN_EMAIL:-}
   SEED_TEST_DELEGATES: ${SEED_TEST_DELEGATES:-false}
 
@@ -92,6 +95,8 @@ services:
       HOSTNAME: 0.0.0.0
       APP_DOMAIN: ${APP_DOMAIN}
       SENTRY_DSN: ${SENTRY_DSN:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
+      SENTRY_RELEASE: ${IMAGE_TAG:-local}
     healthcheck:
       test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:3000/ > /dev/null || exit 1']
       interval: 30s
@@ -148,6 +153,7 @@ services:
     environment:
       <<: *app-env
       HEALTHCHECKS_WORKER_URL: ${HEALTHCHECKS_WORKER_URL:-}
+      HEARTBEAT_INTERVAL_SECONDS: ${HEARTBEAT_INTERVAL_SECONDS:-120}
     depends_on:
       db:
         condition: service_healthy

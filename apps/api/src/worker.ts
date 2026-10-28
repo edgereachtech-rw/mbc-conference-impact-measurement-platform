@@ -1,34 +1,66 @@
-import { APP_NAME } from '@mbc/shared';
-import { PgBoss } from 'pg-boss';
+import { captureException, flushSentry, initSentry } from './lib/sentry.js';
+
+initSentry('worker');
+
+const { APP_NAME } = await import('@mbc/shared');
+const { PgBoss } = await import('pg-boss');
+const { startHeartbeat } = await import('./lib/heartbeat.js');
+const { createLogger } = await import('./lib/logger.js');
+
+const logger = createLogger(undefined, undefined).child({ service: 'worker' });
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) {
-  console.error('DATABASE_URL is not set; the worker cannot start.');
+  logger.error('DATABASE_URL is not set; the worker cannot start');
   process.exit(1);
 }
 
 const boss = new PgBoss({ connectionString });
 
 boss.on('error', (error: Error) => {
-  console.error('pg-boss error', error);
+  logger.error({ err: error }, 'pg-boss error');
+  captureException(error);
 });
+
+let heartbeat: { stop(): void } | undefined;
 
 async function main() {
   await boss.start();
-  // Jobs are registered here in later increments (reminders, exports, heartbeat).
+  // Jobs are registered here in later increments (reminders, exports).
+
+  const heartbeatUrl = process.env.HEALTHCHECKS_WORKER_URL;
+  if (heartbeatUrl) {
+    heartbeat = startHeartbeat({
+      url: heartbeatUrl,
+      intervalSeconds: Number(process.env.HEARTBEAT_INTERVAL_SECONDS ?? 120) || 120,
+      logger,
+    });
+  } else {
+    logger.info('HEALTHCHECKS_WORKER_URL not set; heartbeat disabled');
+  }
+
+  logger.info({ app: APP_NAME }, 'worker ready');
   console.log(`${APP_NAME} worker ready`);
 }
 
 async function shutdown(signal: NodeJS.Signals) {
-  console.log(`received ${signal}, stopping worker`);
+  logger.info({ signal }, 'stopping worker');
+  heartbeat?.stop();
   await boss.stop({ graceful: true });
+  await flushSentry();
   process.exit(0);
 }
 
 process.on('SIGINT', () => void shutdown('SIGINT'));
 process.on('SIGTERM', () => void shutdown('SIGTERM'));
+process.on('unhandledRejection', (reason) => {
+  logger.error({ err: reason }, 'unhandled rejection');
+  captureException(reason);
+});
 
-main().catch((error: unknown) => {
-  console.error('worker failed to start', error);
+main().catch(async (error: unknown) => {
+  logger.error({ err: error }, 'worker failed to start');
+  captureException(error);
+  await flushSentry();
   process.exit(1);
 });

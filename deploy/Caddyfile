@@ -44,9 +44,27 @@
 	}
 
 	# Structured access logs to stdout; Docker's json-file driver applies the size/rotation limits.
-	# Caddy logs request headers; it does not log bodies, so form answers never reach the log.
+	# Caddy never logs request bodies, so form answers cannot reach the log.
+	# Access log without personal data: no query strings, no request headers (custom headers
+	# such as X-Name would otherwise be stored verbatim; Authorization/Cookie are only redacted),
+	# no response headers, and client IPs masked to /24 (/56 for IPv6).
 	log {
 		output stdout
-		format json
+		format filter {
+			wrap json
+			fields {
+				request>uri regexp "\?.*$" ""
+				request>headers delete
+				resp_headers delete
+				request>remote_ip ip_mask {
+					ipv4 24
+					ipv6 56
+				}
+				request>client_ip ip_mask {
+					ipv4 24
+					ipv6 56
+				}
+			}
+		}
 	}
 }

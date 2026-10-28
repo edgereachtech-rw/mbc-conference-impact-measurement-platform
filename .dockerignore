@@ -5,6 +5,7 @@
 .vscode
 .idea
 node_modules
+
 **/node_modules
 **/dist
 **/.next
@@ -22,3 +23,6 @@ scripts
 .env.*
 **/.env
 **/.env.*
+docs/test-reports
+docs/screenshots
+
