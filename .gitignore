@@ -28,3 +28,7 @@ Thumbs.db
 
 # backup e2e test scratch
 deploy/backup/.tmp/
+
+# generated screenshots and test reports (regenerate with pnpm screenshots / the test run)
+docs/screenshots/
+docs/test-reports/
