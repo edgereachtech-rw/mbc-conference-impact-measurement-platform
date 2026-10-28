@@ -30,7 +30,7 @@ set_env() {
 [ -n "${IMAGE_PREFIX:-}" ] && set_env IMAGE_PREFIX "$IMAGE_PREFIX"
 set_env IMAGE_TAG "$TAG"
 PREFIX="$(grep '^IMAGE_PREFIX=' .env | cut -d= -f2-)"
-echo "==> deploying ${PREFIX}/{web,api}:${TAG}"
+echo "==> deploying ${PREFIX}/{web,api,backup}:${TAG}"
 
 fail() {
   echo "!!! deploy failed: $1"
@@ -40,7 +40,7 @@ fail() {
 }
 
 echo "==> pulling images"
-$COMPOSE pull --quiet web api || fail "image pull"
+$COMPOSE pull --quiet web api backup || fail "image pull"
 
 if [ "$MIGRATE" -eq 1 ]; then
   echo "==> running migrations (one-off container)"

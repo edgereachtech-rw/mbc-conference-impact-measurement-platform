@@ -1,0 +1,151 @@
+/**
+ * Idempotent seed: creates the ITTEC 2026 event, its two participation categories, one admin
+ * account (ADMIN_EMAIL) and, when SEED_TEST_DELEGATES=true and NODE_ENV is not production, ten
+ * delegates with registration_status "test". Running it twice changes nothing.
+ *
+ *   pnpm --filter @mbc/api db:seed            (development, via tsx)
+ *   node dist/seed.js                          (inside the api image on staging)
+ */
+import { getPrisma, type PrismaClient } from './db.js';
+import { audit } from './lib/audit.js';
+import { normaliseEmail } from './lib/email.js';
+
+export const ITTEC_2026 = {
+  slug: 'ittec-2026',
+  name: 'ITTEC 2026: International Training Transfer Effectiveness Conference',
+  theme: 'Technology, Practice, and Impact',
+  startsOn: new Date('2026-11-12T00:00:00.000Z'),
+  endsOn: new Date('2026-11-13T00:00:00.000Z'),
+  timezone: 'Africa/Lagos',
+  location: 'Lagos Oriental Hotel, Victoria Island, Lagos, Nigeria',
+  format: 'hybrid',
+  status: 'active',
+} as const;
+
+export const PARTICIPATION_CATEGORIES = [
+  { code: 'physical', name: 'In-person (Lagos)' },
+  { code: 'virtual', name: 'Virtual' },
+] as const;
+
+export const TEST_DELEGATE_COUNT = 10;
+
+export interface SeedOptions {
+  adminEmail?: string;
+  /** Only honoured when NODE_ENV is not "production". */
+  seedTestDelegates?: boolean;
+  log?: (message: string) => void;
+}
+
+export interface SeedResult {
+  eventId: string;
+  adminUserId: string | null;
+  testDelegates: number;
+}
+
+export async function seed(prisma: PrismaClient, options: SeedOptions = {}): Promise<SeedResult> {
+  const log = options.log ?? (() => undefined);
+
+  const event = await prisma.event.upsert({
+    where: { slug: ITTEC_2026.slug },
+    create: ITTEC_2026,
+    update: {
+      name: ITTEC_2026.name,
+      theme: ITTEC_2026.theme,
+      startsOn: ITTEC_2026.startsOn,
+      endsOn: ITTEC_2026.endsOn,
+      timezone: ITTEC_2026.timezone,
+      location: ITTEC_2026.location,
+      format: ITTEC_2026.format,
+    },
+  });
+  log(`event ${event.slug} (${event.id})`);
+
+  for (const category of PARTICIPATION_CATEGORIES) {
+    await prisma.participationCategory.upsert({
+      where: { eventId_code: { eventId: event.id, code: category.code } },
+      create: { eventId: event.id, ...category },
+      update: { name: category.name },
+    });
+  }
+  log(`${PARTICIPATION_CATEGORIES.length} participation categories`);
+
+  let adminUserId: string | null = null;
+  if (options.adminEmail) {
+    const email = normaliseEmail(options.adminEmail);
+    const admin = await prisma.userAccount.upsert({
+      where: { email },
+      create: { email, role: 'admin', status: 'active' },
+      update: { role: 'admin', status: 'active' },
+    });
+    adminUserId = admin.id;
+    log('admin account ensured');
+  } else {
+    log('ADMIN_EMAIL not set; no admin account created');
+  }
+
+  let testDelegates = 0;
+  if (options.seedTestDelegates && process.env.NODE_ENV !== 'production') {
+    for (let i = 1; i <= TEST_DELEGATE_COUNT; i++) {
+      const n = String(i).padStart(2, '0');
+      const email = `test-delegate-${n}@example.com`;
+      const data = {
+        name: `Test Delegate ${n}`,
+        email,
+        organisation: i % 2 === 0 ? 'Example Bank Plc' : 'Example Ministry of Health',
+        jobTitle: i % 3 === 0 ? 'Learning and Development Manager' : 'HR Business Partner',
+        country: i % 4 === 0 ? 'Ghana' : 'Nigeria',
+        attendanceFormat: i % 3 === 0 ? ('virtual' as const) : ('physical' as const),
+        capacity: i % 5 === 0 ? ('nominee' as const) : ('individual' as const),
+        nominatingOrganisation: i % 5 === 0 ? 'Example Group' : null,
+        registrationStatus: 'test' as const,
+      };
+      // No PSL-level unique on (event_id, email): the partial functional index lives in SQL only.
+      const existing = await prisma.delegate.findFirst({
+        where: { eventId: event.id, email, registrationStatus: 'test' },
+        select: { id: true },
+      });
+      if (existing) {
+        await prisma.delegate.update({ where: { id: existing.id }, data });
+      } else {
+        await prisma.delegate.create({ data: { eventId: event.id, ...data } });
+      }
+      testDelegates++;
+    }
+    log(`${testDelegates} test delegates (registration_status = test)`);
+  } else if (options.seedTestDelegates) {
+    log('refusing to seed test delegates: NODE_ENV is production');
+  }
+
+  // Every seed run is recorded; the log is append-only, so re-runs add a row rather than editing one.
+  await audit(prisma, {
+    action: 'seed.completed',
+    entityType: 'event',
+    entityId: event.id,
+    eventId: event.id,
+    actorUserId: adminUserId,
+    newValue: { testDelegates, adminAccount: adminUserId !== null },
+  });
+
+  return { eventId: event.id, adminUserId, testDelegates };
+}
+
+// Run directly: `tsx src/seed.ts` or `node dist/seed.js`.
+const isDirectRun = process.argv[1] !== undefined && /[\\/]seed\.(ts|js)$/.test(process.argv[1]);
+
+if (isDirectRun) {
+  const prisma = getPrisma();
+  seed(prisma, {
+    adminEmail: process.env.ADMIN_EMAIL,
+    seedTestDelegates: process.env.SEED_TEST_DELEGATES === 'true',
+    log: (message) => console.log(`seed: ${message}`),
+  })
+    .then(async (result) => {
+      console.log(`seed: done (event ${result.eventId})`);
+      await prisma.$disconnect();
+    })
+    .catch(async (error: unknown) => {
+      console.error('seed: failed', error);
+      await prisma.$disconnect();
+      process.exit(1);
+    });
+}

@@ -46,13 +46,13 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Both images must exist for this tag
+      - name: All three images must exist for this tag
         env:
           IMAGE_TAG: ${{ inputs.image_tag }}
         run: |
           set -eu
           prefix="$(printf 'ghcr.io/%s' "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')"
-          for app in web api; do
+          for app in web api backup; do
             docker manifest inspect "$prefix/$app:$IMAGE_TAG" > /dev/null \
               || { echo "::error::image $prefix/$app:$IMAGE_TAG not found; deploy it to staging first"; exit 1; }
           done

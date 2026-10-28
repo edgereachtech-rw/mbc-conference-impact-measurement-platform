@@ -204,3 +204,33 @@ sh deploy/scripts/rollback.sh <previous-sha>
 This re-runs `deploy.sh` with the previous tag and skips migrations. Equivalent from GitHub: run
 `deploy-production.yml` with the previous SHA (that path does run `migrate deploy`, which is a
 no-op when the schema is already current).
+
+## Seeding
+
+The seed is idempotent and runs inside the api image (no tsx needed):
+
+```bash
+# staging: ADMIN_EMAIL set and SEED_TEST_DELEGATES=true in .env
+docker compose -f docker-compose.yml run --rm --no-deps api node dist/seed.js
+```
+
+It creates the ITTEC 2026 event, the physical and virtual participation categories, the admin
+account for `ADMIN_EMAIL`, and on staging ten delegates flagged `registration_status = test`.
+The test delegates are refused when `NODE_ENV=production`, so running the same command on
+production only ensures the event, categories and admin.
+
+## Backups
+
+The `backup` service (image from `deploy/backup/`) dumps PostgreSQL with `pg_dump`, encrypts the
+dump with `age` to `BACKUP_AGE_PUBLIC_KEY`, uploads it with `rclone` to the off-site bucket
+(`BACKUP_S3_*`) and syncs the object bucket to an encrypted copy. Schedule: 02:00 Africa/Lagos, or
+hourly with `BACKUP_MODE=hourly`. Retention 14 daily / 8 weekly / 12 monthly (48 hourly).
+Every run pings `HEALTHCHECKS_BACKUP_URL`.
+
+```bash
+docker compose -f docker-compose.yml run --rm backup /backup/backup.sh            # run now
+docker compose -f docker-compose.yml run --rm backup /backup/restore.sh --list    # what exists
+sh backup/test-local.sh                                                           # local end-to-end test
+```
+
+Restore procedure, key custody and the pre-go-live checklist: [docs/backup-and-recovery.md](../docs/backup-and-recovery.md).

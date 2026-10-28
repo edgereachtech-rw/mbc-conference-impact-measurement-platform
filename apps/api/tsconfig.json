@@ -6,6 +6,5 @@
     "types": ["node"],
     "noEmit": true
   },
-  "include": ["src", "vitest.config.ts", "prisma.config.ts"],
-  "exclude": ["src/generated"]
+  "include": ["src", "vitest.config.ts", "prisma.config.ts"]
 }

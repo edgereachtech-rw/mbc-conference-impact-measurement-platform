@@ -75,10 +75,10 @@ services:
     environment:
       NODE_ENV: development
       HUSKY: '0'
-      SMTP_HOST: mailpit
-      SMTP_PORT: 1025
-      SMTP_USER: ''
-      SMTP_PASSWORD: ''
+      MAIL_TRANSPORT: mailpit
+      MAILPIT_HOST: mailpit
+      MAILPIT_PORT: 1025
+      APP_URL: http://localhost
     volumes: *dev-volumes
     depends_on:
       deps:
@@ -97,10 +97,10 @@ services:
     environment:
       NODE_ENV: development
       HUSKY: '0'
-      SMTP_HOST: mailpit
-      SMTP_PORT: 1025
-      SMTP_USER: ''
-      SMTP_PASSWORD: ''
+      MAIL_TRANSPORT: mailpit
+      MAILPIT_HOST: mailpit
+      MAILPIT_PORT: 1025
+      APP_URL: http://localhost
     volumes: *dev-volumes
     depends_on:
       deps:

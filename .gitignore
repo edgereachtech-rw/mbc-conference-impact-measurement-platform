@@ -25,3 +25,6 @@ Thumbs.db
 .idea/
 .vscode/*
 !.vscode/extensions.json
+
+# backup e2e test scratch
+deploy/backup/.tmp/

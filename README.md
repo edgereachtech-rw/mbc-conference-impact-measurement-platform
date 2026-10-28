@@ -57,17 +57,52 @@ pnpm build       # shared -> api (tsc) and web (next build, standalone output)
 
 A Husky pre-commit hook runs lint-staged (ESLint fix + Prettier) on staged files.
 
-### Prisma
+### Database (Prisma 7)
 
-Prisma lives in `apps/api`. Prisma 7 reads the connection string from
-[apps/api/prisma.config.ts](apps/api/prisma.config.ts) (`DATABASE_URL`, loaded from `.env`), not from
-`schema.prisma`. The schema currently declares no models; tables arrive per increment with their own
-migrations.
+Prisma lives in `apps/api`. The connection string comes from `DATABASE_URL`, read by
+[apps/api/prisma.config.ts](apps/api/prisma.config.ts); without it `prisma generate` still works
+but any command that connects fails. The generated client is written to `apps/api/src/generated`
+(git-ignored) by `prisma generate`, which the api `build`, `typecheck` and `test` scripts run first.
 
 ```bash
-pnpm --filter @mbc/api prisma validate   # checks schema + config
-pnpm --filter @mbc/api prisma migrate dev  # once models exist
+pnpm --filter @mbc/api db:migrate   # prisma migrate dev: create and apply migrations locally
+pnpm --filter @mbc/api db:deploy    # prisma migrate deploy: apply committed migrations (CI, servers)
+pnpm --filter @mbc/api db:seed      # idempotent: ITTEC 2026 event, categories, ADMIN_EMAIL admin,
+                                    # plus 10 test delegates when SEED_TEST_DELEGATES=true
 ```
+
+Database tests (`apps/api/src/db/*.test.ts` and `src/seed.test.ts`) run only when `DATABASE_URL`
+points at a migrated database; otherwise they are skipped. Quick local database:
+
+```bash
+docker run -d --name mbc-dev-pg -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=mbc_impact_test \
+  -p 127.0.0.1:5433:5432 postgres:16.15-alpine3.23
+export DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5433/mbc_impact_test
+pnpm --filter @mbc/api db:deploy && pnpm test
+```
+
+Schema conventions: UUID keys from `gen_random_uuid()`, snake_case tables, timestamps in UTC.
+Three rules live as SQL inside the migration because the Prisma schema language cannot express
+them: case-insensitive unique emails on `user_account`, one email per event for delegates not
+marked `duplicate`, and the trigger that makes `audit_log` append-only. Services write audit rows
+with `audit()` from [apps/api/src/lib/audit.ts](apps/api/src/lib/audit.ts) inside the same
+transaction as the change they describe.
+
+### Email
+
+Outgoing mail goes through `apps/api/src/mail`: a `Mailer` interface, the Nodemailer SMTP
+implementation (relay on servers, Mailpit locally with `MAIL_TRANSPORT=mailpit`) and an
+in-memory mailer for tests. Templates (`invitation`, `magic-link`, `test-delivery`) share one
+layout that renders HTML and plain text from the same content, using the brand tokens.
+
+```bash
+pnpm mail:test you@example.com                       # sends the delivery test, prints the SMTP response
+pnpm mail:test you@example.com --template invitation
+pnpm email:screenshots                               # renders what is in Mailpit to docs/screenshots/
+```
+
+DNS records, relay configuration, bounce handling and the deliverability checklist are in
+[docs/email-setup.md](docs/email-setup.md).
 
 ## Folder map
 

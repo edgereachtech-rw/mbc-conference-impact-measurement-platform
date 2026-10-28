@@ -1,0 +1,46 @@
+# Local end-to-end test of the backup system (backup/test-local.sh). Adds a second Garage
+# instance ("offsite") that stands in for the off-site S3 bucket and points the backup service at
+# it. All secrets come from the environment that test-local.sh generates; nothing is hard-coded.
+#
+#   docker compose -f docker-compose.yml -f backup/docker-compose.test.yml ...
+
+services:
+  offsite:
+    image: dxflrs/garage:v2.5.0
+    command: ['/garage', 'server']
+    environment:
+      GARAGE_RPC_SECRET: ${OFFSITE_RPC_SECRET:?set by backup/test-local.sh}
+      GARAGE_ADMIN_TOKEN: ${OFFSITE_ADMIN_TOKEN:?set by backup/test-local.sh}
+    volumes:
+      - ./backup/offsite-garage.toml:/etc/garage.toml:ro
+      - offsitemeta:/var/lib/garage/meta
+      - offsitedata:/var/lib/garage/data
+    healthcheck:
+      test: ['CMD', '/garage', 'status']
+      interval: 10s
+      timeout: 10s
+      start_period: 15s
+      retries: 6
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  backup:
+    environment:
+      BACKUP_S3_PROVIDER: Other
+      BACKUP_S3_ENDPOINT: http://offsite:3900
+      BACKUP_S3_REGION: garage
+      BACKUP_S3_BUCKET: ${OFFSITE_BUCKET:?set by backup/test-local.sh}
+      BACKUP_S3_ACCESS_KEY: ${OFFSITE_ACCESS_KEY:?set by backup/test-local.sh}
+      BACKUP_S3_SECRET_KEY: ${OFFSITE_SECRET_KEY:?set by backup/test-local.sh}
+      BACKUP_AGE_PUBLIC_KEY: ${TEST_AGE_PUBLIC_KEY:?set by backup/test-local.sh}
+      BACKUP_RCLONE_CRYPT_PASSWORD: ${TEST_CRYPT_PASSWORD:?set by backup/test-local.sh}
+      HEALTHCHECKS_BACKUP_URL: ''
+    depends_on:
+      offsite:
+        condition: service_healthy
+
+volumes:
+  offsitemeta:
+  offsitedata:
