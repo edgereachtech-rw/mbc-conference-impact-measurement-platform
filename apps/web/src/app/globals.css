@@ -36,6 +36,20 @@
   --brand-footer-foreground: #d9dfe8;
   --brand-footer-muted: #9fb0c8;
 
+  /* M.Bryan corporate identity, verified on https://mbryanconsultinggroup.com/ (Tailwind default
+     palette used by the site: slate for ink and text, emerald for actions). See docs/design-tokens.md. */
+  --corp-ink: #0f172a; /* slate-900: theme-color, dark buttons, headings */
+  --corp-ink-deep: #020617; /* slate-950: site header background */
+  --corp-text: #475569; /* slate-600: body text */
+  --corp-muted: #64748b; /* slate-500: secondary text */
+  --corp-line: #e2e8f0; /* slate-200: borders */
+  --corp-surface: #f8fafc; /* slate-50: section backgrounds */
+  --corp-green: #047857; /* emerald-700: site hover shade, used as our base so white text passes AA */
+  --corp-green-bright: #059669; /* emerald-600: site button base (3.8:1 with white; large text only) */
+  --corp-green-text: #065f46; /* emerald-800: green text on light surfaces */
+  --corp-green-soft: #ecfdf5; /* emerald-50: tinted panels */
+  --corp-green-line: #a7f3d0; /* emerald-200: tinted borders */
+
   /* shadcn/ui semantic variables mapped onto the brand */
   --background: var(--brand-surface-raised);
   --foreground: var(--brand-text);
@@ -82,6 +96,7 @@
   --font-sans: var(--font-poppins), ui-sans-serif, system-ui, sans-serif;
   --font-display: var(--font-oswald), var(--font-poppins), sans-serif;
   --font-heading: var(--font-poppins), ui-sans-serif, system-ui, sans-serif;
+  --font-corporate: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
 
   /* Typography scale (mobile first; bump with md: variants) */
   --text-display: 2.625rem;
@@ -126,6 +141,19 @@
   --color-footer: var(--brand-footer);
   --color-footer-foreground: var(--brand-footer-foreground);
   --color-footer-muted: var(--brand-footer-muted);
+
+  /* Corporate utilities: bg-corp-surface, text-corp-ink, bg-corp-green, ... */
+  --color-corp-ink: var(--corp-ink);
+  --color-corp-ink-deep: var(--corp-ink-deep);
+  --color-corp-text: var(--corp-text);
+  --color-corp-muted: var(--corp-muted);
+  --color-corp-line: var(--corp-line);
+  --color-corp-surface: var(--corp-surface);
+  --color-corp-green: var(--corp-green);
+  --color-corp-green-bright: var(--corp-green-bright);
+  --color-corp-green-text: var(--corp-green-text);
+  --color-corp-green-soft: var(--corp-green-soft);
+  --color-corp-green-line: var(--corp-green-line);
 
   /* shadcn/ui colour utilities */
   --color-sidebar-ring: var(--sidebar-ring);

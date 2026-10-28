@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from 'next';
-import { Oswald, Poppins } from 'next/font/google';
+import { Inter, Oswald, Poppins } from 'next/font/google';
 import type { ReactNode } from 'react';
 
 import { SiteFooter } from '@/components/layout/site-footer';
@@ -22,6 +22,14 @@ const oswald = Oswald({
   subsets: ['latin'],
   weight: ['400', '500', '600', '700'],
   variable: '--font-oswald',
+  display: 'swap',
+});
+
+// Corporate font (M.Bryan site uses Inter); only the organiser band uses it.
+const inter = Inter({
+  subsets: ['latin'],
+  weight: ['400', '600', '700'],
+  variable: '--font-inter',
   display: 'swap',
 });
 
@@ -54,7 +62,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   const session = await getSession();
 
   return (
-    <html lang="en" className={cn(poppins.variable, oswald.variable)}>
+    <html lang="en" className={cn(poppins.variable, oswald.variable, inter.variable)}>
       <body className="flex min-h-dvh flex-col">
         <SiteHeader session={session} />
         <div className="flex flex-1 flex-col">{children}</div>

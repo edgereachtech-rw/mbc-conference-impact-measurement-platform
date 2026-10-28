@@ -36,16 +36,20 @@ export function IttecLogoWhite({ className, priority = false }: LogoProps) {
   );
 }
 
-/** M.Bryan Consulting organiser logo. */
+/**
+ * M.Bryan Consulting Limited corporate logo: the official asset served by the corporate website
+ * (https://mbryanconsultinggroup.com/assets/img/MBC.webp, also its favicon), 436x300, unmodified.
+ * Sized by height like the corporate site header (h-9 / h-10) so the oval mark keeps its shape.
+ */
 export function MbryanLogo({ className, priority = false }: LogoProps) {
   return (
     <Image
-      src="/brand/mbryan-logo.png"
-      alt={event.organiser.name}
-      width={203}
-      height={103}
+      src="/brand/mbryan-consulting.webp"
+      alt="M.Bryan Consulting Limited"
+      width={436}
+      height={300}
       priority={priority}
-      className={cn('h-auto w-[64px] md:w-[85px]', className)}
+      className={cn('h-9 w-auto md:h-10', className)}
     />
   );
 }

@@ -1,6 +1,7 @@
 import { CalendarDaysIcon, MapPinIcon } from 'lucide-react';
 import Link from 'next/link';
 
+import { MbryanLogo } from '@/components/brand/logo';
 import { buttonVariants } from '@/components/ui/button';
 import { event } from '@/config/event';
 import { cn } from '@/lib/utils';
@@ -69,6 +70,46 @@ export default function HomePage() {
               For registered delegates. Use the email you registered with.
             </p>
           </div>
+        </div>
+      </section>
+
+      {/* Organiser band: M.Bryan corporate identity (slate ink, emerald actions, Inter). */}
+      <section
+        aria-labelledby="organiser-heading"
+        className="border-t border-corp-line bg-corp-surface font-corporate text-corp-text"
+      >
+        <div className="mx-auto flex max-w-6xl flex-col gap-6 px-gutter py-10 md:flex-row md:items-center md:justify-between md:px-6 md:py-12">
+          <div className="flex items-start gap-4">
+            <a
+              href={event.organiser.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="M.Bryan Consulting Limited website (opens in a new tab)"
+              className="flex min-h-tap shrink-0 items-center rounded-md"
+            >
+              <MbryanLogo className="h-12 md:h-14" />
+            </a>
+            <div className="space-y-1">
+              <p className="text-xs font-semibold tracking-[0.14em] text-corp-green-text uppercase">
+                Organised by
+              </p>
+              <h2 id="organiser-heading" className="font-corporate text-h3 text-corp-ink">
+                M.Bryan Consulting Limited
+              </h2>
+              <p className="max-w-prose text-sm leading-relaxed md:text-base">
+                Training transfer effectiveness specialists: turning training into measurable
+                workplace performance, return on expectations and return on investment.
+              </p>
+            </div>
+          </div>
+          <a
+            href={event.organiser.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex min-h-tap shrink-0 items-center justify-center rounded-full bg-corp-green px-6 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-corp-ink focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-corp-green"
+          >
+            Visit mbryanconsultinggroup.com
+          </a>
         </div>
       </section>
     </main>
