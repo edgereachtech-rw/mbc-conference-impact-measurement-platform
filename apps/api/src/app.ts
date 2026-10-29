@@ -7,6 +7,7 @@ import { getPrisma, type PrismaClient } from './db.js';
 import { importConfigFromEnv, type ImportConfig } from './imports/config.js';
 import { ConflictResolver, type ResolutionHooks } from './imports/resolution.js';
 import { ImportService, type ImportHooks } from './imports/service.js';
+import type { AccountStatusHooks } from './routes/delegate-accounts.js';
 import { errorHandler, notFoundHandler } from './lib/errors.js';
 import { getLogger, type Logger } from './lib/logger.js';
 import { pathOnly, requestId } from './lib/request-id.js';
@@ -35,6 +36,8 @@ export interface AppOptions {
   importHooks?: ImportHooks;
   /** Test hooks for the conflict-resolution transaction. */
   resolutionHooks?: ResolutionHooks;
+  /** Test hooks for the delegate account-status transaction (E2-13). */
+  accountStatusHooks?: AccountStatusHooks;
   /** Extra origins accepted for state-changing requests (the Next dev server, tests). */
   allowedOrigins?: readonly string[];
   /** Express `trust proxy` setting; defaults to TRUST_PROXY from the auth configuration. */
@@ -163,6 +166,14 @@ export function createApp(options: AppOptions = {}) {
       config: authConfig,
       imports,
       resolver,
+      mailer,
+      mailConfig: () => {
+        mailConfig ??= mailConfigFromEnv();
+        return mailConfig;
+      },
+      logger,
+      now: options.now,
+      accountStatusHooks: options.accountStatusHooks,
       allowedOrigins: options.allowedOrigins ?? authConfig.allowedOrigins,
     }),
   );

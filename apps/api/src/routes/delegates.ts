@@ -37,7 +37,15 @@ const DELEGATE_FIELDS = {
   updatedAt: true,
 } as const;
 
-const EDITABLE = ['name', 'organisation', 'jobTitle', 'country', 'attendanceFormat'] as const;
+const EDITABLE = [
+  'name',
+  'organisation',
+  'jobTitle',
+  'country',
+  'attendanceFormat',
+  'capacity',
+  'registrationStatus',
+] as const;
 
 /**
  * Delegate records (E2-4 subset, E3-6). `/me/delegate` is the delegate's own record, resolved

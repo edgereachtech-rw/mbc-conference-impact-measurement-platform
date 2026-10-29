@@ -18,3 +18,5 @@ export { isSensitiveKey, REDACTED, scrubEventPayload, scrubString, scrubValue } 
 export * from './schemas/auth.js';
 export * from './schemas/imports.js';
 export * from './schemas/imports-resolution.js';
+export * from './schemas/my-events.js';
+export * from './schemas/admin.js';

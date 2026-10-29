@@ -231,6 +231,31 @@ exchanged with a POST so mail scanners cannot consume it), `/account` (gated). I
 Next dev server proxies `/api/*` to the API when `API_PROXY_URL` is set; behind Caddy the same
 path works without a proxy.
 
+## My Events, invitations and delegate accounts (Increments 1b and 1c)
+
+- `GET /api/v1/me/events` and `GET /api/v1/me/events/:eventId` (backlog E3-10, D7): the events
+  with a registration linked to the session's identity, resolved on the server, ordered upcoming
+  first (soonest first) then past (most recent first); each carries the caller's own registration
+  (status, attendance format, capacity, organisation, job title, country, first sign-in) and
+  `attendance: not_recorded` until an attendance record exists (E6). Another identity's event id
+  answers 404, staff accounts 403, an unlinked delegate account an empty list. Pending OQ-25,
+  cancelled registrations and archived events are left out (`MY_EVENTS_VISIBILITY` in
+  `apps/api/src/routes/me-events.ts`). `/account` renders this list.
+- `POST /api/v1/events/:eventId/invitations` (E3-1, admin only; body `{ delegateIds? }`): sends
+  the invitation email to every eligible registration of the event (or the listed ones) with a
+  single-use link `/signin?invite=<token>` that pre-fills the email on the normal sign-in page;
+  resending revokes the earlier link; the first sign-in marks the invitation accepted;
+  `invitation.sent` / `invitation.send_failed` are audited without addresses. Requires
+  `INVITATION_TTL_DAYS`. `GET /api/v1/auth/invitations/:token` resolves a link for the sign-in page
+  without consuming it.
+- `PATCH /api/v1/delegate-accounts/:accountId` (E2-13, admin only; body `{ status, reason }`):
+  deactivation revokes every session at once, reactivation only clears the status; success writes
+  `identity.account_status_changed`, a refusal (unknown or staff account, no change)
+  `identity.account_status_refused`, a failure after acceptance `identity.account_status_failed`.
+- `PATCH /api/v1/delegates/:id` (E2-4, E2-5) now also accepts `capacity` and `registrationStatus`
+  (`valid` or `cancelled`; `duplicate` and `test` are never set this way), audited with old and new
+  values.
+
 ## Registration imports (Increment 1b)
 
 Admin-only CSV/XLSX import of an event's registrations (backlog E2-1, E2-8 to E2-11; design note

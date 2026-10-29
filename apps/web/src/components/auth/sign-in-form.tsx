@@ -14,6 +14,8 @@ interface SignInFormProps {
   /** Where to go after a successful code sign-in (links carry their own `next`). */
   next?: string;
   supportEmail: string;
+  /** Pre-filled by an invitation link (E3-1); the delegate can still change it. */
+  initialEmail?: string;
 }
 
 type Stage = 'email' | 'sent';
@@ -22,11 +24,11 @@ type Stage = 'email' | 'sent';
  * Passwordless sign-in (E3-3, E3-4): request a link, then either click it or type the code.
  * The confirmation never reveals whether the address is registered.
  */
-export function SignInForm({ next, supportEmail }: SignInFormProps) {
+export function SignInForm({ next, supportEmail, initialEmail }: SignInFormProps) {
   const router = useRouter();
   const ids = { email: useId(), code: useId() };
   const [stage, setStage] = useState<Stage>('email');
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(initialEmail ?? '');
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);

@@ -316,6 +316,14 @@ export class AuthService {
             data: { userAccountId: account.id },
           });
         }
+        // Invitations (E3-1): accepted means first sign-in of the invited registration.
+        await tx.invitation.updateMany({
+          where: {
+            delegateId: { in: identity.delegates.map((d) => d.id) },
+            status: { in: ['pending', 'sent'] },
+          },
+          data: { status: 'accepted', acceptedAt: now },
+        });
         // signed_up_at is kept per event record: first sign-in while that record exists (D8 item 4).
         const accountId = account.id;
         for (const record of identity.delegates) {

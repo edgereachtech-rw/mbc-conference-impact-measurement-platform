@@ -37,6 +37,10 @@ export function SiteHeader({ session }: SiteHeaderProps) {
                 </p>
                 {session.participationMode ? (
                   <ParticipationBadge mode={session.participationMode} />
+                ) : session.role !== 'delegate' ? (
+                  <span className="rounded-full bg-corp-ink px-2 py-0.5 font-corporate text-[0.65rem] font-semibold tracking-[0.14em] text-white uppercase">
+                    {session.role}
+                  </span>
                 ) : null}
               </div>
               <SignOutButton variant="icon" className="md:hidden" />

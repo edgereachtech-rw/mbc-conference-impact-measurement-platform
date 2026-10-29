@@ -96,6 +96,9 @@ export const delegatePatchSchema = z
     jobTitle: z.string().trim().max(200).nullable(),
     country: z.string().trim().max(100).nullable(),
     attendanceFormat: z.enum(participationModes),
+    capacity: z.enum(['individual', 'nominee', 'other']),
+    /** E2-5: valid or cancelled by an admin; duplicate and test are never set this way. */
+    registrationStatus: z.enum(['valid', 'cancelled']),
   })
   .partial()
   .refine((v) => Object.keys(v).length > 0, { error: 'Nothing to update' });
