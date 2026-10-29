@@ -97,8 +97,8 @@ export function invitationRouter({
 
       const { delegateIds } = req.body as InvitationSend;
       const eligible = config.allowTestRegistrations
-        ? (['valid', 'test'] as const)
-        : (['valid'] as const);
+        ? (['active', 'test'] as const)
+        : (['active'] as const);
       const targets = await prisma().delegate.findMany({
         where: {
           eventId,

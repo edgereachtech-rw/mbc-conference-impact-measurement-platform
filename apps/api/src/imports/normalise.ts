@@ -1,4 +1,4 @@
-import type { ImportMapping, ImportRejectionReason } from '@mbc/shared';
+import type { ImportMapping, ImportRejectionReason, ImportValueMappings } from '@mbc/shared';
 
 import { normaliseEmail } from '../lib/email.js';
 
@@ -11,7 +11,7 @@ import { normaliseEmail } from '../lib/email.js';
 
 export type AttendanceFormat = 'physical' | 'virtual';
 export type Capacity = 'individual' | 'nominee' | 'other';
-export type RegistrationStatus = 'valid' | 'cancelled';
+export type RegistrationStatus = 'active' | 'pending' | 'cancelled';
 
 export interface RowValues {
   email: string;
@@ -106,13 +106,18 @@ const CAPACITY_SYNONYMS: Record<string, Capacity> = {
 };
 
 const STATUS_SYNONYMS: Record<string, RegistrationStatus> = {
-  valid: 'valid',
-  registered: 'valid',
-  confirmed: 'valid',
-  active: 'valid',
-  paid: 'valid',
-  complete: 'valid',
-  completed: 'valid',
+  valid: 'active',
+  registered: 'active',
+  confirmed: 'active',
+  active: 'active',
+  paid: 'active',
+  complete: 'active',
+  completed: 'active',
+  pending: 'pending',
+  awaiting: 'pending',
+  awaitingpayment: 'pending',
+  unpaid: 'pending',
+  incomplete: 'pending',
   cancelled: 'cancelled',
   canceled: 'cancelled',
   refunded: 'cancelled',
@@ -130,9 +135,13 @@ export function parseAttendanceFormat(value: string): AttendanceFormat | undefin
   return ATTENDANCE_SYNONYMS[enumKey(value)];
 }
 
+/** Database exports write absent values as the words NULL, null or N/A; they mean empty. */
+const EMPTY_MARKERS = new Set(['null', 'n/a', 'na', 'none', '-']);
+
 function cellOf(raw: Record<string, string>, column: string | null | undefined): string {
   if (!column) return '';
-  return raw[column] ?? '';
+  const value = raw[column] ?? '';
+  return EMPTY_MARKERS.has(value.trim().toLowerCase()) ? '' : value;
 }
 
 /**
@@ -140,10 +149,24 @@ function cellOf(raw: Record<string, string>, column: string | null | undefined):
  * and length; required fields for presence and format. A row with any problem is rejected with
  * every reason found, so the admin fixes them all at once (D3 step 3).
  */
+/** The admin's translation for a file value, matched on the trimmed text, case-insensitively. */
+function translated<T extends string>(
+  table: Record<string, T> | undefined,
+  cell: string | null,
+): T | undefined {
+  if (!table) return undefined;
+  const key = (cell ?? '').trim();
+  if (key in table) return table[key];
+  const lower = key.toLowerCase();
+  for (const [k, v] of Object.entries(table)) if (k.trim().toLowerCase() === lower) return v;
+  return undefined;
+}
+
 export function normaliseRow(
   raw: Record<string, string>,
   mapping: ImportMapping,
   attendanceFormatDefault: AttendanceFormat | undefined,
+  valueMappings: ImportValueMappings | undefined = undefined,
 ): NormalisedRow {
   const rejections: RowRejection[] = [];
   const text = (field: string, column: string | null | undefined, limit: number): string | null => {
@@ -177,7 +200,10 @@ export function normaliseRow(
   if (mapping.attendanceFormat) {
     const cell = text('attendanceFormat', mapping.attendanceFormat, 100);
     // A mapped column decides every row; the run-wide default applies only when no column is mapped.
-    attendanceFormat = cell ? parseAttendanceFormat(cell) : undefined;
+    // An explicit admin translation of the file value wins over the built-in synonyms.
+    attendanceFormat =
+      translated(valueMappings?.attendanceFormat, cell) ??
+      (cell ? parseAttendanceFormat(cell) : undefined);
   } else {
     attendanceFormat = attendanceFormatDefault;
   }
@@ -201,15 +227,19 @@ export function normaliseRow(
 
   let capacity: Capacity = 'individual';
   const capacityCell = text('capacity', mapping.capacity, 100);
-  if (capacityCell) {
+  const capacityTranslated = translated(valueMappings?.capacity, capacityCell);
+  if (capacityTranslated) capacity = capacityTranslated;
+  else if (capacityCell) {
     const parsed = CAPACITY_SYNONYMS[enumKey(capacityCell)];
     if (!parsed) rejections.push({ reason: 'capacity_unknown', field: 'capacity' });
     else capacity = parsed;
   }
 
-  let registrationStatus: RegistrationStatus = 'valid';
+  let registrationStatus: RegistrationStatus = 'active';
   const statusCell = text('registrationStatus', mapping.registrationStatus, 100);
-  if (statusCell) {
+  const statusTranslated = translated(valueMappings?.registrationStatus, statusCell);
+  if (statusTranslated) registrationStatus = statusTranslated;
+  else if (statusCell) {
     const parsed = STATUS_SYNONYMS[enumKey(statusCell)];
     // "duplicate" and "test" cannot be set by import (D4): they are unknown here on purpose.
     if (!parsed)

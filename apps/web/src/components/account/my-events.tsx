@@ -10,6 +10,7 @@ import { ErrorState } from '@/components/error-state';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { apiFetch, ApiError } from '@/lib/api';
+import { cn } from '@/lib/utils';
 
 type State =
   | { kind: 'loading' }
@@ -155,50 +156,65 @@ function EventGroup({ title, events }: { title: string; events: MyEvent[] }) {
 }
 
 function EventCard({ event }: { event: MyEvent }) {
+  const upcoming = event.period === 'upcoming';
   return (
     <article
-      className="space-y-3 rounded-lg border border-brand-line bg-card p-4 shadow-card md:p-5"
+      className={cn(
+        'space-y-4 rounded-lg border border-brand-line bg-card p-4 shadow-card md:p-5',
+        upcoming ? 'border-l-4 border-l-brand-primary' : 'border-l-4 border-l-brand-line',
+      )}
       aria-label={event.name}
     >
       <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
         <div className="min-w-0 space-y-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant={upcoming ? 'accent' : 'outline'}>
+              {upcoming ? 'Upcoming' : 'Past'}
+            </Badge>
+            <ParticipationBadge mode={event.registration.attendanceFormat} />
+          </div>
           <h3 className="text-h3">{event.name}</h3>
           {event.theme ? <p className="text-sm text-brand-muted">{event.theme}</p> : null}
         </div>
-        <ParticipationBadge mode={event.registration.attendanceFormat} />
       </div>
-      <dl className="grid gap-2 text-sm sm:grid-cols-2">
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm md:grid-cols-4">
         <div className="flex items-start gap-2">
           <CalendarDaysIcon
             className="mt-0.5 size-4 shrink-0 text-brand-primary"
             aria-hidden="true"
           />
-          <div>
-            <dt className="text-brand-muted">Dates</dt>
-            <dd>{formatDates(event.startsOn, event.endsOn)}</dd>
+          <div className="min-w-0">
+            <dt className="text-xs text-brand-muted uppercase">Dates</dt>
+            <dd className="font-medium text-brand-text">
+              {formatDates(event.startsOn, event.endsOn)}
+            </dd>
           </div>
         </div>
         <div className="flex items-start gap-2">
           <MapPinIcon className="mt-0.5 size-4 shrink-0 text-brand-primary" aria-hidden="true" />
-          <div>
-            <dt className="text-brand-muted">Where</dt>
-            <dd>{event.location ?? formatLabel[event.format]}</dd>
+          <div className="min-w-0">
+            <dt className="text-xs text-brand-muted uppercase">Where</dt>
+            <dd className="font-medium text-brand-text">
+              {event.location ?? formatLabel[event.format]}
+            </dd>
           </div>
         </div>
         <div>
-          <dt className="text-brand-muted">Registration</dt>
-          <dd>
-            <Badge variant={event.registration.status === 'valid' ? 'success' : 'outline'}>
-              {event.registration.status === 'valid' ? 'Registered' : 'Test registration'}
+          <dt className="text-xs text-brand-muted uppercase">Registration</dt>
+          <dd className="mt-0.5">
+            <Badge variant={event.registration.status === 'active' ? 'success' : 'outline'}>
+              {event.registration.status === 'active' ? 'Registered' : 'Test registration'}
             </Badge>
             {event.registration.organisation ? (
-              <span className="ml-2 text-brand-muted">{event.registration.organisation}</span>
+              <span className="block truncate text-xs text-brand-muted">
+                {event.registration.organisation}
+              </span>
             ) : null}
           </dd>
         </div>
         <div>
-          <dt className="text-brand-muted">Attendance</dt>
-          <dd>
+          <dt className="text-xs text-brand-muted uppercase">Attendance</dt>
+          <dd className="mt-0.5">
             <Badge variant="outline">Not recorded</Badge>
           </dd>
         </div>

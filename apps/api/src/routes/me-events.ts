@@ -57,7 +57,7 @@ export function meEventsRouter({ prisma, config, middleware, now }: Deps): Route
   const router = Router();
   const clock = now ?? (() => new Date());
   const eligibleStatuses = () =>
-    config.allowTestRegistrations ? (['valid', 'test'] as const) : (['valid'] as const);
+    config.allowTestRegistrations ? (['active', 'test'] as const) : (['active'] as const);
 
   async function myEvents(identityId: string | null): Promise<MyEvent[]> {
     if (!identityId) return [];
@@ -93,7 +93,7 @@ export function meEventsRouter({ prisma, config, middleware, now }: Deps): Route
       period: isoDate(r.event.endsOn) >= current ? 'upcoming' : 'past',
       registration: {
         id: r.id,
-        status: r.registrationStatus as 'valid' | 'test',
+        status: r.registrationStatus as 'active' | 'test',
         attendanceFormat: r.attendanceFormat,
         capacity: r.capacity,
         organisation: r.organisation,

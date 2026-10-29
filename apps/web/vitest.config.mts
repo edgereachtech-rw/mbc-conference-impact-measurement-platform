@@ -15,6 +15,8 @@ export default defineConfig({
   },
   test: {
     environment: 'jsdom',
+    // userEvent-driven flows (upload, map, preview, confirm) take several seconds on a loaded machine.
+    testTimeout: 15_000,
     // Testing Library cleans up rendered trees after each test only when afterEach is global.
     globals: true,
     include: ['src/**/*.test.{ts,tsx}'],

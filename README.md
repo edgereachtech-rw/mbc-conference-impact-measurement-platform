@@ -190,7 +190,7 @@ updates the existing identity, revokes its sessions and outstanding links, and a
 Passwordless sign-in lives in `apps/api/src/auth` and `apps/api/src/routes`:
 
 - `POST /api/v1/auth/magic-link` emails a single-use link and a 6-digit code to a registered
-  delegate (`registration_status` valid in a non-archived event) or to an active staff account.
+  delegate (`registration_status` active in a non-archived event) or to an active staff account.
   The Increment 1 code also accepts `test` registrations; the requirements (backlog OQ-27, decided
   2026-10-29) confine that to development and staging, so Increment 1b removes it for production. The response is always `202` so addresses cannot be enumerated; unknown,
   cancelled and inactive addresses receive nothing. Rate limits (code defaults): 3 requests per
@@ -215,7 +215,7 @@ Passwordless sign-in lives in `apps/api/src/auth` and `apps/api/src/routes`:
   requests must carry an `Origin` matching `APP_URL` or `AUTH_ALLOWED_ORIGINS`.
 - Eligibility is identity-based (backlog D8 items 1 to 4): a link or code is issued, and a
   verification succeeds, only when the address is the _current_ address of a platform identity
-  that holds a registration with status valid in a non-archived event (or the address belongs to
+  that holds a registration with status active in a non-archived event (or the address belongs to
   an active staff account). Historical and provisional addresses never authenticate, even with a
   link issued before the change. Registrations with status `test` qualify only with
   `AUTH_ALLOW_TEST_REGISTRATIONS=true`, which production refuses to start with. The first
@@ -253,7 +253,8 @@ path works without a proxy.
   `identity.account_status_changed`, a refusal (unknown or staff account, no change)
   `identity.account_status_refused`, a failure after acceptance `identity.account_status_failed`.
 - `PATCH /api/v1/delegates/:id` (E2-4, E2-5) now also accepts `capacity` and `registrationStatus`
-  (`valid` or `cancelled`; `duplicate` and `test` are never set this way), audited with old and new
+  (`active`, `pending` or `cancelled`; `duplicate` and `test` are never set this way; pending cannot
+  sign in and is hidden from My Events), audited with old and new
   values.
 
 ## Registration imports (Increment 1b)

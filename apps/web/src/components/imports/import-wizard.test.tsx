@@ -80,6 +80,7 @@ const PREVIEW = () => ({
   run: { ...RUN, status: 'previewed', previewExpiresAt: future() },
   counts: COUNTS,
   ignoredColumns: ['Checked In'],
+  unrecognisedValues: { attendanceFormat: [], capacity: [], registrationStatus: [] },
   previewExpiresAt: future(),
   rows: [
     {
@@ -404,6 +405,45 @@ describe('ImportWizard', () => {
     await user.click(screen.getByRole('button', { name: 'Upload and continue' }));
     expect(screen.getByRole('alert').textContent).toMatch(/larger than 10 MB/);
     expect(calls.some((c) => c.key.startsWith('POST'))).toBe(false);
+  });
+
+  it('lets the admin translate unrecognised values and rebuilds the preview with them', async () => {
+    let previews = 0;
+    const calls = stubApi({
+      'GET /imports/status': () => ({ status: 200, body: STATUS_OK }),
+      'GET /events': () => ({ status: 200, body: { events: [EVENT] } }),
+      'POST /events/e1/imports': () => ({ status: 201, body: UPLOAD }),
+      'POST /imports/run1/preview': () => {
+        previews += 1;
+        return {
+          status: 200,
+          body: {
+            ...PREVIEW(),
+            unrecognisedValues:
+              previews === 1
+                ? {
+                    attendanceFormat: [{ value: 'Standard (NGR)', count: 51 }],
+                    capacity: [],
+                    registrationStatus: [],
+                  }
+                : { attendanceFormat: [], capacity: [], registrationStatus: [] },
+          },
+        };
+      },
+    });
+    const user = await uploadAndMap(calls);
+    await user.click(screen.getByRole('button', { name: 'Preview import' }));
+    const panel = await screen.findByRole('region', { name: /Translate values/ });
+    expect(within(panel).getByText('Standard (NGR)')).toBeTruthy();
+    expect(within(panel).getByText('51 rows')).toBeTruthy();
+    await user.selectOptions(within(panel).getByLabelText(/Standard \(NGR\)/), 'physical');
+    await user.click(within(panel).getByRole('button', { name: /Rebuild preview/ }));
+    const previewCalls = calls.filter((c) => c.key === 'POST /imports/run1/preview');
+    expect(previewCalls).toHaveLength(2);
+    expect(JSON.parse(String(previewCalls[1]?.init?.body))).toEqual({
+      mapping: { email: 'Email', name: 'Full Name', attendanceFormat: 'Format' },
+      valueMappings: { attendanceFormat: { 'Standard (NGR)': 'physical' } },
+    });
   });
 
   it('history lists runs with their outcome and the open conflicts', async () => {

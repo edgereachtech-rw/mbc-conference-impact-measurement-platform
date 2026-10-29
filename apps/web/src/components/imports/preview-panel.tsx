@@ -15,13 +15,17 @@ import {
 } from '@/components/ui/table';
 import {
   formatDateTime,
+  type ImportValueMappings,
   isPreviewExpired,
   outcomeLabels,
   reasonLabel,
   resolutionLabels,
+  type PreviewResult,
   type PreviewRow,
   type StoredRow,
 } from '@/lib/imports';
+
+import { ValueMappingForm } from './value-mapping-form';
 import { cn } from '@/lib/utils';
 
 type Filter = 'all' | ImportRowOutcome;
@@ -140,6 +144,9 @@ interface PreviewPanelProps {
   counts: ImportCounts;
   rows: PreviewRow[];
   ignoredColumns: string[];
+  unrecognisedValues?: PreviewResult['unrecognisedValues'];
+  valueMappings?: ImportValueMappings;
+  onValueMappingsChange?: (next: ImportValueMappings) => void;
   previewExpiresAt: string;
   /** Set after the server refused the confirmation; the preview must be rebuilt. */
   staleMessage: string | null;
@@ -155,6 +162,9 @@ export function PreviewPanel({
   counts,
   rows,
   ignoredColumns,
+  unrecognisedValues,
+  valueMappings,
+  onValueMappingsChange,
   previewExpiresAt,
   staleMessage,
   busy,
@@ -179,6 +189,15 @@ export function PreviewPanel({
   return (
     <div className="space-y-6">
       <CountSummary counts={counts} />
+      {unrecognisedValues && valueMappings && onValueMappingsChange ? (
+        <ValueMappingForm
+          unrecognisedValues={unrecognisedValues}
+          valueMappings={valueMappings}
+          onChange={onValueMappingsChange}
+          busy={busy}
+          onRebuild={onRefreshPreview}
+        />
+      ) : null}
       {ignoredColumns.length > 0 ? (
         <p className="text-sm text-brand-muted">Ignored columns: {ignoredColumns.join(', ')}.</p>
       ) : null}

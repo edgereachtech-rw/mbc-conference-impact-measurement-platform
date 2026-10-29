@@ -38,7 +38,7 @@ const nameMismatch: StoredRow = {
     country: null,
     capacity: 'individual',
     nominatingOrganisation: null,
-    registrationStatus: 'valid',
+    registrationStatus: 'active',
     externalRegistrationId: null,
   },
   outcome: 'conflict',

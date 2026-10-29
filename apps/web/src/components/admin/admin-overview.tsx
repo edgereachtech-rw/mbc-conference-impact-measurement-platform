@@ -5,11 +5,26 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
 import { apiFetch } from '@/lib/api';
-import { describeError, type EventSummary, type ImportFeatureStatus } from '@/lib/imports';
+import {
+  describeError,
+  formatDateTime,
+  runStatusLabels,
+  type EventSummary,
+  type ImportFeatureStatus,
+  type ImportRunSummary,
+} from '@/lib/imports';
+
+import { StatTile, StatusPill } from './page-header';
 
 type State =
   | { kind: 'loading' }
-  | { kind: 'ready'; events: EventSummary[]; imports: ImportFeatureStatus }
+  | {
+      kind: 'ready';
+      events: EventSummary[];
+      imports: ImportFeatureStatus;
+      recent: ImportRunSummary[];
+      recentEvent: EventSummary | null;
+    }
   | { kind: 'error'; message: string };
 
 const statusLabel: Record<EventSummary['status'], string> = {
@@ -19,8 +34,9 @@ const statusLabel: Record<EventSummary['status'], string> = {
 };
 
 /**
- * Live panels of the admin console: the events the admin can act on and the state of the import
- * release gates. Everything comes from admin-only API routes; the console shows what the API answers.
+ * Overview panels: KPIs, events, the most recent imports of the current active event, and the
+ * import release gates. Everything comes from admin-only routes; the console shows what the API
+ * answers and decides nothing itself.
  */
 export function AdminOverview() {
   const [state, setState] = useState<State>({ kind: 'loading' });
@@ -28,12 +44,21 @@ export function AdminOverview() {
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([
-      apiFetch<{ events: EventSummary[] }>('/events'),
-      apiFetch<ImportFeatureStatus>('/imports/status'),
-    ]).then(
-      ([{ events }, imports]) => {
-        if (!cancelled) setState({ kind: 'ready', events, imports });
+    (async () => {
+      const [{ events }, imports] = await Promise.all([
+        apiFetch<{ events: EventSummary[] }>('/events'),
+        apiFetch<ImportFeatureStatus>('/imports/status'),
+      ]);
+      const recentEvent = events.find((e) => e.status === 'active') ?? events[0] ?? null;
+      const recent = recentEvent
+        ? (
+            await apiFetch<{ runs: ImportRunSummary[] }>(`/events/${recentEvent.id}/imports`)
+          ).runs.slice(0, 5)
+        : [];
+      return { events, imports, recent, recentEvent };
+    })().then(
+      (data) => {
+        if (!cancelled) setState({ kind: 'ready', ...data });
       },
       (error: unknown) => {
         if (!cancelled) setState({ kind: 'error', message: describeError(error).message });
@@ -53,7 +78,7 @@ export function AdminOverview() {
   }
   if (state.kind === 'error') {
     return (
-      <div role="alert" className="rounded-2xl border border-corp-line bg-white p-5">
+      <div role="alert" className="rounded-none border border-corp-line bg-white p-5">
         <p className="font-semibold text-corp-ink">The console could not load</p>
         <p className="mt-1 text-sm text-corp-text">{state.message}</p>
         <button
@@ -62,7 +87,7 @@ export function AdminOverview() {
             setState({ kind: 'loading' });
             setAttempt((n) => n + 1);
           }}
-          className="mt-4 inline-flex min-h-tap items-center rounded-full border border-corp-green px-5 text-sm font-semibold text-corp-green-text hover:bg-corp-green-soft"
+          className="mt-4 inline-flex min-h-tap items-center rounded-none border border-corp-green px-5 text-sm font-semibold text-corp-green-text hover:bg-corp-green-soft"
         >
           Try again
         </button>
@@ -70,7 +95,13 @@ export function AdminOverview() {
     );
   }
 
-  const { events, imports } = state;
+  const { events, imports, recent, recentEvent } = state;
+  const active = events.filter((e) => e.status === 'active').length;
+  const committed = recent.filter((r) => r.status === 'committed').length;
+  const openConflicts = recent.reduce(
+    (sum, r) => sum + (r.status === 'committed' ? (r.counts?.conflict ?? 0) : 0),
+    0,
+  );
   const gates: Array<{ label: string; ok: boolean; detail: string }> = [
     {
       label: 'Uploads enabled in this environment',
@@ -94,85 +125,204 @@ export function AdminOverview() {
   ];
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
-      <section aria-labelledby="admin-events-title" className="space-y-3">
-        <h2 id="admin-events-title" className="font-corporate text-h3 text-corp-ink">
-          Events
-        </h2>
-        {events.length === 0 ? (
-          <p className="rounded-2xl border border-dashed border-corp-line bg-white p-5 text-sm text-corp-text">
-            No events exist yet. Conference setup arrives with Increment 2; the seed creates ITTEC
-            2026.
-          </p>
-        ) : (
+    <div className="space-y-8">
+      <section aria-label="Key figures" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <StatTile label="Events" value={events.length} hint={`${active} active`} />
+        <StatTile
+          label="Imports committed"
+          value={committed}
+          hint={recentEvent ? `latest 5 runs of ${recentEvent.name}` : 'no event yet'}
+        />
+        <StatTile
+          label="Conflicts quarantined"
+          value={openConflicts}
+          tone={openConflicts > 0 ? 'attention' : 'neutral'}
+          hint="in those runs"
+        />
+        <StatTile
+          label="Uploads"
+          value={imports.uploadsEnabled ? 'On' : 'Off'}
+          tone={imports.uploadsEnabled ? 'positive' : 'neutral'}
+          hint={imports.migrationGatePassed ? 'gate passed' : 'gate not passed'}
+        />
+      </section>
+
+      <div className="grid gap-6 lg:grid-cols-[3fr_2fr]">
+        <section aria-labelledby="admin-events-title" className="space-y-3">
+          <div className="flex items-baseline justify-between">
+            <h2 id="admin-events-title" className="font-corporate text-h3 text-corp-ink">
+              Events
+            </h2>
+            <span className="text-xs text-corp-muted">{events.length} total</span>
+          </div>
+          {events.length === 0 ? (
+            <p className="rounded-none border border-dashed border-corp-line bg-white p-5 text-sm text-corp-text">
+              No events exist yet. Conference setup arrives with Increment 2; the seed creates ITTEC
+              2026.
+            </p>
+          ) : (
+            <div className="overflow-hidden rounded-none border border-corp-line bg-white">
+              <table className="w-full text-sm" aria-label="Events">
+                <thead className="bg-corp-surface text-left text-xs font-semibold tracking-[0.08em] text-corp-muted uppercase">
+                  <tr>
+                    <th scope="col" className="px-4 py-2">
+                      Event
+                    </th>
+                    <th scope="col" className="hidden px-4 py-2 sm:table-cell">
+                      Dates
+                    </th>
+                    <th scope="col" className="px-4 py-2">
+                      Status
+                    </th>
+                    <th scope="col" className="px-4 py-2 text-right">
+                      <span className="sr-only">Actions</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-corp-line">
+                  {events.map((ev) => (
+                    <tr key={ev.id}>
+                      <td className="px-4 py-3">
+                        <p className="font-semibold text-corp-ink">{ev.name}</p>
+                        <p className="text-xs text-corp-muted sm:hidden">
+                          {ev.startsOn.slice(0, 10)} to {ev.endsOn.slice(0, 10)}
+                        </p>
+                      </td>
+                      <td className="hidden px-4 py-3 text-corp-text sm:table-cell">
+                        {ev.startsOn.slice(0, 10)} to {ev.endsOn.slice(0, 10)} · {ev.format}
+                      </td>
+                      <td className="px-4 py-3">
+                        <StatusPill tone={ev.status === 'active' ? 'positive' : 'neutral'}>
+                          {statusLabel[ev.status]}
+                        </StatusPill>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        {ev.status !== 'archived' ? (
+                          <Link
+                            href="/admin/imports"
+                            className="text-sm font-semibold text-corp-green-text hover:underline"
+                          >
+                            Import registrations
+                          </Link>
+                        ) : null}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+
+        <section aria-labelledby="admin-gates-title" className="space-y-3">
+          <h2 id="admin-gates-title" className="font-corporate text-h3 text-corp-ink">
+            Release gates
+          </h2>
           <ul
-            className="divide-y divide-corp-line rounded-2xl border border-corp-line bg-white"
-            aria-label="Events"
+            className="divide-y divide-corp-line rounded-none border border-corp-line bg-white"
+            aria-label="Release gates"
           >
-            {events.map((ev) => (
-              <li
-                key={ev.id}
-                className="flex flex-col gap-2 p-4 sm:flex-row sm:items-center sm:justify-between"
-              >
+            {gates.map((gate) => (
+              <li key={gate.label} className="flex items-start gap-3 p-4">
+                <span
+                  aria-hidden="true"
+                  className={
+                    gate.ok
+                      ? 'mt-1.5 size-2.5 shrink-0 rounded-full bg-corp-green-bright'
+                      : 'mt-1.5 size-2.5 shrink-0 rounded-full bg-corp-muted'
+                  }
+                />
                 <div className="min-w-0">
-                  <p className="truncate font-semibold text-corp-ink">{ev.name}</p>
-                  <p className="text-sm text-corp-muted">
-                    {ev.startsOn.slice(0, 10)} to {ev.endsOn.slice(0, 10)} · {ev.format}
+                  <p className="text-sm font-semibold text-corp-ink">
+                    {gate.label}
+                    <span className="sr-only">{gate.ok ? ' (passed)' : ' (not passed)'}</span>
                   </p>
-                </div>
-                <div className="flex shrink-0 items-center gap-3">
-                  <span
-                    className={
-                      ev.status === 'active'
-                        ? 'rounded-full bg-corp-green-soft px-3 py-1 text-xs font-semibold text-corp-green-text'
-                        : 'rounded-full bg-corp-surface px-3 py-1 text-xs font-semibold text-corp-muted'
-                    }
-                  >
-                    {statusLabel[ev.status]}
-                  </span>
-                  {ev.status !== 'archived' ? (
-                    <Link
-                      href="/admin/imports"
-                      className="inline-flex min-h-tap items-center rounded-full bg-corp-green px-4 text-sm font-semibold text-white hover:bg-corp-ink"
-                    >
-                      Import registrations
-                    </Link>
-                  ) : null}
+                  <p className="text-sm text-corp-text">{gate.detail}</p>
                 </div>
               </li>
             ))}
           </ul>
-        )}
-      </section>
+        </section>
+      </div>
 
-      <section aria-labelledby="admin-gates-title" className="space-y-3">
-        <h2 id="admin-gates-title" className="font-corporate text-h3 text-corp-ink">
-          Release gates
-        </h2>
-        <ul className="space-y-2" aria-label="Release gates">
-          {gates.map((gate) => (
-            <li
-              key={gate.label}
-              className="flex items-start gap-3 rounded-2xl border border-corp-line bg-white p-4"
-            >
-              <span
-                aria-hidden="true"
-                className={
-                  gate.ok
-                    ? 'mt-1 size-2.5 shrink-0 rounded-full bg-corp-green-bright'
-                    : 'mt-1 size-2.5 shrink-0 rounded-full bg-corp-muted'
-                }
-              />
-              <div className="min-w-0">
-                <p className="text-sm font-semibold text-corp-ink">
-                  {gate.label}
-                  <span className="sr-only">{gate.ok ? ' (passed)' : ' (not passed)'}</span>
-                </p>
-                <p className="text-sm text-corp-text">{gate.detail}</p>
-              </div>
-            </li>
-          ))}
-        </ul>
+      <section aria-labelledby="admin-recent-title" className="space-y-3">
+        <div className="flex items-baseline justify-between">
+          <h2 id="admin-recent-title" className="font-corporate text-h3 text-corp-ink">
+            Recent imports{recentEvent ? ` · ${recentEvent.name}` : ''}
+          </h2>
+          <Link
+            href="/admin/imports"
+            className="text-sm font-semibold text-corp-green-text hover:underline"
+          >
+            All imports
+          </Link>
+        </div>
+        {recent.length === 0 ? (
+          <p className="rounded-none border border-dashed border-corp-line bg-white p-5 text-sm text-corp-text">
+            No import runs yet for this event.
+          </p>
+        ) : (
+          <div className="overflow-hidden rounded-none border border-corp-line bg-white">
+            <table className="w-full text-sm" aria-label="Recent imports">
+              <thead className="bg-corp-surface text-left text-xs font-semibold tracking-[0.08em] text-corp-muted uppercase">
+                <tr>
+                  <th scope="col" className="px-4 py-2">
+                    File
+                  </th>
+                  <th scope="col" className="hidden px-4 py-2 md:table-cell">
+                    When
+                  </th>
+                  <th scope="col" className="px-4 py-2">
+                    Status
+                  </th>
+                  <th scope="col" className="hidden px-4 py-2 text-right sm:table-cell">
+                    New
+                  </th>
+                  <th scope="col" className="hidden px-4 py-2 text-right sm:table-cell">
+                    Updated
+                  </th>
+                  <th scope="col" className="px-4 py-2 text-right">
+                    Conflicts
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-corp-line">
+                {recent.map((run) => (
+                  <tr key={run.id}>
+                    <td className="max-w-[12rem] truncate px-4 py-3 font-medium text-corp-ink">
+                      {run.fileName}
+                    </td>
+                    <td className="hidden px-4 py-3 text-corp-text md:table-cell">
+                      {formatDateTime(run.createdAt)}
+                    </td>
+                    <td className="px-4 py-3">
+                      <StatusPill
+                        tone={
+                          run.status === 'committed'
+                            ? 'positive'
+                            : run.status === 'discarded'
+                              ? 'neutral'
+                              : 'attention'
+                        }
+                      >
+                        {runStatusLabels[run.status]}
+                      </StatusPill>
+                    </td>
+                    <td className="hidden px-4 py-3 text-right tabular-nums sm:table-cell">
+                      {run.counts?.accepted ?? '–'}
+                    </td>
+                    <td className="hidden px-4 py-3 text-right tabular-nums sm:table-cell">
+                      {run.counts?.updated ?? '–'}
+                    </td>
+                    <td className="px-4 py-3 text-right tabular-nums">
+                      {run.counts?.conflict ?? '–'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
     </div>
   );

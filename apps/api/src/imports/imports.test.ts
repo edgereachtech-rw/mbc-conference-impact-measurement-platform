@@ -366,7 +366,7 @@ describe.skipIf(!hasDatabase)('registration imports (E2-1, E2-8..11; D3, D5, D9)
       organisation: 'Acme',
       externalRegistrationId: 'R1',
       registrationSource: 'eventbrite',
-      registrationStatus: 'valid',
+      registrationStatus: 'active',
     });
     expect(ann.identityId).toBeTruthy();
     const address = await prisma.identityEmail.findUniqueOrThrow({
@@ -455,7 +455,7 @@ describe.skipIf(!hasDatabase)('registration imports (E2-1, E2-8..11; D3, D5, D9)
     });
     expect(change.oldValue).toEqual({ organisation: 'Beta' });
     expect(change.newValue).toMatchObject({ organisation: 'Beta Ltd', runId: third.runId });
-    expect(await prisma.delegate.count({ where: { eventId, registrationStatus: 'valid' } })).toBe(
+    expect(await prisma.delegate.count({ where: { eventId, registrationStatus: 'active' } })).toBe(
       4,
     );
 
@@ -800,6 +800,94 @@ describe.skipIf(!hasDatabase)('registration imports (E2-1, E2-8..11; D3, D5, D9)
       (await prisma.identityEmail.findUniqueOrThrow({ where: { emailNormalised: email('fay') } }))
         .kind,
     ).toBe('historical');
+  });
+
+  it('imports a pending registration status as pending (E2-5)', async () => {
+    const server = app();
+    const headers = ['Email', 'Full Name', 'Format', 'Status'];
+    const rows = [
+      headers,
+      [email('pend'), 'Pen Ding', 'virtual', 'pending'],
+      [email('act'), 'Act Ive', 'virtual', 'active'],
+    ];
+    const up = await upload(server, csv(rows));
+    const pv = await preview(server, up.body.run.id, {
+      mapping: {
+        email: 'Email',
+        name: 'Full Name',
+        attendanceFormat: 'Format',
+        registrationStatus: 'Status',
+      },
+    });
+    expect(pv.status, pv.text).toBe(200);
+    expect(pv.body.counts).toMatchObject({ accepted: 2, rejected: 0 });
+    expect((await confirm(server, up.body.run.id)).status).toBe(200);
+    const pending = await prisma.delegate.findFirstOrThrow({
+      where: { eventId, email: email('pend') },
+    });
+    expect(pending.registrationStatus).toBe('pending');
+    const active = await prisma.delegate.findFirstOrThrow({
+      where: { eventId, email: email('act') },
+    });
+    expect(active.registrationStatus).toBe('active');
+  });
+
+  it('lists unrecognised values with counts and applies the admin’s translations on the next preview', async () => {
+    const server = app();
+    const file = csv([
+      HEADERS,
+      [email('tier1'), 'Tier One', 'Standard (NGR)', '', 'T1', ''],
+      [email('tier2'), 'Tier Two', 'Standard (NGR)', '', 'T2', ''],
+      [email('tier3'), 'Tier Three', 'Final (NGR)', '', 'T3', ''],
+      [email('onsite'), 'On Site', 'On-site', '', 'T4', ''],
+    ]);
+    const up = await upload(server, file);
+    const first = await preview(server, up.body.run.id);
+    expect(first.status, first.text).toBe(200);
+    expect(first.body.counts).toMatchObject({ accepted: 1, rejected: 3 });
+    expect(first.body.unrecognisedValues.attendanceFormat).toEqual([
+      { value: 'Standard (NGR)', count: 2 },
+      { value: 'Final (NGR)', count: 1 },
+    ]);
+    expect(first.body.unrecognisedValues.capacity).toEqual([]);
+
+    const second = await preview(server, up.body.run.id, {
+      mapping: MAPPING,
+      valueMappings: {
+        attendanceFormat: { 'Standard (NGR)': 'physical', 'Final (NGR)': 'virtual' },
+      },
+    });
+    expect(second.status, second.text).toBe(200);
+    expect(second.body.counts).toMatchObject({ accepted: 4, rejected: 0 });
+    expect(second.body.unrecognisedValues.attendanceFormat).toEqual([]);
+    const stored = await prisma.importRun.findUniqueOrThrow({ where: { id: up.body.run.id } });
+    expect(stored.valueMappings).toEqual({
+      attendanceFormat: { 'Standard (NGR)': 'physical', 'Final (NGR)': 'virtual' },
+    });
+    const previewed = await prisma.auditLog.findFirst({
+      where: { action: 'import.previewed', entityId: up.body.run.id },
+      orderBy: { occurredAt: 'desc' },
+    });
+    expect((previewed?.newValue as { valueMappings: unknown }).valueMappings).toEqual({
+      attendanceFormat: { 'Standard (NGR)': 'physical', 'Final (NGR)': 'virtual' },
+    });
+
+    const cf = await confirm(server, up.body.run.id);
+    expect(cf.status, cf.text).toBe(200);
+    const three = await prisma.delegate.findFirstOrThrow({
+      where: { eventId, email: email('tier3') },
+    });
+    expect(three.attendanceFormat).toBe('virtual');
+    const one = await prisma.delegate.findFirstOrThrow({
+      where: { eventId, email: email('tier1') },
+    });
+    expect(one.attendanceFormat).toBe('physical');
+    // The request shape is validated: an unknown platform value is refused before any preview.
+    const bad = await preview(server, up.body.run.id, {
+      mapping: MAPPING,
+      valueMappings: { attendanceFormat: { x: 'hybrid' } },
+    });
+    expect(bad.status).toBe(422);
   });
 
   it('never infers attendance: no attendance-like data is stored from a file (criterion 16)', async () => {

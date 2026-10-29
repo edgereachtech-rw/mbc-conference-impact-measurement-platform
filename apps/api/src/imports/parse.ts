@@ -18,11 +18,15 @@ import { HttpError } from '../lib/errors.js';
  * numbers and dates from XLSX are rendered as text. No normalisation happens here.
  */
 
+export type CsvEncoding = 'utf-8' | 'utf-16le' | 'utf-16be' | 'windows-1252';
+
 export interface ParsedFile {
   headers: string[];
   rows: Array<Record<string, string>>;
   /** Comma or semicolon for CSV; null for XLSX. */
   delimiter: ',' | ';' | null;
+  /** How the CSV bytes were decoded; null for XLSX. Anything but utf-8 is reported to the admin. */
+  encoding: CsvEncoding | null;
   fileHash: string;
 }
 
@@ -72,6 +76,7 @@ interface RawTable {
   headers: string[];
   rows: Array<Record<string, string>>;
   delimiter: ',' | ';' | null;
+  encoding: CsvEncoding | null;
 }
 
 function shapeTable(records: string[][], delimiter: ',' | ';' | null): RawTable {
@@ -113,12 +118,37 @@ function shapeTable(records: string[][], delimiter: ',' | ';' | null): RawTable 
     });
     return record;
   });
-  return { headers, rows, delimiter };
+  return { headers, rows, delimiter, encoding: null };
 }
 
 // ---------------------------------------------------------------------------------------------
 // CSV
 
+/**
+ * Decodes CSV bytes. UTF-8 (with or without BOM) is the documented format (D3 step 2). Excel's
+ * other CSV flavours are accepted because registration teams send them: "Unicode Text" carries a
+ * UTF-16 byte-order mark and decodes losslessly; the Windows default "CSV (Comma delimited)"
+ * writes Windows-1252, which cannot be told apart from damaged UTF-8 by inspection, so it is
+ * decoded as Windows-1252 and the admin is warned to check accented names in the preview.
+ */
+export function decodeCsvBytes(bytes: Uint8Array): { text: string; encoding: CsvEncoding } {
+  if (bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xfe) {
+    return { text: new TextDecoder('utf-16le').decode(bytes), encoding: 'utf-16le' };
+  }
+  if (bytes.length >= 2 && bytes[0] === 0xfe && bytes[1] === 0xff) {
+    return { text: new TextDecoder('utf-16be').decode(bytes), encoding: 'utf-16be' };
+  }
+  try {
+    return {
+      text: new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(bytes),
+      encoding: 'utf-8',
+    };
+  } catch {
+    return { text: new TextDecoder('windows-1252').decode(bytes), encoding: 'windows-1252' };
+  }
+}
+
+/** Kept for callers that must insist on UTF-8. */
 export function decodeUtf8Strict(bytes: Uint8Array): string {
   try {
     return new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(bytes);
@@ -209,12 +239,12 @@ export function parseCsvRecords(text: string, delimiter: ',' | ';'): string[][] 
 }
 
 export function parseCsv(bytes: Uint8Array): RawTable {
-  const decoded = decodeUtf8Strict(bytes);
+  const { text: decoded, encoding } = decodeCsvBytes(bytes);
   const text = decoded.charCodeAt(0) === 0xfeff ? decoded.slice(1) : decoded;
   const firstLineEnd = text.search(/\r|\n/);
   const firstLine = firstLineEnd === -1 ? text : text.slice(0, firstLineEnd);
   const delimiter = detectDelimiter(firstLine);
-  return shapeTable(parseCsvRecords(text, delimiter), delimiter);
+  return { ...shapeTable(parseCsvRecords(text, delimiter), delimiter), encoding };
 }
 
 // ---------------------------------------------------------------------------------------------

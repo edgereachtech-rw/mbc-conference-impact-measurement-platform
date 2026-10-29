@@ -1,12 +1,7 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
-import { redirect } from 'next/navigation';
 
+import { AdminContent, AdminPageHeader } from '@/components/admin/page-header';
 import { ImportWizard } from '@/components/imports/import-wizard';
-import { PageContainer } from '@/components/layout/page-container';
-import { SectionHeading } from '@/components/section-heading';
-import { buttonVariants } from '@/components/ui/button';
-import { ErrorState } from '@/components/error-state';
 import { importsAccess } from '@/lib/imports-access';
 import { getSession } from '@/lib/session';
 
@@ -19,29 +14,28 @@ export const metadata: Metadata = { title: 'Registration imports' };
 export default async function ImportsPage() {
   const session = await getSession();
   const access = importsAccess(session);
-  if (access === 'signed-out') redirect('/signin?next=/admin/imports');
 
   return (
-    <PageContainer size="wide" className="flex flex-1 flex-col gap-6">
-      <SectionHeading
-        as="h1"
-        eyebrow="Admin"
+    <>
+      <AdminPageHeader
+        breadcrumbs={[{ label: 'Overview', href: '/admin' }, { label: 'Imports' }]}
         title="Registration imports"
-        description="Import an event's registered delegates from a CSV or XLSX export: map the columns, review the preview, then confirm."
+        description="Import an event's registered delegates from a CSV or XLSX export: map the columns, review the preview, then confirm. Attendance is never imported."
       />
-      {access === 'forbidden' ? (
-        <ErrorState
-          title="Admins only"
-          description="Registration imports are run by M.Bryan admins. Your account does not have that role."
-          action={
-            <Link href="/" className={buttonVariants({ variant: 'outline' })}>
-              Back to home
-            </Link>
-          }
-        />
-      ) : (
-        <ImportWizard />
-      )}
-    </PageContainer>
+      <AdminContent>
+        {access === 'allowed' ? (
+          <div className="rounded-none border border-corp-line bg-white p-4 font-sans text-brand-text md:p-6">
+            <ImportWizard />
+          </div>
+        ) : (
+          <div role="alert" className="rounded-none border border-corp-line bg-white p-5">
+            <p className="font-semibold text-corp-ink">Admins only</p>
+            <p className="mt-1 text-sm">
+              Registration imports are run by M.Bryan admins. Your account does not have that role.
+            </p>
+          </div>
+        )}
+      </AdminContent>
+    </>
   );
 }

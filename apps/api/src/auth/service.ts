@@ -24,7 +24,7 @@ import {
 const MAX_CODE_ATTEMPTS = 5;
 const LAST_SEEN_THROTTLE_MS = 5 * 60_000;
 
-type RegistrationStatus = 'valid' | 'test';
+type RegistrationStatus = 'active' | 'test';
 
 /** Eligible event record of an identity: an identity-owned registration the session may act on. */
 interface EligibleDelegate {
@@ -417,7 +417,8 @@ export class AuthService {
   // ---------------------------------------------------------------- eligibility (D8 item 1)
 
   private eligibleStatuses(): RegistrationStatus[] {
-    return this.deps.config.allowTestRegistrations ? ['valid', 'test'] : ['valid'];
+    // Pending and cancelled registrations never sign in (E2-5).
+    return this.deps.config.allowTestRegistrations ? ['active', 'test'] : ['active'];
   }
 
   /**

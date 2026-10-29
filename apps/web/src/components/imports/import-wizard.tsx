@@ -19,6 +19,7 @@ import {
   type ConfirmResult,
   type EventSummary,
   type ImportFeatureStatus,
+  type ImportValueMappings,
   type MappingDraft,
   type PreviewResult,
   type UploadResult,
@@ -33,6 +34,10 @@ type Step = 'setup' | 'mapping' | 'preview' | 'done';
 type Tab = 'import' | 'history';
 
 const STEP_LABELS = ['Event and file', 'Map columns', 'Review preview', 'Done'];
+
+function hasValueMappings(mappings: ImportValueMappings): boolean {
+  return Object.values(mappings).some((table) => table && Object.keys(table).length > 0);
+}
 const STEP_INDEX: Record<Step, number> = { setup: 1, mapping: 2, preview: 3, done: 4 };
 
 interface Failure {
@@ -57,6 +62,7 @@ export function ImportWizard() {
   const [upload, setUpload] = useState<UploadResult | null>(null);
   const [draft, setDraft] = useState<MappingDraft>(draftFromMapping(null));
   const [attendanceDefault, setAttendanceDefault] = useState<'' | 'physical' | 'virtual'>('');
+  const [valueMappings, setValueMappings] = useState<ImportValueMappings>({});
   const [saveMapping, setSaveMapping] = useState(false);
   const [preview, setPreview] = useState<PreviewResult | null>(null);
   const [staleMessage, setStaleMessage] = useState<string | null>(null);
@@ -141,6 +147,7 @@ export function ImportWizard() {
         ),
       );
       setAttendanceDefault('');
+      setValueMappings({});
       setSaveMapping(false);
       setPreview(null);
       setStaleMessage(null);
@@ -166,6 +173,7 @@ export function ImportWizard() {
           ...(attendanceDefault && !built.mapping.attendanceFormat
             ? { attendanceFormatDefault: attendanceDefault }
             : {}),
+          ...(hasValueMappings(valueMappings) ? { valueMappings } : {}),
           ...(saveMapping ? { saveMapping: true } : {}),
         }),
       });
@@ -408,6 +416,9 @@ export function ImportWizard() {
               counts={preview.counts}
               rows={preview.rows}
               ignoredColumns={preview.ignoredColumns}
+              unrecognisedValues={preview.unrecognisedValues}
+              valueMappings={valueMappings}
+              onValueMappingsChange={setValueMappings}
               previewExpiresAt={preview.previewExpiresAt}
               staleMessage={staleMessage}
               busy={busy}

@@ -33,7 +33,25 @@ describe('CSV parsing (D3 step 2, criterion 1)', () => {
     expect(ok.rows).toEqual([{ Email: 'a@x.io', Name: 'Ann' }]);
     expect(() => parseCsv(enc('\n\n'))).toThrow(/header/);
     expect(() => parseCsv(enc('Email,email\na,b'))).toThrow(/unique/);
-    expect(() => parseCsv(new Uint8Array([0x45, 0xff, 0xfe, 0x2c]))).toThrow(/UTF-8/);
+    // Excel's Windows default writes Windows-1252: decoded, with the encoding reported.
+    const ansi = parseCsv(
+      new Uint8Array([
+        0x45, 0x6d, 0x61, 0x69, 0x6c, 0x2c, 0x4e, 0x6f, 0x6d, 0x0a, 0x61, 0x40, 0x78, 0x2e, 0x69,
+        0x6f, 0x2c, 0x52, 0x65, 0x6e, 0xe9, 0x0a,
+      ]),
+    );
+    expect(ansi.encoding).toBe('windows-1252');
+    expect(ansi.rows[0]).toEqual({ Email: 'a@x.io', Nom: 'Ren\u00e9' });
+    // Excel's "Unicode Text" is UTF-16 with a byte-order mark: decoded losslessly.
+    const utf16 = new Uint8Array([
+      0xff,
+      0xfe,
+      ...Buffer.from('Email\tNom\na@x.io\tRen\u00e9\n'.replace(/\t/g, ','), 'utf16le'),
+    ]);
+    const wide = parseCsv(utf16);
+    expect(wide.encoding).toBe('utf-16le');
+    expect(wide.rows[0]).toEqual({ Email: 'a@x.io', Nom: 'Ren\u00e9' });
+    expect(parseCsv(enc('Email,Nom\na@x.io,Ren\u00e9')).encoding).toBe('utf-8');
     expect(() => parseCsv(enc('a,b\n"open'))).toThrow(/not closed/);
   });
 
@@ -197,10 +215,25 @@ describe('row normalisation and validation (D3 step 3, D4, criterion 2)', () => 
         country: null,
         capacity: 'individual',
         nominatingOrganisation: null,
-        registrationStatus: 'valid',
+        registrationStatus: 'active',
         externalRegistrationId: null,
       },
     });
+    // Export placeholders for absent values are empty, never stored as text.
+    const placeholders = normaliseRow(
+      { Email: 'b@x.io', Name: 'B', Format: 'Physical', Org: 'NULL', Status: 'N/A', Capacity: '-' },
+      mapping,
+      undefined,
+    );
+    expect(placeholders.ok && placeholders.values.organisation).toBeNull();
+    expect(placeholders.ok && placeholders.values.registrationStatus).toBe('active');
+    expect(placeholders.ok && placeholders.values.capacity).toBe('individual');
+    const nullFormat = normaliseRow(
+      { Email: 'b@x.io', Name: 'B', Format: 'NULL' },
+      mapping,
+      undefined,
+    );
+    expect(nullFormat.ok).toBe(false);
     expect(parseAttendanceFormat('ONLINE')).toBe('virtual');
     expect(parseAttendanceFormat('hybrid')).toBeUndefined();
   });
@@ -239,6 +272,45 @@ describe('row normalisation and validation (D3 step 3, D4, criterion 2)', () => 
       undefined,
     );
     expect(long.ok).toBe(false);
+  });
+
+  it('applies admin translations of file values before the built-in synonyms and never guesses the rest', () => {
+    const translations = {
+      attendanceFormat: { 'Standard (NGR)': 'physical' as const, '': 'virtual' as const },
+      capacity: { 'Team Rate': 'nominee' as const },
+      registrationStatus: { pending: 'active' as const },
+    };
+    const tier = normaliseRow(
+      {
+        Email: 'a@x.io',
+        Name: 'A',
+        Format: 'standard (ngr)',
+        Capacity: 'Team Rate',
+        Status: 'PENDING',
+      },
+      mapping,
+      undefined,
+      translations,
+    );
+    expect(tier.ok && tier.values.attendanceFormat).toBe('physical');
+    expect(tier.ok && tier.values.capacity).toBe('nominee');
+    expect(tier.ok && tier.values.registrationStatus).toBe('active');
+    const blank = normaliseRow(
+      { Email: 'a@x.io', Name: 'A', Format: '' },
+      mapping,
+      undefined,
+      translations,
+    );
+    expect(blank.ok && blank.values.attendanceFormat).toBe('virtual');
+    const untranslated = normaliseRow(
+      { Email: 'a@x.io', Name: 'A', Format: 'Final (NGR)' },
+      mapping,
+      undefined,
+      translations,
+    );
+    expect(untranslated.ok).toBe(false);
+    if (!untranslated.ok)
+      expect(untranslated.rejections[0]?.reason).toBe('attendance_format_unknown');
   });
 
   it('applies the run-wide attendance default only when no column is mapped', () => {
@@ -320,7 +392,7 @@ describe('classification (D5, criteria 3, 4, 7, 21, 22)', () => {
       attendanceFormat: 'virtual' as const,
       capacity: 'individual' as const,
       nominatingOrganisation: null,
-      registrationStatus: 'valid' as const,
+      registrationStatus: 'active' as const,
       externalRegistrationId: null,
       registrationSource: null,
     };
@@ -426,7 +498,7 @@ describe('classification (D5, criteria 3, 4, 7, 21, 22)', () => {
       attendanceFormat: 'virtual' as const,
       capacity: 'individual' as const,
       nominatingOrganisation: null,
-      registrationStatus: 'valid' as const,
+      registrationStatus: 'active' as const,
       externalRegistrationId: 'R1',
       registrationSource: 'src',
     };

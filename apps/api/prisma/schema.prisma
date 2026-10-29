@@ -77,8 +77,12 @@ enum DelegateCapacity {
   @@map("delegate_capacity")
 }
 
+/// Decided 2026-10-30: `active` replaces `valid`; `pending` is imported or set by an admin, cannot
+/// sign in, is hidden from My Events and excluded from active-registration counts until an admin
+/// sets it to active. `duplicate` and `test` are never set by an import.
 enum RegistrationStatus {
-  valid
+  active
+  pending
   cancelled
   duplicate
   test
@@ -290,7 +294,7 @@ model Delegate {
   attendanceFormat       ParticipationCode  @map("attendance_format")
   capacity               DelegateCapacity   @default(individual)
   nominatingOrganisation String?            @map("nominating_organisation")
-  registrationStatus     RegistrationStatus @default(valid) @map("registration_status")
+  registrationStatus     RegistrationStatus @default(active) @map("registration_status")
   duplicateOfId          String?            @map("duplicate_of_id") @db.Uuid
   /// Registration source the record was imported from (D4); scopes the external id.
   registrationSource     String?            @map("registration_source")
@@ -338,6 +342,8 @@ model ImportRun {
   headers                 Json
   mapping                 Json?
   attendanceFormatDefault ParticipationCode? @map("attendance_format_default")
+  /// Admin translations of file values for the enumerated fields (D4); part of the fingerprint.
+  valueMappings           Json?              @map("value_mappings")
   status                  ImportRunStatus    @default(uploaded)
   /// Hash of file, mapping and the snapshot of matched records (D3 step 5); null until previewed.
   fingerprint             String?

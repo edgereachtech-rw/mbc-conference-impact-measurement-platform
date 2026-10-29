@@ -19,7 +19,7 @@ export function DelegateHero({ displayName, participationMode }: DelegateHeroPro
       aria-labelledby="delegate-hero-title"
       className="on-dark bg-brand-primary bg-[radial-gradient(ellipse_at_top_right,rgb(255_183_3/0.14),transparent_50%),linear-gradient(160deg,var(--brand-primary),var(--brand-footer))] text-white"
     >
-      <div className="mx-auto flex max-w-4xl flex-col gap-5 px-gutter py-8 md:px-6 md:py-12">
+      <div className="mx-auto flex max-w-4xl flex-col gap-4 px-gutter py-7 md:px-6 md:py-10">
         <p className="font-display text-eyebrow tracking-[0.14em] text-brand-accent uppercase">
           Delegate · {event.shortName}
         </p>
@@ -70,36 +70,65 @@ export function DelegateHero({ displayName, participationMode }: DelegateHeroPro
 }
 
 const JOURNEY = [
-  { step: 'Before', title: 'Pre-conference check-in', note: 'Opens before the conference' },
-  { step: 'Day 1', title: 'Check-in and transfer planning', note: event.dates.start },
-  { step: 'Day 2', title: 'Check-in, plan and evaluation', note: event.dates.end },
-  { step: 'After', title: 'Follow-ups at 30, 60, 90 days', note: 'Scheduled by M.Bryan' },
+  {
+    step: 'Before',
+    title: 'Pre-conference check-in',
+    note: 'Opens before the conference',
+    state: 'upcoming',
+  },
+  {
+    step: 'Day 1',
+    title: 'Check-in and transfer planning',
+    note: event.dates.start,
+    state: 'upcoming',
+  },
+  {
+    step: 'Day 2',
+    title: 'Check-in, plan and evaluation',
+    note: event.dates.end,
+    state: 'upcoming',
+  },
+  {
+    step: 'After',
+    title: 'Follow-ups at 30, 60, 90 days',
+    note: 'Scheduled by M.Bryan',
+    state: 'upcoming',
+  },
 ] as const;
 
-/** The delegate journey as a horizontal strip on phones and a four-up row on larger screens. */
+/**
+ * The delegate journey as a stepper: a connected horizontal strip on phones (scrolls) and a
+ * four-up row on larger screens. Every step is "Opens later" until its epic ships; nothing here
+ * claims attendance.
+ */
 export function JourneyStrip() {
   return (
     <section aria-labelledby="journey-title" className="space-y-3">
-      <h2
-        id="journey-title"
-        className="font-display text-eyebrow tracking-[0.14em] text-brand-secondary uppercase"
-      >
-        Your journey
-      </h2>
+      <div className="flex items-baseline justify-between">
+        <h2 id="journey-title" className="text-h3">
+          Your journey
+        </h2>
+        <span className="text-xs text-brand-muted">4 steps</span>
+      </div>
       <ol className="-mx-gutter flex snap-x gap-3 overflow-x-auto px-gutter pb-1 md:mx-0 md:grid md:grid-cols-4 md:overflow-visible md:px-0">
         {JOURNEY.map((item, index) => (
           <li
             key={item.step}
-            className="flex min-w-[14rem] snap-start flex-col gap-1 rounded-lg border border-brand-line bg-card p-4 shadow-card md:min-w-0"
+            className="relative flex min-w-[15rem] snap-start flex-col gap-2 rounded-lg border border-brand-line bg-card p-4 shadow-card md:min-w-0"
           >
-            <span className="flex size-7 items-center justify-center rounded-full bg-brand-accent font-display text-sm font-semibold text-brand-primary">
-              {index + 1}
-            </span>
-            <span className="font-display text-eyebrow tracking-[0.14em] text-brand-muted uppercase">
-              {item.step}
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-brand-accent font-display text-sm font-semibold text-brand-primary">
+                {index + 1}
+              </span>
+              <span className="font-display text-eyebrow tracking-[0.14em] text-brand-muted uppercase">
+                {item.step}
+              </span>
+            </div>
             <span className="font-medium text-brand-primary">{item.title}</span>
             <span className="text-sm text-brand-muted">{item.note}</span>
+            <span className="mt-auto inline-flex w-fit items-center rounded-full border border-brand-line px-2 py-0.5 text-xs font-medium text-brand-muted">
+              Opens later
+            </span>
           </li>
         ))}
       </ol>

@@ -27,7 +27,8 @@ export const myEventSchema = z.object({
   /** The caller's own registration for this event. */
   registration: z.object({
     id: z.uuid(),
-    status: z.enum(['valid', 'test']),
+    /** Pending and cancelled registrations are not listed (E2-5). */
+    status: z.enum(['active', 'test']),
     attendanceFormat: z.enum(participationModes),
     capacity: z.enum(['individual', 'nominee', 'other']),
     organisation: z.string().nullable(),

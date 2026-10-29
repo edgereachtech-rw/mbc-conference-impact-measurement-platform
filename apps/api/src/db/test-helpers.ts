@@ -43,7 +43,7 @@ export async function createRegisteredIdentity(
   email: string,
   options: {
     name?: string;
-    registrationStatus?: 'valid' | 'cancelled' | 'duplicate' | 'test';
+    registrationStatus?: 'active' | 'pending' | 'cancelled' | 'duplicate' | 'test';
     attendanceFormat?: 'physical' | 'virtual';
     userAccountId?: string | null;
   } = {},
@@ -63,7 +63,7 @@ export async function createRegisteredIdentity(
       name: options.name ?? `Delegate ${normalised}`,
       email: normalised,
       attendanceFormat: options.attendanceFormat ?? 'physical',
-      registrationStatus: options.registrationStatus ?? 'valid',
+      registrationStatus: options.registrationStatus ?? 'active',
       userAccountId: options.userAccountId ?? null,
     },
   });

@@ -49,10 +49,34 @@ export const importMappingSchema = z.object({
 });
 export type ImportMapping = z.infer<typeof importMappingSchema>;
 
+const fileValue = z.string().max(200);
+
+/**
+ * Explicit translations of the file's own values for the three enumerated fields, chosen by the
+ * admin on the preview (for example "Standard (NGR)" -> physical). Keyed by the trimmed cell
+ * text; the empty string stands for a blank cell. A value without a translation and without a
+ * built-in synonym still rejects the row: the platform never guesses (D4).
+ */
+export const importValueMappingsSchema = z.object({
+  attendanceFormat: z.record(fileValue, z.enum(participationModes)).optional(),
+  capacity: z.record(fileValue, z.enum(['individual', 'nominee', 'other'])).optional(),
+  registrationStatus: z.record(fileValue, z.enum(['active', 'pending', 'cancelled'])).optional(),
+});
+export type ImportValueMappings = z.infer<typeof importValueMappingsSchema>;
+
+/** Enumerated fields whose file values can be translated. */
+export const importValueMappedFields = [
+  'attendanceFormat',
+  'capacity',
+  'registrationStatus',
+] as const;
+export type ImportValueMappedField = (typeof importValueMappedFields)[number];
+
 export const importPreviewRequestSchema = z.object({
   mapping: importMappingSchema,
   /** One explicit value for every row when the export has no attendance-format column (D4). */
   attendanceFormatDefault: z.enum(participationModes).optional(),
+  valueMappings: importValueMappingsSchema.optional(),
   /** Save this mapping for the run's registration source (E2-8). */
   saveMapping: z.boolean().optional(),
 });

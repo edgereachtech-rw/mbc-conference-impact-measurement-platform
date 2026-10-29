@@ -33,7 +33,7 @@ export interface ExistingRegistration {
   attendanceFormat: 'physical' | 'virtual';
   capacity: 'individual' | 'nominee' | 'other';
   nominatingOrganisation: string | null;
-  registrationStatus: 'valid' | 'cancelled' | 'duplicate' | 'test';
+  registrationStatus: 'active' | 'pending' | 'cancelled' | 'duplicate' | 'test';
   externalRegistrationId: string | null;
   registrationSource: string | null;
 }

@@ -33,7 +33,7 @@ const lagos = {
   period: 'upcoming',
   registration: {
     id: 'd1',
-    status: 'valid',
+    status: 'active',
     attendanceFormat: 'physical',
     capacity: 'individual',
     organisation: 'Acme',

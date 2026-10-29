@@ -103,6 +103,11 @@ export function MappingForm({
               : 'A mapping is saved for this source but the columns differ from the last file, so it was not applied. Review the suggestion below.'}
           </p>
         ) : null}
+        {(upload.warnings ?? []).map((warning) => (
+          <p key={warning} role="alert" className="font-medium text-brand-warning-text">
+            {warning}
+          </p>
+        ))}
         {upload.attendanceRecordColumns.length > 0 ? (
           <p role="note">
             Ignored (attendance is recorded in the platform, never imported):{' '}

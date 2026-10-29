@@ -192,6 +192,27 @@ describe.skipIf(!hasDatabase)('My Events (E3-10, D7, Increment 1c)', () => {
     expect(bobs.body.events.map((e: { id: string }) => e.id)).toEqual([lagos]);
   });
 
+  it('hides pending registrations and lists them again once an admin sets them active (E2-5)', async () => {
+    const server = app();
+    const admin = await sessionFor('admin', `admin2-${tag}@example.com`);
+    const toPending = await request(server)
+      .patch(`/api/v1/delegates/${alice.delegateIds[1]}`)
+      .set('Origin', ORIGIN)
+      .set('Cookie', admin.cookie)
+      .send({ registrationStatus: 'pending' });
+    expect(toPending.status, toPending.text).toBe(200);
+    let res = await request(server).get('/api/v1/me/events').set('Cookie', alice.cookie);
+    expect(res.body.events.map((e: { id: string }) => e.id)).not.toContain(online);
+    const back = await request(server)
+      .patch(`/api/v1/delegates/${alice.delegateIds[1]}`)
+      .set('Origin', ORIGIN)
+      .set('Cookie', admin.cookie)
+      .send({ registrationStatus: 'active' });
+    expect(back.status).toBe(200);
+    res = await request(server).get('/api/v1/me/events').set('Cookie', alice.cookie);
+    expect(res.body.events.map((e: { id: string }) => e.id)).toContain(online);
+  });
+
   it('hides cancelled registrations (pending OQ-25) and reflects an admin cancellation immediately', async () => {
     const server = app();
     const admin = await sessionFor('admin', `admin-${tag}@example.com`);
@@ -205,7 +226,7 @@ describe.skipIf(!hasDatabase)('My Events (E3-10, D7, Increment 1c)', () => {
       where: { action: 'delegate.updated', entityId: alice.delegateIds[2] },
       orderBy: { occurredAt: 'desc' },
     });
-    expect(audit?.oldValue).toEqual({ registrationStatus: 'valid' });
+    expect(audit?.oldValue).toEqual({ registrationStatus: 'active' });
     expect(audit?.newValue).toEqual({ registrationStatus: 'cancelled' });
     const res = await request(server).get('/api/v1/me/events').set('Cookie', alice.cookie);
     expect(res.body.events.map((e: { id: string }) => e.id)).toEqual([lagos, online]);

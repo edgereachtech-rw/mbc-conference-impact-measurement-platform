@@ -153,6 +153,20 @@ describe.skipIf(!hasDatabase)(
       );
     });
 
+    it('a pending registration never signs in until an admin sets it active (E2-5)', async () => {
+      const pendingEmail = `pending-${unique()}@example.com`;
+      const { delegate } = await register(pendingEmail, { registrationStatus: 'pending' });
+      const agent = request(app());
+      expect((await requestLink(agent, pendingEmail)).status).toBe(202);
+      expect(mailer.sent).toHaveLength(0);
+      await prisma.delegate.update({
+        where: { id: delegate.id },
+        data: { registrationStatus: 'active' },
+      });
+      const ok = await signInWithLink(agent, pendingEmail);
+      accountIds.push(ok.body.user.id);
+    });
+
     it('test registrations sign in only with the explicit allowance; cancelled and archived never do', async () => {
       const testEmail = `test-${unique()}@example.com`;
       await register(testEmail, { registrationStatus: 'test' });

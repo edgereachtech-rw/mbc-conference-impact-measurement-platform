@@ -2,8 +2,11 @@ import { createHash } from 'node:crypto';
 
 import {
   IMPORT_PREVIEW_TTL_MINUTES,
+  importValueMappedFields,
   type ImportMapping,
   type ImportPreviewRequest,
+  type ImportValueMappedField,
+  type ImportValueMappings,
 } from '@mbc/shared';
 
 import type { ClientContext } from '../auth/service.js';
@@ -218,6 +221,13 @@ export class ImportService {
       run,
       headers: parsed.headers,
       delimiter: parsed.delimiter,
+      encoding: parsed.encoding,
+      warnings:
+        parsed.encoding && parsed.encoding !== 'utf-8'
+          ? [
+              `The file was not UTF-8; it was read as ${parsed.encoding}. Check accented names and special characters in the preview, or export it again as UTF-8 CSV or XLSX.`,
+            ]
+          : [],
       suggestedMapping: suggestion.mapping,
       unmappedColumns: suggestion.unmapped,
       attendanceRecordColumns: parsed.headers.filter(isAttendanceRecordColumn),
@@ -248,6 +258,7 @@ export class ImportService {
     });
     const classified = await this.classify(this.prisma, run.eventId, run.source, rawRows, request);
     const counts = countRows(classified.rows);
+    const unrecognisedValues = this.unrecognisedValues(rawRows, request);
     const fingerprint = this.fingerprint(run.fileHash, request, classified.snapshot);
     const now = this.now();
     const previewExpiresAt = new Date(now.getTime() + IMPORT_PREVIEW_TTL_MINUTES * 60_000);
@@ -275,6 +286,9 @@ export class ImportService {
         data: {
           mapping: request.mapping as Prisma.InputJsonValue,
           attendanceFormatDefault: request.attendanceFormatDefault ?? null,
+          valueMappings: request.valueMappings
+            ? (request.valueMappings as Prisma.InputJsonValue)
+            : Prisma.JsonNull,
           status: 'previewed',
           fingerprint,
           previewExpiresAt,
@@ -308,6 +322,7 @@ export class ImportService {
           counts,
           mapping: mappingColumns(request.mapping),
           attendanceFormatDefault: request.attendanceFormatDefault ?? null,
+          valueMappings: request.valueMappings ?? null,
           ignoredColumns: ignoredColumns.length,
           mappingSaved: request.saveMapping === true,
         } as unknown as Prisma.InputJsonValue,
@@ -323,6 +338,7 @@ export class ImportService {
       }),
       counts,
       ignoredColumns,
+      unrecognisedValues,
       previewExpiresAt,
       rows: classified.rows.map(publicRow),
     };
@@ -377,6 +393,7 @@ export class ImportService {
           const request: ImportPreviewRequest = {
             mapping: run.mapping as ImportMapping,
             attendanceFormatDefault: run.attendanceFormatDefault ?? undefined,
+            valueMappings: (run.valueMappings as ImportValueMappings | null) ?? undefined,
           };
           const stored = await tx.importRow.findMany({
             where: { runId },
@@ -656,6 +673,7 @@ export class ImportService {
         fileHash: true,
         mapping: true,
         attendanceFormatDefault: true,
+        valueMappings: true,
         fingerprint: true,
       },
     });
@@ -664,7 +682,12 @@ export class ImportService {
   }
 
   private emailOf(raw: Record<string, string>, request: ImportPreviewRequest): string | null {
-    const normalised = normaliseRow(raw, request.mapping, request.attendanceFormatDefault);
+    const normalised = normaliseRow(
+      raw,
+      request.mapping,
+      request.attendanceFormatDefault,
+      request.valueMappings,
+    );
     if (normalised.ok) return normalised.values.email;
     const cell = raw[request.mapping.email];
     return cell ? normaliseEmail(cell) : null;
@@ -683,6 +706,7 @@ export class ImportService {
         r.raw as Record<string, string>,
         request.mapping,
         request.attendanceFormatDefault,
+        request.valueMappings,
       ),
     }));
     const emails = [
@@ -798,8 +822,53 @@ export class ImportService {
       fileHash,
       stableStringify(request.mapping),
       request.attendanceFormatDefault ?? '',
+      stableStringify(request.valueMappings ?? null),
       snapshot,
     ]);
+  }
+
+  /**
+   * File values of the enumerated fields that neither a synonym nor a translation recognises, with
+   * how many rows carry each, so the admin can translate them explicitly (D4).
+   */
+  private unrecognisedValues(
+    rawRows: ReadonlyArray<{ raw: unknown }>,
+    request: ImportPreviewRequest,
+  ): Record<ImportValueMappedField, Array<{ value: string; count: number }>> {
+    const reasons: Record<ImportValueMappedField, string> = {
+      attendanceFormat: 'attendance_format_unknown',
+      capacity: 'capacity_unknown',
+      registrationStatus: 'registration_status_unknown',
+    };
+    const tallies: Record<ImportValueMappedField, Map<string, number>> = {
+      attendanceFormat: new Map(),
+      capacity: new Map(),
+      registrationStatus: new Map(),
+    };
+    for (const r of rawRows) {
+      const raw = r.raw as Record<string, string>;
+      const result = normaliseRow(
+        raw,
+        request.mapping,
+        request.attendanceFormatDefault,
+        request.valueMappings,
+      );
+      if (result.ok) continue;
+      for (const field of importValueMappedFields) {
+        const column = request.mapping[field];
+        if (!column || !result.rejections.some((x) => x.reason === reasons[field])) continue;
+        const value = (raw[column] ?? '').trim();
+        tallies[field].set(value, (tallies[field].get(value) ?? 0) + 1);
+      }
+    }
+    const out = {} as Record<ImportValueMappedField, Array<{ value: string; count: number }>>;
+    for (const field of importValueMappedFields) {
+      out[field] = [...tallies[field].entries()]
+        .map(([value, count]) => ({ value, count }))
+        .sort((a, b) => b.count - a.count || a.value.localeCompare(b.value))
+        .slice(0, 50);
+    }
+    return out;
   }
 
   /** Applies the classified rows: identities, addresses, registrations, per-record audit, row links. */

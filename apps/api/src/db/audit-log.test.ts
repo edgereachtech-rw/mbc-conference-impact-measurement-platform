@@ -27,7 +27,7 @@ describe.skipIf(!hasDatabase)('audit_log is append-only', () => {
       entityType: 'delegate',
       entityId: 'test-entity',
       eventId,
-      oldValue: { registrationStatus: 'valid' },
+      oldValue: { registrationStatus: 'active' },
       newValue: { registrationStatus: 'cancelled' },
       ip: '127.0.0.1',
       userAgent: 'vitest',
@@ -35,7 +35,7 @@ describe.skipIf(!hasDatabase)('audit_log is append-only', () => {
 
     expect(row.id).toBeTruthy();
     expect(row.occurredAt).toBeInstanceOf(Date);
-    expect(row.oldValue).toEqual({ registrationStatus: 'valid' });
+    expect(row.oldValue).toEqual({ registrationStatus: 'active' });
     expect(row.actorUserId).toBeNull();
   });
 

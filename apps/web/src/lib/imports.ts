@@ -1,5 +1,7 @@
 import type {
   ImportConflictReason,
+  ImportValueMappedField,
+  ImportValueMappings,
   ImportCounts,
   ImportField,
   ImportMapping,
@@ -54,6 +56,9 @@ export interface UploadResult {
   run: ImportRunSummary;
   headers: string[];
   delimiter: ',' | ';' | null;
+  encoding: 'utf-8' | 'utf-16le' | 'utf-16be' | 'windows-1252' | null;
+  /** Things the admin should know before mapping, e.g. a non-UTF-8 file. */
+  warnings: string[];
   suggestedMapping: Partial<ImportMapping>;
   unmappedColumns: string[];
   attendanceRecordColumns: string[];
@@ -93,9 +98,13 @@ export interface PreviewResult {
   run: ImportRunSummary;
   counts: ImportCounts;
   ignoredColumns: string[];
+  /** File values of the enumerated fields that rejected rows; the admin can translate them. */
+  unrecognisedValues: Record<ImportValueMappedField, Array<{ value: string; count: number }>>;
   previewExpiresAt: string;
   rows: PreviewRow[];
 }
+
+export type { ImportValueMappedField, ImportValueMappings };
 
 export interface ConfirmResult {
   run: ImportRunSummary;
@@ -196,7 +205,7 @@ export const fieldLabels: Record<ImportField, string> = {
   country: 'Country',
   capacity: 'Capacity (individual / nominee / other)',
   nominatingOrganisation: 'Nominating organisation',
-  registrationStatus: 'Registration status (valid / cancelled)',
+  registrationStatus: 'Registration status (active / pending / cancelled)',
   externalRegistrationId: 'Registration id from the source',
 };
 
