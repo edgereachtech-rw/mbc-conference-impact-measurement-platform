@@ -1,11 +1,16 @@
 import express, { type Express } from 'express';
 import { pinoHttp } from 'pino-http';
 
-import { getPrisma } from './db.js';
+import { authConfigFromEnv, type AuthConfig } from './auth/config.js';
+import { AuthService } from './auth/service.js';
+import { getPrisma, type PrismaClient } from './db.js';
 import { errorHandler, notFoundHandler } from './lib/errors.js';
 import { getLogger, type Logger } from './lib/logger.js';
 import { pathOnly, requestId } from './lib/request-id.js';
 import { captureException } from './lib/sentry.js';
+import { createMailer, mailConfigFromEnv, type MailConfig } from './mail/index.js';
+import type { Mailer } from './mail/mailer.js';
+import { apiRouter } from './routes/index.js';
 
 export interface AppOptions {
   logger?: Logger;
@@ -16,6 +21,20 @@ export interface AppOptions {
   /** Test hook to mount extra routes before the 404/error handlers. */
   extraRoutes?: (app: Express) => void;
   captureException?: (error: unknown, context: { requestId: string }) => void;
+  /** Database client factory; tests pass their own. Resolved lazily so health checks need no DB. */
+  prisma?: () => PrismaClient;
+  /** Outgoing mail; tests pass a MemoryMailer. */
+  mailer?: () => Mailer;
+  authConfig?: AuthConfig;
+  mailConfig?: MailConfig;
+  /** Extra origins accepted for state-changing requests (the Next dev server, tests). */
+  allowedOrigins?: readonly string[];
+  /** Express `trust proxy` setting; defaults to TRUST_PROXY from the auth configuration. */
+  trustProxy?: string | boolean;
+  /** Hides internal error messages; defaults to NODE_ENV === "production". */
+  production?: boolean;
+  /** Clock override for expiry tests. */
+  now?: () => Date;
 }
 
 async function defaultDatabaseCheck(): Promise<void> {
@@ -43,11 +62,32 @@ export function createApp(options: AppOptions = {}) {
   const logger = options.logger ?? getLogger();
   const checkDatabase = options.checkDatabase ?? defaultDatabaseCheck;
   const readinessTimeoutMs = options.readinessTimeoutMs ?? 2_000;
+  const prisma = options.prisma ?? (() => getPrisma());
+  const authConfig = options.authConfig ?? authConfigFromEnv();
+  let mailerInstance: Mailer | undefined;
+  const mailer =
+    options.mailer ??
+    (() => {
+      mailerInstance ??= createMailer(options.mailConfig ?? mailConfigFromEnv());
+      return mailerInstance;
+    });
+  let mailConfig: MailConfig | undefined = options.mailConfig;
+  const auth = new AuthService({
+    prisma,
+    mailer,
+    config: authConfig,
+    get mailConfig() {
+      mailConfig ??= mailConfigFromEnv();
+      return mailConfig;
+    },
+    logger,
+    now: options.now,
+  });
 
   const app = express();
   app.disable('x-powered-by');
-  // Caddy terminates TLS on the private Docker network; trust only private-range proxies.
-  app.set('trust proxy', 'uniquelocal');
+  // Forwarded headers are honoured only from the proxy network named by TRUST_PROXY (false = none).
+  app.set('trust proxy', options.trustProxy ?? authConfig.trustProxy);
 
   app.use(requestId);
   app.use(
@@ -62,7 +102,10 @@ export function createApp(options: AppOptions = {}) {
           method: req.method,
           path: pathOnly(req.url),
         }),
-        res: (res: { statusCode?: number }) => ({ statusCode: res.statusCode }),
+        // pino-http hands the serializer a wrapper whose `raw` is the Node response.
+        res: (res: { statusCode?: number; raw?: { statusCode?: number } }) => ({
+          statusCode: res.raw?.statusCode ?? res.statusCode ?? null,
+        }),
       },
       customSuccessMessage: () => 'request completed',
       customErrorMessage: () => 'request errored',
@@ -90,10 +133,25 @@ export function createApp(options: AppOptions = {}) {
     }
   });
 
+  app.use(
+    '/api/v1',
+    apiRouter({
+      prisma,
+      auth,
+      config: authConfig,
+      allowedOrigins: options.allowedOrigins ?? authConfig.allowedOrigins,
+    }),
+  );
+
   options.extraRoutes?.(app);
 
   app.use(notFoundHandler);
-  app.use(errorHandler({ captureException: options.captureException ?? captureException }));
+  app.use(
+    errorHandler({
+      captureException: options.captureException ?? captureException,
+      production: options.production ?? authConfig.production,
+    }),
+  );
 
   return app;
 }

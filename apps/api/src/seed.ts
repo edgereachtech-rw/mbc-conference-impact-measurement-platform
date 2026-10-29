@@ -72,13 +72,20 @@ export async function seed(prisma: PrismaClient, options: SeedOptions = {}): Pro
   let adminUserId: string | null = null;
   if (options.adminEmail) {
     const email = normaliseEmail(options.adminEmail);
-    const admin = await prisma.userAccount.upsert({
-      where: { email },
-      create: { email, role: 'admin', status: 'active' },
-      update: { role: 'admin', status: 'active' },
-    });
-    adminUserId = admin.id;
-    log('admin account ensured');
+    const existing = await prisma.userAccount.findUnique({ where: { email } });
+    if (existing && existing.status !== 'active') {
+      // Deactivation is a deliberate, audited act; the seed must not undo it on the next run.
+      adminUserId = existing.id;
+      log('admin account exists but is inactive; left inactive (reactivate it deliberately)');
+    } else {
+      const admin = await prisma.userAccount.upsert({
+        where: { email },
+        create: { email, role: 'admin', status: 'active' },
+        update: { role: 'admin' },
+      });
+      adminUserId = admin.id;
+      log('admin account ensured');
+    }
   } else {
     log('ADMIN_EMAIL not set; no admin account created');
   }

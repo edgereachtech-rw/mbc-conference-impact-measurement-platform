@@ -1,13 +1,30 @@
+// Loads .env for host-run development (no-op in Docker and CI, where the environment is injected).
+import 'dotenv/config';
+
 import { captureException, flushSentry, initSentry } from './lib/sentry.js';
 
 initSentry('worker');
 
 const { APP_NAME } = await import('@mbc/shared');
+const { authConfigFromEnv } = await import('./auth/config.js');
+const { mailConfigFromEnv } = await import('./mail/config.js');
 const { PgBoss } = await import('pg-boss');
 const { startHeartbeat } = await import('./lib/heartbeat.js');
 const { createLogger } = await import('./lib/logger.js');
 
 const logger = createLogger(undefined, undefined).child({ service: 'worker' });
+
+// Same early configuration check as the API: the worker sends mail and shares the auth settings.
+try {
+  authConfigFromEnv();
+  mailConfigFromEnv();
+} catch (error) {
+  logger.fatal(
+    { reason: error instanceof Error ? error.message : 'unknown' },
+    'configuration invalid; refusing to start',
+  );
+  process.exit(1);
+}
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) {

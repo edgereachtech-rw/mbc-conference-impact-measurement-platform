@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { withoutBlankValues } from '../lib/env.js';
+
 /**
  * Mail configuration from the environment.
  *
@@ -21,6 +23,7 @@ const envSchema = z.object({
   APP_URL: z.url().default('http://localhost:3000'),
   MAILPIT_HOST: z.string().default('mailpit'),
   MAILPIT_PORT: z.coerce.number().int().positive().default(1025),
+  NODE_ENV: z.string().optional(),
 });
 
 export interface SmtpSettings {
@@ -48,12 +51,17 @@ export function addressOf(from: string): string {
 }
 
 export function mailConfigFromEnv(env: NodeJS.ProcessEnv = process.env): MailConfig {
-  const parsed = envSchema.safeParse(env);
+  const parsed = envSchema.safeParse(withoutBlankValues(env));
   if (!parsed.success) {
     const issues = parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
     throw new Error(`invalid mail configuration: ${issues}`);
   }
   const e = parsed.data;
+  if (e.NODE_ENV === 'production' && e.MAIL_TRANSPORT !== 'smtp') {
+    throw new Error(
+      `invalid mail configuration: MAIL_TRANSPORT=${e.MAIL_TRANSPORT} is not allowed in production (use smtp)`,
+    );
+  }
 
   let smtp: SmtpSettings;
   if (e.MAIL_TRANSPORT === 'mailpit') {

@@ -1,6 +1,6 @@
-import { LogOutIcon } from 'lucide-react';
 import Link from 'next/link';
 
+import { SignOutButton } from '@/components/auth/sign-out-button';
 import { ParticipationBadge } from '@/components/badges/participation-badge';
 import { IttecLogo, MbryanLogo } from '@/components/brand/logo';
 import { buttonVariants } from '@/components/ui/button';
@@ -14,7 +14,7 @@ interface SiteHeaderProps {
 
 /**
  * Compact app header: ITTEC logo, delegate slot, M.Bryan logo.
- * The sign-out control is wired to the real action in E3; for now it links to /signin.
+ * Sign-out revokes the server session through the API (E3-3).
  */
 export function SiteHeader({ session }: SiteHeaderProps) {
   return (
@@ -39,23 +39,8 @@ export function SiteHeader({ session }: SiteHeaderProps) {
                   <ParticipationBadge mode={session.participationMode} />
                 ) : null}
               </div>
-              <Link
-                href="/signin"
-                className={cn(buttonVariants({ variant: 'ghost', size: 'icon' }), 'md:hidden')}
-              >
-                <LogOutIcon aria-hidden="true" />
-                <span className="sr-only">Sign out</span>
-              </Link>
-              <Link
-                href="/signin"
-                className={cn(
-                  buttonVariants({ variant: 'outline', size: 'sm' }),
-                  'hidden md:inline-flex',
-                )}
-              >
-                <LogOutIcon aria-hidden="true" data-icon="inline-start" />
-                Sign out
-              </Link>
+              <SignOutButton variant="icon" className="md:hidden" />
+              <SignOutButton variant="text" className="hidden md:inline-flex" />
             </>
           ) : (
             <Link

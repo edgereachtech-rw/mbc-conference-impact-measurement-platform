@@ -15,6 +15,17 @@ export class HttpError extends Error {
   }
 }
 
+/** 429 with the seconds after which the client may retry (sent as Retry-After). */
+export class RateLimitError extends HttpError {
+  constructor(
+    public readonly retryAfterSeconds: number,
+    message = 'Too many attempts. Try again later.',
+  ) {
+    super(429, 'rate_limited', message);
+    this.name = 'RateLimitError';
+  }
+}
+
 export interface ErrorBody {
   error: { code: string; message: string; requestId: string };
 }
@@ -90,6 +101,7 @@ export function errorHandler(options: ErrorHandlerOptions = {}): ErrorRequestHan
       type?: unknown;
       expose?: unknown;
       message?: unknown;
+      retryAfterSeconds?: unknown;
     };
     const rawStatus =
       typeof e.status === 'number'
@@ -125,6 +137,9 @@ export function errorHandler(options: ErrorHandlerOptions = {}): ErrorRequestHan
       log?.warn({ requestId, status, code }, 'request rejected');
     }
 
+    if (typeof e.retryAfterSeconds === 'number' && e.retryAfterSeconds > 0) {
+      res.setHeader('Retry-After', String(Math.ceil(e.retryAfterSeconds)));
+    }
     const body: ErrorBody = { error: { code, message, requestId } };
     res.status(status).json(body);
   };

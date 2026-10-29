@@ -8,6 +8,27 @@
 	email {$ACME_EMAIL:ops@example.com}
 	# Caddy's own admin API stays off; configuration is this file only.
 	admin off
+	# Runtime logs (reverse-proxy warnings and errors) also describe the request, so they get the
+	# same treatment as the access log below: no query strings, no headers (cookies), masked IPs.
+	log {
+		output stdout
+		format filter {
+			wrap json
+			fields {
+				request>uri regexp "\?.*$" ""
+				request>headers delete
+				resp_headers delete
+				request>remote_ip ip_mask {
+					ipv4 24
+					ipv6 56
+				}
+				request>client_ip ip_mask {
+					ipv4 24
+					ipv6 56
+				}
+			}
+		}
+	}
 }
 
 {$APP_DOMAIN} {

@@ -64,6 +64,25 @@ describe.skipIf(!hasDatabase)('seed', () => {
     ).toBe(TEST_DELEGATE_COUNT);
   });
 
+  it('leaves a deactivated administrator inactive on rerun', async () => {
+    await seed(prisma, { adminEmail, seedTestDelegates: false });
+    await prisma.userAccount.update({
+      where: { email: 'seed-admin@example.com' },
+      data: { status: 'inactive' },
+    });
+    await seed(prisma, { adminEmail, seedTestDelegates: false });
+    const account = await prisma.userAccount.findUnique({
+      where: { email: 'seed-admin@example.com' },
+    });
+    expect(account?.status).toBe('inactive');
+    expect(account?.role).toBe('admin');
+    // Restore for the other tests in this file.
+    await prisma.userAccount.update({
+      where: { email: 'seed-admin@example.com' },
+      data: { status: 'active' },
+    });
+  });
+
   it('never seeds test delegates when NODE_ENV is production', async () => {
     const previous = process.env.NODE_ENV;
     process.env.NODE_ENV = 'production';

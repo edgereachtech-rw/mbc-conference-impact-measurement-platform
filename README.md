@@ -31,7 +31,8 @@ acceptance criteria and the question bank. Engineering rules live in [CLAUDE.md]
 
 ```bash
 pnpm install          # installs all workspaces, builds packages/shared, installs git hooks
-cp .env.example .env  # then edit DATABASE_URL if your PostgreSQL differs
+cp .env.example .env  # then set DATABASE_URL to the compose database (DB_* values in deploy/.env)
+cp .env apps/api/.env && cp .env apps/web/.env  # each app loads the .env in its own folder
 pnpm dev              # runs shared (tsc --watch), api (tsx watch) and web (next dev) in parallel
 ```
 
@@ -164,3 +165,35 @@ table, contrast results and asset notes are in [docs/design-tokens.md](docs/desi
   `public/icons`.
 - Screenshots: `pnpm build && pnpm screenshots` writes 360/768/1280px captures of `/`, `/signin`,
   `/account` and `/admin` to `docs/screenshots/`.
+
+## Authentication and access control (Increment 1)
+
+Passwordless sign-in lives in `apps/api/src/auth` and `apps/api/src/routes`:
+
+- `POST /api/v1/auth/magic-link` emails a single-use link and a 6-digit code to a registered
+  delegate (any `registration_status` of valid or test in a non-archived event) or to an active
+  staff account. The response is always `202` so addresses cannot be enumerated; unknown,
+  cancelled and inactive addresses receive nothing. Rate limits (code defaults): 3 requests per
+  email per 15 minutes; 10 link requests and 20 failed verifications per client address per hour.
+  Production values are set in `deploy/.env` (`AUTH_RATE_LIMIT_PER_IP`, `AUTH_VERIFY_LIMIT_PER_IP`)
+  and remain conditional on the confirmed venue headcount and network layout, because physical
+  delegates share the venue's egress address; see the sizing note in `deploy/.env.example`.
+- `POST /api/v1/auth/verify` takes `{ token }` or `{ email, code }`, consumes the token once
+  (expiry `MAGIC_LINK_TTL_MINUTES`, default 15), links the registration to the account on first
+  use, and sets the `mbc_session` cookie (HttpOnly, SameSite=Lax, Secure outside development,
+  host-only, `SESSION_TTL_DAYS` absolute and `SESSION_IDLE_DAYS` idle lifetime).
+- `GET /api/v1/auth/me` returns the signed-in user; `POST /api/v1/auth/sign-out` revokes the
+  server-side session. Deactivating an account revokes all of its sessions.
+- Authorization is server-side: `requireAuth`, `requireRole(...)` and `requireDelegate` in
+  `apps/api/src/auth/middleware.ts`, with the pure rules in `auth/policies.ts` (delegates read
+  only their own record; admin, analyst and support read any; admin and support correct records
+  with an audit entry; only admins manage staff; speakers see only their own sessions,
+  anonymised). State-changing requests must carry an `Origin` matching `APP_URL` or
+  `AUTH_ALLOWED_ORIGINS`.
+- Only hashes of tokens, codes and session identifiers are stored; audit rows record who, when
+  and a hashed IP, never a token or an email address.
+
+Web: `/signin` (email, then code entry), `/signin/verify?token=…` (the emailed link; the token is
+exchanged with a POST so mail scanners cannot consume it), `/account` (gated). In development the
+Next dev server proxies `/api/*` to the API when `API_PROXY_URL` is set; behind Caddy the same
+path works without a proxy.

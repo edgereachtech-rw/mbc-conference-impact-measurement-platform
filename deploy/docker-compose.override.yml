@@ -55,6 +55,8 @@ services:
       NEXT_TELEMETRY_DISABLED: '1'
       WATCHPACK_POLLING: 'true' # file events do not cross Windows/macOS bind mounts
       CHOKIDAR_USEPOLLING: 'true'
+      API_INTERNAL_URL: http://api:4000
+      API_PROXY_URL: http://api:4000
     volumes: *dev-volumes
     depends_on:
       deps:
@@ -79,6 +81,8 @@ services:
       MAILPIT_HOST: mailpit
       MAILPIT_PORT: 1025
       APP_URL: http://localhost
+      AUTH_ALLOWED_ORIGINS: http://localhost,http://localhost:3000,http://127.0.0.1:3000
+      COOKIE_SECURE: 'false'
     volumes: *dev-volumes
     depends_on:
       deps:
@@ -122,8 +126,9 @@ services:
     restart: unless-stopped
     ports:
       - '127.0.0.1:8025:8025' # web inbox
+      - '127.0.0.1:1025:1025' # SMTP for an API running on the host (MAILPIT_HOST=127.0.0.1)
     expose:
-      - '1025' # SMTP, reached by api/worker as mailpit:1025
+      - '1025' # SMTP, reached by the api/worker containers as mailpit:1025
     environment:
       MP_SMTP_AUTH_ACCEPT_ANY: '1'
       MP_SMTP_AUTH_ALLOW_INSECURE: '1'

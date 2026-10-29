@@ -103,6 +103,20 @@ enum ConsentDocument {
   @@map("consent_document")
 }
 
+enum SignInPurpose {
+  signin
+  invite_accept
+
+  @@map("sign_in_purpose")
+}
+
+enum AuthAttemptKind {
+  request_link
+  verify
+
+  @@map("auth_attempt_kind")
+}
+
 // ------------------------------------------------------------------ event setup (E1)
 
 model Event {
@@ -152,7 +166,9 @@ model UserAccount {
   createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt    DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  delegates Delegate[]
+  delegates    Delegate[]
+  authSessions AuthSession[]
+  signInTokens SignInToken[]
 
   @@map("user_account")
 }
@@ -172,6 +188,8 @@ model Delegate {
   registrationStatus     RegistrationStatus @default(valid) @map("registration_status")
   duplicateOfId          String?            @map("duplicate_of_id") @db.Uuid
   importedAt             DateTime?          @map("imported_at") @db.Timestamptz(3)
+  /// Set when the delegate first signs in and the account is linked (E3-2).
+  signedUpAt             DateTime?          @map("signed_up_at") @db.Timestamptz(3)
   createdAt              DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt              DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
 
@@ -247,4 +265,65 @@ model AuditLog {
   @@index([entityType, entityId])
   @@index([occurredAt])
   @@map("audit_log")
+}
+
+// ------------------------------------------------------------------ authentication (E3-3..6)
+
+/// Server-side session. The cookie carries a random token; only its SHA-256 is stored here.
+model AuthSession {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userAccountId String    @map("user_account_id") @db.Uuid
+  tokenHash     String    @unique @map("token_hash")
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  /// Absolute expiry (SESSION_TTL_DAYS); idle expiry is derived from lastSeenAt.
+  expiresAt     DateTime  @map("expires_at") @db.Timestamptz(3)
+  lastSeenAt    DateTime  @default(now()) @map("last_seen_at") @db.Timestamptz(3)
+  revokedAt     DateTime? @map("revoked_at") @db.Timestamptz(3)
+  /// SHA-256 of the client IP; never the IP itself.
+  ipHash        String?   @map("ip_hash")
+  userAgent     String?   @map("user_agent")
+
+  userAccount UserAccount @relation(fields: [userAccountId], references: [id], onDelete: Cascade)
+
+  @@index([userAccountId])
+  @@index([expiresAt])
+  @@map("auth_session")
+}
+
+/// Magic link / one-time code. Raw token and code are emailed once; only hashes are stored.
+model SignInToken {
+  id            String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// Lower-cased address the link was sent to.
+  email         String
+  userAccountId String?       @map("user_account_id") @db.Uuid
+  purpose       SignInPurpose @default(signin)
+  tokenHash     String        @unique @map("token_hash")
+  codeHash      String?       @map("code_hash")
+  expiresAt     DateTime      @map("expires_at") @db.Timestamptz(3)
+  usedAt        DateTime?     @map("used_at") @db.Timestamptz(3)
+  /// Failed verification attempts against this token (code guessing).
+  attempts      Int           @default(0)
+  /// Relative path to return to after sign-in (deep links, E3-5).
+  targetPath    String?       @map("target_path")
+  createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  userAccount UserAccount? @relation(fields: [userAccountId], references: [id], onDelete: SetNull)
+
+  @@index([email, createdAt])
+  @@index([expiresAt])
+  @@map("sign_in_token")
+}
+
+/// Rate-limiting ledger for authentication requests; survives restarts and multiple api replicas.
+model AuthAttempt {
+  id          String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  kind        AuthAttemptKind
+  /// Keyed hash of the normalised email (no plaintext addresses in the ledger).
+  emailHash   String?         @map("email_hash")
+  ipHash      String?         @map("ip_hash")
+  attemptedAt DateTime        @default(now()) @map("attempted_at") @db.Timestamptz(3)
+
+  @@index([emailHash, attemptedAt])
+  @@index([ipHash, attemptedAt])
+  @@map("auth_attempt")
 }

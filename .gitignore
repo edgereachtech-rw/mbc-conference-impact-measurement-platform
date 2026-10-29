@@ -29,6 +29,10 @@ Thumbs.db
 # backup e2e test scratch
 deploy/backup/.tmp/
 
+# written and re-added by `next dev` (agent guidance for the installed Next version); CLAUDE.md is
+# the project's instruction file, so this generated copy stays out of the tree
+apps/web/AGENTS.md
+
 # generated screenshots and test reports (regenerate with pnpm screenshots / the test run)
 docs/screenshots/
 docs/test-reports/

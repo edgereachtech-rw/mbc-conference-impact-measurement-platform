@@ -4,6 +4,7 @@ import request from 'supertest';
 import { describe, expect, it, vi } from 'vitest';
 
 import { createApp } from './app.js';
+import { authConfigFromEnv } from './auth/config.js';
 import { HttpError } from './lib/errors.js';
 
 const silent = pino({ level: 'silent' });
@@ -92,6 +93,10 @@ describe('request id and error responses', () => {
       const app = createApp({
         logger: silent,
         captureException,
+        // A production env is validated at startup (see auth/config.test.ts); here only the
+        // error-handling behaviour of production is under test.
+        authConfig: authConfigFromEnv({ NODE_ENV: 'test' }),
+        production: true,
         extraRoutes: (a) => {
           a.get('/boom', () => {
             throw new Error('database password is hunter2 for ada@example.com');
