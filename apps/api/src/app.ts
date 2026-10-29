@@ -4,6 +4,9 @@ import { pinoHttp } from 'pino-http';
 import { authConfigFromEnv, type AuthConfig } from './auth/config.js';
 import { AuthService } from './auth/service.js';
 import { getPrisma, type PrismaClient } from './db.js';
+import { importConfigFromEnv, type ImportConfig } from './imports/config.js';
+import { ConflictResolver, type ResolutionHooks } from './imports/resolution.js';
+import { ImportService, type ImportHooks } from './imports/service.js';
 import { errorHandler, notFoundHandler } from './lib/errors.js';
 import { getLogger, type Logger } from './lib/logger.js';
 import { pathOnly, requestId } from './lib/request-id.js';
@@ -27,6 +30,11 @@ export interface AppOptions {
   mailer?: () => Mailer;
   authConfig?: AuthConfig;
   mailConfig?: MailConfig;
+  importConfig?: ImportConfig;
+  /** Test hooks for the import commit transaction. */
+  importHooks?: ImportHooks;
+  /** Test hooks for the conflict-resolution transaction. */
+  resolutionHooks?: ResolutionHooks;
   /** Extra origins accepted for state-changing requests (the Next dev server, tests). */
   allowedOrigins?: readonly string[];
   /** Express `trust proxy` setting; defaults to TRUST_PROXY from the auth configuration. */
@@ -84,6 +92,20 @@ export function createApp(options: AppOptions = {}) {
     now: options.now,
   });
 
+  const imports = new ImportService({
+    prisma,
+    config: options.importConfig ?? importConfigFromEnv(),
+    logger,
+    now: options.now,
+    hooks: options.importHooks,
+  });
+  const resolver = new ConflictResolver({
+    prisma,
+    logger,
+    now: options.now,
+    hooks: options.resolutionHooks,
+  });
+
   const app = express();
   app.disable('x-powered-by');
   // Forwarded headers are honoured only from the proxy network named by TRUST_PROXY (false = none).
@@ -139,6 +161,8 @@ export function createApp(options: AppOptions = {}) {
       prisma,
       auth,
       config: authConfig,
+      imports,
+      resolver,
       allowedOrigins: options.allowedOrigins ?? authConfig.allowedOrigins,
     }),
   );

@@ -10,7 +10,7 @@ import type { MailConfig } from '../mail/config.js';
 import type { Mailer } from '../mail/mailer.js';
 import { renderMagicLink } from '../mail/templates/index.js';
 import type { AuthConfig } from './config.js';
-import type { Principal } from './policies.js';
+import { isRetiredRole, type Principal } from './policies.js';
 import { AttemptLedger } from './rate-limit.js';
 import {
   generateCode,
@@ -24,8 +24,26 @@ import {
 const MAX_CODE_ATTEMPTS = 5;
 const LAST_SEEN_THROTTLE_MS = 5 * 60_000;
 
-/** Registration statuses that may sign in (E3-2): valid delegates, plus test delegates on staging. */
-const SIGN_IN_ELIGIBLE = ['valid', 'test'] as const;
+type RegistrationStatus = 'valid' | 'test';
+
+/** Eligible event record of an identity: an identity-owned registration the session may act on. */
+interface EligibleDelegate {
+  id: string;
+  eventId: string;
+  name: string;
+  attendanceFormat: 'physical' | 'virtual';
+  userAccountId: string | null;
+  signedUpAt: Date | null;
+}
+
+interface EligibleIdentity {
+  id: string;
+  userAccountId: string | null;
+  /** Eligible records, most recent first. */
+  delegates: EligibleDelegate[];
+}
+
+type IdentityReader = Pick<PrismaClient, 'identityEmail' | 'delegateIdentity'>;
 
 export interface AuthDeps {
   prisma: () => PrismaClient;
@@ -109,6 +127,11 @@ export class AuthService {
     }
 
     const account = await this.prisma.userAccount.findUnique({ where: { email } });
+    if (account && isRetiredRole(account.role)) {
+      // Retired roles (D8 item 7) get the generic response and nothing else.
+      this.deps.logger.info('sign-in link requested for a retired-role account');
+      return;
+    }
     if (account && account.status !== 'active') {
       await audit(this.prisma, {
         action: 'signin.inactive_account',
@@ -120,17 +143,21 @@ export class AuthService {
       return;
     }
 
-    const delegate = account
-      ? null
-      : await this.prisma.delegate.findFirst({
-          where: {
-            email: { equals: email, mode: 'insensitive' },
-            registrationStatus: { in: [...SIGN_IN_ELIGIBLE] },
-            event: { status: { not: 'archived' } },
-          },
-          orderBy: { createdAt: 'desc' },
-        });
-    if (!account && !delegate) {
+    // Eligibility (D8 item 1): the address must be an identity's current address and that identity
+    // must hold a valid registration in a non-archived event. Historical and provisional addresses
+    // never qualify. Staff accounts (admin, speaker) need no registration.
+    const identity =
+      !account || account.role === 'delegate'
+        ? await this.eligibleIdentity(this.prisma, email)
+        : null;
+    if (account?.role === 'delegate' && (!identity || !sameOwner(identity, account.id))) {
+      this.deps.logger.info(
+        'sign-in link requested for a delegate account without an eligible identity',
+      );
+      return;
+    }
+    const delegate = identity?.delegates[0] ?? null;
+    if (!account && !identity) {
       // Unknown address: same outward behaviour, nothing sent (E3-2 refuses unregistered emails).
       this.deps.logger.info('sign-in link requested for an unknown address');
       return;
@@ -259,31 +286,48 @@ export class AuthService {
         ? await tx.userAccount.findUnique({ where: { id: token.userAccountId } })
         : await tx.userAccount.findUnique({ where: { email: token.email } });
 
+      // Eligibility is re-checked at verification (D8 item 1): the identity's current address
+      // must be the token's address, with a valid registration in a non-archived event.
+      const identity =
+        !account || account.role === 'delegate'
+          ? await this.eligibleIdentity(tx, token.email)
+          : null;
       if (!account) {
-        const eligible = await tx.delegate.findFirst({
-          where: {
-            email: { equals: token.email, mode: 'insensitive' },
-            registrationStatus: { in: [...SIGN_IN_ELIGIBLE] },
-            event: { status: { not: 'archived' } },
-          },
-        });
-        if (!eligible) throw new HttpError(401, 'invalid_token', 'This email is not registered.');
+        if (!identity) throw new HttpError(401, 'invalid_token', 'This email is not registered.');
         account = await tx.userAccount.create({ data: { email: token.email, role: 'delegate' } });
+      }
+      if (isRetiredRole(account.role)) {
+        throw new HttpError(401, 'invalid_token', 'This account is not active.');
       }
       if (account.status !== 'active') {
         throw new HttpError(401, 'invalid_token', 'This account is not active.');
       }
 
       if (account.role === 'delegate') {
-        // Link every eligible registration with this email to the account (E3-2).
-        await tx.delegate.updateMany({
-          where: {
-            email: { equals: token.email, mode: 'insensitive' },
-            userAccountId: null,
-            registrationStatus: { in: [...SIGN_IN_ELIGIBLE] },
-          },
-          data: { userAccountId: account.id, signedUpAt: now },
-        });
+        if (!identity) throw new HttpError(401, 'invalid_token', 'This email is not registered.');
+        if (!sameOwner(identity, account.id)) {
+          // The identity already belongs to another account: never re-link (fail closed).
+          throw new HttpError(401, 'invalid_token', 'This email is not registered.');
+        }
+        if (!identity.userAccountId) {
+          // First verification links the account to the identity once (D8 item 2).
+          await tx.delegateIdentity.update({
+            where: { id: identity.id },
+            data: { userAccountId: account.id },
+          });
+        }
+        // signed_up_at is kept per event record: first sign-in while that record exists (D8 item 4).
+        const accountId = account.id;
+        for (const record of identity.delegates) {
+          if (record.signedUpAt && record.userAccountId === accountId) continue;
+          await tx.delegate.update({
+            where: { id: record.id },
+            data: {
+              userAccountId: accountId,
+              ...(record.signedUpAt ? {} : { signedUpAt: now }),
+            },
+          });
+        }
       }
 
       const session = await tx.authSession.create({
@@ -298,13 +342,7 @@ export class AuthService {
       });
       await tx.userAccount.update({ where: { id: account.id }, data: { lastSignInAt: now } });
 
-      const delegate =
-        account.role === 'delegate'
-          ? await tx.delegate.findFirst({
-              where: { userAccountId: account.id },
-              orderBy: { createdAt: 'desc' },
-            })
-          : null;
+      const delegate = account.role === 'delegate' ? (identity?.delegates[0] ?? null) : null;
 
       await audit(tx, {
         action: 'signin.succeeded',
@@ -340,6 +378,7 @@ export class AuthService {
     if (!session || session.revokedAt || session.expiresAt <= now) return null;
     if (session.lastSeenAt.getTime() + this.deps.config.sessionIdleMs <= now.getTime()) return null;
     if (session.userAccount.status !== 'active') return null;
+    if (isRetiredRole(session.userAccount.role)) return null;
 
     if (now.getTime() - session.lastSeenAt.getTime() > LAST_SEEN_THROTTLE_MS) {
       await this.prisma.authSession.update({
@@ -347,23 +386,97 @@ export class AuthService {
         data: { lastSeenAt: now },
       });
     }
-    const delegate =
+    // The principal carries the identity and every eligible event record it owns (D8 item 3).
+    const identity =
       session.userAccount.role === 'delegate'
-        ? await this.prisma.delegate.findFirst({
-            where: { userAccountId: session.userAccountId },
-            orderBy: { createdAt: 'desc' },
-          })
+        ? await this.identityOfAccount(session.userAccountId)
         : null;
+    const delegate = identity?.delegates[0] ?? null;
 
     return {
       sessionId: session.id,
       principal: {
         userId: session.userAccountId,
         role: session.userAccount.role,
+        identityId: identity?.id ?? null,
+        delegateIds: identity?.delegates.map((d) => d.id) ?? [],
         delegateId: delegate?.id ?? null,
       },
       user: toSessionUser(session.userAccount, delegate),
     };
+  }
+
+  // ---------------------------------------------------------------- eligibility (D8 item 1)
+
+  private eligibleStatuses(): RegistrationStatus[] {
+    return this.deps.config.allowTestRegistrations ? ['valid', 'test'] : ['valid'];
+  }
+
+  /**
+   * The identity whose *current* address this is, with its eligible registrations, or null. A
+   * historical or provisional address, or an identity without an eligible registration, is null.
+   */
+  private async eligibleIdentity(
+    db: IdentityReader,
+    email: string,
+  ): Promise<EligibleIdentity | null> {
+    const address = await db.identityEmail.findUnique({
+      where: { emailNormalised: normaliseEmail(email) },
+      select: {
+        kind: true,
+        identity: {
+          select: {
+            id: true,
+            userAccountId: true,
+            delegates: {
+              where: {
+                registrationStatus: { in: this.eligibleStatuses() },
+                event: { status: { not: 'archived' } },
+              },
+              orderBy: { createdAt: 'desc' },
+              select: {
+                id: true,
+                eventId: true,
+                name: true,
+                attendanceFormat: true,
+                userAccountId: true,
+                signedUpAt: true,
+              },
+            },
+          },
+        },
+      },
+    });
+    if (!address || address.kind !== 'current') return null;
+    if (address.identity.delegates.length === 0) return null;
+    return address.identity;
+  }
+
+  /** The identity linked to an account with its eligible registrations (sessions never use addresses). */
+  private async identityOfAccount(userAccountId: string): Promise<EligibleIdentity | null> {
+    const identity = await this.prisma.delegateIdentity.findUnique({
+      where: { userAccountId },
+      select: {
+        id: true,
+        userAccountId: true,
+        delegates: {
+          where: {
+            registrationStatus: { in: this.eligibleStatuses() },
+            event: { status: { not: 'archived' } },
+          },
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            eventId: true,
+            name: true,
+            attendanceFormat: true,
+            userAccountId: true,
+            signedUpAt: true,
+          },
+        },
+      },
+    });
+    return identity;
   }
 
   async signOut(rawToken: string, client: ClientContext): Promise<void> {
@@ -393,6 +506,11 @@ export class AuthService {
     });
     return result.count;
   }
+}
+
+/** True when the identity is unlinked or linked to this very account. */
+function sameOwner(identity: EligibleIdentity, accountId: string): boolean {
+  return identity.userAccountId === null || identity.userAccountId === accountId;
 }
 
 interface AccountLike {

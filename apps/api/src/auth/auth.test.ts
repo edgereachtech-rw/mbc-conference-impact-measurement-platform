@@ -6,7 +6,12 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { createApp } from '../app.js';
 import type { PrismaClient } from '../db.js';
-import { createTestEvent, hasDatabase, testPrisma } from '../db/test-helpers.js';
+import {
+  createRegisteredIdentity,
+  createTestEvent,
+  hasDatabase,
+  testPrisma,
+} from '../db/test-helpers.js';
 import { MemoryMailer } from '../mail/mailer.js';
 import { authConfigFromEnv } from './config.js';
 import { hashToken } from './tokens.js';
@@ -91,10 +96,12 @@ describe.skipIf(!hasDatabase)('passwordless sign-in (E3-2..5)', () => {
     now = new Date();
   });
 
-  async function registeredDelegate(email: string) {
-    return prisma.delegate.create({
-      data: { eventId, name: `Delegate ${email}`, email, attendanceFormat: 'physical' },
-    });
+  /** A person as an import creates them: identity, current address, registration (D8 item 1). */
+  async function registeredDelegate(
+    email: string,
+    options: Parameters<typeof createRegisteredIdentity>[3] = {},
+  ) {
+    return (await createRegisteredIdentity(prisma, eventId, email, options)).delegate;
   }
 
   async function requestLink(agent: Agent, email: string, next?: string) {
@@ -128,18 +135,10 @@ describe.skipIf(!hasDatabase)('passwordless sign-in (E3-2..5)', () => {
 
   it('ignores cancelled registrations and inactive accounts', async () => {
     const cancelled = `cancelled-${unique()}@example.com`;
-    await prisma.delegate.create({
-      data: {
-        eventId,
-        name: 'C',
-        email: cancelled,
-        attendanceFormat: 'virtual',
-        registrationStatus: 'cancelled',
-      },
-    });
+    await registeredDelegate(cancelled, { registrationStatus: 'cancelled' });
     const inactive = `inactive-${unique()}@example.com`;
     const account = await prisma.userAccount.create({
-      data: { email: inactive, role: 'support', status: 'inactive' },
+      data: { email: inactive, role: 'speaker', status: 'inactive' },
     });
     expect((await requestLink(request(app()), cancelled)).status).toBe(202);
     expect((await requestLink(request(app()), inactive)).status).toBe(202);

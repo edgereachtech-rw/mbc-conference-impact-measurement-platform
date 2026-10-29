@@ -6,7 +6,12 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createApp } from '../app.js';
 import type { PrismaClient } from '../db.js';
-import { createTestEvent, hasDatabase, testPrisma } from '../db/test-helpers.js';
+import {
+  createRegisteredIdentity,
+  createTestEvent,
+  hasDatabase,
+  testPrisma,
+} from '../db/test-helpers.js';
 import { createLogger } from '../lib/logger.js';
 import { MemoryMailer } from '../mail/mailer.js';
 import { authConfigFromEnv } from './config.js';
@@ -88,7 +93,7 @@ describe.skipIf(!hasDatabase)('sensitive values never reach the API log', () => 
     });
     const email = `log-${randomUUID().slice(0, 8)}@example.com`;
     const name = `Logged Delegate ${randomUUID().slice(0, 6)}`;
-    await prisma.delegate.create({ data: { eventId, name, email, attendanceFormat: 'physical' } });
+    await createRegisteredIdentity(prisma, eventId, email, { name });
 
     const agent = request(app);
     // Validation failure (422), link request, wrong code, link verification, me, sign-out.

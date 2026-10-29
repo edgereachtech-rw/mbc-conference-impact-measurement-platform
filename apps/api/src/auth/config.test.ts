@@ -108,6 +108,18 @@ describe('auth configuration', () => {
     expect(authConfigFromEnv({ NODE_ENV: 'development', TRUST_PROXY: '' }).trustProxy).toBe(false);
   });
 
+  it('allows test registrations to sign in only through an explicit non-production setting (OQ-27)', () => {
+    expect(authConfigFromEnv({ NODE_ENV: 'test' }).allowTestRegistrations).toBe(false);
+    expect(
+      authConfigFromEnv({ NODE_ENV: 'development', AUTH_ALLOW_TEST_REGISTRATIONS: 'true' })
+        .allowTestRegistrations,
+    ).toBe(true);
+    expect(authConfigFromEnv(PRODUCTION).allowTestRegistrations).toBe(false);
+    expect(() =>
+      authConfigFromEnv({ ...PRODUCTION, AUTH_ALLOW_TEST_REGISTRATIONS: 'true' }),
+    ).toThrow(/AUTH_ALLOW_TEST_REGISTRATIONS must not be set in production/);
+  });
+
   it('reports every problem of a contradictory production environment at once', () => {
     expect(() =>
       authConfigFromEnv({

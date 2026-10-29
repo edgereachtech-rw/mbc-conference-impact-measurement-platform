@@ -10,6 +10,7 @@ const { createApp } = await import('./app.js');
 const { authConfigFromEnv } = await import('./auth/config.js');
 const { getLogger } = await import('./lib/logger.js');
 const { mailConfigFromEnv } = await import('./mail/config.js');
+const { importConfigFromEnv } = await import('./imports/config.js');
 
 const logger = getLogger();
 const port = Number(process.env.PORT ?? 4000);
@@ -20,6 +21,7 @@ const port = Number(process.env.PORT ?? 4000);
 try {
   authConfigFromEnv();
   mailConfigFromEnv();
+  importConfigFromEnv();
 } catch (error) {
   logger.fatal(
     { reason: error instanceof Error ? error.message : 'unknown' },

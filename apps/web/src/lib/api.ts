@@ -56,3 +56,19 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
 export function apiInternalUrl(): string {
   return (process.env.API_INTERNAL_URL ?? 'http://127.0.0.1:4000').replace(/\/+$/, '');
 }
+
+/**
+ * Browser-side multipart upload (registration import files). The browser sets the multipart
+ * boundary itself, so no content-type header is given; the session cookie and Origin travel as
+ * with JSON calls.
+ */
+export async function apiUpload<T>(path: string, body: FormData): Promise<T> {
+  const res = await fetch(`/api/v1${path}`, {
+    method: 'POST',
+    body,
+    credentials: 'same-origin',
+    headers: { accept: 'application/json' },
+  });
+  if (!res.ok) throw await parseError(res);
+  return (await res.json()) as T;
+}

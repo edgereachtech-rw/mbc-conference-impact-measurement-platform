@@ -16,6 +16,8 @@ import { withoutBlankValues } from '../lib/env.js';
  *   COOKIE_SECURE               "true"/"false"; false only when NODE_ENV is development or test
  *   SESSION_SECRET              keys the hashes of client addresses and email identities kept in
  *                               the sign-in attempt ledger and the audit log (32+ chars in production)
+ *   AUTH_ALLOW_TEST_REGISTRATIONS "true" lets registrations with status test sign in (development
+ *                               and staging rehearsals, OQ-27). Refused in production; never a default.
  *   TRUST_PROXY                 Express `trust proxy` value naming the reverse proxy network
  *                               (e.g. "uniquelocal" for Caddy on the Docker network); "false" or
  *                               unset trusts nobody, so forwarded headers are ignored. Required in
@@ -34,6 +36,7 @@ const schema = z.object({
   NODE_ENV: z.string().optional(),
   SESSION_SECRET: z.string().optional(),
   TRUST_PROXY: z.string().optional(),
+  AUTH_ALLOW_TEST_REGISTRATIONS: z.enum(['true', 'false']).optional(),
 });
 
 export interface AuthConfig {
@@ -53,6 +56,8 @@ export interface AuthConfig {
   /** Express `trust proxy` value, or false to ignore forwarded headers entirely. */
   trustProxy: string | false;
   production: boolean;
+  /** Registrations with status test may sign in (never in production; D8 item 1, OQ-27). */
+  allowTestRegistrations: boolean;
 }
 
 export const COOKIE_NAME = 'mbc_session';
@@ -129,6 +134,12 @@ export function authConfigFromEnv(env: NodeJS.ProcessEnv = process.env): AuthCon
     );
   }
 
+  // Test registrations: an explicit non-production allowance only (OQ-27, D8 item 1).
+  const allowTestRegistrations = e.AUTH_ALLOW_TEST_REGISTRATIONS === 'true';
+  if (production && allowTestRegistrations) {
+    problems.push('AUTH_ALLOW_TEST_REGISTRATIONS must not be set in production');
+  }
+
   if (problems.length > 0) {
     throw new Error(`invalid auth configuration: ${problems.join('; ')}`);
   }
@@ -147,6 +158,7 @@ export function authConfigFromEnv(env: NodeJS.ProcessEnv = process.env): AuthCon
     hashSecret,
     trustProxy,
     production,
+    allowTestRegistrations,
   };
 }
 

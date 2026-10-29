@@ -32,3 +32,47 @@ export function isUniqueViolation(error: unknown): boolean {
     code === 'P2002' || code === '23505' || /unique constraint|duplicate key/i.test(message ?? '')
   );
 }
+
+/**
+ * A registered person as an import would create them (D8 item 1): a platform identity whose
+ * current address is `email`, plus a registration in the event linked to that identity.
+ */
+export async function createRegisteredIdentity(
+  prisma: PrismaClient,
+  eventId: string,
+  email: string,
+  options: {
+    name?: string;
+    registrationStatus?: 'valid' | 'cancelled' | 'duplicate' | 'test';
+    attendanceFormat?: 'physical' | 'virtual';
+    userAccountId?: string | null;
+  } = {},
+) {
+  const normalised = email.trim().toLowerCase();
+  const identity = await prisma.delegateIdentity.create({
+    data: {
+      displayName: options.name ?? `Delegate ${normalised}`,
+      userAccountId: options.userAccountId ?? null,
+      emails: { create: { emailNormalised: normalised, kind: 'current', evidence: 'import' } },
+    },
+  });
+  const delegate = await prisma.delegate.create({
+    data: {
+      eventId,
+      identityId: identity.id,
+      name: options.name ?? `Delegate ${normalised}`,
+      email: normalised,
+      attendanceFormat: options.attendanceFormat ?? 'physical',
+      registrationStatus: options.registrationStatus ?? 'valid',
+      userAccountId: options.userAccountId ?? null,
+    },
+  });
+  return { identity, delegate };
+}
+
+/** Removes an identity created by createRegisteredIdentity once its registrations are gone. */
+export async function deleteIdentity(prisma: PrismaClient, identityId: string) {
+  await prisma.identityEmail.deleteMany({ where: { identityId } });
+  await prisma.delegate.deleteMany({ where: { identityId } });
+  await prisma.delegateIdentity.delete({ where: { id: identityId } }).catch(() => undefined);
+}

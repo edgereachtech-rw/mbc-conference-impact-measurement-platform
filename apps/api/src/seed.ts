@@ -111,10 +111,29 @@ export async function seed(prisma: PrismaClient, options: SeedOptions = {}): Pro
         where: { eventId: event.id, email, registrationStatus: 'test' },
         select: { id: true },
       });
+      // Sign-in eligibility is identity-based (D8 item 1): each test delegate owns an identity whose
+      // current address is the registration email, exactly as a committed import would create it.
+      const address = await prisma.identityEmail.findUnique({
+        where: { emailNormalised: email },
+        select: { identityId: true, kind: true },
+      });
+      let identityId = address?.kind === 'current' ? address.identityId : null;
+      if (!identityId) {
+        if (address)
+          throw new Error(`seed: ${email} is reserved by an identity as ${address.kind}`);
+        const identity = await prisma.delegateIdentity.create({
+          data: {
+            displayName: data.name,
+            emails: { create: { emailNormalised: email, kind: 'current', evidence: 'import' } },
+          },
+          select: { id: true },
+        });
+        identityId = identity.id;
+      }
       if (existing) {
-        await prisma.delegate.update({ where: { id: existing.id }, data });
+        await prisma.delegate.update({ where: { id: existing.id }, data: { ...data, identityId } });
       } else {
-        await prisma.delegate.create({ data: { eventId: event.id, ...data } });
+        await prisma.delegate.create({ data: { eventId: event.id, identityId, ...data } });
       }
       testDelegates++;
     }

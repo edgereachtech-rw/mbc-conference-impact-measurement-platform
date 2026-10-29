@@ -3,32 +3,47 @@ import { describe, expect, it } from 'vitest';
 import {
   canManageStaff,
   canReadDelegate,
+  canRunImports,
   canViewSessionFeedback,
   canWriteDelegate,
+  hasRole,
+  isRetiredRole,
   mustAnonymiseFeedback,
   type Principal,
 } from './policies.js';
 
-const p = (role: Principal['role'], delegateId: string | null = null): Principal => ({
+const p = (role: Principal['role'], ...delegateIds: string[]): Principal => ({
   userId: `user-${role}`,
   role,
-  delegateId,
+  identityId: delegateIds.length > 0 ? `identity-${role}` : null,
+  delegateIds,
+  delegateId: delegateIds[0] ?? null,
 });
 
 describe('authorization policies (backlog section 2, E3-6, E8-10)', () => {
-  it('delegates read only their own record; staff read roles read any; speakers none', () => {
-    expect(canReadDelegate(p('delegate', 'd1'), 'd1')).toBe(true);
+  it('delegates read every record of their own identity and nothing else; admins read any; speakers none', () => {
+    expect(canReadDelegate(p('delegate', 'd1', 'd3'), 'd1')).toBe(true);
+    expect(canReadDelegate(p('delegate', 'd1', 'd3'), 'd3')).toBe(true);
     expect(canReadDelegate(p('delegate', 'd1'), 'd2')).toBe(false);
+    expect(canReadDelegate(p('delegate'), 'd1')).toBe(false);
     expect(canReadDelegate(p('admin'), 'd2')).toBe(true);
-    expect(canReadDelegate(p('analyst'), 'd2')).toBe(true);
-    expect(canReadDelegate(p('support'), 'd2')).toBe(true);
     expect(canReadDelegate(p('speaker'), 'd2')).toBe(false);
   });
 
-  it('only admin and support may correct delegate records; analysts are read-only', () => {
+  it('retired roles (analyst, support) are granted nothing (D8 item 7)', () => {
+    for (const role of ['analyst', 'support'] as const) {
+      expect(isRetiredRole(role)).toBe(true);
+      expect(canReadDelegate(p(role), 'd2'), role).toBe(false);
+      expect(canWriteDelegate(p(role)), role).toBe(false);
+      expect(canManageStaff(p(role)), role).toBe(false);
+      expect(canRunImports(p(role)), role).toBe(false);
+      expect(hasRole(p(role), [role]), role).toBe(false);
+    }
+    expect(isRetiredRole('admin')).toBe(false);
+  });
+
+  it('only admins may correct delegate records', () => {
     expect(canWriteDelegate(p('admin'))).toBe(true);
-    expect(canWriteDelegate(p('support'))).toBe(true);
-    expect(canWriteDelegate(p('analyst'))).toBe(false);
     expect(canWriteDelegate(p('speaker'))).toBe(false);
     expect(canWriteDelegate(p('delegate', 'd1'))).toBe(false);
   });
@@ -47,9 +62,7 @@ describe('authorization policies (backlog section 2, E3-6, E8-10)', () => {
     expect(canViewSessionFeedback(p('speaker'), other)).toBe(false);
     expect(mustAnonymiseFeedback(p('speaker'))).toBe(true);
     expect(canViewSessionFeedback(p('admin'), other)).toBe(true);
-    expect(canViewSessionFeedback(p('analyst'), other)).toBe(true);
     expect(mustAnonymiseFeedback(p('admin'))).toBe(false);
-    expect(canViewSessionFeedback(p('support'), scope)).toBe(false);
     expect(canViewSessionFeedback(p('delegate', 'd1'), scope)).toBe(false);
   });
 });

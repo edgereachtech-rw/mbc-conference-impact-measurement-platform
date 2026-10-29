@@ -6,7 +6,12 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { createApp } from '../app.js';
 import type { PrismaClient } from '../db.js';
-import { createTestEvent, hasDatabase, testPrisma } from '../db/test-helpers.js';
+import {
+  createRegisteredIdentity,
+  createTestEvent,
+  hasDatabase,
+  testPrisma,
+} from '../db/test-helpers.js';
 import { MemoryMailer } from '../mail/mailer.js';
 import { authConfigFromEnv } from './config.js';
 import { AttemptLedger, EMAIL_WINDOW_MS } from './rate-limit.js';
@@ -73,9 +78,7 @@ describe.skipIf(!hasDatabase)('sign-in rate limiting (ledger in PostgreSQL)', ()
   });
 
   async function registeredDelegate(email: string) {
-    return prisma.delegate.create({
-      data: { eventId, name: `Delegate ${email}`, email, attendanceFormat: 'physical' },
-    });
+    return (await createRegisteredIdentity(prisma, eventId, email)).delegate;
   }
 
   function requestLink(agent: Agent, email: string, forwardedFor?: string) {

@@ -1,6 +1,10 @@
 import { z } from 'zod';
 
-/** Roles as stored in user_account.role (backlog section 2). */
+/**
+ * Roles as stored in user_account.role (backlog section 2). `analyst` and `support` are retired
+ * (decisions of 2026-10-29, D8 item 7): they remain in the enum only until no account carries
+ * them, cannot authenticate and cannot be assigned.
+ */
 export const userRoles = ['delegate', 'admin', 'analyst', 'support', 'speaker'] as const;
 export type UserRole = (typeof userRoles)[number];
 
@@ -97,7 +101,8 @@ export const delegatePatchSchema = z
   .refine((v) => Object.keys(v).length > 0, { error: 'Nothing to update' });
 export type DelegatePatch = z.infer<typeof delegatePatchSchema>;
 
-export const staffRoles = ['admin', 'analyst', 'support', 'speaker'] as const;
+/** Staff roles an admin may create or assign (E3-9: no analyst or support role). */
+export const staffRoles = ['admin', 'speaker'] as const;
 
 export const staffCreateSchema = z.object({
   email: emailSchema,

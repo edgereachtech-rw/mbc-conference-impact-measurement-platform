@@ -95,7 +95,7 @@ export function createAuthMiddleware(auth: AuthService, config: AuthConfig) {
       next(new HttpError(401, 'unauthenticated', 'Sign in to continue.'));
       return;
     }
-    if (session.principal.role !== 'delegate' || !session.principal.delegateId) {
+    if (session.principal.role !== 'delegate' || session.principal.delegateIds.length === 0) {
       next(new HttpError(403, 'forbidden', 'This area is for registered delegates.'));
       return;
     }

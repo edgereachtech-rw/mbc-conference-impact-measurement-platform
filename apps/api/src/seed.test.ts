@@ -45,6 +45,15 @@ describe.skipIf(!hasDatabase)('seed', () => {
       where: { eventId: event.id, registrationStatus: 'test' },
     });
     expect(testDelegates).toBe(TEST_DELEGATE_COUNT);
+    // Each test delegate owns an identity whose current address is the registration email.
+    const withIdentity = await prisma.delegate.count({
+      where: {
+        eventId: event.id,
+        registrationStatus: 'test',
+        identity: { emails: { some: { kind: 'current' } } },
+      },
+    });
+    expect(withIdentity).toBe(TEST_DELEGATE_COUNT);
   });
 
   it('can run twice without creating duplicates', async () => {

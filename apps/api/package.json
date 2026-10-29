@@ -17,7 +17,8 @@
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:seed": "tsx src/seed.ts",
-    "mail:test": "tsx src/cli/mail-test.ts"
+    "mail:test": "tsx src/cli/mail-test.ts",
+    "identity:backfill": "tsx src/cli/identity-backfill.ts"
   },
   "dependencies": {
     "@mbc/shared": "workspace:*",
@@ -25,7 +26,9 @@
     "@prisma/client": "7.10.1",
     "@sentry/node": "11.10.0",
     "dotenv": "18.0.9",
+    "exceljs": "4.4.0",
     "express": "5.3.0",
+    "multer": "2.5.0",
     "nodemailer": "10.2.1",
     "pg": "8.23.1",
     "pg-boss": "12.38.0",
@@ -36,6 +39,7 @@
   },
   "devDependencies": {
     "@types/express": "5.0.6",
+    "@types/multer": "2.3.0",
     "@types/node": "26.6.5",
     "@types/nodemailer": "8.0.2",
     "@types/pg": "8.23.1",
