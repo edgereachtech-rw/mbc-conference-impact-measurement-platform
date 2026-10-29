@@ -113,7 +113,10 @@ describe('AdminOverview', () => {
     expect(within(events).getByText('ITTEC 2026')).toBeTruthy();
     expect(within(events).getByText('Active')).toBeTruthy();
     expect(within(events).getByText('Archived')).toBeTruthy();
-    expect(within(events).getAllByRole('link', { name: 'Import registrations' })).toHaveLength(1); // not for archived
+    expect(within(events).getAllByRole('link', { name: 'Open event' })).toHaveLength(2);
+    expect(
+      within(events).getAllByRole('link', { name: 'Open event' })[0]?.getAttribute('href'),
+    ).toBe('/admin/events/e1');
 
     const recent = screen.getByRole('table', { name: 'Recent imports' });
     expect(within(recent).getByText('reg.csv')).toBeTruthy();

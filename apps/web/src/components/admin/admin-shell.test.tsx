@@ -27,12 +27,9 @@ describe('AdminShell', () => {
     expect(
       within(sidebar).getByRole('link', { name: 'Overview' }).getAttribute('aria-current'),
     ).toBeNull();
-    expect(within(sidebar).queryByRole('link', { name: 'Delegates' })).toBeNull(); // coming soon: not a link
+    expect(within(sidebar).queryByRole('link', { name: 'Staff' })).toBeNull(); // coming soon: not a link
     expect(
-      within(sidebar)
-        .getByText('Delegates')
-        .closest('[aria-disabled]')
-        ?.getAttribute('aria-disabled'),
+      within(sidebar).getByText('Staff').closest('[aria-disabled]')?.getAttribute('aria-disabled'),
     ).toBe('true');
     expect(screen.getByText('Olu Admin')).toBeTruthy();
     expect(screen.getByText('content')).toBeTruthy();

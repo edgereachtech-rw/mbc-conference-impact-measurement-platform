@@ -197,14 +197,12 @@ export function AdminOverview() {
                         </StatusPill>
                       </td>
                       <td className="px-4 py-3 text-right">
-                        {ev.status !== 'archived' ? (
-                          <Link
-                            href="/admin/imports"
-                            className="text-sm font-semibold text-corp-green-text hover:underline"
-                          >
-                            Import registrations
-                          </Link>
-                        ) : null}
+                        <Link
+                          href={`/admin/events/${ev.id}`}
+                          className="text-sm font-semibold text-corp-green-text hover:underline"
+                        >
+                          Open event
+                        </Link>
                       </td>
                     </tr>
                   ))}

@@ -12,6 +12,7 @@ import type { Mailer } from '../mail/mailer.js';
 import { authRouter } from './auth.js';
 import { delegateAccountRouter, type AccountStatusHooks } from './delegate-accounts.js';
 import { delegateRouter } from './delegates.js';
+import { eventDelegateRouter } from './event-delegates.js';
 import { eventRouter } from './events.js';
 import { importRouter } from './imports.js';
 import { invitationRouter } from './invitations.js';
@@ -48,6 +49,7 @@ export function apiRouter(deps: ApiDeps): Router {
   router.use(staffRouter({ prisma: deps.prisma, auth: deps.auth, middleware }));
   router.use(importRouter({ imports: deps.imports, resolver: deps.resolver, middleware }));
   router.use(eventRouter({ prisma: deps.prisma, middleware }));
+  router.use(eventDelegateRouter({ prisma: deps.prisma, middleware }));
   router.use(
     meEventsRouter({ prisma: deps.prisma, config: deps.config, middleware, now: deps.now }),
   );

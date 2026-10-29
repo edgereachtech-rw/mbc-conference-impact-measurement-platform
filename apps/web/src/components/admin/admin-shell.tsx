@@ -2,10 +2,10 @@
 
 import {
   BarChart3Icon,
+  CalendarDaysIcon,
   LayoutDashboardIcon,
   ShieldCheckIcon,
   UploadIcon,
-  UsersIcon,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -25,10 +25,9 @@ const NAV: NavItem[] = [
   { href: '/admin', label: 'Overview', icon: <LayoutDashboardIcon aria-hidden="true" /> },
   { href: '/admin/imports', label: 'Imports', icon: <UploadIcon aria-hidden="true" /> },
   {
-    href: '/admin/delegates',
-    label: 'Delegates',
-    icon: <UsersIcon aria-hidden="true" />,
-    soon: true,
+    href: '/admin/events',
+    label: 'Events',
+    icon: <CalendarDaysIcon aria-hidden="true" />,
   },
   {
     href: '/admin/staff',

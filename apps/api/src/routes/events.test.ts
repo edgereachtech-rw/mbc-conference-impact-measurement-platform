@@ -76,5 +76,25 @@ describe.skipIf(!hasDatabase)('GET /events (admin import screen)', () => {
     expect(Object.keys(mine ?? {}).sort()).toEqual(
       ['endsOn', 'format', 'id', 'name', 'slug', 'startsOn', 'status', 'timezone'].sort(),
     );
+    // One event by id, with theme and location for the detail page; unknown ids are 404.
+    const one = await request(server)
+      .get(`/api/v1/events/${eventId}`)
+      .set('Cookie', cookies.admin ?? '');
+    expect(one.status).toBe(200);
+    expect(one.body.event).toMatchObject({ id: eventId, status: 'draft', theme: null });
+    expect(
+      (
+        await request(server)
+          .get(`/api/v1/events/${randomUUID()}`)
+          .set('Cookie', cookies.admin ?? '')
+      ).status,
+    ).toBe(404);
+    expect(
+      (
+        await request(server)
+          .get(`/api/v1/events/${eventId}`)
+          .set('Cookie', cookies.delegate ?? '')
+      ).status,
+    ).toBe(403);
   });
 });
