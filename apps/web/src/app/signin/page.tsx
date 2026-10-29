@@ -4,7 +4,6 @@ import { redirect } from 'next/navigation';
 
 import { SignInForm } from '@/components/auth/sign-in-form';
 import { PageContainer } from '@/components/layout/page-container';
-import { SectionHeading } from '@/components/section-heading';
 import { event } from '@/config/event';
 import { apiInternalUrl } from '@/lib/api';
 import { getSession } from '@/lib/session';
@@ -42,25 +41,36 @@ export default async function SignInPage({ searchParams }: SignInPageProps) {
   const initialEmail = await invitedEmail(invite);
 
   return (
-    <PageContainer size="narrow" className="flex flex-1 flex-col gap-6">
-      <SectionHeading
-        as="h1"
-        eyebrow={event.shortName}
-        title="Sign in"
-        description="For registered delegates and the conference team. Use the email address you registered with."
-      />
-      <div className="rounded-lg border border-brand-line bg-card p-4 shadow-card md:p-6">
-        {invite && !initialEmail ? (
-          <p className="mb-4 text-sm text-brand-muted" role="note">
-            This invitation link is no longer valid. Sign in with the email address you registered
-            with; a new link and code will be sent to it.
+    <PageContainer size="narrow" className="flex flex-1 flex-col justify-center gap-6">
+      <div className="mx-auto w-full max-w-md space-y-6">
+        <div className="space-y-2 text-center">
+          <p className="font-display text-eyebrow tracking-[0.14em] text-brand-secondary uppercase">
+            {event.shortName}
           </p>
-        ) : null}
-        <SignInForm
-          next={safeNext}
-          supportEmail={event.contactEmail}
-          initialEmail={initialEmail ?? undefined}
-        />
+          <h1 className="text-h1">{initialEmail ? 'Activate your account' : 'Sign in'}</h1>
+          <p className="text-base text-brand-muted">
+            {initialEmail
+              ? 'Your invitation is ready. Confirm your email below and we will send a one-time link and code.'
+              : 'No password needed. We email a secure link and a one-time code to the address you registered with.'}
+          </p>
+        </div>
+        <div className="rounded-lg border border-brand-line bg-card p-5 shadow-card md:p-6">
+          {invite && !initialEmail ? (
+            <p className="mb-4 text-sm text-brand-muted" role="note">
+              This invitation link is no longer valid. Sign in with the email address you registered
+              with; a new link and code will be sent to it.
+            </p>
+          ) : null}
+          <SignInForm
+            next={safeNext}
+            supportEmail={event.contactEmail}
+            initialEmail={initialEmail ?? undefined}
+          />
+        </div>
+        <p className="text-center text-xs text-brand-muted">
+          For registered delegates and the conference team. Nothing is created for an email that is
+          not registered.
+        </p>
       </div>
     </PageContainer>
   );

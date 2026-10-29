@@ -20,11 +20,11 @@ export default async function ImportsPage() {
       <AdminPageHeader
         breadcrumbs={[{ label: 'Overview', href: '/admin' }, { label: 'Imports' }]}
         title="Registration imports"
-        description="Import an event's registered delegates from a CSV or XLSX export: map the columns, review the preview, then confirm. Attendance is never imported."
+        description="Bring an event's registrations in from a CSV or XLSX export: map the columns, review the preview, then confirm. Attendance is never imported."
       />
       <AdminContent>
         {access === 'allowed' ? (
-          <div className="rounded-none border border-corp-line bg-white p-4 font-sans text-brand-text md:p-6">
+          <div className="rounded-none border border-corp-line bg-white p-4 md:p-6">
             <ImportWizard />
           </div>
         ) : (

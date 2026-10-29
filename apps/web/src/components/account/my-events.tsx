@@ -1,9 +1,9 @@
 'use client';
 
 import type { MyEvent, MyEventsResponse } from '@mbc/shared';
-import { Loader2Icon } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
+import { consoleButton, StatePanel } from '@/components/console/page';
 import { apiFetch, ApiError } from '@/lib/api';
 
 import { EventCardGrid } from './event-cards';
@@ -82,47 +82,45 @@ export function MyEventsStatus({
   contactEmail: string;
   onRetry: () => void;
 }) {
-  if (state.kind === 'loading') {
-    return (
-      <p className="flex items-center gap-2 text-sm text-corp-muted" role="status">
-        <Loader2Icon className="size-4 animate-spin" aria-hidden="true" /> Loading your events…
-      </p>
-    );
-  }
+  if (state.kind === 'loading') return <StatePanel kind="loading" title="Loading your events…" />;
   if (state.kind === 'error') {
     return (
-      <div role="alert" className="rounded-none border border-corp-line bg-white p-5">
-        <p className="font-semibold text-corp-ink">Events unavailable</p>
-        <p className="mt-1 text-sm text-corp-text">{state.message}</p>
-        {state.requestId ? (
-          <p className="mt-1 text-xs text-corp-muted">Request id {state.requestId}</p>
-        ) : null}
-        <button
-          type="button"
-          onClick={onRetry}
-          className="mt-4 inline-flex min-h-tap items-center rounded-none border border-corp-green px-5 text-sm font-semibold text-corp-green-text hover:bg-corp-green-soft"
-        >
-          Try again
-        </button>
-      </div>
+      <StatePanel
+        kind="error"
+        title="Events unavailable"
+        description={state.message}
+        requestId={state.requestId}
+        action={
+          <button
+            type="button"
+            onClick={onRetry}
+            className={consoleButton({ variant: 'secondary' })}
+          >
+            Try again
+          </button>
+        }
+      />
     );
   }
   if (state.events.length === 0) {
     return (
-      <div className="rounded-none border border-dashed border-corp-line bg-white p-5">
-        <p className="font-semibold text-corp-ink">No events yet</p>
-        <p className="mt-1 text-sm text-corp-text">
-          No registration is linked to your account at the moment. If you registered for a
-          conference and expected to see it here, write to{' '}
-          <a
-            href={`mailto:${contactEmail}`}
-            className="font-semibold text-corp-green-text underline"
-          >
-            {contactEmail}
-          </a>
-          .
-        </p>
-      </div>
+      <StatePanel
+        kind="empty"
+        title="No events yet"
+        description={
+          <>
+            No registration is linked to your account at the moment. If you registered for a
+            conference and expected to see it here, write to{' '}
+            <a
+              href={`mailto:${contactEmail}`}
+              className="font-semibold text-corp-green-text underline"
+            >
+              {contactEmail}
+            </a>
+            .
+          </>
+        }
+      />
     );
   }
   return null;

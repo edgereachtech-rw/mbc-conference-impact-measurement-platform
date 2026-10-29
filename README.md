@@ -157,6 +157,10 @@ prints peer warnings at install time that can be ignored until those plugins upd
 
 ## Design foundation (apps/web)
 
+Signed-in screens (admin console and delegate area) share one console system in
+`apps/web/src/components/console/` (shell, page header, panels, state panels, buttons); see
+`docs/design-tokens.md`, "Console system". Public pages keep the ITTEC event identity.
+
 The web app carries the ITTEC brand extracted from the live conference website. The full token
 table, contrast results and asset notes are in [docs/design-tokens.md](docs/design-tokens.md).
 

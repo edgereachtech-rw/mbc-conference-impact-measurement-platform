@@ -66,7 +66,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
       <body className="flex min-h-dvh flex-col">
         <SiteHeader session={session} />
         <div className="flex flex-1 flex-col">{children}</div>
-        <SiteFooter />
+        <SiteFooter session={session} />
         <Toaster position="top-center" />
       </body>
     </html>

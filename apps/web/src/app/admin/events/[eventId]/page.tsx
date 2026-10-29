@@ -5,6 +5,7 @@ import { notFound } from 'next/navigation';
 
 import { EventWorkspace } from '@/components/admin/event-workspace';
 import { AdminContent, AdminPageHeader, StatusPill } from '@/components/admin/page-header';
+import { consoleButton } from '@/components/console/page';
 import { apiInternalUrl } from '@/lib/api';
 import { importsAccess } from '@/lib/imports-access';
 import type { EventSummary } from '@/lib/imports';
@@ -57,10 +58,7 @@ export default async function EventPage({ params }: { params: Promise<{ eventId:
         description={event?.theme ?? undefined}
         actions={
           event && event.status !== 'archived' ? (
-            <Link
-              href="/admin/imports"
-              className="inline-flex min-h-tap items-center justify-center rounded-none bg-corp-green px-5 text-sm font-semibold text-white hover:bg-corp-ink focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-corp-green"
-            >
+            <Link href="/admin/imports" className={consoleButton({ variant: 'accent' })}>
               Import registrations
             </Link>
           ) : null

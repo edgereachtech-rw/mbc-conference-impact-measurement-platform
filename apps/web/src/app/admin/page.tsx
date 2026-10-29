@@ -3,6 +3,7 @@ import Link from 'next/link';
 
 import { AdminOverview } from '@/components/admin/admin-overview';
 import { AdminContent, AdminPageHeader } from '@/components/admin/page-header';
+import { consoleButton } from '@/components/console/page';
 import { importsAccess } from '@/lib/imports-access';
 import { getSession } from '@/lib/session';
 
@@ -16,14 +17,12 @@ export default async function AdminPage() {
   return (
     <>
       <AdminPageHeader
-        title={`Welcome, ${session?.displayName ?? ''}`}
-        description="Conference operations for the organiser team: registrations, accounts, audit and, later, the dashboard."
+        eyebrow="Overview"
+        title={`Welcome back, ${session?.displayName ?? ''}`}
+        description="Registrations, communications and release readiness for your events, in one place."
         actions={
           access === 'allowed' ? (
-            <Link
-              href="/admin/imports"
-              className="inline-flex min-h-tap items-center justify-center rounded-none bg-corp-green px-5 text-sm font-semibold text-white hover:bg-corp-ink focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-corp-green"
-            >
+            <Link href="/admin/imports" className={consoleButton({ variant: 'accent' })}>
               New import
             </Link>
           ) : null

@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react';
 import { apiFetch } from '@/lib/api';
 import { describeError, type EventSummary } from '@/lib/imports';
 
-import { StatusPill } from './page-header';
+import { pageSlice, StatusPill, TablePagination } from '@/components/console/page';
 
 type State =
   | { kind: 'loading' }
@@ -29,6 +29,8 @@ const formatLabel: Record<EventSummary['format'], string> = {
 export function EventsList() {
   const [state, setState] = useState<State>({ kind: 'loading' });
   const [attempt, setAttempt] = useState(0);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   useEffect(() => {
     let cancelled = false;
@@ -78,6 +80,7 @@ export function EventsList() {
     );
   }
 
+  const visible = pageSlice(state.events, page, pageSize);
   return (
     <div className="overflow-hidden border border-corp-line bg-white">
       <table className="w-full text-sm" aria-label="Events">
@@ -101,7 +104,7 @@ export function EventsList() {
           </tr>
         </thead>
         <tbody className="divide-y divide-corp-line">
-          {state.events.map((ev) => (
+          {visible.map((ev) => (
             <tr key={ev.id}>
               <td className="px-4 py-3">
                 <Link
@@ -137,6 +140,17 @@ export function EventsList() {
           ))}
         </tbody>
       </table>
+      <TablePagination
+        page={page}
+        pageSize={pageSize}
+        total={state.events.length}
+        noun="events"
+        onPageChange={setPage}
+        onPageSizeChange={(size) => {
+          setPageSize(size);
+          setPage(1);
+        }}
+      />
     </div>
   );
 }

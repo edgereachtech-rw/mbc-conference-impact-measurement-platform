@@ -50,6 +50,12 @@
   --corp-green-soft: #ecfdf5; /* emerald-50: tinted panels */
   --corp-green-line: #a7f3d0; /* emerald-200: tinted borders */
 
+  /* Console accent (yellow) used with the navy console palette below */
+  --corp-accent: #ffb703; /* amber: rules, active navigation, call-to-action buttons */
+  --corp-accent-deep: #efa506; /* amber hover */
+  --corp-accent-soft: #fff4d6; /* amber tint: active sidebar item, positive pills, tinted panels */
+  --corp-accent-text: #7a4f00; /* amber-derived text that passes AA on white */
+
   /* shadcn/ui semantic variables mapped onto the brand */
   --background: var(--brand-surface-raised);
   --foreground: var(--brand-text);
@@ -154,6 +160,10 @@
   --color-corp-green-text: var(--corp-green-text);
   --color-corp-green-soft: var(--corp-green-soft);
   --color-corp-green-line: var(--corp-green-line);
+  --color-corp-accent: var(--corp-accent);
+  --color-corp-accent-deep: var(--corp-accent-deep);
+  --color-corp-accent-soft: var(--corp-accent-soft);
+  --color-corp-accent-text: var(--corp-accent-text);
 
   /* shadcn/ui colour utilities */
   --color-sidebar-ring: var(--sidebar-ring);
@@ -203,6 +213,7 @@
   --shadow-elevated: 0 13px 35px rgb(0 0 0 / 0.1);
   --shadow-button: 0 8px 6px -6px rgb(50 51 51 / 0.4);
   --shadow-icon: 0 2px 10px rgb(52 61 71 / 0.2);
+  --shadow-panel: 0 1px 2px rgb(15 23 42 / 0.05);
 
   /* Spacing additions (base scale stays Tailwind's 4px grid) */
   --spacing-gutter: 1rem; /* page side padding on phones */
@@ -235,4 +246,43 @@
     outline: 3px solid var(--ring);
     outline-offset: 2px;
   }
+}
+
+/*
+ * Console system: everything signed-in (admin console and delegate area) sits in the M.Bryan
+ * corporate identity: Inter, slate ink, emerald actions, sharp edges. The class is set by the
+ * console shell, header and footer so shadcn controls inside inherit the square radius and the
+ * emerald focus ring without per-component overrides.
+ */
+.console-area {
+  /* Console palette: dark blue, yellow and white. The corp-* utilities are re-pointed here so the
+     console reads navy where the organiser band reads emerald. */
+  --corp-ink: #001d42; /* deep navy: headings, hover of primary buttons, sidebar */
+  --corp-ink-deep: #00122b;
+  --corp-green: #002a5e; /* navy: primary buttons, outlines */
+  --corp-green-bright: #0b3d82;
+  --corp-green-text: #002a5e; /* navy links and values */
+  --corp-green-soft: #fff4d6; /* amber tint */
+  --corp-green-line: #ffd666;
+  --corp-surface: #f3f6fb; /* pale blue-grey page background */
+  --corp-line: #d9e0ec;
+  --corp-text: #323333;
+  --corp-muted: #5b6672;
+  --ring: var(--corp-accent);
+  --radius: 0;
+  --primary: var(--corp-green);
+  --primary-foreground: #ffffff;
+  --accent: var(--corp-green-soft);
+  --accent-foreground: var(--corp-green-text);
+  --border: var(--corp-line);
+  --input: var(--corp-line);
+  --muted: var(--corp-surface);
+  --muted-foreground: var(--corp-muted);
+  --foreground: var(--corp-text);
+}
+.console-area h1,
+.console-area h2,
+.console-area h3,
+.console-area h4 {
+  @apply font-corporate tracking-tight text-corp-ink;
 }

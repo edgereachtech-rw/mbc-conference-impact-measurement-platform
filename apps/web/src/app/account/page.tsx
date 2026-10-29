@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation';
 
 import { DelegateDashboard } from '@/components/account/delegate-dashboard';
 import { AdminContent, AdminPageHeader } from '@/components/admin/page-header';
+import { consoleButton } from '@/components/console/page';
 import { event } from '@/config/event';
 import { countdownLine } from '@/lib/my-events';
 import { loadMyEvents } from '@/lib/my-events-server';
@@ -24,6 +25,7 @@ export default async function AccountPage() {
   return (
     <>
       <AdminPageHeader
+        eyebrow="Dashboard"
         title={`Welcome, ${session.displayName}`}
         description={
           nextEvent
@@ -34,7 +36,7 @@ export default async function AccountPage() {
           nextEvent ? (
             <Link
               href={`/account/events/${nextEvent.id}`}
-              className="inline-flex min-h-tap items-center justify-center rounded-none bg-corp-green px-5 text-sm font-semibold text-white hover:bg-corp-ink focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-corp-green"
+              className={consoleButton({ variant: 'accent' })}
             >
               Open next event
             </Link>

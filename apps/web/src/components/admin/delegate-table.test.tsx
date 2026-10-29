@@ -90,6 +90,11 @@ describe('DelegateTable', () => {
     expect(patch?.url).toBe('/api/v1/delegates/d2');
     expect(JSON.parse(String(patch?.init?.body))).toEqual({ registrationStatus: 'cancelled' });
     expect((await screen.findByRole('status')).textContent).toMatch(/Status set to cancelled/);
+
+    expect(calls[0]?.url).toMatch(/pageSize=10/); // 10 rows by default
+    await user.selectOptions(screen.getByLabelText('Rows per page'), '50');
+    expect(calls[calls.length - 1]?.url).toMatch(/pageSize=50&?/);
+    expect(calls[calls.length - 1]?.url).toMatch(/page=1/);
   });
 
   it('selects delegates with checkboxes and emails exactly those through the composer', async () => {

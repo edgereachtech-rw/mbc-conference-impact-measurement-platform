@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useId, useRef, useState } from 'react';
 
+import { consoleButton } from '@/components/console/page';
 import { NativeSelect } from '@/components/imports/native-select';
 import { apiFetch } from '@/lib/api';
 import { describeError } from '@/lib/imports';
@@ -393,11 +394,7 @@ export function MessageComposer({
 
         <footer className="flex flex-col gap-2 border-t border-corp-line px-4 py-3 sm:flex-row sm:items-center sm:justify-end md:px-6">
           {stage.kind === 'sent' ? (
-            <button
-              type="button"
-              onClick={onClose}
-              className="inline-flex min-h-tap items-center justify-center rounded-none bg-corp-ink px-5 text-sm font-semibold text-white hover:bg-corp-green"
-            >
+            <button type="button" onClick={onClose} className={consoleButton({ variant: 'dark' })}>
               Done
             </button>
           ) : stage.kind === 'confirm' ? (
@@ -408,14 +405,14 @@ export function MessageComposer({
               <button
                 type="button"
                 onClick={() => setStage({ kind: 'write' })}
-                className="inline-flex min-h-tap items-center justify-center rounded-none border border-corp-line bg-white px-5 text-sm font-semibold text-corp-ink hover:bg-corp-surface"
+                className={consoleButton({ variant: 'ghost' })}
               >
                 Back
               </button>
               <button
                 type="button"
                 onClick={() => void send()}
-                className="inline-flex min-h-tap items-center justify-center gap-2 rounded-none bg-corp-green px-5 text-sm font-semibold text-white hover:bg-corp-ink"
+                className={consoleButton({ variant: 'accent' })}
               >
                 <SendIcon className="size-4" aria-hidden="true" /> Send now
               </button>
@@ -426,7 +423,7 @@ export function MessageComposer({
                 type="button"
                 onClick={onClose}
                 disabled={busy}
-                className="inline-flex min-h-tap items-center justify-center rounded-none border border-corp-line bg-white px-5 text-sm font-semibold text-corp-ink hover:bg-corp-surface disabled:opacity-50"
+                className={consoleButton({ variant: 'ghost' })}
               >
                 Cancel
               </button>
@@ -434,7 +431,7 @@ export function MessageComposer({
                 type="button"
                 disabled={!canSend}
                 onClick={() => setStage({ kind: 'confirm' })}
-                className="inline-flex min-h-tap items-center justify-center gap-2 rounded-none bg-corp-green px-5 text-sm font-semibold text-white hover:bg-corp-ink disabled:opacity-50"
+                className={consoleButton()}
               >
                 {busy ? (
                   <Loader2Icon className="size-4 animate-spin" aria-hidden="true" />

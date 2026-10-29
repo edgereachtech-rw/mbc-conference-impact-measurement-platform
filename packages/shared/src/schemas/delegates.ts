@@ -31,7 +31,7 @@ export const delegateListQuerySchema = z.object({
   sort: z.enum(delegateListSorts).default('name'),
   direction: z.enum(['asc', 'desc']).default('asc'),
   page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(10).max(200).default(50),
+  pageSize: z.coerce.number().int().min(10).max(200).default(10),
 });
 export type DelegateListQuery = z.infer<typeof delegateListQuerySchema>;
 

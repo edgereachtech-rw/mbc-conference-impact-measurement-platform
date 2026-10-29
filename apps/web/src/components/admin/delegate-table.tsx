@@ -14,8 +14,9 @@ import type {
   PreviewSample,
 } from '@/lib/messages';
 
+import { consoleButton, StatTile, StatusPill, TablePagination } from '@/components/console/page';
+
 import { MessageComposer } from './message-composer';
-import { StatTile, StatusPill } from './page-header';
 
 const STATUS_LABEL: Record<DelegateListStatus, string> = {
   active: 'Active',
@@ -70,7 +71,7 @@ export function DelegateTable({ eventId, eventName = 'this event', onMessageSent
   const [sort, setSort] = useState<(typeof SORTS)[number]['value']>('name');
   const [direction, setDirection] = useState<'asc' | 'desc'>('asc');
   const [page, setPage] = useState(1);
-  const [pageSize] = useState(50);
+  const [pageSize, setPageSize] = useState(10);
   const [data, setData] = useState<DelegateListResponse | null>(null);
   const [error, setError] = useState<{ message: string; requestId?: string } | null>(null);
   /** Key of the request whose result `data` holds; a different current key means loading. */
@@ -204,7 +205,6 @@ export function DelegateTable({ eventId, eventName = 'this event', onMessageSent
     }
   }
 
-  const totalPages = data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1;
   const counts = data?.counts;
   const chips: Array<{ value: Filter; label: string; count: number | null }> = [
     {
@@ -247,10 +247,7 @@ export function DelegateTable({ eventId, eventName = 'this event', onMessageSent
               placeholder="Name, email, organisation or registration id"
               className="h-11 w-full min-w-0 rounded-none border border-corp-line bg-white px-3 text-base md:text-sm"
             />
-            <button
-              type="submit"
-              className="inline-flex h-11 shrink-0 items-center gap-2 rounded-none bg-corp-green px-4 text-sm font-semibold text-white hover:bg-corp-ink"
-            >
+            <button type="submit" className={consoleButton({ size: 'default' })}>
               <SearchIcon className="size-4" aria-hidden="true" />
               <span className="hidden sm:inline">Search</span>
             </button>
@@ -336,7 +333,7 @@ export function DelegateTable({ eventId, eventName = 'this event', onMessageSent
         <div
           role="region"
           aria-label="Selection"
-          className="flex flex-col gap-2 border border-corp-ink bg-corp-ink px-4 py-3 text-sm text-white sm:flex-row sm:items-center"
+          className="flex flex-col gap-2 border border-corp-ink bg-corp-ink px-4 py-3 text-sm text-white shadow-panel sm:flex-row sm:items-center"
         >
           <p className="font-semibold">
             {allMatching
@@ -363,7 +360,7 @@ export function DelegateTable({ eventId, eventName = 'this event', onMessageSent
             <button
               type="button"
               onClick={openComposer}
-              className="inline-flex min-h-10 items-center gap-2 rounded-none bg-corp-green px-4 font-semibold text-white hover:bg-corp-green-bright"
+              className={consoleButton({ variant: 'accent', size: 'sm' })}
             >
               <MailIcon className="size-4" aria-hidden="true" /> Send email
             </button>
@@ -381,7 +378,7 @@ export function DelegateTable({ eventId, eventName = 'this event', onMessageSent
           <button
             type="button"
             onClick={() => setReload((n) => n + 1)}
-            className="mt-4 inline-flex min-h-tap items-center rounded-none border border-corp-green px-5 text-sm font-semibold text-corp-green-text hover:bg-corp-green-soft"
+            className={`mt-4 ${consoleButton({ variant: 'secondary' })}`}
           >
             Try again
           </button>
@@ -519,33 +516,17 @@ export function DelegateTable({ eventId, eventName = 'this event', onMessageSent
               ))}
             </tbody>
           </table>
-          <div className="flex flex-col gap-2 border-t border-corp-line px-4 py-3 text-sm text-corp-muted sm:flex-row sm:items-center sm:justify-between">
-            <span>
-              Showing {(data.page - 1) * data.pageSize + 1}–
-              {Math.min(data.page * data.pageSize, data.total)} of {data.total}
-            </span>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                disabled={page <= 1}
-                onClick={() => setPage((p) => p - 1)}
-                className="min-h-10 rounded-none border border-corp-line bg-white px-3 disabled:opacity-50"
-              >
-                Previous
-              </button>
-              <span className="self-center">
-                Page {data.page} of {totalPages}
-              </span>
-              <button
-                type="button"
-                disabled={page >= totalPages}
-                onClick={() => setPage((p) => p + 1)}
-                className="min-h-10 rounded-none border border-corp-line bg-white px-3 disabled:opacity-50"
-              >
-                Next
-              </button>
-            </div>
-          </div>
+          <TablePagination
+            page={data.page}
+            pageSize={data.pageSize}
+            total={data.total}
+            noun="delegates"
+            onPageChange={setPage}
+            onPageSizeChange={(size) => {
+              setPageSize(size);
+              setPage(1);
+            }}
+          />
         </div>
       )}
 

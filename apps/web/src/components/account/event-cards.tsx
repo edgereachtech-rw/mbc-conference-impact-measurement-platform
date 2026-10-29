@@ -2,8 +2,9 @@ import type { MyEvent } from '@mbc/shared';
 import { ArrowRightIcon, CalendarDaysIcon, MapPinIcon } from 'lucide-react';
 import Link from 'next/link';
 
-import { StatusPill } from '@/components/admin/page-header';
+import { consoleButton, StatusPill } from '@/components/console/page';
 import { attendanceFormatLabel, formatEventDates, formatWhereLabel } from '@/lib/my-events';
+import { cn } from '@/lib/utils';
 
 /** One event as a card: the facts at a glance and a button to the full view. */
 export function EventCard({ event }: { event: MyEvent }) {
@@ -11,7 +12,10 @@ export function EventCard({ event }: { event: MyEvent }) {
   return (
     <article
       aria-label={event.name}
-      className="flex flex-col gap-4 rounded-none border border-corp-line bg-white p-4 md:p-5"
+      className={cn(
+        'flex w-full flex-col gap-4 rounded-none border border-corp-line bg-white p-4 shadow-panel transition-shadow hover:shadow-elevated md:p-5',
+        upcoming ? 'border-l-4 border-l-corp-accent' : 'border-l-4 border-l-corp-line',
+      )}
     >
       <div className="flex flex-wrap items-center gap-2">
         <StatusPill tone={upcoming ? 'positive' : 'neutral'}>
@@ -54,7 +58,7 @@ export function EventCard({ event }: { event: MyEvent }) {
         </span>
         <Link
           href={`/account/events/${event.id}`}
-          className="inline-flex min-h-10 items-center gap-1 rounded-none border border-corp-green px-4 text-sm font-semibold text-corp-green-text hover:bg-corp-green-soft focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-corp-green"
+          className={consoleButton({ variant: 'secondary', size: 'sm' })}
         >
           View more <ArrowRightIcon className="size-4" aria-hidden="true" />
         </Link>

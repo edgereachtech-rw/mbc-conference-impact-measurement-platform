@@ -12,7 +12,7 @@ import {
   type DelegateMessageSummary,
 } from '@/lib/messages';
 
-import { StatusPill } from './page-header';
+import { pageSlice, StatusPill, TablePagination } from '@/components/console/page';
 
 interface Props {
   eventId: string;
@@ -38,6 +38,8 @@ export function MessagesHistory({ eventId, refreshKey = 0 }: Props) {
   const [open, setOpen] = useState<string | null>(null);
   const [detail, setDetail] = useState<DelegateMessageDetail | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   useEffect(() => {
     let cancelled = false;
@@ -97,6 +99,7 @@ export function MessagesHistory({ eventId, refreshKey = 0 }: Props) {
     );
   }
 
+  const visible = pageSlice(state.messages, page, pageSize);
   return (
     <div className="overflow-hidden border border-corp-line bg-white">
       <table className="w-full text-sm" aria-label="Messages">
@@ -120,7 +123,7 @@ export function MessagesHistory({ eventId, refreshKey = 0 }: Props) {
           </tr>
         </thead>
         <tbody className="divide-y divide-corp-line">
-          {state.messages.map((m) => (
+          {visible.map((m) => (
             <tr key={m.id} className="align-top">
               <td className="px-4 py-3">
                 <button
@@ -190,6 +193,17 @@ export function MessagesHistory({ eventId, refreshKey = 0 }: Props) {
           ))}
         </tbody>
       </table>
+      <TablePagination
+        page={page}
+        pageSize={pageSize}
+        total={state.messages.length}
+        noun="messages"
+        onPageChange={setPage}
+        onPageSizeChange={(size) => {
+          setPageSize(size);
+          setPage(1);
+        }}
+      />
     </div>
   );
 }

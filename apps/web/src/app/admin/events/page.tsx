@@ -17,7 +17,7 @@ export default async function EventsPage() {
       <AdminPageHeader
         breadcrumbs={[{ label: 'Overview', href: '/admin' }, { label: 'Events' }]}
         title="Events"
-        description="Open an event to see its details, registrations and import history."
+        description="Every event the organiser team runs. Open one to manage its registrations, send messages and review imports."
       />
       <AdminContent>
         {access === 'allowed' ? (

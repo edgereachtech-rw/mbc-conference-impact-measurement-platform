@@ -175,6 +175,31 @@ Focus: every interactive element shows a 3px ring (`--ring`) with a 2px offset; 
 Tap targets: buttons, inputs, selects, tabs, radio and checkbox hit areas, footer icons and both
 logo links are at least 44px.
 
+## Console system (signed-in screens, 2026-10-30)
+
+Everything signed in, for staff and delegates alike, uses one set of components in
+`apps/web/src/components/console/`. Palette (decided 2026-10-30): dark blue, yellow and white.
+Inside `.console-area` the `corp-*` utilities are re-pointed to navy (`#002a5e` actions,
+`#001d42` ink and sidebar), amber accents (`#ffb703`, tint `#fff4d6`, text `#7a4f00`), white
+surfaces on a pale blue-grey background (`#f3f6fb`); the organiser band on the public landing
+page keeps the verified emerald. Tables show 10 rows by default with a rows-per-page picker
+(10, 20, 50, 100) in `TablePagination`; the sidebar is sticky under the top bar and never
+scrolls with the page:
+
+- `ConsoleShell`: sidebar from `lg` up, bottom tab bar on phones, one navigation list per area
+  (admin: Overview, Events, Imports, Staff, Reports; delegate: Dashboard, My events, Profile).
+  It sets the `console-area` class, which switches the shadcn controls inside to square corners,
+  emerald primary and focus ring, and Inter headings in slate ink.
+- `PageHeader` (breadcrumb, eyebrow, title, description, meta, actions), `PageContent`
+  (one 72rem column, 16px gutters on phones), `SectionHeader`, `Panel`, `TableScroll`,
+  `StatTile`, `StatusPill`, `StatePanel` (loading, empty, error) and `consoleButton`
+  (primary emerald, secondary outline, ghost, dark, danger; 44px tall by default).
+- The signed-in top bar shows the M.Bryan logo, the area name, a monogram, the person's name and
+  role, and sign-out; the footer is a slim corporate line. Visitors keep the ITTEC event bar,
+  hero and navy footer.
+- Wording: titles in sentence case, one-line descriptions that say what the screen is for,
+  buttons as verbs ("Send email", "View more", "Open event"), states that say what to do next.
+
 ## Assets
 
 | File                                           | Source                                                                | Notes                                                                                     |

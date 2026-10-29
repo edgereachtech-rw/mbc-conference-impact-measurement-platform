@@ -66,7 +66,7 @@ export function DelegateDashboard({ contactEmail, initialEvents }: Props) {
       </section>
 
       <aside
-        className="rounded-none border border-corp-line bg-white p-4 text-sm text-corp-text"
+        className="rounded-none border border-corp-green-line bg-corp-accent-soft p-4 text-sm text-corp-ink"
         aria-label="Help"
       >
         Need a correction to your registration or a different email? Write to{' '}
