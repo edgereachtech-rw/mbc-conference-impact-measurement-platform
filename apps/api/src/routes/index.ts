@@ -17,6 +17,7 @@ import { eventRouter } from './events.js';
 import { importRouter } from './imports.js';
 import { invitationRouter } from './invitations.js';
 import { meEventsRouter } from './me-events.js';
+import { messageRouter } from './messages.js';
 import { staffRouter } from './staff.js';
 
 export interface ApiDeps {
@@ -60,6 +61,16 @@ export function apiRouter(deps: ApiDeps): Router {
       logger: deps.logger,
       now: deps.now,
       hooks: deps.accountStatusHooks,
+    }),
+  );
+  router.use(
+    messageRouter({
+      prisma: deps.prisma,
+      mailer: deps.mailer,
+      mailConfig: deps.mailConfig,
+      middleware,
+      logger: deps.logger,
+      now: deps.now,
     }),
   );
   router.use(

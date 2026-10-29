@@ -3,7 +3,7 @@ import { type EmailBranding, type RenderedEmail, renderLayout } from './layout.j
 export type { EmailBranding, EmailButton, EmailContent, RenderedEmail } from './layout.js';
 export { renderLayout, escapeHtml } from './layout.js';
 
-export type TemplateName = 'invitation' | 'magic-link' | 'test-delivery';
+export type TemplateName = 'invitation' | 'magic-link' | 'test-delivery' | 'admin-message';
 
 /** Formats an expiry for humans: "15 minutes", "7 days". */
 function describeDuration(minutes: number): string {
@@ -107,8 +107,34 @@ export function renderTestDelivery(
   });
 }
 
+// ------------------------------------------------------------------ admin message (E2-14)
+
+export interface AdminMessageInput {
+  /** Subject with the recipient's placeholders already filled; also the email's title. */
+  subject: string;
+  /** Body rendered by the shared message renderer for this recipient. */
+  body: { html: string; text: string };
+}
+
+/** An email an admin wrote to selected delegates, in the event's branding with no button. */
+export function renderAdminMessage(
+  branding: EmailBranding,
+  input: AdminMessageInput,
+): RenderedEmail {
+  const firstLine = input.body.text.split('\n').find((line) => line.trim() !== '');
+  return renderLayout(branding, {
+    subject: input.subject,
+    preheader: (firstLine ?? input.subject).slice(0, 140),
+    eyebrow: branding.eventName,
+    title: input.subject,
+    paragraphs: [],
+    body: input.body,
+  });
+}
+
 export const templates = {
   invitation: renderInvitation,
+  'admin-message': renderAdminMessage,
   'magic-link': renderMagicLink,
   'test-delivery': renderTestDelivery,
 } as const;

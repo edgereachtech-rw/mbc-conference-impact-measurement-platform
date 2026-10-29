@@ -21,3 +21,5 @@ export * from './schemas/imports-resolution.js';
 export * from './schemas/my-events.js';
 export * from './schemas/admin.js';
 export * from './schemas/delegates.js';
+export * from './schemas/messages.js';
+export * from './message-body.js';

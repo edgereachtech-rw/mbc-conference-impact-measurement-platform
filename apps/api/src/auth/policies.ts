@@ -38,6 +38,9 @@ export const IMPORT_ROLES: readonly UserRole[] = ['admin'];
 /** Roles that may read reports and exports (E16); speakers may not. */
 export const REPORT_ROLES: readonly UserRole[] = ['admin'];
 
+/** Who may email selected delegates of an event (E2-14): M.Bryan admins only. */
+export const MESSAGE_ROLES: readonly UserRole[] = ['admin'];
+
 export function hasRole(principal: Principal, roles: readonly UserRole[]): boolean {
   if (isRetiredRole(principal.role)) return false;
   return roles.includes(principal.role);
@@ -52,6 +55,10 @@ export function canReadDelegate(principal: Principal, delegateId: string): boole
 /** Corrections are a staff action; delegates request them (E17-8) rather than apply them. */
 export function canWriteDelegate(principal: Principal): boolean {
   return hasRole(principal, DELEGATE_WRITE_ROLES);
+}
+
+export function canMessageDelegates(principal: Principal): boolean {
+  return hasRole(principal, MESSAGE_ROLES);
 }
 
 export function canManageStaff(principal: Principal): boolean {

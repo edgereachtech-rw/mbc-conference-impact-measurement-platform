@@ -257,6 +257,34 @@ path works without a proxy.
   sign in and is hidden from My Events), audited with old and new
   values.
 
+## Messages to delegates (Increment 1b, backlog E2-14)
+
+Admin-only emails to selected registrations of an event, from the event page
+(`/admin/events/:eventId`): tick delegates in the table (or the whole page, then "Select all N
+matching" to extend to every registration matching the status filter and search), choose Send
+email, write the subject and body, preview, confirm.
+
+- Body format is a small markdown subset rendered by `packages/shared/src/message-body.ts` for
+  the email HTML, the plain-text part and the on-screen preview alike: `**bold**`, `*italic*`,
+  `#`/`##` headings, `-` and `1.` lists, `[label](https://…)` links (http(s) and mailto only),
+  blank line between paragraphs. Placeholders `{{firstName}}`, `{{name}}`, `{{email}}`,
+  `{{organisation}}` and `{{eventName}}` are filled per recipient in the subject and the body;
+  an unknown placeholder is refused. Everything is escaped before markup is added.
+- `POST /api/v1/events/:eventId/messages` (body `{ subject, body, recipients }` where
+  `recipients` is `{ delegateIds }` or `{ filter: { status?, attendanceFormat?, q? } }`): refuses
+  archived events (409), registrations of other events or merged duplicates (404), a duplicate
+  filter, an empty audience or more than 2,000 recipients (422); sends one branded email per
+  distinct address through the configured mailer; answers `{ messageId, total, sent, failed,
+skipped }` (201). Rows: `delegate_message` (subject, body, selection used, counts, status
+  `sent` / `partially_failed` / `failed`) and `delegate_message_recipient` (per-recipient
+  status, provider message id). Audit: `message.sent` with counts and the selection kind,
+  `message.send_failed` per failed recipient; never an address.
+- `GET /api/v1/events/:eventId/messages` lists the event's messages (newest first, who sent them);
+  `GET /api/v1/events/:eventId/messages/:messageId` adds the body and the per-recipient outcome.
+  The event page shows both under Messages.
+- Sending runs inside the request (like invitations). A few hundred recipients take seconds over
+  SMTP; the worker queue takes over when the reminder engine (E10-8) introduces jobs.
+
 ## Registration imports (Increment 1b)
 
 Admin-only CSV/XLSX import of an event's registrations (backlog E2-1, E2-8 to E2-11; design note

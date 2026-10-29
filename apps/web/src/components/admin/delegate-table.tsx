@@ -1,14 +1,20 @@
 'use client';
 
 import type { DelegateListItem, DelegateListResponse, DelegateListStatus } from '@mbc/shared';
-import { Loader2Icon, SearchIcon } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { Loader2Icon, MailIcon, SearchIcon } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 
 import { NativeSelect } from '@/components/imports/native-select';
 import { ParticipationBadge } from '@/components/badges/participation-badge';
 import { apiFetch } from '@/lib/api';
 import { describeError } from '@/lib/imports';
+import type {
+  DelegateMessageRecipients,
+  DelegateMessageSendResult,
+  PreviewSample,
+} from '@/lib/messages';
 
+import { MessageComposer } from './message-composer';
 import { StatTile, StatusPill } from './page-header';
 
 const STATUS_LABEL: Record<DelegateListStatus, string> = {
@@ -36,17 +42,28 @@ const SORTS = [
 
 type Filter = '' | DelegateListStatus;
 
+interface Composer {
+  recipients: DelegateMessageRecipients;
+  count: number;
+  sample?: PreviewSample;
+}
+
 interface Props {
   /** The event whose registrations are listed; the page that owns the event passes it. */
   eventId: string;
+  /** Shown in the message composer and used for the {{eventName}} preview. */
+  eventName?: string;
+  /** Called after a message to delegates was sent, so the page can refresh the history. */
+  onMessageSent?: (result: DelegateMessageSendResult) => void;
 }
 
 /**
- * Delegates of one event (E2-6 subset): event picker, search, status chips, sortable paged table,
- * inline status change through the audited correction route. Everything is read from and written
- * through admin-only routes; the table decides nothing itself.
+ * Delegates of one event (E2-6 subset): search, status chips, sortable paged table, inline status
+ * change through the audited correction route, and selection by checkbox to email the chosen
+ * delegates (E2-14). Everything is read from and written through admin-only routes; the table
+ * decides nothing itself.
  */
-export function DelegateTable({ eventId }: Props) {
+export function DelegateTable({ eventId, eventName = 'this event', onMessageSent }: Props) {
   const [q, setQ] = useState('');
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<Filter>('');
@@ -62,6 +79,13 @@ export function DelegateTable({ eventId }: Props) {
   const [rowMessage, setRowMessage] = useState<{ id: string; text: string; ok: boolean } | null>(
     null,
   );
+  /** Ticked registration ids; kept across pages until cleared or sent. */
+  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
+  /** "Every delegate matching the current filter", beyond the page on screen. */
+  const [allMatching, setAllMatching] = useState(false);
+  const [composer, setComposer] = useState<Composer | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const headerCheckbox = useRef<HTMLInputElement>(null);
 
   const params = new URLSearchParams({
     sort,
@@ -95,6 +119,70 @@ export function DelegateTable({ eventId }: Props) {
       cancelled = true;
     };
   }, [requestKey]);
+
+  const rows = data?.delegates ?? [];
+  const selectable = rows.filter((d) => d.registrationStatus !== 'duplicate');
+  const allOnPage = selectable.length > 0 && selectable.every((d) => selected.has(d.id));
+  const someOnPage = selectable.some((d) => selected.has(d.id));
+  useEffect(() => {
+    if (headerCheckbox.current) headerCheckbox.current.indeterminate = someOnPage && !allOnPage;
+  }, [someOnPage, allOnPage]);
+
+  function changeFilter(update: () => void) {
+    update();
+    setPage(1);
+    setAllMatching(false);
+  }
+  function toggle(id: string, on: boolean) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+    if (!on) setAllMatching(false);
+  }
+  function togglePage(on: boolean) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      for (const d of selectable) {
+        if (on) next.add(d.id);
+        else next.delete(d.id);
+      }
+      return next;
+    });
+    if (!on) setAllMatching(false);
+  }
+  function clearSelection() {
+    setSelected(new Set());
+    setAllMatching(false);
+  }
+  function openComposer() {
+    if (!data) return;
+    const sample = rows.find((d) => selected.has(d.id)) ?? rows[0];
+    const preview: PreviewSample | undefined = sample
+      ? { name: sample.name, email: sample.email, organisation: sample.organisation }
+      : undefined;
+    setNotice(null);
+    if (allMatching) {
+      setComposer({
+        recipients: {
+          filter: {
+            ...(status ? { status } : {}),
+            ...(search ? { q: search } : {}),
+          },
+        },
+        count: data.total,
+        sample: preview,
+      });
+    } else {
+      setComposer({
+        recipients: { delegateIds: [...selected] },
+        count: selected.size,
+        sample: preview,
+      });
+    }
+  }
 
   async function changeStatus(delegate: DelegateListItem, next: DelegateListStatus) {
     if (next === delegate.registrationStatus) return;
@@ -130,6 +218,10 @@ export function DelegateTable({ eventId }: Props) {
       count: counts ? counts[s] : null,
     })),
   ];
+  const selectionCount = allMatching ? (data?.total ?? selected.size) : selected.size;
+  const showSelectionBar = selected.size > 0 || allMatching;
+  const canSelectAllMatching =
+    !!data && allOnPage && !allMatching && data.total > rows.length && status !== 'duplicate';
 
   return (
     <div className="space-y-6">
@@ -138,8 +230,7 @@ export function DelegateTable({ eventId }: Props) {
           className="space-y-1"
           onSubmit={(e) => {
             e.preventDefault();
-            setSearch(q.trim());
-            setPage(1);
+            changeFilter(() => setSearch(q.trim()));
           }}
         >
           <label
@@ -190,10 +281,7 @@ export function DelegateTable({ eventId }: Props) {
             key={chip.value || 'all'}
             type="button"
             aria-pressed={status === chip.value}
-            onClick={() => {
-              setStatus(chip.value);
-              setPage(1);
-            }}
+            onClick={() => changeFilter(() => setStatus(chip.value))}
             className={
               status === chip.value
                 ? 'min-h-tap rounded-none border border-corp-ink bg-corp-ink px-3 text-sm font-medium text-white'
@@ -235,6 +323,54 @@ export function DelegateTable({ eventId }: Props) {
         </div>
       </div>
 
+      {notice ? (
+        <p
+          role="status"
+          className="border border-corp-green-line bg-corp-green-soft px-4 py-3 text-sm text-corp-green-text"
+        >
+          {notice}
+        </p>
+      ) : null}
+
+      {showSelectionBar ? (
+        <div
+          role="region"
+          aria-label="Selection"
+          className="flex flex-col gap-2 border border-corp-ink bg-corp-ink px-4 py-3 text-sm text-white sm:flex-row sm:items-center"
+        >
+          <p className="font-semibold">
+            {allMatching
+              ? `All ${selectionCount} delegates matching the current filter selected`
+              : `${selectionCount} selected`}
+          </p>
+          {canSelectAllMatching ? (
+            <button
+              type="button"
+              onClick={() => setAllMatching(true)}
+              className="text-left underline underline-offset-2 hover:text-corp-green-line"
+            >
+              Select all {data.total} matching
+            </button>
+          ) : null}
+          <div className="flex gap-2 sm:ml-auto">
+            <button
+              type="button"
+              onClick={clearSelection}
+              className="inline-flex min-h-10 items-center rounded-none border border-white/40 px-3 font-medium hover:bg-white/10"
+            >
+              Clear
+            </button>
+            <button
+              type="button"
+              onClick={openComposer}
+              className="inline-flex min-h-10 items-center gap-2 rounded-none bg-corp-green px-4 font-semibold text-white hover:bg-corp-green-bright"
+            >
+              <MailIcon className="size-4" aria-hidden="true" /> Send email
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       {error ? (
         <div role="alert" className="rounded-none border border-corp-line bg-white p-5">
           <p className="font-semibold text-corp-ink">Delegates unavailable</p>
@@ -265,6 +401,17 @@ export function DelegateTable({ eventId }: Props) {
           <table className="w-full text-sm" aria-label="Delegates">
             <thead className="bg-corp-surface text-left text-xs font-semibold tracking-[0.08em] text-corp-muted uppercase">
               <tr>
+                <th scope="col" className="w-10 px-3 py-2">
+                  <input
+                    ref={headerCheckbox}
+                    type="checkbox"
+                    aria-label="Select all on this page"
+                    checked={allOnPage}
+                    disabled={selectable.length === 0}
+                    onChange={(e) => togglePage(e.target.checked)}
+                    className="size-5 accent-corp-green"
+                  />
+                </th>
                 <th scope="col" className="px-4 py-2">
                   Delegate
                 </th>
@@ -290,7 +437,25 @@ export function DelegateTable({ eventId }: Props) {
             </thead>
             <tbody className="divide-y divide-corp-line">
               {data.delegates.map((d) => (
-                <tr key={d.id} className="align-top">
+                <tr
+                  key={d.id}
+                  className={selected.has(d.id) ? 'bg-corp-green-soft align-top' : 'align-top'}
+                >
+                  <td className="px-3 py-3">
+                    <input
+                      type="checkbox"
+                      aria-label={`Select ${d.name}`}
+                      checked={selected.has(d.id)}
+                      disabled={d.registrationStatus === 'duplicate'}
+                      title={
+                        d.registrationStatus === 'duplicate'
+                          ? 'Merged duplicates cannot be messaged'
+                          : undefined
+                      }
+                      onChange={(e) => toggle(d.id, e.target.checked)}
+                      className="size-5 accent-corp-green"
+                    />
+                  </td>
                   <td className="px-4 py-3">
                     <p className="font-semibold text-corp-ink">{d.name}</p>
                     <p className="truncate text-xs text-corp-muted">{d.email}</p>
@@ -383,6 +548,26 @@ export function DelegateTable({ eventId }: Props) {
           </div>
         </div>
       )}
+
+      {composer ? (
+        <MessageComposer
+          eventId={eventId}
+          eventName={eventName}
+          recipients={composer.recipients}
+          recipientCount={composer.count}
+          sample={composer.sample}
+          onClose={() => setComposer(null)}
+          onSent={(result) => {
+            clearSelection();
+            setNotice(
+              result.failed === 0
+                ? `Message sent to ${result.sent} delegate${result.sent === 1 ? '' : 's'}.`
+                : `Message sent to ${result.sent} of ${result.total} delegates; ${result.failed} failed. See Messages below.`,
+            );
+            onMessageSent?.(result);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

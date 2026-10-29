@@ -38,6 +38,11 @@ export interface EmailContent {
   title: string;
   /** Paragraphs in order. Plain strings; HTML special characters are escaped. */
   paragraphs: string[];
+  /**
+   * Pre-rendered body used instead of `paragraphs` for admin-written messages. Both parts must
+   * come from the shared message renderer, which escapes everything it is given.
+   */
+  body?: { html: string; text: string };
   /** The one primary action. Its URL is repeated in plain text and under the button. */
   button?: EmailButton;
   /** Lines after the button, e.g. expiry notice. */
@@ -90,12 +95,14 @@ export function renderLayout(branding: EmailBranding, content: EmailContent): Re
 
   const logoUrl = `${branding.appUrl.replace(/\/+$/, '')}/brand/logo-white.png`;
   const title = escapeHtml(content.title);
-  const paragraphsHtml = content.paragraphs
-    .map(
-      (p) =>
-        `<p style="margin:0 0 16px;font-family:${fontStack};font-size:16px;line-height:24px;color:${colours.text};" class="body-text">${escapeHtml(p)}</p>`,
-    )
-    .join('\n');
+  const paragraphsHtml =
+    content.body?.html ??
+    content.paragraphs
+      .map(
+        (p) =>
+          `<p style="margin:0 0 16px;font-family:${fontStack};font-size:16px;line-height:24px;color:${colours.text};" class="body-text">${escapeHtml(p)}</p>`,
+      )
+      .join('\n');
   const notesHtml = (content.notes ?? [])
     .map(
       (n) =>
@@ -182,9 +189,14 @@ export function renderLayout(branding: EmailBranding, content: EmailContent): Re
   if (content.eyebrow) textLines.push(content.eyebrow.toUpperCase());
   textLines.push(content.title);
   textLines.push('');
-  for (const p of content.paragraphs) {
-    textLines.push(p);
+  if (content.body) {
+    textLines.push(content.body.text);
     textLines.push('');
+  } else {
+    for (const p of content.paragraphs) {
+      textLines.push(p);
+      textLines.push('');
+    }
   }
   if (content.button) {
     textLines.push(`${content.button.label}: ${content.button.url}`);

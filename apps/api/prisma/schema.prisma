@@ -90,6 +90,23 @@ enum RegistrationStatus {
   @@map("registration_status")
 }
 
+enum DelegateMessageStatus {
+  sending
+  sent
+  partially_failed
+  failed
+
+  @@map("delegate_message_status")
+}
+
+enum DelegateMessageRecipientStatus {
+  queued
+  sent
+  failed
+
+  @@map("delegate_message_recipient_status")
+}
+
 enum InvitationStatus {
   pending
   sent
@@ -200,6 +217,7 @@ model Event {
   participationCategories ParticipationCategory[]
   delegates               Delegate[]
   importRuns              ImportRun[]
+  messages                DelegateMessage[]
 
   @@map("event")
 }
@@ -306,14 +324,15 @@ model Delegate {
   createdAt              DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt              DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  event       Event             @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  userAccount UserAccount?      @relation(fields: [userAccountId], references: [id], onDelete: SetNull)
-  identity    DelegateIdentity? @relation(fields: [identityId], references: [id], onDelete: Restrict)
-  duplicateOf Delegate?         @relation("DelegateDuplicates", fields: [duplicateOfId], references: [id], onDelete: SetNull)
-  duplicates  Delegate[]        @relation("DelegateDuplicates")
+  event       Event                      @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  userAccount UserAccount?               @relation(fields: [userAccountId], references: [id], onDelete: SetNull)
+  identity    DelegateIdentity?          @relation(fields: [identityId], references: [id], onDelete: Restrict)
+  duplicateOf Delegate?                  @relation("DelegateDuplicates", fields: [duplicateOfId], references: [id], onDelete: SetNull)
+  duplicates  Delegate[]                 @relation("DelegateDuplicates")
   invitations Invitation[]
   consents    ConsentRecord[]
   importRows  ImportRow[]
+  messages    DelegateMessageRecipient[]
 
   @@index([eventId])
   @@index([email])
@@ -406,6 +425,50 @@ model ImportSourceMapping {
   @@map("import_source_mapping")
 }
 
+/// An email an admin wrote and sent to selected registrations of one event (E2-14).
+model DelegateMessage {
+  id                 String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventId            String                @map("event_id") @db.Uuid
+  /// The admin who sent it; kept as an id (no relation) like import_run.actor_user_id.
+  createdByUserId    String                @map("created_by_user_id") @db.Uuid
+  subject            String
+  /// Body as written, in the message markdown subset; rendered per recipient at send time.
+  body               String
+  /// How the recipients were chosen (ids or a listing filter); never the addresses.
+  recipientSelection Json                  @map("recipient_selection")
+  status             DelegateMessageStatus @default(sending)
+  recipientCount     Int                   @map("recipient_count")
+  sentCount          Int                   @default(0) @map("sent_count")
+  failedCount        Int                   @default(0) @map("failed_count")
+  createdAt          DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  completedAt        DateTime?             @map("completed_at") @db.Timestamptz(3)
+
+  event      Event                      @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  recipients DelegateMessageRecipient[]
+
+  @@index([eventId, createdAt])
+  @@map("delegate_message")
+}
+
+model DelegateMessageRecipient {
+  id                String                         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  messageId         String                         @map("message_id") @db.Uuid
+  delegateId        String                         @map("delegate_id") @db.Uuid
+  status            DelegateMessageRecipientStatus @default(queued)
+  sentAt            DateTime?                      @map("sent_at") @db.Timestamptz(3)
+  /// What the transport returned; no address.
+  providerMessageId String?                        @map("provider_message_id")
+  /// Short failure class ("delivery_failed"); never the error text, which may carry the address.
+  failureReason     String?                        @map("failure_reason")
+
+  message  DelegateMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  delegate Delegate        @relation(fields: [delegateId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, delegateId])
+  @@index([delegateId])
+  @@map("delegate_message_recipient")
+}
+
 model Invitation {
   id         String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   delegateId String           @map("delegate_id") @db.Uuid
@@ -446,18 +509,18 @@ model ConsentRecord {
 // actor_user_id are historical references.
 
 model AuditLog {
-  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  occurredAt  DateTime  @default(now()) @map("occurred_at") @db.Timestamptz(3)
-  eventId     String?   @map("event_id") @db.Uuid
-  actorUserId String?   @map("actor_user_id") @db.Uuid
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  occurredAt  DateTime @default(now()) @map("occurred_at") @db.Timestamptz(3)
+  eventId     String?  @map("event_id") @db.Uuid
+  actorUserId String?  @map("actor_user_id") @db.Uuid
   /// Verb in dotted form, e.g. "delegate.status_changed", "export.created".
   action      String
-  entityType  String    @map("entity_type")
-  entityId    String?   @map("entity_id")
-  oldValue    Json?     @map("old_value")
-  newValue    Json?     @map("new_value")
+  entityType  String   @map("entity_type")
+  entityId    String?  @map("entity_id")
+  oldValue    Json?    @map("old_value")
+  newValue    Json?    @map("new_value")
   ip          String?
-  userAgent   String?   @map("user_agent")
+  userAgent   String?  @map("user_agent")
 
   @@index([eventId])
   @@index([actorUserId])

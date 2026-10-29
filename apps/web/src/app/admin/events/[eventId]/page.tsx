@@ -3,7 +3,7 @@ import { cookies } from 'next/headers';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
-import { DelegateTable } from '@/components/admin/delegate-table';
+import { EventWorkspace } from '@/components/admin/event-workspace';
 import { AdminContent, AdminPageHeader, StatusPill } from '@/components/admin/page-header';
 import { apiInternalUrl } from '@/lib/api';
 import { importsAccess } from '@/lib/imports-access';
@@ -109,12 +109,7 @@ export default async function EventPage({ params }: { params: Promise<{ eventId:
                 </div>
               </dl>
             </section>
-            <section aria-labelledby="event-delegates-title" className="space-y-3">
-              <h2 id="event-delegates-title" className="font-corporate text-h3 text-corp-ink">
-                Delegates
-              </h2>
-              <DelegateTable eventId={event.id} />
-            </section>
+            <EventWorkspace eventId={event.id} eventName={event.name} />
           </>
         )}
       </AdminContent>
