@@ -28,13 +28,21 @@ describe('SiteHeader', () => {
     expect(screen.getAllByRole('button', { name: /sign out/i }).length).toBeGreaterThan(0);
   });
 
-  it('keeps the ITTEC event bar for delegates and visitors', () => {
-    const { unmount } = render(<SiteHeader session={session('delegate')} />);
-    expect(screen.getByAltText(/ITTEC/i)).toBeTruthy();
-    expect(screen.queryByRole('link', { name: 'Admin console home' })).toBeNull();
-    expect(screen.getByText('Physical')).toBeTruthy();
-    unmount();
+  it('gives delegates the same corporate bar, with the dashboard as home', () => {
+    render(<SiteHeader session={session('delegate')} />);
+    const home = screen.getByRole('link', { name: 'Delegate home' });
+    expect(home.getAttribute('href')).toBe('/account');
+    expect(screen.getByAltText(/M\.Bryan/i)).toBeTruthy();
+    expect(screen.queryByAltText(/ITTEC/i)).toBeNull();
+    expect(screen.getByText('Olu')).toBeTruthy();
+    expect(screen.getByText('delegate')).toBeTruthy();
+    expect(screen.getAllByRole('button', { name: /sign out/i }).length).toBeGreaterThan(0);
+  });
+
+  it('keeps the ITTEC event bar for visitors', () => {
     render(<SiteHeader session={null} />);
+    expect(screen.getByAltText(/ITTEC/i)).toBeTruthy();
+    expect(screen.queryByRole('link', { name: /home$/ })?.getAttribute('href')).toBe('/');
     expect(screen.getByRole('link', { name: 'Sign in' })).toBeTruthy();
   });
 });

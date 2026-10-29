@@ -1,57 +1,49 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
-import { DelegateHero, JourneyStrip } from '@/components/account/delegate-hero';
-import { MyEvents } from '@/components/account/my-events';
+import { DelegateDashboard } from '@/components/account/delegate-dashboard';
+import { AdminContent, AdminPageHeader } from '@/components/admin/page-header';
 import { event } from '@/config/event';
+import { countdownLine } from '@/lib/my-events';
+import { loadMyEvents } from '@/lib/my-events-server';
 import { getSession } from '@/lib/session';
 
-export const metadata: Metadata = { title: 'My events' };
+export const metadata: Metadata = { title: 'Dashboard' };
 
 /**
- * `/account` is the delegate home: My Events (backlog D7) under the conference identity. The API
- * decides what the session may see; this page only renders it. Staff accounts are sent to the
- * admin console, which has its own identity.
+ * `/account` is the delegate dashboard: key figures, every event as a card, and where to go
+ * next. The API decides what the session may see; this page only renders it.
  */
 export default async function AccountPage() {
   const session = await getSession();
   if (!session) redirect('/signin?next=/account');
-  if (session.role !== 'delegate') redirect('/admin');
+  const initialEvents = await loadMyEvents();
+  const nextEvent = initialEvents?.find((e) => e.period === 'upcoming') ?? null;
 
   return (
-    <main className="flex flex-1 flex-col">
-      <DelegateHero
-        displayName={session.displayName}
-        participationMode={session.participationMode}
+    <>
+      <AdminPageHeader
+        title={`Welcome, ${session.displayName}`}
+        description={
+          nextEvent
+            ? `${countdownLine(nextEvent)} This is your space to record what you take back to work.`
+            : 'Your conference journey, in one place: check-ins, your transfer plan and follow-ups.'
+        }
+        actions={
+          nextEvent ? (
+            <Link
+              href={`/account/events/${nextEvent.id}`}
+              className="inline-flex min-h-tap items-center justify-center rounded-none bg-corp-green px-5 text-sm font-semibold text-white hover:bg-corp-ink focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-corp-green"
+            >
+              Open next event
+            </Link>
+          ) : null
+        }
       />
-      <div className="mx-auto flex w-full max-w-4xl flex-col gap-8 px-gutter py-6 md:px-6 md:py-10">
-        <section aria-labelledby="my-events-title" className="space-y-3">
-          <div className="flex flex-col gap-1 md:flex-row md:items-baseline md:justify-between">
-            <h2 id="my-events-title" className="text-h2">
-              My events
-            </h2>
-            <p className="text-sm text-brand-muted">
-              Registration and attendance are shown separately; attendance is recorded at the
-              conference.
-            </p>
-          </div>
-          <MyEvents contactEmail={event.contactEmail} />
-        </section>
-        <JourneyStrip />
-        <aside
-          className="rounded-lg border border-brand-line bg-surface-tint p-4 text-sm text-brand-muted"
-          aria-label="Help"
-        >
-          Need a correction to your registration or a different email? Write to{' '}
-          <a
-            href={`mailto:${event.contactEmail}`}
-            className="font-medium text-brand-primary underline"
-          >
-            {event.contactEmail}
-          </a>
-          . Nothing changes on your account without the organiser team.
-        </aside>
-      </div>
-    </main>
+      <AdminContent>
+        <DelegateDashboard contactEmail={event.contactEmail} initialEvents={initialEvents} />
+      </AdminContent>
+    </>
   );
 }
