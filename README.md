@@ -386,6 +386,29 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   time, each question with its answer as text, correct flag and weight), audited as
   `assessment.response_viewed` without the answers. Shown on the stage page's Submissions tab
   with a "View" popup per delegate. The CSV export prefixes each column with its section title.
+- Attendance (attendance requirements, 2026-10-30; backlog E6): recorded per delegate per event
+  date, admins only, never inferred from registration or an assessment. Tables
+  `attendance_token` (one QR code per delegate per date: a keyed hash of delegate and date,
+  no personal data; only its hash is stored and it is shown on the delegate's event page),
+  `attendance_record` (status attended/partial/absent, mode physical/virtual, method
+  qr/manual/bulk/closure/correction, the admin responsible, time, note; unique per delegate and
+  date) and `session_attendance` (per session, separate from the date), plus
+  `event_date.attendance_closed_at`. Migration `20261031220000_attendance`. Routes under
+  `/api/v1/events/:id/attendance`: overview; `dates/:dateId` list with q/format/status
+  filters; `scan` (validates a code against the event and the selected date, returns the
+  registration for the admin to check the person, records nothing); `check-in` (records by QR,
+  409 when already recorded); `dates/:dateId/mark` (manual, 409 duplicate); `dates/:dateId/bulk`
+  (skips duplicates and unknown ids, reports them); `records/:id` PATCH (correction with a
+  reason; old and new values in the audit log); `dates/:dateId/close` (closes the date and,
+  on request, records absences for everyone without a record; nobody is absent before closure);
+  `sessions/:sessionId` GET/POST (add and remove, reason required to remove);
+  `delegates/:delegateId` profile (dates, sessions, history). `GET /me/events/:id/attendance`
+  gives the delegate their codes and recorded statuses. Overall status per delegate: attended
+  every date, pending while a date is open without presence, partially attended, else absent
+  (`overallAttendance` in `@mbc/shared`); `MyEvent.attendance.status` now carries it. Admin
+  screen: the event page's Attendance tab (per-date lists, QR scan with the camera where the
+  browser supports it or a typed code, manual and bulk marking, corrections, closure, session
+  attendance, delegate profiles); the dashboard shows the attendance counts.
 - Event dashboard (2026-10-30): `/admin/events/:id/dashboard`, from the "Dashboard" button on
   the event page, shows `GET /api/v1/events/:id/dashboard` (admin only, counts only): registered
   delegates (active, plus test where allowed) with signed-up and invited counts and the

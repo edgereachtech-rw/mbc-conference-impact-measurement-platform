@@ -69,6 +69,32 @@ const dashboard: Dashboard = {
       nonCompleters: 0,
     },
   ],
+  attendance: {
+    registered: 40,
+    attended: 20,
+    partial: 5,
+    absent: 3,
+    pending: 12,
+    attendees: 25,
+    rate: 62.5,
+    dates: [
+      {
+        id: 'd1',
+        date: '2026-11-12',
+        closedAt: '2026-11-12T20:00:00.000Z',
+        counts: {
+          registered: 40,
+          attended: 24,
+          partial: 1,
+          absent: 15,
+          notCheckedIn: 0,
+          physical: 20,
+          virtual: 5,
+          rate: 62.5,
+        },
+      },
+    ],
+  },
   messages: {
     sent: 3,
     recipients: 120,
@@ -102,6 +128,11 @@ describe('EventDashboard', () => {
     expect(delegates.textContent).toMatch(/In person · Online25 · 15/);
     expect(delegates.textContent).toMatch(/Sessions5.*2 event days/);
 
+    const attendance = screen.getByRole('region', { name: 'Attendance' });
+    expect(attendance.textContent).toMatch(/Attended at least one day25.*62\.5% of 40 registered/);
+    expect(screen.getByLabelText('Attendance by date').textContent).toMatch(
+      /12 Nov 2026 · closed25 of 40 attended \(62\.5%\) · 20 in person · 5 online · 15 absent/,
+    );
     const pre = screen.getByRole('article', { name: 'Pre-conference assessment' });
     expect(pre.textContent).toMatch(/Open to delegates/);
     expect(pre.textContent).toMatch(/25 questions/);

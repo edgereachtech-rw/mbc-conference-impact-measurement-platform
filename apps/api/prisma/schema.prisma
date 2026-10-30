@@ -56,6 +56,33 @@ enum EventType {
   @@map("event_type")
 }
 
+/// Attendance (attendance requirements, 2026-10-30): recorded per delegate per event date,
+/// never inferred from registration or an assessment submission.
+enum AttendanceStatus {
+  attended
+  partial
+  absent
+
+  @@map("attendance_status")
+}
+
+enum AttendanceMode {
+  physical
+  virtual
+
+  @@map("attendance_mode")
+}
+
+enum AttendanceMethod {
+  qr
+  manual
+  bulk
+  closure
+  correction
+
+  @@map("attendance_method")
+}
+
 enum SessionType {
   keynote
   plenary
@@ -300,6 +327,9 @@ model Event {
   assessmentStages        AssessmentStageConfig[]
   assessmentQuestions     AssessmentQuestion[]
   assessmentSections      AssessmentSection[]
+  attendanceTokens        AttendanceToken[]
+  attendanceRecords       AttendanceRecord[]
+  sessionAttendance       SessionAttendance[]
 
   @@map("event")
 }
@@ -307,16 +337,83 @@ model Event {
 /// One selected event date (E1 brief, section 4). Dates are picked individually and need not be
 /// consecutive; the event's starts_on/ends_on are derived from the earliest and latest row.
 model EventDate {
-  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  eventId   String   @map("event_id") @db.Uuid
-  date      DateTime @db.Date
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  id                       String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventId                  String    @map("event_id") @db.Uuid
+  date                     DateTime  @db.Date
+  /// Set when an admin closes attendance for the date; absences are only recorded after that.
+  attendanceClosedAt       DateTime? @map("attendance_closed_at") @db.Timestamptz(3)
+  attendanceClosedByUserId String?   @map("attendance_closed_by_user_id") @db.Uuid
+  createdAt                DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  event    Event          @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  sessions EventSession[]
+  event      Event              @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  sessions   EventSession[]
+  tokens     AttendanceToken[]
+  attendance AttendanceRecord[]
 
   @@unique([eventId, date])
   @@map("event_date")
+}
+
+/// One QR code per registered delegate per event date. The code carries a random token; only
+/// its hash is stored, and holding the code never counts as attendance by itself.
+model AttendanceToken {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventId     String    @map("event_id") @db.Uuid
+  delegateId  String    @map("delegate_id") @db.Uuid
+  eventDateId String    @map("event_date_id") @db.Uuid
+  tokenHash   String    @unique @map("token_hash")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  revokedAt   DateTime? @map("revoked_at") @db.Timestamptz(3)
+
+  event     Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  delegate  Delegate  @relation(fields: [delegateId], references: [id], onDelete: Cascade)
+  eventDate EventDate @relation(fields: [eventDateId], references: [id], onDelete: Cascade)
+
+  @@unique([delegateId, eventDateId])
+  @@map("attendance_token")
+}
+
+/// Attendance of one delegate on one event date, with who recorded it and how. Corrections keep
+/// the row and write old and new values to the audit log.
+model AttendanceRecord {
+  id               String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventId          String           @map("event_id") @db.Uuid
+  delegateId       String           @map("delegate_id") @db.Uuid
+  eventDateId      String           @map("event_date_id") @db.Uuid
+  status           AttendanceStatus
+  mode             AttendanceMode
+  method           AttendanceMethod
+  recordedByUserId String           @map("recorded_by_user_id") @db.Uuid
+  note             String?
+  recordedAt       DateTime         @default(now()) @map("recorded_at") @db.Timestamptz(3)
+  updatedAt        DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  event     Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  delegate  Delegate  @relation(fields: [delegateId], references: [id], onDelete: Cascade)
+  eventDate EventDate @relation(fields: [eventDateId], references: [id], onDelete: Cascade)
+
+  @@unique([delegateId, eventDateId])
+  @@index([eventId, eventDateId])
+  @@map("attendance_record")
+}
+
+/// Presence at one session, recorded by an admin; separate from the event-date record.
+model SessionAttendance {
+  id               String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventId          String           @map("event_id") @db.Uuid
+  delegateId       String           @map("delegate_id") @db.Uuid
+  sessionId        String           @map("session_id") @db.Uuid
+  method           AttendanceMethod @default(manual)
+  recordedByUserId String           @map("recorded_by_user_id") @db.Uuid
+  recordedAt       DateTime         @default(now()) @map("recorded_at") @db.Timestamptz(3)
+
+  event    Event        @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  delegate Delegate     @relation(fields: [delegateId], references: [id], onDelete: Cascade)
+  session  EventSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([delegateId, sessionId])
+  @@index([sessionId])
+  @@map("session_attendance")
 }
 
 /// A programme session (E1 brief, section 5): optional, always on one of the event's selected dates.
@@ -338,8 +435,9 @@ model EventSession {
   createdAt       DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt       DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  event     Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  eventDate EventDate @relation(fields: [eventDateId], references: [id], onDelete: Restrict)
+  event      Event               @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  eventDate  EventDate           @relation(fields: [eventDateId], references: [id], onDelete: Restrict)
+  attendance SessionAttendance[]
 
   @@index([eventId])
   @@index([eventDateId])
@@ -591,6 +689,9 @@ model Delegate {
   importRows          ImportRow[]
   messages            DelegateMessageRecipient[]
   assessmentResponses AssessmentResponse[]
+  attendanceTokens    AttendanceToken[]
+  attendanceRecords   AttendanceRecord[]
+  sessionAttendance   SessionAttendance[]
 
   @@index([eventId])
   @@index([email])

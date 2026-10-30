@@ -36,8 +36,11 @@ export const myEventSchema = z.object({
     country: z.string().nullable(),
     signedUpAt: z.string().nullable(),
   }),
-  /** Attendance comes only from an attendance record (E6); none exist before Increment 3. */
-  attendance: z.object({ status: z.literal('not_recorded') }),
+  /**
+   * Attendance comes only from attendance records (E6): pending until the organisers record it
+   * or close the dates, then attended, partially attended or absent.
+   */
+  attendance: z.object({ status: z.enum(['pending', 'attended', 'partial', 'absent']) }),
 });
 export type MyEvent = z.infer<typeof myEventSchema>;
 

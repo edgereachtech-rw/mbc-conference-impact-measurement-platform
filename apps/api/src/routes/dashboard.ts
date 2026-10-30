@@ -13,6 +13,7 @@ import { canRunImports, IMPORT_ROLES } from '../auth/policies.js';
 import type { PrismaClient } from '../db.js';
 import { HttpError } from '../lib/errors.js';
 import { stageSummaryFor, type EligibleStatuses } from './assessments.js';
+import { attendanceOverviewFor } from './attendance.js';
 
 interface Deps {
   prisma: () => PrismaClient;
@@ -163,6 +164,7 @@ export function dashboardRouter({ prisma, config, middleware, now }: Deps): Rout
         });
       }
 
+      const attendance = await attendanceOverviewFor({ prisma, config, now }, event.id);
       const dashboard: EventDashboard = {
         event: {
           id: event.id,
@@ -185,6 +187,16 @@ export function dashboardRouter({ prisma, config, middleware, now }: Deps): Rout
           byStatus: statusCounts,
         },
         stages,
+        attendance: {
+          registered: attendance?.overall.registered ?? registered,
+          attended: attendance?.overall.attended ?? 0,
+          partial: attendance?.overall.partial ?? 0,
+          absent: attendance?.overall.absent ?? 0,
+          pending: attendance?.overall.pending ?? registered,
+          attendees: attendance?.overall.attendees ?? 0,
+          rate: attendance?.overall.rate ?? null,
+          dates: attendance?.dates ?? [],
+        },
         messages: {
           sent: event._count.messages,
           recipients: messageTotals._sum.recipientCount ?? 0,

@@ -1,4 +1,4 @@
-import type { MyEvent } from '@mbc/shared';
+import { overallAttendanceLabels, type MyEvent } from '@mbc/shared';
 
 import { StatusPill } from '@/components/admin/page-header';
 import {
@@ -10,6 +10,7 @@ import {
 } from '@/lib/my-events';
 
 import { AssessmentsPanel } from './assessments-panel';
+import { AttendanceCodes } from './attendance-codes';
 import { JourneyStrip } from './journey-strip';
 
 /**
@@ -74,9 +75,19 @@ export function EventDetail({ event, contactEmail }: { event: MyEvent; contactEm
               Attendance
             </dt>
             <dd className="mt-1">
-              <StatusPill tone="neutral">Not recorded</StatusPill>
+              <StatusPill
+                tone={
+                  event.attendance.status === 'attended' || event.attendance.status === 'partial'
+                    ? 'positive'
+                    : event.attendance.status === 'absent'
+                      ? 'attention'
+                      : 'neutral'
+                }
+              >
+                {overallAttendanceLabels[event.attendance.status]}
+              </StatusPill>
               <span className="mt-1 block text-xs text-corp-muted">
-                Recorded at the conference.
+                Recorded by the organisers at the event. Your codes are below.
               </span>
             </dd>
           </div>
@@ -91,6 +102,13 @@ export function EventDetail({ event, contactEmail }: { event: MyEvent; contactEm
           </a>
           ; the organisers correct registrations and every change is recorded.
         </p>
+      </section>
+
+      <section aria-labelledby="event-attendance-title" className="space-y-3">
+        <h2 id="event-attendance-title" className="font-corporate text-h3 text-corp-ink">
+          Your attendance
+        </h2>
+        <AttendanceCodes eventId={event.id} />
       </section>
 
       <section aria-labelledby="event-assessments-title" className="space-y-3">

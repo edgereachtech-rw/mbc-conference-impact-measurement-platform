@@ -42,7 +42,7 @@ const lagos = {
     country: null,
     signedUpAt: null,
   },
-  attendance: { status: 'not_recorded' },
+  attendance: { status: 'pending' },
 } as const;
 const past = {
   ...lagos,

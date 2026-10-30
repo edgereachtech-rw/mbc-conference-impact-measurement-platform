@@ -10,6 +10,7 @@ import type { Logger } from '../lib/logger.js';
 import type { MailConfig } from '../mail/config.js';
 import type { Mailer } from '../mail/mailer.js';
 import { assessmentRouter } from './assessments.js';
+import { attendanceRouter } from './attendance.js';
 import { authRouter } from './auth.js';
 import { dashboardRouter } from './dashboard.js';
 import { delegateAccountRouter, type AccountStatusHooks } from './delegate-accounts.js';
@@ -61,6 +62,9 @@ export function apiRouter(deps: ApiDeps): Router {
   router.use(eventDelegateRouter({ prisma: deps.prisma, middleware }));
   router.use(
     dashboardRouter({ prisma: deps.prisma, config: deps.config, middleware, now: deps.now }),
+  );
+  router.use(
+    attendanceRouter({ prisma: deps.prisma, config: deps.config, middleware, now: deps.now }),
   );
   router.use(
     meEventsRouter({ prisma: deps.prisma, config: deps.config, middleware, now: deps.now }),

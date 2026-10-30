@@ -5,6 +5,7 @@ import { Loader2Icon } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
+import { AttendanceManager } from '@/components/admin/attendance/attendance-manager';
 import { EventWorkspace } from '@/components/admin/event-workspace';
 import { consoleButton } from '@/components/console/page';
 import { apiFetch } from '@/lib/api';
@@ -16,7 +17,8 @@ import { EventProfileForm } from './event-profile-form';
 import { PublishPanel } from './publish-panel';
 import { SessionsEditor } from './sessions-editor';
 
-type Tab = 'profile' | 'dates' | 'sessions' | 'assessments' | 'publish' | 'delegates';
+type Tab =
+  'profile' | 'dates' | 'sessions' | 'assessments' | 'publish' | 'delegates' | 'attendance';
 
 const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'profile', label: 'Event profile' },
@@ -25,6 +27,7 @@ const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'assessments', label: 'Assessment configuration' },
   { id: 'publish', label: 'Review and publication' },
   { id: 'delegates', label: 'Delegates' },
+  { id: 'attendance', label: 'Attendance' },
 ];
 
 interface EventSettingsProps {
@@ -187,6 +190,7 @@ export function EventSettings({ initialEvent }: EventSettingsProps) {
             <EventWorkspace eventId={event.id} eventName={event.name} />
           </div>
         ) : null}
+        {tab === 'attendance' ? <AttendanceManager event={event} /> : null}
       </div>
     </section>
   );

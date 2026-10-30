@@ -25,7 +25,7 @@ const lagos: MyEvent = {
     country: 'Nigeria',
     signedUpAt: '2026-10-29T15:34:07.015Z',
   },
-  attendance: { status: 'not_recorded' },
+  attendance: { status: 'pending' },
 };
 
 describe('EventDetail', () => {
@@ -43,7 +43,7 @@ describe('EventDetail', () => {
     expect(within(reg).getByText('Not provided')).toBeTruthy(); // job title
     expect(within(reg).getByText('Nominated by an organisation')).toBeTruthy();
     expect(within(reg).getByText('29 October 2026')).toBeTruthy();
-    expect(within(reg).getByText('Not recorded')).toBeTruthy();
+    expect(within(reg).getByText('Pending')).toBeTruthy();
     expect(within(reg).getByRole('link', { name: 'conference@example.com' })).toBeTruthy();
     expect(screen.getByRole('region', { name: 'Your journey' })).toBeTruthy();
     expect(screen.getAllByRole('listitem')).toHaveLength(4);

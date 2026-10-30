@@ -1,4 +1,4 @@
-import type { MyEvent } from '@mbc/shared';
+import { overallAttendance, type MyEvent } from '@mbc/shared';
 import { Router } from 'express';
 
 import type { AuthConfig } from '../auth/config.js';
@@ -76,7 +76,13 @@ export function meEventsRouter({ prisma, config, middleware, now }: Deps): Route
         jobTitle: true,
         country: true,
         signedUpAt: true,
-        event: { select: EVENT_SELECT },
+        event: {
+          select: {
+            ...EVENT_SELECT,
+            dates: { select: { id: true, attendanceClosedAt: true } },
+          },
+        },
+        attendanceRecords: { select: { eventDateId: true, status: true } },
       },
     });
     const current = today(clock());
@@ -101,7 +107,15 @@ export function meEventsRouter({ prisma, config, middleware, now }: Deps): Route
         country: r.country,
         signedUpAt: r.signedUpAt ? r.signedUpAt.toISOString() : null,
       },
-      attendance: { status: 'not_recorded' },
+      attendance: {
+        status: overallAttendance(
+          r.event.dates.map((d) => ({
+            closed: d.attendanceClosedAt !== null,
+            daily:
+              r.attendanceRecords.find((a) => a.eventDateId === d.id)?.status ?? 'not_checked_in',
+          })),
+        ),
+      },
     }));
     events.sort((a, b) => {
       if (a.period !== b.period) return a.period === 'upcoming' ? -1 : 1;

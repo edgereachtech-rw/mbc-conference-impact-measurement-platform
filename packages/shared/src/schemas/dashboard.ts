@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { stageSummarySchema } from './assessments.js';
+import { attendanceDateSchema } from './attendance.js';
 import { delegateListStatuses } from './delegates.js';
 import {
   assessmentStages,
@@ -56,6 +57,17 @@ export const eventDashboardSchema = z.object({
       nonCompleters: z.number().int(),
     }),
   ),
+  /** Attendance across the event's dates (counts only). */
+  attendance: z.object({
+    registered: z.number().int(),
+    attended: z.number().int(),
+    partial: z.number().int(),
+    absent: z.number().int(),
+    pending: z.number().int(),
+    attendees: z.number().int(),
+    rate: z.number().nullable(),
+    dates: z.array(attendanceDateSchema),
+  }),
   messages: z.object({
     sent: z.number().int(),
     recipients: z.number().int(),

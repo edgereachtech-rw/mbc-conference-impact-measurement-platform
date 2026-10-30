@@ -7,7 +7,13 @@ import { useEffect, useState } from 'react';
 
 import { consoleButton, Panel, StatePanel, StatTile, StatusPill } from '@/components/console/page';
 import { apiFetch } from '@/lib/api';
-import { formatInstant, stageLabels, stageStatusLabels, stageWhen } from '@/lib/events';
+import {
+  formatDateShort,
+  formatInstant,
+  stageLabels,
+  stageStatusLabels,
+  stageWhen,
+} from '@/lib/events';
 import { describeError } from '@/lib/imports';
 
 interface EventDashboardProps {
@@ -86,7 +92,7 @@ export function EventDashboard({ eventId, timezone }: EventDashboardProps) {
       />
     );
   }
-  const { event, delegates, stages, messages, generatedAt } = state.dashboard;
+  const { event, delegates, stages, attendance, messages, generatedAt } = state.dashboard;
 
   return (
     <div className="space-y-6">
@@ -120,6 +126,51 @@ export function EventDashboard({ eventId, timezone }: EventDashboardProps) {
           value={event.sessions}
           hint={`${event.days} event day${event.days === 1 ? '' : 's'} · ${event.timezone}`}
         />
+      </section>
+
+      <section aria-label="Attendance" className="space-y-3">
+        <h2 className="font-corporate text-h3 text-corp-ink">Attendance</h2>
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          <StatTile
+            label="Attended at least one day"
+            value={attendance.attendees}
+            tone={attendance.attendees > 0 ? 'positive' : 'neutral'}
+            hint={
+              attendance.rate === null
+                ? 'Nobody registered'
+                : `${attendance.rate}% of ${attendance.registered} registered`
+            }
+          />
+          <StatTile label="Every day" value={attendance.attended} hint="Attended all dates" />
+          <StatTile label="Partially" value={attendance.partial} hint="Some dates only" />
+          <StatTile
+            label="Absent · Pending"
+            value={`${attendance.absent} · ${attendance.pending}`}
+            hint="Absent once a date is closed"
+          />
+        </div>
+        {attendance.dates.length ? (
+          <Panel>
+            <dl aria-label="Attendance by date" className="divide-y divide-corp-line text-sm">
+              {attendance.dates.map((d) => (
+                <div
+                  key={d.id}
+                  className="flex flex-wrap items-center justify-between gap-2 py-1.5"
+                >
+                  <dt className="text-corp-text">
+                    {formatDateShort(d.date)}
+                    {d.closedAt ? ' · closed' : ' · open'}
+                  </dt>
+                  <dd className="text-corp-ink tabular-nums">
+                    {d.counts.attended + d.counts.partial} of {d.counts.registered} attended
+                    {d.counts.rate !== null ? ` (${d.counts.rate}%)` : ''} · {d.counts.physical} in
+                    person · {d.counts.virtual} online · {d.counts.absent} absent
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </Panel>
+        ) : null}
       </section>
 
       <section aria-label="Assessment stages" className="space-y-3">

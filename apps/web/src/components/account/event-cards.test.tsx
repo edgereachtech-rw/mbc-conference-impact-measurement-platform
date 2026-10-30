@@ -25,7 +25,7 @@ const lagos: MyEvent = {
     country: null,
     signedUpAt: null,
   },
-  attendance: { status: 'not_recorded' },
+  attendance: { status: 'pending' },
 };
 const past: MyEvent = {
   ...lagos,

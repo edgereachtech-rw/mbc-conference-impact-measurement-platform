@@ -25,7 +25,7 @@ const lagos: MyEvent = {
     country: 'Nigeria',
     signedUpAt: '2026-10-29T15:34:07.015Z',
   },
-  attendance: { status: 'not_recorded' },
+  attendance: { status: 'pending' },
 };
 
 describe('ProfilePanel', () => {

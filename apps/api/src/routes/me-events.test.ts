@@ -156,7 +156,7 @@ describe.skipIf(!hasDatabase)('My Events (E3-10, D7, Increment 1c)', () => {
     }>;
     expect(events.map((e) => e.id)).toEqual([lagos, online, past]); // soonest upcoming first, then most recent past
     expect(events.map((e) => e.period)).toEqual(['upcoming', 'upcoming', 'past']);
-    expect(events.every((e) => e.attendance.status === 'not_recorded')).toBe(true);
+    expect(events.every((e) => e.attendance.status === 'pending')).toBe(true);
     expect(events[1]?.registration).toMatchObject({
       attendanceFormat: 'virtual',
       organisation: 'Acme',
