@@ -1,7 +1,9 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 
 import { EventsList } from '@/components/admin/events-list';
 import { AdminContent, AdminPageHeader } from '@/components/admin/page-header';
+import { consoleButton } from '@/components/console/page';
 import { importsAccess } from '@/lib/imports-access';
 import { getSession } from '@/lib/session';
 
@@ -17,7 +19,14 @@ export default async function EventsPage() {
       <AdminPageHeader
         breadcrumbs={[{ label: 'Overview', href: '/admin' }, { label: 'Events' }]}
         title="Events"
-        description="Every event the organiser team runs. Open one to manage its registrations, send messages and review imports."
+        description="Every event the organiser team runs. Open one to configure it, manage registrations, send messages and review imports."
+        actions={
+          access === 'allowed' ? (
+            <Link href="/admin/events/new" className={consoleButton({ variant: 'accent' })}>
+              New event
+            </Link>
+          ) : null
+        }
       />
       <AdminContent>
         {access === 'allowed' ? (

@@ -163,14 +163,21 @@ function ResolutionForm({ row, onResolved }: ResolutionFormProps) {
       </fieldset>
 
       {needsConfirmation ? (
-        <label className="flex items-start gap-2 text-sm">
+        <label
+          className={
+            confirmed
+              ? 'flex min-h-tap items-start gap-3 rounded-md border border-success/40 bg-success/5 p-3 text-sm'
+              : 'flex min-h-tap items-start gap-3 rounded-md border border-brand-warning bg-brand-warning/10 p-3 text-sm'
+          }
+        >
           <input
             type="checkbox"
-            className="mt-1 size-4"
+            className="mt-0.5 size-5 shrink-0 accent-brand-primary"
             checked={confirmed}
             onChange={(e) => setConfirmed(e.target.checked)}
           />
           <span>
+            <span className="block font-medium text-brand-text">Confirmation required</span>
             {action === 'link_existing'
               ? 'I have established that this row is the same person as the existing person.'
               : 'I have established that this row is a different person from anyone already registered.'}
@@ -198,7 +205,12 @@ function ResolutionForm({ row, onResolved }: ResolutionFormProps) {
         </p>
       ) : null}
 
-      <div className="flex justify-end">
+      <div className="flex flex-col items-end gap-1">
+        {needsConfirmation && !confirmed ? (
+          <p className="text-xs text-brand-muted" role="note">
+            Tick the confirmation above to enable “Apply decision”.
+          </p>
+        ) : null}
         <Button type="submit" disabled={!canSubmit}>
           {busy ? <Loader2Icon className="animate-spin" aria-hidden="true" /> : null}
           {busy ? 'Applying…' : 'Apply decision'}

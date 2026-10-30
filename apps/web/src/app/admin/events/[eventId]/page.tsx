@@ -1,22 +1,24 @@
+import type { EventDetail } from '@mbc/shared';
 import type { Metadata } from 'next';
 import { cookies } from 'next/headers';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
+import { EventSettings } from '@/components/admin/event-setup/event-settings';
 import { EventWorkspace } from '@/components/admin/event-workspace';
 import { AdminContent, AdminPageHeader, StatusPill } from '@/components/admin/page-header';
 import { consoleButton } from '@/components/console/page';
 import { apiInternalUrl } from '@/lib/api';
+import {
+  eventFormatLabels,
+  eventStatusLabels,
+  eventTypeLabels,
+  formatDateShort,
+} from '@/lib/events';
 import { importsAccess } from '@/lib/imports-access';
-import type { EventSummary } from '@/lib/imports';
 import { getSession } from '@/lib/session';
 
 export const metadata: Metadata = { title: 'Event' };
-
-interface EventDetail extends EventSummary {
-  theme: string | null;
-  location: string | null;
-}
 
 /** The event as the API serves it to this admin session, or null when it does not exist or is not allowed. */
 async function loadEvent(eventId: string): Promise<EventDetail | null> {
@@ -36,9 +38,6 @@ async function loadEvent(eventId: string): Promise<EventDetail | null> {
   }
 }
 
-const statusLabel = { draft: 'Draft', active: 'Active', archived: 'Archived' } as const;
-const formatLabel = { physical: 'In person', virtual: 'Online', hybrid: 'Hybrid' } as const;
-
 export default async function EventPage({ params }: { params: Promise<{ eventId: string }> }) {
   const { eventId } = await params;
   const session = await getSession();
@@ -54,8 +53,25 @@ export default async function EventPage({ params }: { params: Promise<{ eventId:
           { label: 'Events', href: '/admin/events' },
           { label: event?.name ?? 'Event' },
         ]}
+        eyebrow={event ? `${eventTypeLabels[event.eventType]} · ${event.code}` : undefined}
         title={event?.name ?? 'Event'}
-        description={event?.theme ?? undefined}
+        description={event?.theme ?? event?.description}
+        meta={
+          event ? (
+            <>
+              <StatusPill tone={event.status === 'active' ? 'positive' : 'neutral'}>
+                {eventStatusLabels[event.status]}
+              </StatusPill>
+              <StatusPill tone="neutral">{eventFormatLabels[event.format]}</StatusPill>
+              <span className="text-xs text-corp-muted">
+                {event.dates.length
+                  ? event.dates.map((d) => formatDateShort(d.date)).join(', ')
+                  : 'No dates'}{' '}
+                · {event.timezone}
+              </span>
+            </>
+          ) : null
+        }
         actions={
           event && event.status !== 'archived' ? (
             <Link href="/admin/imports" className={consoleButton({ variant: 'accent' })}>
@@ -72,41 +88,7 @@ export default async function EventPage({ params }: { params: Promise<{ eventId:
           </div>
         ) : (
           <>
-            <section aria-label="Event details" className="border border-corp-line bg-white">
-              <dl className="grid gap-4 p-4 sm:grid-cols-2 lg:grid-cols-4 md:p-5">
-                <div>
-                  <dt className="text-xs font-semibold tracking-[0.08em] text-corp-muted uppercase">
-                    Dates
-                  </dt>
-                  <dd className="mt-1 text-sm text-corp-ink">
-                    {event.startsOn.slice(0, 10)} to {event.endsOn.slice(0, 10)}
-                  </dd>
-                  <dd className="text-xs text-corp-muted">{event.timezone}</dd>
-                </div>
-                <div>
-                  <dt className="text-xs font-semibold tracking-[0.08em] text-corp-muted uppercase">
-                    Venue
-                  </dt>
-                  <dd className="mt-1 text-sm text-corp-ink">{event.location ?? 'Not set'}</dd>
-                </div>
-                <div>
-                  <dt className="text-xs font-semibold tracking-[0.08em] text-corp-muted uppercase">
-                    Format
-                  </dt>
-                  <dd className="mt-1 text-sm text-corp-ink">{formatLabel[event.format]}</dd>
-                </div>
-                <div>
-                  <dt className="text-xs font-semibold tracking-[0.08em] text-corp-muted uppercase">
-                    Status
-                  </dt>
-                  <dd className="mt-1">
-                    <StatusPill tone={event.status === 'active' ? 'positive' : 'neutral'}>
-                      {statusLabel[event.status]}
-                    </StatusPill>
-                  </dd>
-                </div>
-              </dl>
-            </section>
+            <EventSettings initialEvent={event} />
             <EventWorkspace eventId={event.id} eventName={event.name} />
           </>
         )}

@@ -261,6 +261,64 @@ path works without a proxy.
   sign in and is hidden from My Events), audited with old and new
   values.
 
+## Event creation and configuration (backlog E1, brief of 2026-10-30)
+
+Admin-only, from the console: `/admin/events/new` creates an event (profile plus at least one
+date); `/admin/events/:eventId` carries the sections Event profile, Event dates, Sessions and
+schedule, Assessment configuration, Review and publication, above the delegates and messages.
+
+- Profile (`POST /api/v1/events`, `PATCH /api/v1/events/:id`): name, unique code generated from
+  the name at creation (the slug, numbered when the name is already taken, never edited),
+  description, type, organiser, format, time zone; optional theme, website, image URL, additional
+  information. A venue is required for in-person and hybrid events.
+- Dates (`PUT /api/v1/events/:id/dates`): picked one by one on a calendar, consecutive or not,
+  stored as `event_date` rows; duplicates and empty lists are refused; `starts_on`/`ends_on`
+  are derived from the earliest and latest date (OQ-30). Removing a date that still has
+  sessions answers 409 `dates_have_sessions` with the counts.
+- Sessions (`POST/PATCH/DELETE /api/v1/events/:id/sessions[/:sessionId]`): optional; must sit
+  on a selected date (422 `date_not_in_event`); end after start; times are wall-clock in the
+  event time zone. The schedule groups by date and keeps empty dates visible.
+- Assessment stages (`PUT /api/v1/events/:id/assessments/:stage`): `pre_conference`,
+  `during_conference`, `follow_up`, each with enabled, opens at, closes at, target, status,
+  validated independently; windows are entered in the event time zone and stored as instants.
+- Publication (`POST /api/v1/events/:id/status`): draft, active (published), archived.
+  Publishing requires at least one date and the venue rule; archived events refuse changes
+  (409 `event_archived`). `GET /api/v1/events/:id` serves the full configuration.
+- Migration `20261031090000_event_setup` adds the profile columns and the `event_date`,
+  `event_session` and `assessment_stage_config` tables, and backfills existing events with
+  one date per day of their start-to-end range and three disabled stages.
+
+## Assessment questions and answers (backlog E1-4, groundwork for E5, E11, E12)
+
+Every enabled assessment stage carries questions that delegates answer (decided 2026-10-30).
+
+- Admin (`/admin/events/:id`, Assessment configuration, "Manage questions"): per stage, a
+  question list with order, type (short answer, long answer, single choice, multiple choice,
+  rating scale, yes or no, number, date), required flag, measurement area and help text, plus
+  suggested questions per measurement area of the brief. Routes:
+  `GET/POST /api/v1/events/:id/assessments/:stage/questions`, `PATCH/DELETE .../questions/:qid`,
+  `PUT .../questions/order`. Questions are versioned: editing a question that already has
+  answers retires that version and creates version + 1 under the same `question_key`; deleting
+  an answered question retires it. Every answer points at the exact version it answered.
+- Sections (2026-10-30): questions can be grouped into titled sections with an optional
+  introduction (`POST/PATCH/DELETE .../assessments/:stage/sections[/:sid]`, `PUT
+.../sections/order`; a question carries `sectionId`, null for the untitled first group).
+  Delegates see an open stage one section per step with Previous, Next, Save draft and a final
+  Submit; a missing required answer sends them back to its section. Deleting a section keeps its
+  questions and moves them to the first group. Migration `20261031150000_assessment_sections`.
+- Rules: an enabled stage with no questions cannot be scheduled or opened (422
+  `stage_without_questions`) and blocks publishing the event; the publish checklist says so.
+- Delegate (`/account/events/:id`, "Your assessments"): `GET /api/v1/me/events/:id/assessments`
+  lists the enabled stages as upcoming, open or closed for the signed-in delegate's own
+  registration; `PUT /api/v1/me/events/:id/assessments/:stage` saves a draft or submits
+  (`submit: true`) after validating each answer against its question type and requiring every
+  required question; a stage is answerable only when open and inside its window, and only until
+  it is submitted (409 `already_submitted`). Answers never enter the audit log; `assessment.saved`
+  and `assessment.submitted` record stage, registration id and counts.
+- Attendance is recorded separately (E6); a submission never counts as attendance.
+- Migration `20261031120000_assessment_questions`: `assessment_question`,
+  `assessment_response`, `assessment_answer`.
+
 ## Messages to delegates (Increment 1b, backlog E2-14)
 
 Admin-only emails to selected registrations of an event, from the event page
@@ -296,6 +354,11 @@ D3 to D9). Every route is under `/api/v1`, requires an `admin` session, and is r
 other role, delegates and anonymous callers. Nothing in a file is executed: CSV is read with a
 strict RFC 4180 reader, XLSX cells are read as values only (formula cells contribute their cached
 result), and the original file is not retained (parsed rows live in `import_row`).
+
+- Event format rule (2026-10-30): for an in-person-only or online-only event the import never asks
+  for an attendance format. The mapping step hides the field, any mapped attendance column and its
+  value translations are dropped on the server, and every row gets the event's format. Only hybrid
+  events map the column or choose a run-wide value.
 
 - `POST /events/:eventId/imports` (multipart `file` + `source`): parses the file (10 MB, 5,000
   rows, `.csv` or `.xlsx`; `.xls` and larger files are refused with split guidance), stores the

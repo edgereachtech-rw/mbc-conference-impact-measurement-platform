@@ -9,6 +9,7 @@ import {
   formatLabel,
 } from '@/lib/my-events';
 
+import { AssessmentsPanel } from './assessments-panel';
 import { JourneyStrip } from './journey-strip';
 
 /**
@@ -90,6 +91,13 @@ export function EventDetail({ event, contactEmail }: { event: MyEvent; contactEm
           </a>
           ; the organisers correct registrations and every change is recorded.
         </p>
+      </section>
+
+      <section aria-labelledby="event-assessments-title" className="space-y-3">
+        <h2 id="event-assessments-title" className="font-corporate text-h3 text-corp-ink">
+          Your assessments
+        </h2>
+        <AssessmentsPanel eventId={event.id} timezone={event.timezone} />
       </section>
 
       {event.period === 'upcoming' ? <JourneyStrip event={event} /> : null}

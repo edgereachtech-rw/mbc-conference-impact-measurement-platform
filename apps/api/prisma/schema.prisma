@@ -45,6 +45,67 @@ enum EventFormat {
   @@map("event_format")
 }
 
+enum EventType {
+  conference
+  workshop
+  seminar
+  summit
+  training
+  other
+
+  @@map("event_type")
+}
+
+enum SessionType {
+  keynote
+  plenary
+  panel
+  workshop
+  breakout
+  transfer_planning
+  networking
+  other
+
+  @@map("session_type")
+}
+
+enum AssessmentStage {
+  pre_conference
+  during_conference
+  follow_up
+
+  @@map("assessment_stage")
+}
+
+enum AssessmentStageStatus {
+  draft
+  scheduled
+  open
+  closed
+
+  @@map("assessment_stage_status")
+}
+
+enum AssessmentTarget {
+  all_delegates
+  group
+
+  @@map("assessment_target")
+}
+
+enum QuestionType {
+  short_text
+  long_text
+  single_choice
+  multiple_choice
+  rating
+  yes_no
+  number
+  date
+
+  @@map("question_type")
+}
+
 enum ParticipationCode {
   physical
   virtual
@@ -201,25 +262,191 @@ enum ImportResolution {
 // ------------------------------------------------------------------ event setup (E1)
 
 model Event {
-  id        String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  slug      String      @unique
-  name      String
-  theme     String?
-  startsOn  DateTime    @map("starts_on") @db.Date
-  endsOn    DateTime    @map("ends_on") @db.Date
-  timezone  String      @default("Africa/Lagos")
-  location  String?
-  format    EventFormat @default(hybrid)
-  status    EventStatus @default(draft)
-  createdAt DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+  id             String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  slug           String      @unique
+  name           String
+  theme          String?
+  startsOn       DateTime    @map("starts_on") @db.Date
+  endsOn         DateTime    @map("ends_on") @db.Date
+  timezone       String      @default("Africa/Lagos")
+  location       String?
+  format         EventFormat @default(hybrid)
+  status         EventStatus @default(draft)
+  /// Structured profile (E1 brief, section 3). The slug is the unique event code.
+  description    String      @default("")
+  eventType      EventType   @default(conference) @map("event_type")
+  organiser      String      @default("")
+  website        String?
+  imageUrl       String?     @map("image_url")
+  additionalInfo String?     @map("additional_info")
+  createdAt      DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   participationCategories ParticipationCategory[]
   delegates               Delegate[]
   importRuns              ImportRun[]
   messages                DelegateMessage[]
+  dates                   EventDate[]
+  sessions                EventSession[]
+  assessmentStages        AssessmentStageConfig[]
+  assessmentQuestions     AssessmentQuestion[]
+  assessmentSections      AssessmentSection[]
 
   @@map("event")
+}
+
+/// One selected event date (E1 brief, section 4). Dates are picked individually and need not be
+/// consecutive; the event's starts_on/ends_on are derived from the earliest and latest row.
+model EventDate {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventId   String   @map("event_id") @db.Uuid
+  date      DateTime @db.Date
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  event    Event          @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  sessions EventSession[]
+
+  @@unique([eventId, date])
+  @@map("event_date")
+}
+
+/// A programme session (E1 brief, section 5): optional, always on one of the event's selected dates.
+/// Times are wall-clock in the event's time zone (HH:MM); the date row fixes the day.
+model EventSession {
+  id              String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventId         String      @map("event_id") @db.Uuid
+  eventDateId     String      @map("event_date_id") @db.Uuid
+  title           String
+  sessionType     SessionType @map("session_type")
+  startTime       String      @map("start_time")
+  endTime         String      @map("end_time")
+  description     String?
+  venue           String?
+  speaker         String?
+  capacity        Int?
+  /// Session-specific feedback, configured separately and linked to this session (brief 6.2).
+  feedbackEnabled Boolean     @default(false) @map("feedback_enabled")
+  createdAt       DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  event     Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  eventDate EventDate @relation(fields: [eventDateId], references: [id], onDelete: Restrict)
+
+  @@index([eventId])
+  @@index([eventDateId])
+  @@map("event_session")
+}
+
+/// One of the three assessment stages of an event (E1 brief, section 6), enabled and scheduled
+/// independently. Questions are versioned data of later increments and hang off this row.
+model AssessmentStageConfig {
+  id          String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventId     String                @map("event_id") @db.Uuid
+  stage       AssessmentStage
+  enabled     Boolean               @default(false)
+  opensAt     DateTime?             @map("opens_at") @db.Timestamptz(3)
+  closesAt    DateTime?             @map("closes_at") @db.Timestamptz(3)
+  target      AssessmentTarget      @default(all_delegates)
+  targetGroup String?               @map("target_group")
+  status      AssessmentStageStatus @default(draft)
+  createdAt   DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  event     Event                @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  questions AssessmentQuestion[]
+  responses AssessmentResponse[]
+  sections  AssessmentSection[]
+
+  @@unique([eventId, stage])
+  @@map("assessment_stage_config")
+}
+
+/// A titled group of questions within one stage; delegates see one section per step.
+model AssessmentSection {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  stageConfigId String   @map("stage_config_id") @db.Uuid
+  eventId       String   @map("event_id") @db.Uuid
+  title         String
+  description   String?
+  order         Int
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  stage     AssessmentStageConfig @relation(fields: [stageConfigId], references: [id], onDelete: Cascade)
+  event     Event                 @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  questions AssessmentQuestion[]
+
+  @@index([stageConfigId])
+  @@map("assessment_section")
+}
+
+/// A question of one assessment stage. Versioned: an edit after answers exist creates a new row with
+/// the same question_key and version + 1 and retires this one; answers keep pointing at the version
+/// they answered (CLAUDE.md: questions are data, versioned; responses store the question version).
+model AssessmentQuestion {
+  id            String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  stageConfigId String       @map("stage_config_id") @db.Uuid
+  eventId       String       @map("event_id") @db.Uuid
+  questionKey   String       @default(dbgenerated("gen_random_uuid()")) @map("question_key") @db.Uuid
+  /// Optional section the question is shown under; null means the first, untitled group.
+  sectionId     String?      @map("section_id") @db.Uuid
+  version       Int          @default(1)
+  order         Int
+  prompt        String
+  helpText      String?      @map("help_text")
+  type          QuestionType
+  required      Boolean      @default(true)
+  area          String?
+  options       Json?
+  scale         Json?
+  retiredAt     DateTime?    @map("retired_at") @db.Timestamptz(3)
+  createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  stage   AssessmentStageConfig @relation(fields: [stageConfigId], references: [id], onDelete: Cascade)
+  event   Event                 @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  section AssessmentSection?    @relation(fields: [sectionId], references: [id], onDelete: SetNull)
+  answers AssessmentAnswer[]
+
+  @@unique([questionKey, version])
+  @@index([stageConfigId])
+  @@index([sectionId])
+  @@map("assessment_question")
+}
+
+/// One delegate's response to one stage: a draft until submitted_at is set.
+model AssessmentResponse {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  stageConfigId String    @map("stage_config_id") @db.Uuid
+  delegateId    String    @map("delegate_id") @db.Uuid
+  submittedAt   DateTime? @map("submitted_at") @db.Timestamptz(3)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  stage    AssessmentStageConfig @relation(fields: [stageConfigId], references: [id], onDelete: Cascade)
+  delegate Delegate              @relation(fields: [delegateId], references: [id], onDelete: Cascade)
+  answers  AssessmentAnswer[]
+
+  @@unique([stageConfigId, delegateId])
+  @@index([delegateId])
+  @@map("assessment_response")
+}
+
+/// One answer, pointing at the exact question version it answered.
+model AssessmentAnswer {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  responseId String   @map("response_id") @db.Uuid
+  questionId String   @map("question_id") @db.Uuid
+  value      Json
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  response AssessmentResponse @relation(fields: [responseId], references: [id], onDelete: Cascade)
+  question AssessmentQuestion @relation(fields: [questionId], references: [id], onDelete: Restrict)
+
+  @@unique([responseId, questionId])
+  @@index([questionId])
+  @@map("assessment_answer")
 }
 
 model ParticipationCategory {
@@ -324,15 +551,16 @@ model Delegate {
   createdAt              DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt              DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  event       Event                      @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  userAccount UserAccount?               @relation(fields: [userAccountId], references: [id], onDelete: SetNull)
-  identity    DelegateIdentity?          @relation(fields: [identityId], references: [id], onDelete: Restrict)
-  duplicateOf Delegate?                  @relation("DelegateDuplicates", fields: [duplicateOfId], references: [id], onDelete: SetNull)
-  duplicates  Delegate[]                 @relation("DelegateDuplicates")
-  invitations Invitation[]
-  consents    ConsentRecord[]
-  importRows  ImportRow[]
-  messages    DelegateMessageRecipient[]
+  event               Event                      @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  userAccount         UserAccount?               @relation(fields: [userAccountId], references: [id], onDelete: SetNull)
+  identity            DelegateIdentity?          @relation(fields: [identityId], references: [id], onDelete: Restrict)
+  duplicateOf         Delegate?                  @relation("DelegateDuplicates", fields: [duplicateOfId], references: [id], onDelete: SetNull)
+  duplicates          Delegate[]                 @relation("DelegateDuplicates")
+  invitations         Invitation[]
+  consents            ConsentRecord[]
+  importRows          ImportRow[]
+  messages            DelegateMessageRecipient[]
+  assessmentResponses AssessmentResponse[]
 
   @@index([eventId])
   @@index([email])

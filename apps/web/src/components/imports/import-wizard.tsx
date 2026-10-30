@@ -106,6 +106,9 @@ export function ImportWizard() {
   }, []);
 
   const selectedEvent = events?.find((e) => e.id === eventId) ?? null;
+  /** In-person-only or online-only events fix the attendance format of every registration. */
+  const fixedAttendanceFormat =
+    selectedEvent && selectedEvent.format !== 'hybrid' ? selectedEvent.format : null;
   const uploadsEnabled = status !== null && status !== 'error' && status.uploadsEnabled;
   const fail = (e: unknown, fallback: string) => setFailure(describeError(e, fallback));
 
@@ -146,7 +149,7 @@ export function ImportWizard() {
             : uploaded.suggestedMapping,
         ),
       );
-      setAttendanceDefault('');
+      setAttendanceDefault(fixedAttendanceFormat ?? '');
       setValueMappings({});
       setSaveMapping(false);
       setPreview(null);
@@ -162,17 +165,22 @@ export function ImportWizard() {
   async function buildPreview() {
     if (!upload) return;
     setFailure(null);
-    const built = mappingFromDraft(draft, attendanceDefault);
+    const built = mappingFromDraft(draft, fixedAttendanceFormat ?? attendanceDefault);
     if ('problem' in built) return setFailure({ message: built.problem });
+    const { attendanceFormat: mappedAttendance, ...mappingWithout } = built.mapping;
+    const mapping = fixedAttendanceFormat ? mappingWithout : built.mapping;
+    const attendanceFormatDefault = fixedAttendanceFormat
+      ? fixedAttendanceFormat
+      : attendanceDefault && !mappedAttendance
+        ? attendanceDefault
+        : undefined;
     setBusy(true);
     try {
       const previewed = await apiFetch<PreviewResult>(`/imports/${upload.run.id}/preview`, {
         method: 'POST',
         body: JSON.stringify({
-          mapping: built.mapping,
-          ...(attendanceDefault && !built.mapping.attendanceFormat
-            ? { attendanceFormatDefault: attendanceDefault }
-            : {}),
+          mapping,
+          ...(attendanceFormatDefault ? { attendanceFormatDefault } : {}),
           ...(hasValueMappings(valueMappings) ? { valueMappings } : {}),
           ...(saveMapping ? { saveMapping: true } : {}),
         }),
@@ -401,6 +409,7 @@ export function ImportWizard() {
               draft={draft}
               onDraftChange={setDraft}
               attendanceFormatDefault={attendanceDefault}
+              fixedAttendanceFormat={fixedAttendanceFormat}
               onAttendanceFormatDefaultChange={setAttendanceDefault}
               saveMapping={saveMapping}
               onSaveMappingChange={setSaveMapping}

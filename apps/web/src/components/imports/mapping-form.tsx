@@ -16,6 +16,8 @@ interface MappingFormProps {
   onDraftChange: (draft: MappingDraft) => void;
   attendanceFormatDefault: '' | 'physical' | 'virtual';
   onAttendanceFormatDefaultChange: (value: '' | 'physical' | 'virtual') => void;
+  /** Set for an in-person-only or online-only event: every row gets this format, nothing to map. */
+  fixedAttendanceFormat?: 'physical' | 'virtual' | null;
   saveMapping: boolean;
   onSaveMappingChange: (value: boolean) => void;
   busy: boolean;
@@ -36,6 +38,7 @@ export function MappingForm({
   onDraftChange,
   attendanceFormatDefault,
   onAttendanceFormatDefaultChange,
+  fixedAttendanceFormat = null,
   saveMapping,
   onSaveMappingChange,
   busy,
@@ -108,6 +111,13 @@ export function MappingForm({
             {warning}
           </p>
         ))}
+        {fixedAttendanceFormat ? (
+          <p role="note" data-testid="fixed-format">
+            {fixedAttendanceFormat === 'virtual'
+              ? 'This is an online event: every imported delegate is recorded as online, so no attendance-format column is needed.'
+              : 'This is an in-person event: every imported delegate is recorded as in person, so no attendance-format column is needed.'}
+          </p>
+        ) : null}
         {upload.attendanceRecordColumns.length > 0 ? (
           <p role="note">
             Ignored (attendance is recorded in the platform, never imported):{' '}
@@ -118,6 +128,7 @@ export function MappingForm({
 
       <div className="grid gap-5 md:grid-cols-2">
         {importFields.map((field) => {
+          if (field === 'attendanceFormat' && fixedAttendanceFormat) return null;
           const required = requiredFields.includes(field);
           const id = `${ids.base}-${field}`;
           if (field === 'name') {

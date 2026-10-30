@@ -23,3 +23,5 @@ export * from './schemas/admin.js';
 export * from './schemas/delegates.js';
 export * from './schemas/messages.js';
 export * from './message-body.js';
+export * from './schemas/events.js';
+export * from './schemas/assessments.js';

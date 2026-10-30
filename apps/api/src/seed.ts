@@ -20,7 +20,15 @@ export const ITTEC_2026 = {
   location: 'Lagos Oriental Hotel, Victoria Island, Lagos, Nigeria',
   format: 'hybrid',
   status: 'active',
+  description:
+    'The International Training Transfer Effectiveness Conference: two days on turning training into measurable workplace impact, in Lagos and online.',
+  eventType: 'conference',
+  organiser: 'M.Bryan Consulting Limited',
+  website: 'https://itteconference.mbryanconsultinggroup.com/',
 } as const;
+
+/** Selected event dates (E1 brief, section 4): the two conference days. */
+export const ITTEC_2026_DATES = ['2026-11-12', '2026-11-13'] as const;
 
 export const PARTICIPATION_CATEGORIES = [
   { code: 'physical', name: 'In-person (Lagos)' },
@@ -56,9 +64,28 @@ export async function seed(prisma: PrismaClient, options: SeedOptions = {}): Pro
       timezone: ITTEC_2026.timezone,
       location: ITTEC_2026.location,
       format: ITTEC_2026.format,
+      description: ITTEC_2026.description,
+      eventType: ITTEC_2026.eventType,
+      organiser: ITTEC_2026.organiser,
+      website: ITTEC_2026.website,
     },
   });
   log(`event ${event.slug} (${event.id})`);
+
+  for (const date of ITTEC_2026_DATES) {
+    await prisma.eventDate.upsert({
+      where: { eventId_date: { eventId: event.id, date: new Date(`${date}T00:00:00.000Z`) } },
+      create: { eventId: event.id, date: new Date(`${date}T00:00:00.000Z`) },
+      update: {},
+    });
+  }
+  for (const stage of ['pre_conference', 'during_conference', 'follow_up'] as const) {
+    await prisma.assessmentStageConfig.upsert({
+      where: { eventId_stage: { eventId: event.id, stage } },
+      create: { eventId: event.id, stage },
+      update: {},
+    });
+  }
 
   for (const category of PARTICIPATION_CATEGORIES) {
     await prisma.participationCategory.upsert({

@@ -9,10 +9,12 @@ import type { ImportService } from '../imports/service.js';
 import type { Logger } from '../lib/logger.js';
 import type { MailConfig } from '../mail/config.js';
 import type { Mailer } from '../mail/mailer.js';
+import { assessmentRouter } from './assessments.js';
 import { authRouter } from './auth.js';
 import { delegateAccountRouter, type AccountStatusHooks } from './delegate-accounts.js';
 import { delegateRouter } from './delegates.js';
 import { eventDelegateRouter } from './event-delegates.js';
+import { eventSetupRouter } from './event-setup.js';
 import { eventRouter } from './events.js';
 import { importRouter } from './imports.js';
 import { invitationRouter } from './invitations.js';
@@ -49,7 +51,12 @@ export function apiRouter(deps: ApiDeps): Router {
   router.use(delegateRouter({ prisma: deps.prisma, middleware }));
   router.use(staffRouter({ prisma: deps.prisma, auth: deps.auth, middleware }));
   router.use(importRouter({ imports: deps.imports, resolver: deps.resolver, middleware }));
+  // Setup first: its fixed path /events/code-preview must win over /events/:eventId below.
+  router.use(eventSetupRouter({ prisma: deps.prisma, middleware, now: deps.now }));
   router.use(eventRouter({ prisma: deps.prisma, middleware }));
+  router.use(
+    assessmentRouter({ prisma: deps.prisma, config: deps.config, middleware, now: deps.now }),
+  );
   router.use(eventDelegateRouter({ prisma: deps.prisma, middleware }));
   router.use(
     meEventsRouter({ prisma: deps.prisma, config: deps.config, middleware, now: deps.now }),

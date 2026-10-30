@@ -115,6 +115,27 @@ function sha256(parts: readonly string[]): string {
   return h.digest('hex');
 }
 
+/**
+ * An in-person-only or online-only event has one attendance format for every registration (E1
+ * brief, section 3), so the import never asks for it: any mapped attendance column and its value
+ * translations are dropped and the event's format is applied to every row. Hybrid events keep
+ * the mapping or the run-wide default the admin chose.
+ */
+export function applyEventFormat(
+  request: ImportPreviewRequest,
+  format: 'physical' | 'virtual' | 'hybrid',
+): ImportPreviewRequest {
+  if (format === 'hybrid') return request;
+  const { attendanceFormat: _column, ...mapping } = request.mapping;
+  const { attendanceFormat: _values, ...valueMappings } = request.valueMappings ?? {};
+  return {
+    ...request,
+    mapping: mapping as ImportPreviewRequest['mapping'],
+    attendanceFormatDefault: format,
+    ...(request.valueMappings ? { valueMappings } : {}),
+  };
+}
+
 export class ImportService {
   private readonly now: () => Date;
 
@@ -244,6 +265,11 @@ export class ImportService {
     if (run.status === 'committed' || run.status === 'discarded') {
       throw new HttpError(409, 'run_closed', `This import run is ${run.status}.`);
     }
+    const event = await this.prisma.event.findUniqueOrThrow({
+      where: { id: run.eventId },
+      select: { format: true },
+    });
+    request = applyEventFormat(request, event.format);
     const headers = run.headers as string[];
     const { ignoredColumns } = validateMapping(
       request.mapping,

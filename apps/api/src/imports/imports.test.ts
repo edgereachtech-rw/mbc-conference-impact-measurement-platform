@@ -275,6 +275,62 @@ describe.skipIf(!hasDatabase)('registration imports (E2-1, E2-8..11; D3, D5, D9)
     expect(await prisma.importRun.count({ where: { eventId } })).toBe(0);
   });
 
+  it('an online-only or in-person-only event never asks for the attendance format: every row gets the event format', async () => {
+    const server = app();
+    const online = await newEvent();
+    await prisma.event.update({ where: { id: online.id }, data: { format: 'virtual' } });
+    // No attendance column in the file, no run-wide default: still accepted for an online event.
+    const up = await upload(
+      server,
+      csv([
+        ['Email', 'Full Name'],
+        [email('web-only'), 'Wendy Web'],
+      ]),
+      'online.csv',
+      online.id,
+    );
+    expect(up.status, up.text).toBe(201);
+    const pv = await preview(server, up.body.run.id, {
+      mapping: { email: 'Email', name: 'Full Name' },
+    });
+    expect(pv.status, pv.text).toBe(200);
+    expect(pv.body.rows[0]).toMatchObject({
+      outcome: 'accepted',
+      values: { attendanceFormat: 'virtual' },
+    });
+    // A mapped attendance column saying otherwise is ignored for a single-format event.
+    const up2 = await upload(
+      server,
+      csv([
+        ['Email', 'Full Name', 'Format'],
+        [email('web-two'), 'Wally Web', 'Physical'],
+      ]),
+      'online2.csv',
+      online.id,
+    );
+    const pv2 = await preview(server, up2.body.run.id, {
+      mapping: { email: 'Email', name: 'Full Name', attendanceFormat: 'Format' },
+    });
+    expect(pv2.status, pv2.text).toBe(200);
+    expect(pv2.body.rows[0]).toMatchObject({
+      outcome: 'accepted',
+      values: { attendanceFormat: 'virtual' },
+    });
+    expect(
+      (await prisma.importRun.findUniqueOrThrow({ where: { id: up2.body.run.id } }))
+        .attendanceFormatDefault,
+    ).toBe('virtual');
+    const cf = await confirm(server, up2.body.run.id);
+    expect(cf.status, cf.text).toBe(200);
+    expect(
+      (
+        await prisma.delegate.findFirstOrThrow({
+          where: { eventId: online.id, email: email('web-two') },
+        })
+      ).attendanceFormat,
+    ).toBe('virtual');
+  });
+
   it('upload returns headers, a suggested mapping and flags attendance columns; preview validates the mapping (criteria 2, 16)', async () => {
     const server = app();
     const up = await upload(

@@ -4,6 +4,7 @@ import { principalOf, type createAuthMiddleware } from '../auth/middleware.js';
 import { canRunImports, IMPORT_ROLES } from '../auth/policies.js';
 import type { PrismaClient } from '../db.js';
 import { HttpError } from '../lib/errors.js';
+import { loadEventDetail } from './event-setup.js';
 
 interface Deps {
   prisma: () => PrismaClient;
@@ -14,6 +15,7 @@ const EVENT_FIELDS = {
   id: true,
   slug: true,
   name: true,
+  eventType: true,
   startsOn: true,
   endsOn: true,
   timezone: true,
@@ -39,10 +41,7 @@ export function eventRouter({ prisma, middleware }: Deps): Router {
 
   router.get('/events/:eventId', middleware.requireRole(...IMPORT_ROLES), async (req, res) => {
     if (!canRunImports(principalOf(res))) throw new HttpError(403, 'forbidden', 'Admins only.');
-    const event = await prisma().event.findUnique({
-      where: { id: String(req.params.eventId) },
-      select: { ...EVENT_FIELDS, theme: true, location: true },
-    });
+    const event = await loadEventDetail(prisma(), String(req.params.eventId));
     if (!event) throw new HttpError(404, 'not_found', 'Event not found.');
     res.json({ event });
   });

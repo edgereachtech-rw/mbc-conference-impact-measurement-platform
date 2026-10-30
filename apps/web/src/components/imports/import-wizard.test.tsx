@@ -194,6 +194,25 @@ describe('ImportWizard', () => {
     expect(calls.filter((c) => c.key === 'POST /imports/run1/confirm')).toHaveLength(1);
   });
 
+  it('never asks for the attendance format when the event is online-only', async () => {
+    const calls = stubApi({
+      'GET /imports/status': () => ({ status: 200, body: STATUS_OK }),
+      'GET /events': () => ({ status: 200, body: { events: [{ ...EVENT, format: 'virtual' }] } }),
+      'POST /events/e1/imports': () => ({ status: 201, body: UPLOAD }),
+      'POST /imports/run1/preview': () => ({ status: 200, body: PREVIEW() }),
+    });
+    const user = await uploadAndMap(calls);
+    expect(screen.getByTestId('fixed-format').textContent).toMatch(/online event/);
+    expect(screen.queryByLabelText(/^Attendance format/)).toBeNull();
+    expect(screen.queryByText('Choose…')).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Preview import' }));
+    const previewCall = calls.find((c) => c.key === 'POST /imports/run1/preview');
+    expect(JSON.parse(String(previewCall?.init?.body))).toEqual({
+      mapping: { email: 'Email', name: 'Full Name' },
+      attendanceFormatDefault: 'virtual',
+    });
+  });
+
   it('a stale preview blocks confirmation until a fresh preview is built, then commits', async () => {
     let confirms = 0;
     const calls = stubApi({

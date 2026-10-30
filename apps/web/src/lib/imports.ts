@@ -22,6 +22,7 @@ export interface EventSummary {
   id: string;
   slug: string;
   name: string;
+  eventType?: 'conference' | 'workshop' | 'seminar' | 'summit' | 'training' | 'other';
   startsOn: string;
   endsOn: string;
   timezone: string;

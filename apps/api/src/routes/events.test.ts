@@ -74,7 +74,17 @@ describe.skipIf(!hasDatabase)('GET /events (admin import screen)', () => {
     const mine = (res.body.events as Array<Record<string, unknown>>).find((e) => e.id === eventId);
     expect(mine).toMatchObject({ status: 'draft' });
     expect(Object.keys(mine ?? {}).sort()).toEqual(
-      ['endsOn', 'format', 'id', 'name', 'slug', 'startsOn', 'status', 'timezone'].sort(),
+      [
+        'endsOn',
+        'eventType',
+        'format',
+        'id',
+        'name',
+        'slug',
+        'startsOn',
+        'status',
+        'timezone',
+      ].sort(),
     );
     // One event by id, with theme and location for the detail page; unknown ids are 404.
     const one = await request(server)
