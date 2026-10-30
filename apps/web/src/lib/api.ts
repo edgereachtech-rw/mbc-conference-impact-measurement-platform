@@ -19,6 +19,8 @@ export class ApiError extends Error {
     public readonly code: string,
     message: string,
     public readonly requestId?: string,
+    /** The parsed error response, for callers that read extra fields such as per-question problems. */
+    public readonly body?: unknown,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -37,6 +39,7 @@ async function parseError(res: Response): Promise<ApiError> {
     body?.error?.code ?? 'request_failed',
     body?.error?.message ?? 'The request failed. Please try again.',
     body?.error?.requestId,
+    body,
   );
 }
 

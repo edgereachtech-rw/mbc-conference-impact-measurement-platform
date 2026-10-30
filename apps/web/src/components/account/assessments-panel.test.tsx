@@ -17,6 +17,7 @@ const question = (id: string, extra: Record<string, unknown>) => ({
   area: null,
   options: null,
   scale: null,
+  isKnowledge: false,
   responseCount: 0,
   ...extra,
 });
@@ -43,6 +44,7 @@ const open: MyAssessment = {
     question('t', { type: 'long_text', prompt: 'What do you want to learn?', required: false }),
   ] as MyAssessment['questions'],
   response: null,
+  feedback: {},
   canAnswer: true,
 };
 const upcoming: MyAssessment = {
@@ -53,14 +55,47 @@ const upcoming: MyAssessment = {
   sections: [],
   questions: [],
   response: null,
+  feedback: {},
   canAnswer: false,
+};
+const CORRECT = { correct: true, correctValue: 'b', correctLabel: 'Examine the gap' };
+const scored: MyAssessment = {
+  ...open,
+  stage: 'follow_up',
+  questions: [
+    question('k', {
+      type: 'single_choice',
+      prompt: 'What should be done first?',
+      isKnowledge: true,
+      options: [
+        { value: 'a', label: 'Enrol everyone' },
+        { value: 'b', label: 'Examine the gap' },
+        { value: 'e', label: 'I am not sure' },
+      ],
+    }),
+    question('m', {
+      type: 'multiple_choice',
+      prompt: 'Which do you use?',
+      options: [
+        { value: 'plan', label: 'A transfer plan' },
+        { value: 'none', label: 'None of the above', exclusive: true },
+        { value: 'other', label: 'Other, please specify', other: true },
+      ],
+    }),
+  ] as MyAssessment['questions'],
 };
 const sectioned: MyAssessment = {
   ...open,
   stage: 'during_conference',
   sections: [
-    { id: 's1', title: 'About the sessions', description: 'Think about today.', order: 1 },
-    { id: 's2', title: 'About you', description: null, order: 2 },
+    {
+      id: 's1',
+      title: 'About the sessions',
+      description: 'Think about today.',
+      order: 1,
+      marking: 'none',
+    },
+    { id: 's2', title: 'About you', description: null, order: 2, marking: 'none' },
   ],
   questions: [
     question('a', { type: 'yes_no', prompt: 'Did you attend the keynote?', sectionId: 's1' }),
@@ -93,6 +128,11 @@ function stub(assessments: MyAssessment[]) {
                   updatedAt: 'x',
                   answers: body.answers,
                 },
+                // The stub scores the knowledge question "k" (correct answer "b") like the API.
+                feedback:
+                  typeof body.answers.k === 'string'
+                    ? { k: { ...CORRECT, correct: body.answers.k === 'b' } }
+                    : {},
               }
             : a,
         );
@@ -177,6 +217,40 @@ describe('AssessmentsPanel', () => {
     const submit = calls.find((c) => c.init?.method === 'PUT');
     expect(JSON.parse(String(submit?.init?.body))).toEqual({
       answers: { d: true, a: true },
+      submit: true,
+    });
+  });
+
+  it('saves a knowledge answer at once, shows the result and locks it, and handles exclusive and "Other" options', async () => {
+    const calls = stub([scored]);
+    const user = userEvent.setup();
+    render(<AssessmentsPanel eventId="e1" timezone="Africa/Lagos" />);
+    const card = await screen.findByRole('article', { name: 'Follow-up assessment' });
+    expect(card.textContent).toMatch(/saved as soon as you choose it/);
+
+    await user.click(within(card).getByLabelText('Enrol everyone'));
+    const check = calls.find((c) => c.init?.method === 'PUT');
+    expect(JSON.parse(String(check?.init?.body))).toEqual({ answers: { k: 'a' }, submit: false });
+    expect((await within(card).findByRole('status')).textContent).toMatch(
+      /Not quite. The correct answer is: Examine the gap/,
+    );
+    expect(within(card).getByLabelText('Enrol everyone')).toHaveProperty('disabled', true);
+    expect(within(card).getByLabelText(/Examine the gap/)).toHaveProperty('disabled', true);
+
+    // Exclusive options stand alone; "Other" needs its text before submitting.
+    await user.click(within(card).getByLabelText('A transfer plan'));
+    await user.click(within(card).getByLabelText('None of the above'));
+    expect(within(card).getByLabelText('A transfer plan')).toHaveProperty('checked', false);
+    await user.click(within(card).getByLabelText('Other, please specify'));
+    expect(within(card).getByLabelText('None of the above')).toHaveProperty('checked', false);
+    await user.click(within(card).getByRole('button', { name: 'Submit answers' }));
+    expect(within(card).getByRole('alert').textContent).toMatch(/Please specify/);
+    await user.type(within(card).getByLabelText('Please specify'), 'A coaching log');
+    await user.click(within(card).getByRole('button', { name: 'Submit answers' }));
+    await user.click(within(card).getByRole('button', { name: 'Submit now' }));
+    const submit = calls.filter((c) => c.init?.method === 'PUT').at(-1);
+    expect(JSON.parse(String(submit?.init?.body))).toEqual({
+      answers: { k: 'a', m: { selected: ['other'], other: 'A coaching log' } },
       submit: true,
     });
   });

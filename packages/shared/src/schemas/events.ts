@@ -276,6 +276,34 @@ export const assessmentStageViewSchema = z.object({
 });
 export type AssessmentStageView = z.infer<typeof assessmentStageViewSchema>;
 
+export const stageWindowStates = ['hidden', 'upcoming', 'open', 'closed'] as const;
+export type StageWindowState = (typeof stageWindowStates)[number];
+
+/**
+ * What delegates see for a stage at `at`. A draft or disabled stage is hidden and a closed
+ * stage is closed whatever its dates. A scheduled or open stage follows its window: upcoming
+ * before "available from", closed after the deadline, open in between (a scheduled stage opens
+ * by itself at its opening time; nobody has to flip it). The admin card and the delegate view
+ * both use this, so the two sides agree.
+ */
+export function stageWindowState(
+  stage: {
+    enabled?: boolean;
+    status: AssessmentStageStatus;
+    opensAt: string | Date | null;
+    closesAt: string | Date | null;
+  },
+  at: Date,
+): StageWindowState {
+  if (stage.enabled === false || stage.status === 'draft') return 'hidden';
+  if (stage.status === 'closed') return 'closed';
+  const opens = stage.opensAt ? new Date(stage.opensAt) : null;
+  const closes = stage.closesAt ? new Date(stage.closesAt) : null;
+  if (opens && at < opens) return 'upcoming';
+  if (closes && at > closes) return 'closed';
+  return 'open';
+}
+
 export const eventDetailSchema = z.object({
   id: z.uuid(),
   /** The unique event code, generated from the name at creation (stored as the slug). */

@@ -3,14 +3,20 @@
 import {
   choiceTypes,
   groupQuestions,
+  markedOptions,
+  optionPresets,
   questionFieldsSchema,
   questionTypeLabels,
   questionTypes,
   sectionFieldsSchema,
+  sectionMarkingLabels,
+  sectionMarkings,
   type AssessmentQuestionView,
   type AssessmentSectionView,
   type AssessmentStage,
+  type QuestionOption,
   type QuestionType,
+  type SectionMarking,
 } from '@mbc/shared';
 import {
   ArrowDownIcon,
@@ -20,6 +26,7 @@ import {
   PencilIcon,
   PlusIcon,
   Trash2Icon,
+  XIcon,
 } from 'lucide-react';
 import { useEffect, useId, useState } from 'react';
 
@@ -37,15 +44,26 @@ interface QuestionBuilderProps {
   onChanged: () => void;
 }
 
+export interface OptionDraft {
+  value: string;
+  label: string;
+  /** Points as typed; blank means not scored (for example "Not applicable"). */
+  score: string;
+  correct: boolean;
+  exclusive: boolean;
+  other: boolean;
+}
+
 interface Draft {
   prompt: string;
   helpText: string;
   type: QuestionType;
   required: boolean;
   area: string;
+  /** The admin chose "Other…" for the measurement area and types their own. */
+  areaOther: boolean;
   sectionId: string;
-  /** One option per line: "label" or "value | label". */
-  optionsText: string;
+  options: OptionDraft[];
   scaleMin: string;
   scaleMax: string;
   minLabel: string;
@@ -57,14 +75,27 @@ interface Lists {
   questions: AssessmentQuestionView[];
 }
 
+/** Select value for a measurement area typed by the admin rather than picked from the list. */
+const OTHER_AREA = '__other__';
+
+const emptyOption = (): OptionDraft => ({
+  value: '',
+  label: '',
+  score: '',
+  correct: false,
+  exclusive: false,
+  other: false,
+});
+
 const EMPTY: Draft = {
   prompt: '',
   helpText: '',
-  type: 'rating',
+  type: 'single_choice',
   required: true,
   area: '',
+  areaOther: false,
   sectionId: '',
-  optionsText: '',
+  options: [emptyOption(), emptyOption()],
   scaleMin: '1',
   scaleMax: '5',
   minLabel: '',
@@ -72,106 +103,28 @@ const EMPTY: Draft = {
 };
 
 /** Starting points per stage, one per measurement area of the brief; the admin edits freely. */
-export const SUGGESTIONS: Record<
-  AssessmentStage,
-  Array<{ area: string; prompt: string; type: QuestionType }>
-> = {
-  pre_conference: [
-    {
-      area: 'Existing knowledge and understanding',
-      prompt: 'How would you rate your current knowledge of training transfer?',
-      type: 'rating',
-    },
-    {
-      area: 'Current confidence level',
-      prompt: 'How confident are you in applying what you learn at work?',
-      type: 'rating',
-    },
-    {
-      area: 'Expectations and learning objectives',
-      prompt: 'What do you most want to learn or gain from this event?',
-      type: 'long_text',
-    },
-    {
-      area: 'Relevant professional experience',
-      prompt: 'How many years have you worked in learning, HR or a related field?',
-      type: 'number',
-    },
-    {
-      area: 'Existing challenges related to the subject',
-      prompt: 'What is the biggest challenge you face in turning training into results?',
-      type: 'long_text',
-    },
-  ],
-  during_conference: [
-    {
-      area: 'Knowledge gained',
-      prompt: 'How much new knowledge have you gained so far?',
-      type: 'rating',
-    },
-    {
-      area: 'Changes in confidence',
-      prompt: 'How confident do you feel now about applying what you have learned?',
-      type: 'rating',
-    },
-    {
-      area: 'Session relevance and usefulness',
-      prompt: 'How relevant has the content been to your work?',
-      type: 'rating',
-    },
-    {
-      area: 'Participant engagement',
-      prompt: 'Which sessions have you taken part in today?',
-      type: 'short_text',
-    },
-    {
-      area: 'Session feedback and satisfaction',
-      prompt: 'What would make the next day more useful for you?',
-      type: 'long_text',
-    },
-  ],
-  follow_up: [
-    {
-      area: 'Knowledge retention',
-      prompt: 'How much of what you learned do you still use?',
-      type: 'rating',
-    },
-    {
-      area: 'Application of learning at work',
-      prompt: 'Have you applied what you learned at work?',
-      type: 'yes_no',
-    },
-    {
-      area: 'Changes in professional practice',
-      prompt: 'What have you done differently since the event?',
-      type: 'long_text',
-    },
-    { area: 'Outcomes achieved', prompt: 'What results have you seen so far?', type: 'long_text' },
-    {
-      area: 'Challenges encountered',
-      prompt: 'What has got in the way of applying your learning?',
-      type: 'long_text',
-    },
-    {
-      area: 'Organisational benefits and impact',
-      prompt: 'Has your organisation benefited from what you applied?',
-      type: 'yes_no',
-    },
-  ],
-};
+function optionDraftOf(o: QuestionOption): OptionDraft {
+  return {
+    value: o.value,
+    label: o.label,
+    score: o.score === null || o.score === undefined ? '' : String(o.score),
+    correct: Boolean(o.correct),
+    exclusive: Boolean(o.exclusive),
+    other: Boolean(o.other),
+  };
+}
 
 function draftOf(q: AssessmentQuestionView | null, sectionId = ''): Draft {
-  if (!q) return { ...EMPTY, sectionId };
+  if (!q) return { ...EMPTY, options: [emptyOption(), emptyOption()], sectionId };
   return {
     prompt: q.prompt,
     helpText: q.helpText ?? '',
     type: q.type,
     required: q.required,
     area: q.area ?? '',
+    areaOther: false,
     sectionId: q.sectionId ?? '',
-    optionsText: (q.options ?? [])
-      .map((o) => (o.value === o.label ? o.label : `${o.value} | ${o.label}`))
-      .join('\n'),
+    options: q.options?.length ? q.options.map(optionDraftOf) : [emptyOption(), emptyOption()],
     scaleMin: String(q.scale?.min ?? 1),
     scaleMax: String(q.scale?.max ?? 5),
     minLabel: q.scale?.minLabel ?? '',
@@ -179,19 +132,76 @@ function draftOf(q: AssessmentQuestionView | null, sectionId = ''): Draft {
   };
 }
 
-/** "value | label" lines or plain labels into options; the value defaults to the label. */
-export function parseOptions(text: string): Array<{ value: string; label: string }> {
+/** "value | label" lines or plain labels into option rows; the value defaults to the label. */
+export function parseOptions(text: string): OptionDraft[] {
   return text
     .split('\n')
     .map((line) => line.trim())
     .filter(Boolean)
     .map((line) => {
       const [value, label] = line.split('|').map((s) => s.trim());
-      return label ? { value: value!, label } : { value: line, label: line };
+      return label
+        ? { ...emptyOption(), value: value!, label }
+        : { ...emptyOption(), value: line, label: line };
     });
 }
 
-export function payloadOf(draft: Draft) {
+/** Codes are limited to 100 characters by the API; longer labels get a short derived code. */
+const MAX_CODE = 100;
+
+/**
+ * The stored code for an option: what the admin typed, or the label when the code is blank. A
+ * code longer than the limit (a long label with no code of its own) becomes a short slug of the
+ * label, made unique among the question's options.
+ */
+export function codeFor(raw: string, used: Set<string>): string {
+  if (raw.length <= MAX_CODE) return raw;
+  const slug =
+    raw
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .slice(0, 60) || 'option';
+  let code = slug;
+  for (let n = 2; used.has(code); n += 1) code = `${slug}_${n}`;
+  return code;
+}
+
+/**
+ * Option rows into the API shape: single choice carries scores and the correct answer (only
+ * those the section's marking allows, when given), multiple choice carries exclusive and "Other".
+ */
+export function optionsPayload(
+  type: QuestionType,
+  options: OptionDraft[],
+  marking?: SectionMarking,
+): QuestionOption[] {
+  const used = new Set<string>();
+  const rows = options
+    .filter((o) => o.label.trim() || o.value.trim())
+    .map((o) => {
+      const label = o.label.trim() || o.value.trim();
+      const value = codeFor(o.value.trim() || label, used);
+      used.add(value);
+      if (type === 'single_choice') {
+        return {
+          value,
+          label,
+          ...(o.score.trim() !== '' ? { score: Number(o.score) } : {}),
+          ...(o.correct ? { correct: true } : {}),
+        };
+      }
+      return {
+        value,
+        label,
+        ...(o.exclusive ? { exclusive: true } : {}),
+        ...(o.other ? { other: true } : {}),
+      };
+    });
+  return marking && type === 'single_choice' ? markedOptions(rows, marking) : rows;
+}
+
+export function payloadOf(draft: Draft, marking: SectionMarking = 'none') {
   const isChoice = choiceTypes.includes(draft.type);
   return {
     prompt: draft.prompt,
@@ -199,7 +209,7 @@ export function payloadOf(draft: Draft) {
     type: draft.type,
     required: draft.required,
     area: draft.area,
-    ...(isChoice ? { options: parseOptions(draft.optionsText) } : {}),
+    ...(isChoice ? { options: optionsPayload(draft.type, draft.options, marking) } : {}),
     ...(draft.type === 'rating'
       ? {
           scale: {
@@ -213,10 +223,18 @@ export function payloadOf(draft: Draft) {
   };
 }
 
+function describeOption(o: QuestionOption): string {
+  return `${o.label}${o.correct ? ' ✓' : ''}${
+    o.score !== null && o.score !== undefined ? ` (${o.score})` : ''
+  }${o.exclusive ? ' (only)' : ''}${o.other ? ' (text)' : ''}`;
+}
+
 /**
  * The questions of one assessment stage (every enabled stage needs at least one), grouped into
  * sections that delegates see one step at a time. Sections and questions can be added, edited,
- * moved and deleted; edits to an answered question become a new version on the server.
+ * moved and deleted; edits to an answered question become a new version on the server. A stage
+ * can repeat a question of another stage by reference (same wording, paired answers) and can
+ * load an example set, which becomes the event's own editable questions.
  */
 export function QuestionBuilder({
   eventId,
@@ -233,6 +251,7 @@ export function QuestionBuilder({
     id: string | null;
     title: string;
     description: string;
+    marking: SectionMarking;
   }>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
@@ -256,7 +275,7 @@ export function QuestionBuilder({
     return () => {
       cancelled = true;
     };
-  }, [base, attempt]);
+  }, [base, stage, attempt]);
 
   function apply(result: Partial<Lists>) {
     setLists((current) => ({
@@ -287,17 +306,38 @@ export function QuestionBuilder({
       return copy;
     });
   }
+  function setOption(index: number, patch: Partial<OptionDraft>) {
+    setEditing((e) => {
+      if (!e) return e;
+      const options = e.draft.options.map((o, i) => {
+        if (i === index) return { ...o, ...patch };
+        // One correct answer at most: ticking one unticks the others.
+        return patch.correct ? { ...o, correct: false } : o;
+      });
+      return { ...e, draft: { ...e.draft, options } };
+    });
+    setErrors((errs) => {
+      if (!errs.options) return errs;
+      const copy = { ...errs };
+      delete copy.options;
+      return copy;
+    });
+  }
 
   async function saveQuestion() {
     if (!editing) return;
-    const payload = payloadOf(editing.draft);
+    const payload = payloadOf(editing.draft, markingOf(editing.draft.sectionId));
     const parsed = questionFieldsSchema.safeParse(payload);
     if (!parsed.success) {
       const next: Record<string, string> = {};
       for (const issue of parsed.error.issues) {
         const key = String(issue.path[0] ?? 'form');
-        next[key === 'options' ? 'optionsText' : key === 'scale' ? 'scaleMax' : key] ??=
-          issue.message;
+        // Option issues name the option and the field: "Option 3, code: Too big…".
+        const where =
+          key === 'options' && typeof issue.path[1] === 'number'
+            ? `Option ${issue.path[1] + 1}${issue.path[2] ? `, ${issue.path[2] === 'value' ? 'code' : String(issue.path[2])}` : ''}: `
+            : '';
+        next[key === 'scale' ? 'scaleMax' : key] ??= `${where}${issue.message}`;
       }
       setErrors(next);
       return;
@@ -348,6 +388,7 @@ export function QuestionBuilder({
     const parsed = sectionFieldsSchema.safeParse({
       title: sectionEditing.title,
       description: sectionEditing.description,
+      marking: sectionEditing.marking,
     });
     if (!parsed.success) {
       setErrors({ sectionTitle: parsed.error.issues[0]?.message ?? 'Give the section a title' });
@@ -394,16 +435,50 @@ export function QuestionBuilder({
     ) : null;
   const inputClass =
     'h-11 w-full min-w-0 rounded-none border border-corp-line bg-white px-3 text-base md:text-sm';
+  const smallInput =
+    'h-10 w-full min-w-0 rounded-none border border-corp-line bg-white px-2 text-base md:text-sm';
   const isChoice = editing ? choiceTypes.includes(editing.draft.type) : false;
+  // "Other…" stays selected while the admin types; a stored area outside the list shows as other.
+  const areaOther = editing
+    ? editing.draft.areaOther ||
+      (editing.draft.area !== '' && !stageAreas[stage].includes(editing.draft.area))
+    : false;
+  const isSingle = editing?.draft.type === 'single_choice';
+  /** Marking comes from the section a question sits in; none outside a section. */
+  const markingOf = (sectionId: string): SectionMarking =>
+    lists?.sections.find((x) => x.id === sectionId)?.marking ?? 'none';
+  const marking = editing ? markingOf(editing.draft.sectionId) : 'none';
+  const copyable =
+    editing && lists
+      ? lists.questions.filter(
+          (q) => q.type === editing.draft.type && q.options?.length && q.id !== editing.id,
+        )
+      : [];
   const groups = lists ? groupQuestions(lists.sections, lists.questions) : [];
   const anyBusy = busy || editing !== null || sectionEditing !== null;
+
+  const sectionSelect = (value: string, onChange: (v: string) => void, selectId: string) => (
+    <NativeSelect
+      id={selectId}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="rounded-none"
+    >
+      <option value="">No section (shown first)</option>
+      {(lists?.sections ?? []).map((s) => (
+        <option key={s.id} value={s.id}>
+          {s.title}
+        </option>
+      ))}
+    </NativeSelect>
+  );
 
   return (
     <section
       aria-label={`Questions: ${stageLabels[stage]}`}
       className="space-y-4 rounded-none border border-corp-line bg-white p-4 md:p-5"
     >
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <h3 className="font-corporate text-base font-semibold text-corp-ink">
             Questions · {stageLabels[stage]}
@@ -422,7 +497,7 @@ export function QuestionBuilder({
               onClick={() => {
                 setErrors({});
                 setFailure(null);
-                setSectionEditing({ id: null, title: '', description: '' });
+                setSectionEditing({ id: null, title: '', description: '', marking: 'none' });
               }}
               className={consoleButton({ variant: 'secondary' })}
             >
@@ -434,7 +509,7 @@ export function QuestionBuilder({
               onClick={() => {
                 setErrors({});
                 setFailure(null);
-                setEditing({ id: null, draft: EMPTY });
+                setEditing({ id: null, draft: draftOf(null) });
               }}
               className={consoleButton({ variant: 'accent' })}
             >
@@ -503,6 +578,36 @@ export function QuestionBuilder({
               className="w-full rounded-none border border-corp-line bg-white px-3 py-2 text-base md:text-sm"
             />
           </div>
+          <div className="space-y-1">
+            <label
+              htmlFor={`${id}-section-marking`}
+              className="text-sm font-semibold text-corp-ink"
+            >
+              Marking
+            </label>
+            <NativeSelect
+              id={`${id}-section-marking`}
+              value={sectionEditing.marking}
+              onChange={(e) =>
+                setSectionEditing((x) =>
+                  x ? { ...x, marking: e.target.value as SectionMarking } : x,
+                )
+              }
+              className="rounded-none"
+            >
+              {sectionMarkings.map((m) => (
+                <option key={m} value={m}>
+                  {sectionMarkingLabels[m]}
+                </option>
+              ))}
+            </NativeSelect>
+            <p className="text-xs text-corp-muted">
+              Applies to the single-choice questions in this section. Rating scale: each option
+              carries a weight (for example Always 5 to Never 1) averaged in reports, with no right
+              answer. Knowledge: each question has one correct answer worth one point, shown to
+              delegates at once and locked.
+            </p>
+          </div>
           <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
             <button
               type="button"
@@ -530,40 +635,6 @@ export function QuestionBuilder({
             void saveQuestion();
           }}
         >
-          {!editing.id ? (
-            <div className="space-y-1">
-              <label htmlFor={`${id}-suggest`} className="text-sm font-semibold text-corp-ink">
-                Start from a suggested question (optional)
-              </label>
-              <NativeSelect
-                id={`${id}-suggest`}
-                value=""
-                onChange={(e) => {
-                  const s = SUGGESTIONS[stage][Number(e.target.value)];
-                  if (s) {
-                    setEditing((cur) => ({
-                      id: null,
-                      draft: {
-                        ...EMPTY,
-                        sectionId: cur?.draft.sectionId ?? '',
-                        prompt: s.prompt,
-                        type: s.type,
-                        area: s.area,
-                      },
-                    }));
-                  }
-                }}
-                className="rounded-none"
-              >
-                <option value="">Choose a measurement area…</option>
-                {SUGGESTIONS[stage].map((s, i) => (
-                  <option key={s.prompt} value={i}>
-                    {s.area}: {s.prompt}
-                  </option>
-                ))}
-              </NativeSelect>
-            </div>
-          ) : null}
           <div className="space-y-1">
             <label htmlFor={`${id}-prompt`} className="text-sm font-semibold text-corp-ink">
               Question
@@ -600,69 +671,226 @@ export function QuestionBuilder({
               <label htmlFor={`${id}-section`} className="text-sm font-semibold text-corp-ink">
                 Section
               </label>
-              <NativeSelect
-                id={`${id}-section`}
-                value={editing.draft.sectionId}
-                onChange={(e) => set('sectionId', e.target.value)}
-                className="rounded-none"
-              >
-                <option value="">No section (shown first)</option>
-                {(lists?.sections ?? []).map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.title}
-                  </option>
-                ))}
-              </NativeSelect>
+              {sectionSelect(editing.draft.sectionId, (v) => set('sectionId', v), `${id}-section`)}
             </div>
             <div className="space-y-1">
               <label htmlFor={`${id}-area`} className="text-sm font-semibold text-corp-ink">
                 Measurement area (optional)
               </label>
-              <input
+              <NativeSelect
                 id={`${id}-area`}
-                list={`${id}-areas`}
-                value={editing.draft.area}
-                maxLength={100}
-                onChange={(e) => set('area', e.target.value)}
+                value={areaOther ? OTHER_AREA : editing.draft.area}
+                onChange={(e) => {
+                  if (e.target.value === OTHER_AREA) {
+                    set('areaOther', true);
+                    set('area', '');
+                  } else {
+                    set('areaOther', false);
+                    set('area', e.target.value);
+                  }
+                }}
+                className="rounded-none"
+              >
+                <option value="">Not set</option>
+                {stageAreas[stage].map((a) => (
+                  <option key={a} value={a}>
+                    {a}
+                  </option>
+                ))}
+                <option value={OTHER_AREA}>Other…</option>
+              </NativeSelect>
+              {areaOther ? (
+                <input
+                  aria-label="Other measurement area"
+                  value={editing.draft.area}
+                  maxLength={100}
+                  placeholder="Type the measurement area"
+                  onChange={(e) => set('area', e.target.value)}
+                  className={inputClass}
+                />
+              ) : null}
+              <p className="text-xs text-corp-muted">
+                What this question measures, for your reports. Delegates never see it.
+              </p>
+            </div>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-1">
+              <label htmlFor={`${id}-help`} className="text-sm font-semibold text-corp-ink">
+                Help text (optional)
+              </label>
+              <input
+                id={`${id}-help`}
+                value={editing.draft.helpText}
+                maxLength={500}
+                onChange={(e) => set('helpText', e.target.value)}
                 className={inputClass}
               />
-              <datalist id={`${id}-areas`}>
-                {stageAreas[stage].map((a) => (
-                  <option key={a} value={a} />
-                ))}
-              </datalist>
             </div>
-          </div>
-          <div className="space-y-1">
-            <label htmlFor={`${id}-help`} className="text-sm font-semibold text-corp-ink">
-              Help text (optional)
-            </label>
-            <input
-              id={`${id}-help`}
-              value={editing.draft.helpText}
-              maxLength={500}
-              onChange={(e) => set('helpText', e.target.value)}
-              className={inputClass}
-            />
           </div>
           {isChoice ? (
-            <div className="space-y-1">
-              <label htmlFor={`${id}-options`} className="text-sm font-semibold text-corp-ink">
-                Options, one per line
-              </label>
-              <textarea
-                id={`${id}-options`}
-                rows={4}
-                value={editing.draft.optionsText}
-                onChange={(e) => set('optionsText', e.target.value)}
-                placeholder={'Strongly agree\nAgree\nDisagree'}
-                className="w-full rounded-none border border-corp-line bg-white px-3 py-2 text-base md:text-sm"
-              />
+            <fieldset className="space-y-2">
+              <legend className="text-sm font-semibold text-corp-ink">Options</legend>
               <p className="text-xs text-corp-muted">
-                Write “code | Label” to store a code different from the label.
+                {!isSingle
+                  ? 'Tick “Only” for an option that cannot be combined with others, such as “None of the above”, and “Text” for “Other, please specify”.'
+                  : marking === 'scored'
+                    ? 'This section is a rating scale: give each option a weight to average in reports and leave “Not applicable” blank so it never counts as a low rating.'
+                    : marking === 'knowledge'
+                      ? 'This section holds knowledge questions: tick the one correct answer. The question is worth one point; delegates see at once whether they were right and cannot change their answer.'
+                      : 'Delegates pick one option. To weight the options or mark a correct answer, put this question in a section whose marking says so.'}
               </p>
-              {fieldError('optionsText')}
-            </div>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <NativeSelect
+                  aria-label="Start from a preset"
+                  value=""
+                  onChange={(e) => {
+                    const preset = optionPresets.find((p) => p.id === e.target.value);
+                    if (preset) set('options', preset.options.map(optionDraftOf));
+                  }}
+                  className="rounded-none sm:max-w-xs"
+                >
+                  <option value="">Start from a preset…</option>
+                  {optionPresets.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.label}
+                    </option>
+                  ))}
+                </NativeSelect>
+                {copyable.length ? (
+                  <NativeSelect
+                    aria-label="Copy options from another question"
+                    value=""
+                    onChange={(e) => {
+                      const from = copyable.find((q) => q.id === e.target.value);
+                      if (from?.options) set('options', from.options.map(optionDraftOf));
+                    }}
+                    className="rounded-none sm:max-w-xs"
+                  >
+                    <option value="">Copy options from…</option>
+                    {copyable.map((q) => (
+                      <option key={q.id} value={q.id}>
+                        {q.prompt}
+                      </option>
+                    ))}
+                  </NativeSelect>
+                ) : null}
+              </div>
+              <ol className="space-y-2" aria-label="Options">
+                {editing.draft.options.map((o, i) => (
+                  <li
+                    key={i}
+                    className="grid gap-2 rounded-none border border-corp-line bg-white p-2 sm:grid-cols-[minmax(0,1fr)_7rem_auto] sm:items-center"
+                  >
+                    <input
+                      aria-label={`Option ${i + 1}`}
+                      placeholder={`Option ${i + 1}`}
+                      value={o.label}
+                      maxLength={200}
+                      onChange={(e) => setOption(i, { label: e.target.value })}
+                      className={smallInput}
+                    />
+                    <input
+                      aria-label={`Code for option ${i + 1}`}
+                      placeholder="Code"
+                      value={o.value}
+                      maxLength={100}
+                      onChange={(e) => setOption(i, { value: e.target.value })}
+                      className={smallInput}
+                    />
+                    <div className="flex flex-wrap items-center gap-3 text-sm text-corp-ink">
+                      {isSingle ? (
+                        <>
+                          {marking === 'scored' ? (
+                            <label className="flex items-center gap-1">
+                              Weight
+                              <input
+                                type="number"
+                                aria-label={`Weight for option ${i + 1}`}
+                                min={0}
+                                max={100}
+                                value={o.score}
+                                onChange={(e) => setOption(i, { score: e.target.value })}
+                                className="h-10 w-16 rounded-none border border-corp-line bg-white px-2 text-base md:text-sm"
+                              />
+                            </label>
+                          ) : null}
+                          {marking === 'knowledge' ? (
+                            <label className="flex min-h-tap items-center gap-1">
+                              <input
+                                type="checkbox"
+                                aria-label={`Correct answer: option ${i + 1}`}
+                                checked={o.correct}
+                                onChange={(e) => setOption(i, { correct: e.target.checked })}
+                                className="size-5 accent-corp-green"
+                              />
+                              Correct
+                            </label>
+                          ) : null}
+                        </>
+                      ) : (
+                        <>
+                          <label className="flex min-h-tap items-center gap-1">
+                            <input
+                              type="checkbox"
+                              aria-label={`Only this option: option ${i + 1}`}
+                              checked={o.exclusive}
+                              onChange={(e) => setOption(i, { exclusive: e.target.checked })}
+                              className="size-5 accent-corp-green"
+                            />
+                            Only
+                          </label>
+                          <label className="flex min-h-tap items-center gap-1">
+                            <input
+                              type="checkbox"
+                              aria-label={`Asks for text: option ${i + 1}`}
+                              checked={o.other}
+                              onChange={(e) => setOption(i, { other: e.target.checked })}
+                              className="size-5 accent-corp-green"
+                            />
+                            Text
+                          </label>
+                        </>
+                      )}
+                      <button
+                        type="button"
+                        aria-label={`Remove option ${i + 1}`}
+                        onClick={() =>
+                          set(
+                            'options',
+                            editing.draft.options.filter((_, j) => j !== i),
+                          )
+                        }
+                        className={consoleButton({ variant: 'ghost', size: 'sm' })}
+                      >
+                        <XIcon aria-hidden="true" />
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
+                <button
+                  type="button"
+                  disabled={editing.draft.options.length >= 20}
+                  onClick={() => set('options', [...editing.draft.options, emptyOption()])}
+                  className={consoleButton({ variant: 'secondary', size: 'sm' })}
+                >
+                  <PlusIcon aria-hidden="true" /> Add option
+                </button>
+                <details className="text-sm">
+                  <summary className="min-h-tap cursor-pointer py-2 font-semibold text-corp-ink">
+                    Paste a list
+                  </summary>
+                  <PasteOptions
+                    onAdd={(rows) =>
+                      set('options', [...editing.draft.options, ...rows].slice(0, 20))
+                    }
+                  />
+                </details>
+              </div>
+              {fieldError('options')}
+            </fieldset>
           ) : null}
           {editing.draft.type === 'rating' ? (
             <div className="grid gap-4 sm:grid-cols-4">
@@ -800,6 +1028,14 @@ export function QuestionBuilder({
                     {group.section?.description ? (
                       <p className="text-xs text-corp-muted">{group.section.description}</p>
                     ) : null}
+                    {group.section && group.section.marking !== 'none' ? (
+                      <StatusPill tone="positive">
+                        {sectionMarkingLabels[group.section.marking]}
+                        {group.section.marking === 'knowledge'
+                          ? ` · ${group.questions.filter((x) => x.isKnowledge).length} point${group.questions.filter((x) => x.isKnowledge).length === 1 ? '' : 's'}`
+                          : ''}
+                      </StatusPill>
+                    ) : null}
                   </div>
                   {group.section && !readOnly ? (
                     <div className="flex flex-wrap gap-1">
@@ -831,6 +1067,7 @@ export function QuestionBuilder({
                             id: group.section!.id,
                             title: group.section!.title,
                             description: group.section!.description ?? '',
+                            marking: group.section!.marking,
                           });
                         }}
                         className={consoleButton({ variant: 'ghost', size: 'sm' })}
@@ -843,7 +1080,10 @@ export function QuestionBuilder({
                         disabled={anyBusy}
                         onClick={() => {
                           setErrors({});
-                          setEditing({ id: null, draft: draftOf(null, group.section!.id) });
+                          setEditing({
+                            id: null,
+                            draft: draftOf(null, group.section!.id),
+                          });
                         }}
                         className={consoleButton({ variant: 'ghost', size: 'sm' })}
                       >
@@ -902,13 +1142,19 @@ export function QuestionBuilder({
                             ) : (
                               <StatusPill tone="neutral">Optional</StatusPill>
                             )}
+                            {q.isKnowledge ? (
+                              <StatusPill tone="positive">Knowledge · 1 point</StatusPill>
+                            ) : group.section?.marking === 'knowledge' &&
+                              q.type === 'single_choice' ? (
+                              <StatusPill tone="attention">No correct answer ticked</StatusPill>
+                            ) : null}
                             {q.version > 1 ? <span>version {q.version}</span> : null}
                             {q.responseCount > 0 ? <span>{q.responseCount} answers</span> : null}
                             {q.area ? <span>{q.area}</span> : null}
                           </div>
                           {q.options ? (
                             <p className="mt-1 text-xs text-corp-muted">
-                              {q.options.map((o) => o.label).join(' · ')}
+                              {q.options.map(describeOption).join(' · ')}
                             </p>
                           ) : null}
                           {q.scale ? (
@@ -945,7 +1191,10 @@ export function QuestionBuilder({
                               onClick={() => {
                                 setErrors({});
                                 setFailure(null);
-                                setEditing({ id: q.id, draft: draftOf(q) });
+                                setEditing({
+                                  id: q.id,
+                                  draft: draftOf(q),
+                                });
                               }}
                               className={consoleButton({ variant: 'ghost', size: 'sm' })}
                             >
@@ -992,5 +1241,36 @@ export function QuestionBuilder({
         </div>
       )}
     </section>
+  );
+}
+
+function PasteOptions({ onAdd }: { onAdd: (rows: OptionDraft[]) => void }) {
+  const [text, setText] = useState('');
+  const id = useId();
+  return (
+    <div className="mt-1 space-y-2">
+      <label htmlFor={id} className="text-xs text-corp-muted">
+        One option per line. Write “code | Label” to store a code different from the label.
+      </label>
+      <textarea
+        id={id}
+        rows={3}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        placeholder={'Strongly agree\nAgree\nDisagree'}
+        className="w-full rounded-none border border-corp-line bg-white px-3 py-2 text-base md:text-sm"
+      />
+      <button
+        type="button"
+        disabled={!text.trim()}
+        onClick={() => {
+          onAdd(parseOptions(text));
+          setText('');
+        }}
+        className={consoleButton({ variant: 'secondary', size: 'sm' })}
+      >
+        Add these options
+      </button>
+    </div>
   );
 }

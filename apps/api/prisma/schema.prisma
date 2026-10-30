@@ -93,6 +93,15 @@ enum AssessmentTarget {
   @@map("assessment_target")
 }
 
+/// How a section's single-choice questions are marked; see sectionMarkings in @mbc/shared.
+enum SectionMarking {
+  none
+  scored
+  knowledge
+
+  @@map("section_marking")
+}
+
 enum QuestionType {
   short_text
   long_text
@@ -369,6 +378,7 @@ model AssessmentSection {
   title         String
   description   String?
   order         Int
+  marking       SectionMarking @default(none)
   createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
@@ -384,29 +394,29 @@ model AssessmentSection {
 /// the same question_key and version + 1 and retires this one; answers keep pointing at the version
 /// they answered (CLAUDE.md: questions are data, versioned; responses store the question version).
 model AssessmentQuestion {
-  id            String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  stageConfigId String       @map("stage_config_id") @db.Uuid
-  eventId       String       @map("event_id") @db.Uuid
-  questionKey   String       @default(dbgenerated("gen_random_uuid()")) @map("question_key") @db.Uuid
+  id               String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  stageConfigId    String       @map("stage_config_id") @db.Uuid
+  eventId          String       @map("event_id") @db.Uuid
+  questionKey      String       @default(dbgenerated("gen_random_uuid()")) @map("question_key") @db.Uuid
   /// Optional section the question is shown under; null means the first, untitled group.
-  sectionId     String?      @map("section_id") @db.Uuid
-  version       Int          @default(1)
-  order         Int
-  prompt        String
-  helpText      String?      @map("help_text")
-  type          QuestionType
-  required      Boolean      @default(true)
-  area          String?
-  options       Json?
-  scale         Json?
-  retiredAt     DateTime?    @map("retired_at") @db.Timestamptz(3)
-  createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt     DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+  sectionId        String?      @map("section_id") @db.Uuid
+  version          Int          @default(1)
+  order            Int
+  prompt           String
+  helpText         String?      @map("help_text")
+  type             QuestionType
+  required         Boolean      @default(true)
+  area             String?
+  options          Json?
+  scale            Json?
+  retiredAt        DateTime?    @map("retired_at") @db.Timestamptz(3)
+  createdAt        DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  stage   AssessmentStageConfig @relation(fields: [stageConfigId], references: [id], onDelete: Cascade)
-  event   Event                 @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  section AssessmentSection?    @relation(fields: [sectionId], references: [id], onDelete: SetNull)
-  answers AssessmentAnswer[]
+  stage          AssessmentStageConfig @relation(fields: [stageConfigId], references: [id], onDelete: Cascade)
+  event          Event                 @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  section        AssessmentSection?    @relation(fields: [sectionId], references: [id], onDelete: SetNull)
+  answers        AssessmentAnswer[]
 
   @@unique([questionKey, version])
   @@index([stageConfigId])
@@ -438,6 +448,10 @@ model AssessmentAnswer {
   responseId String   @map("response_id") @db.Uuid
   questionId String   @map("question_id") @db.Uuid
   value      Json
+  /// Knowledge questions: whether the answer was the correct option (null for other questions).
+  correct    Boolean?
+  /// Points of the chosen option (1/0 for knowledge, option score otherwise, null when not scored).
+  score      Int?
   createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 

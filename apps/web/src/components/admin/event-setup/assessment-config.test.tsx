@@ -90,4 +90,56 @@ describe('AssessmentConfig', () => {
       false,
     );
   });
+
+  it('shows what delegates see, the response counts and the link to the stage page', async () => {
+    // Scheduled with an opening time in the past: open to delegates although nobody flipped it.
+    const live: EventDetail = {
+      ...event,
+      status: 'active',
+      assessmentStages: [
+        {
+          ...stage('pre_conference'),
+          enabled: true,
+          status: 'scheduled',
+          opensAt: '2020-01-01T08:00:00.000Z',
+          closesAt: '2099-01-01T00:00:00.000Z',
+          questionCount: 4,
+        },
+        stage('during_conference'),
+        stage('follow_up'),
+      ],
+    };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const json = (body: unknown) =>
+          new Response(JSON.stringify(body), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          });
+        if (url.endsWith('/summary')) {
+          return json({
+            summary: {
+              stage: 'pre_conference',
+              invited: 3,
+              started: 2,
+              submitted: 1,
+              responseRate: 33.3,
+              knowledge: null,
+              statements: [],
+            },
+          });
+        }
+        return json({ event: live });
+      }),
+    );
+    render(<AssessmentConfig event={live} onSaved={vi.fn()} />);
+    const pre = screen.getByRole('form', { name: 'Pre-conference assessment' });
+    await within(pre).findByText(/Open to delegates until 1 Jan 2099/);
+    const responses = await within(pre).findByLabelText('Responses');
+    expect(responses.textContent).toMatch(/Invited3Started2Submitted1 \(33\.3%\)/);
+    expect(
+      within(pre).getByRole('link', { name: 'Questions and submissions' }).getAttribute('href'),
+    ).toBe('/admin/events/e1/assessments/pre_conference');
+  });
 });

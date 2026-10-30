@@ -4,10 +4,12 @@ import {
   answerIssue,
   groupQuestions,
   isBlankAnswer,
-  type AssessmentQuestionView,
+  multipleChoiceAnswer,
+  type DelegateQuestionView,
+  type KnowledgeFeedback,
   type MyAssessment,
 } from '@mbc/shared';
-import { Loader2Icon } from 'lucide-react';
+import { CheckCircle2Icon, Loader2Icon, XCircleIcon } from 'lucide-react';
 import { useEffect, useId, useState } from 'react';
 
 import { consoleButton, StatePanel, StatusPill } from '@/components/console/page';
@@ -28,8 +30,9 @@ type State =
 /**
  * The delegate's assessments for one event: each enabled stage that is upcoming, open or closed.
  * An open stage shows its questions one section per step (answer, save a draft, submit once);
- * a closed or submitted stage shows the answers read-only. Everything is served and checked by
- * the API for the signed-in delegate only.
+ * a closed or submitted stage shows the answers read-only. A knowledge question is saved the
+ * moment it is answered, shows whether the answer was right, and cannot be changed afterwards.
+ * Everything is served and checked by the API for the signed-in delegate only.
  */
 export function AssessmentsPanel({ eventId, timezone }: AssessmentsPanelProps) {
   const [state, setState] = useState<State>({ kind: 'loading' });
@@ -114,11 +117,12 @@ function AssessmentCard({
     assessment.response?.answers ?? {},
   );
   const [problems, setProblems] = useState<Record<string, string>>({});
-  const [busy, setBusy] = useState<'draft' | 'submit' | null>(null);
+  const [busy, setBusy] = useState<'draft' | 'submit' | 'check' | null>(null);
   const [confirm, setConfirm] = useState(false);
   const [step, setStep] = useState(0);
   const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
   const submitted = Boolean(assessment.response?.submittedAt);
+  const feedback = assessment.feedback ?? {};
   const tone =
     assessment.status === 'open'
       ? 'positive'
@@ -140,22 +144,29 @@ function AssessmentCard({
   const current = stepped ? groups[Math.min(step, groups.length - 1)]! : null;
   const lastStep = !stepped || step >= groups.length - 1;
 
-  function setAnswer(questionId: string, value: unknown) {
-    setAnswers((a) => ({ ...a, [questionId]: value }));
+  function clearProblem(questionId: string) {
     setProblems((p) => {
       if (!p[questionId]) return p;
       const copy = { ...p };
       delete copy[questionId];
       return copy;
     });
+  }
+  function setAnswer(questionId: string, value: unknown) {
+    setAnswers((a) => ({ ...a, [questionId]: value }));
+    clearProblem(questionId);
     setNotice(null);
   }
 
   /** Local check before any request: blank required answers (on submit) and malformed values. */
-  function validate(submit: boolean, only?: AssessmentQuestionView[]): Record<string, string> {
+  function validate(
+    submit: boolean,
+    only?: DelegateQuestionView[],
+    current: Record<string, unknown> = answers,
+  ): Record<string, string> {
     const next: Record<string, string> = {};
     for (const q of only ?? assessment.questions) {
-      const value = answers[q.id];
+      const value = current[q.id];
       if (isBlankAnswer(value)) {
         if (submit && q.required) next[q.id] = 'This question needs an answer before you submit.';
         continue;
@@ -175,28 +186,36 @@ function AssessmentCard({
     }
   }
 
-  async function save(submit: boolean) {
-    const next = validate(submit);
+  async function save(
+    submit: boolean,
+    mode: 'draft' | 'submit' | 'check' = submit ? 'submit' : 'draft',
+    current: Record<string, unknown> = answers,
+  ) {
+    const next = validate(submit, undefined, current);
     if (Object.keys(next).length) {
       showProblems(next);
       return;
     }
-    setBusy(submit ? 'submit' : 'draft');
+    setBusy(mode);
     try {
       const result = await apiFetch<{ assessments: MyAssessment[] }>(
         `/me/events/${eventId}/assessments/${assessment.stage}`,
-        { method: 'PUT', body: JSON.stringify({ answers, submit }) },
+        { method: 'PUT', body: JSON.stringify({ answers: current, submit }) },
       );
       onUpdated(result.assessments);
-      setNotice({
-        ok: true,
-        text: submit
-          ? 'Thank you, your answers are submitted.'
-          : 'Draft saved. You can come back to it.',
-      });
+      if (mode !== 'check') {
+        setNotice({
+          ok: true,
+          text: submit
+            ? 'Thank you, your answers are submitted.'
+            : 'Draft saved. You can come back to it.',
+        });
+      }
       setConfirm(false);
     } catch (e) {
       if (e instanceof ApiError && e.code === 'answers_invalid') {
+        const served = (e.body as { problems?: Record<string, string> } | undefined)?.problems;
+        if (served && Object.keys(served).length) showProblems(served);
         setNotice({ ok: false, text: 'Some answers need attention.' });
       } else {
         setNotice({
@@ -208,6 +227,15 @@ function AssessmentCard({
     } finally {
       setBusy(null);
     }
+  }
+
+  /** A knowledge answer is saved at once so the result can be shown and the answer kept. */
+  function answerKnowledge(questionId: string, value: string) {
+    const current = { ...answers, [questionId]: value };
+    setAnswers(current);
+    clearProblem(questionId);
+    setNotice(null);
+    void save(false, 'check', current);
   }
 
   function nextSection() {
@@ -331,7 +359,10 @@ function AssessmentCard({
                       value={answers[q.id]}
                       disabled={!canAnswer || busy !== null}
                       problem={problems[q.id]}
+                      feedback={feedback[q.id]}
+                      checking={busy === 'check'}
                       onChange={(value) => setAnswer(q.id, value)}
+                      onKnowledgeChoice={(value) => answerKnowledge(q.id, value)}
                     />
                   </li>
                 ))}
@@ -440,14 +471,20 @@ function QuestionField({
   value,
   disabled,
   problem,
+  feedback,
+  checking,
   onChange,
+  onKnowledgeChoice,
 }: {
   index: number;
-  question: AssessmentQuestionView;
+  question: DelegateQuestionView;
   value: unknown;
   disabled: boolean;
   problem?: string;
+  feedback?: KnowledgeFeedback;
+  checking: boolean;
   onChange: (value: unknown) => void;
+  onKnowledgeChoice: (value: string) => void;
 }) {
   const id = useId();
   const label = (
@@ -539,6 +576,99 @@ function QuestionField({
           : typeof value === 'string'
             ? value
             : '';
+      const knowledge = question.isKnowledge;
+      const locked = knowledge && Boolean(feedback);
+      return (
+        <fieldset className="space-y-2">
+          <legend>
+            {label}
+            {help}
+            {knowledge && !locked ? (
+              <span className="block text-xs text-corp-muted">
+                Your answer is saved as soon as you choose it and cannot be changed.
+              </span>
+            ) : null}
+          </legend>
+          {options.map((o) => (
+            <label
+              key={o.value}
+              className="flex min-h-tap items-center gap-2 text-sm text-corp-ink"
+            >
+              <input
+                type="radio"
+                name={id}
+                value={o.value}
+                checked={current === o.value}
+                disabled={disabled || locked}
+                onChange={() => {
+                  if (question.type === 'yes_no') onChange(o.value === 'true');
+                  else if (knowledge) onKnowledgeChoice(o.value);
+                  else onChange(o.value);
+                }}
+                className="size-5 accent-corp-green"
+              />
+              {o.label}
+              {feedback && feedback.correctValue === o.value && o.value !== current ? (
+                <span className="text-xs text-corp-muted">(correct answer)</span>
+              ) : null}
+            </label>
+          ))}
+          {knowledge && checking && !feedback ? (
+            <p className="flex items-center gap-1 text-xs text-corp-muted" role="status">
+              <Loader2Icon className="size-4 animate-spin" aria-hidden="true" /> Checking…
+            </p>
+          ) : null}
+          {feedback ? (
+            <p
+              role="status"
+              className={
+                feedback.correct
+                  ? 'flex items-start gap-1 text-sm font-semibold text-corp-green-text'
+                  : 'flex items-start gap-1 text-sm font-semibold text-brand-danger'
+              }
+            >
+              {feedback.correct ? (
+                <CheckCircle2Icon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+              ) : (
+                <XCircleIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+              )}
+              <span>
+                {feedback.correct
+                  ? 'Correct.'
+                  : `Not quite. The correct answer is: ${feedback.correctLabel}`}
+              </span>
+            </p>
+          ) : null}
+          {error}
+        </fieldset>
+      );
+    }
+    case 'multiple_choice': {
+      const options = question.options ?? [];
+      const answer = multipleChoiceAnswer(value) ?? { selected: [], other: null };
+      // The text as typed (the parsed answer trims it, which would eat spaces while typing).
+      const otherText =
+        value &&
+        typeof value === 'object' &&
+        typeof (value as { other?: unknown }).other === 'string'
+          ? (value as { other: string }).other
+          : (answer.other ?? '');
+      const otherOption = options.find((o) => o.other);
+      const otherTicked = Boolean(otherOption && answer.selected.includes(otherOption.value));
+      const toggle = (option: (typeof options)[number], checked: boolean) => {
+        let selected: string[];
+        if (!checked) {
+          selected = answer.selected.filter((v) => v !== option.value);
+        } else if (option.exclusive) {
+          // "None of the above" and the like stand alone.
+          selected = [option.value];
+        } else {
+          const exclusiveValues = new Set(options.filter((o) => o.exclusive).map((o) => o.value));
+          selected = [...answer.selected.filter((v) => !exclusiveValues.has(v)), option.value];
+        }
+        const keepOther = otherOption ? selected.includes(otherOption.value) : false;
+        onChange({ selected, other: keepOther ? otherText || null : null });
+      };
       return (
         <fieldset className="space-y-2">
           <legend>
@@ -551,48 +681,32 @@ function QuestionField({
               className="flex min-h-tap items-center gap-2 text-sm text-corp-ink"
             >
               <input
-                type="radio"
-                name={id}
-                value={o.value}
-                checked={current === o.value}
-                disabled={disabled}
-                onChange={() => onChange(question.type === 'yes_no' ? o.value === 'true' : o.value)}
-                className="size-5 accent-corp-green"
-              />
-              {o.label}
-            </label>
-          ))}
-          {error}
-        </fieldset>
-      );
-    }
-    case 'multiple_choice': {
-      const chosen = Array.isArray(value) ? (value as string[]) : [];
-      return (
-        <fieldset className="space-y-2">
-          <legend>
-            {label}
-            {help}
-          </legend>
-          {(question.options ?? []).map((o) => (
-            <label
-              key={o.value}
-              className="flex min-h-tap items-center gap-2 text-sm text-corp-ink"
-            >
-              <input
                 type="checkbox"
-                checked={chosen.includes(o.value)}
+                checked={answer.selected.includes(o.value)}
                 disabled={disabled}
-                onChange={(e) =>
-                  onChange(
-                    e.target.checked ? [...chosen, o.value] : chosen.filter((v) => v !== o.value),
-                  )
-                }
+                onChange={(e) => toggle(o, e.target.checked)}
                 className="size-5 accent-corp-green"
               />
               {o.label}
             </label>
           ))}
+          {otherOption && otherTicked ? (
+            <div className="space-y-1 pl-7">
+              <label htmlFor={`${id}-other`} className="block text-xs font-semibold text-corp-ink">
+                Please specify
+              </label>
+              <input
+                id={`${id}-other`}
+                value={otherText}
+                disabled={disabled}
+                maxLength={500}
+                onChange={(e) =>
+                  onChange({ selected: answer.selected, other: e.target.value || null })
+                }
+                className={inputClass}
+              />
+            </div>
+          ) : null}
           {error}
         </fieldset>
       );

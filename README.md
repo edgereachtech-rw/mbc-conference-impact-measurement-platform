@@ -315,9 +315,76 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   required question; a stage is answerable only when open and inside its window, and only until
   it is submitted (409 `already_submitted`). Answers never enter the audit log; `assessment.saved`
   and `assessment.submitted` record stage, registration id and counts.
+- Question format for the pre-conference assessment and beyond (2026-10-30, backlog E5): a
+  single-choice option may carry a score (averaged in reports; a blank score means "Not
+  applicable" and is never counted as a low rating) and at most one option may be marked
+  correct, which makes the question a knowledge question worth one point. A knowledge answer is
+  scored when it is saved (`assessment_answer.correct`, `score` 1 or 0), the delegate sees at
+  once whether it was right and which option was, and it cannot be changed afterwards (422
+  `answers_invalid`, "cannot be changed"); the web form saves it the moment it is chosen.
+  Delegates never receive `correct` or option scores. A multiple-choice option may be exclusive
+  ("None of the above": cannot be combined with others) or "Other, please specify" (text
+  required); the stored value is `{ selected, other }`.
+- Marking belongs to the section (decided 2026-10-30): a section is "Not marked", "Rating
+  scale" (stored as `scored`; renamed 2026-10-30 because "scored" read like marks) or
+  "Knowledge questions" (`assessment_section.marking`, `POST/PATCH
+.../sections` `{ marking }`). The API serves option scores only for questions in a scored
+  section and the correct answer only for questions in a knowledge section, so a question moved
+  out of a marked section becomes a plain choice and its marks stay inert until it is moved back.
+  The builder shows the Score or Correct column according to the question's section, the
+  section header shows the marking and the point total, and a single-choice question in a
+  knowledge section without a correct tick is flagged. Questions outside a section are never
+  marked. Migration `20261031200000_section_marking`.
+- ITTEC content: the pre-conference questions of the pilot
+  (`apps/api/src/assessments/ittec-pre-conference.ts`, from docs/full_platform_requirement.md
+  section 7: expectations, seven practice statements, five knowledge questions with
+  "I am not sure", seven confidence statements, tools in use) are data, not behaviour:
+  `db:seed` loads them once into the ITTEC event's empty pre-conference stage. Other events
+  share the format and enter their own questions. (Removed 2026-10-30 on request: the "Load
+  example questions" button, "Repeat from another stage", the question role and the suggested
+  question dropdown. Pairing pre and post answers for the final assessment is to be decided
+  with that stage.)
+- Stage summary (`GET .../assessments/:stage/summary`, shown on the stage card): invited
+  (active registrations of the event), started, submitted, response rate, knowledge average
+  (score out of the number of knowledge questions and percentage, over delegates who answered
+  every knowledge question in a submitted response) and per-statement averages of scored
+  single-choice questions, unscored options excluded.
+- Builder additions: option table (label, code, score and correct for single choice; "only" and
+  "text" for multiple choice), presets (frequency, confidence, quality), copy options from
+  another question, paste a list. Delegate form: exclusive ticks clear the others, "Other"
+  opens a text box.
+- ITTEC window (decided 2026-10-30, set on the stage card, not in code): opens with the
+  invitation, by 7 November 2026; closes at the start of Day 1, 12 November 2026, Africa/Lagos.
+- Stage window (2026-10-30): `stageWindowState` in `@mbc/shared` decides what delegates see
+  and both sides use it. Draft or disabled: hidden. Closed: closed whatever the dates.
+  Scheduled or open: "Opens later" before "available from", closed after the deadline, open in
+  between; a scheduled stage therefore opens by itself at its opening time and nobody has to
+  change the status. The stage card prints the current state ("Open to delegates until …",
+  "Delegates see "Opens later" until …") next to the stored status.
+- Non-completers (E5-9, 2026-10-30): `GET .../assessments/:stage/non-completers` lists the
+  eligible registrations without a submitted response (name, email, organisation, signed up,
+  started). The stage page shows them under "Not yet submitted (n)" with "Email these
+  delegates", which opens the message composer (E2-14) with those delegates selected.
+- Stage page (2026-10-30): `/admin/events/:id/assessments/:stage` holds a stage's questions
+  (the builder) and its submissions (counts, knowledge average, statement averages, CSV
+  download, non-completers) as two tabs, linked from the stage card under Assessment
+  configuration. The event page's tabs are Event profile, Event dates, Sessions and schedule,
+  Assessment configuration, Review and publication and Delegates (the delegate table and the
+  messages sent to them).
+- Export (E5-10, 2026-10-30): `GET .../assessments/:stage/responses.csv` downloads the
+  submitted responses, one row per delegate (name, email, organisation, job title, country,
+  attendance format, capacity, submitted at in UTC) and one column per active question with
+  option labels rather than codes; each knowledge question adds a "(correct?)" column and a
+  total follows. Cells starting with `=`, `+`, `-`, `@` are prefixed with an apostrophe
+  (spreadsheet injection). The download is audited (`assessment.exported`: stage, row and
+  question counts, never contents). The stage page offers it as "Download responses (CSV)".
+- Reporting by question key (2026-10-30): the summary and the export match answers to a
+  question through its `question_key`, so answers given to an earlier version of an edited
+  question still count under its current wording.
 - Attendance is recorded separately (E6); a submission never counts as attendance.
-- Migration `20261031120000_assessment_questions`: `assessment_question`,
-  `assessment_response`, `assessment_answer`.
+- Migrations `20261031120000_assessment_questions` (`assessment_question`,
+  `assessment_response`, `assessment_answer`) and `20261031180000_question_scoring`
+  (`assessment_answer.correct`, `score`).
 
 ## Messages to delegates (Increment 1b, backlog E2-14)
 

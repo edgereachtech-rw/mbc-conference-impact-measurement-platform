@@ -6,6 +6,7 @@
  *   pnpm --filter @mbc/api db:seed            (development, via tsx)
  *   node dist/seed.js                          (inside the api image on staging)
  */
+import { ITTEC_PRE_CONFERENCE, loadTemplateInto } from './assessments/templates.js';
 import { getPrisma, type PrismaClient } from './db.js';
 import { audit } from './lib/audit.js';
 import { normaliseEmail } from './lib/email.js';
@@ -85,6 +86,17 @@ export async function seed(prisma: PrismaClient, options: SeedOptions = {}): Pro
       create: { eventId: event.id, stage },
       update: {},
     });
+  }
+  // ITTEC's pre-conference questions are pilot content, seeded once as the event's own data.
+  const preStage = await prisma.assessmentStageConfig.findUniqueOrThrow({
+    where: { eventId_stage: { eventId: event.id, stage: 'pre_conference' } },
+    include: { _count: { select: { questions: true } } },
+  });
+  if (preStage._count.questions === 0) {
+    const loaded = await prisma.$transaction((tx) =>
+      loadTemplateInto(tx, preStage, ITTEC_PRE_CONFERENCE),
+    );
+    log(`pre-conference assessment: ${loaded.sections} sections, ${loaded.questions} questions`);
   }
 
   for (const category of PARTICIPATION_CATEGORIES) {

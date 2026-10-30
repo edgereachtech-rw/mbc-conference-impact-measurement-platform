@@ -5,6 +5,7 @@ import { Loader2Icon } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
+import { EventWorkspace } from '@/components/admin/event-workspace';
 import { consoleButton } from '@/components/console/page';
 import { apiFetch } from '@/lib/api';
 import { describeError } from '@/lib/imports';
@@ -15,7 +16,7 @@ import { EventProfileForm } from './event-profile-form';
 import { PublishPanel } from './publish-panel';
 import { SessionsEditor } from './sessions-editor';
 
-type Tab = 'profile' | 'dates' | 'sessions' | 'assessments' | 'publish';
+type Tab = 'profile' | 'dates' | 'sessions' | 'assessments' | 'publish' | 'delegates';
 
 const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'profile', label: 'Event profile' },
@@ -23,6 +24,7 @@ const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'sessions', label: 'Sessions and schedule' },
   { id: 'assessments', label: 'Assessment configuration' },
   { id: 'publish', label: 'Review and publication' },
+  { id: 'delegates', label: 'Delegates' },
 ];
 
 interface EventSettingsProps {
@@ -30,9 +32,10 @@ interface EventSettingsProps {
 }
 
 /**
- * The event management sections (brief section 7) as tabs. Every save goes to the admin-only API
- * and the returned event replaces the local copy; the page header is refreshed so the name and
- * status it shows stay in step.
+ * The event management sections (brief section 7) as tabs, plus the delegates and the messages
+ * sent to them as a tab of their own. Every save goes to the admin-only API and the returned
+ * event replaces the local copy; the page header is refreshed so the name and status it shows
+ * stay in step.
  */
 export function EventSettings({ initialEvent }: EventSettingsProps) {
   const router = useRouter();
@@ -179,6 +182,11 @@ export function EventSettings({ initialEvent }: EventSettingsProps) {
         {tab === 'sessions' ? <SessionsEditor event={event} onSaved={saved} /> : null}
         {tab === 'assessments' ? <AssessmentConfig event={event} onSaved={saved} /> : null}
         {tab === 'publish' ? <PublishPanel event={event} onSaved={saved} /> : null}
+        {tab === 'delegates' ? (
+          <div className="space-y-8">
+            <EventWorkspace eventId={event.id} eventName={event.name} />
+          </div>
+        ) : null}
       </div>
     </section>
   );
