@@ -436,10 +436,26 @@ model AssessmentResponse {
   stage    AssessmentStageConfig @relation(fields: [stageConfigId], references: [id], onDelete: Cascade)
   delegate Delegate              @relation(fields: [delegateId], references: [id], onDelete: Cascade)
   answers  AssessmentAnswer[]
+  sections AssessmentSectionSubmission[]
 
   @@unique([stageConfigId, delegateId])
   @@index([delegateId])
   @@map("assessment_response")
+}
+
+/// A section the delegate submitted on its own (decided 2026-10-30: sections are submitted
+/// separately; the response is submitted once every section with questions is). The key is
+/// the section id, or "general" for the questions outside any section.
+model AssessmentSectionSubmission {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  responseId  String   @map("response_id") @db.Uuid
+  sectionKey  String   @map("section_key")
+  submittedAt DateTime @map("submitted_at") @db.Timestamptz(3)
+
+  response AssessmentResponse @relation(fields: [responseId], references: [id], onDelete: Cascade)
+
+  @@unique([responseId, sectionKey])
+  @@map("assessment_section_submission")
 }
 
 /// One answer, pointing at the exact question version it answered.

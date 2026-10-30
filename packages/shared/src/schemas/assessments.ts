@@ -373,13 +373,58 @@ export function answerScore(
   return { score: chosen.score ?? null, correct: null };
 }
 
+/** Key of the untitled first group (questions outside any section) in section submissions. */
+export const GENERAL_SECTION = 'general';
+/** The submission key of a question's section: its id, or the general group. */
+export function sectionKeyOf(sectionId: string | null | undefined): string {
+  return sectionId ?? GENERAL_SECTION;
+}
+
 export const responseSaveSchema = z.object({
   /** Question version id to value; blank values clear the answer. */
   answers: z.record(z.uuid(), z.unknown()),
-  /** Submit (final) or keep as a draft the delegate can come back to. */
+  /** Submit every section at once (final) or keep a draft the delegate can come back to. */
   submit: z.boolean().default(false),
+  /**
+   * Submit one section (its id, or "general" for the questions outside any section): its
+   * required questions must be answered and its answers lock. The stage counts as submitted
+   * once every section with questions is.
+   */
+  submitSection: z.string().trim().min(1).max(40).optional(),
 });
 export type ResponseSave = z.infer<typeof responseSaveSchema>;
+
+/**
+ * One answer as text, for summaries, the admin view and the export: option labels rather than
+ * codes, "Other" spelled out, Yes/No for yes_no, blank when unanswered.
+ */
+export function describeAnswer(
+  question: { type: QuestionType; options: readonly QuestionOption[] | null },
+  value: unknown,
+): string {
+  if (value === null || value === undefined || value === '') return '';
+  const labelOf = (code: string) =>
+    (question.options ?? []).find((o) => o.value === code)?.label ?? code;
+  switch (question.type) {
+    case 'single_choice':
+      return typeof value === 'string' ? labelOf(value) : String(value);
+    case 'multiple_choice': {
+      const answer = multipleChoiceAnswer(value);
+      if (!answer) return String(value);
+      return answer.selected
+        .map((code) => {
+          const option = (question.options ?? []).find((o) => o.value === code);
+          if (option?.other && answer.other) return `${option.label}: ${answer.other}`;
+          return option?.label ?? code;
+        })
+        .join('; ');
+    }
+    case 'yes_no':
+      return value === true ? 'Yes' : value === false ? 'No' : String(value);
+    default:
+      return typeof value === 'string' ? value : String(value);
+  }
+}
 
 // ------------------------------------------------------------------ delegate view
 
@@ -406,6 +451,8 @@ export const myAssessmentSchema = z.object({
       submittedAt: z.string().nullable(),
       updatedAt: z.string(),
       answers: z.record(z.uuid(), z.unknown()),
+      /** Section keys already submitted (locked); see sectionKeyOf. */
+      submittedSections: z.array(z.string()),
     })
     .nullable(),
   /** Right or wrong for every knowledge question the delegate has answered, by question id. */
@@ -446,6 +493,56 @@ export const stageSummarySchema = z.object({
   ),
 });
 export type StageSummary = z.infer<typeof stageSummarySchema>;
+
+/** One delegate's response to a stage as the admin list shows it. */
+export const stageResponseListItemSchema = z.object({
+  delegateId: z.uuid(),
+  name: z.string(),
+  email: z.string(),
+  organisation: z.string().nullable(),
+  submittedAt: z.string().nullable(),
+  updatedAt: z.string(),
+  /** Sections (with questions) submitted so far, out of the stage's total. */
+  sectionsSubmitted: z.number().int(),
+  sectionsTotal: z.number().int(),
+  answered: z.number().int(),
+});
+export type StageResponseListItem = z.infer<typeof stageResponseListItemSchema>;
+
+/** One delegate's full response: every section with its title, every question with its answer. */
+export const stageResponseDetailSchema = z.object({
+  delegate: z.object({
+    id: z.uuid(),
+    name: z.string(),
+    email: z.string(),
+    organisation: z.string().nullable(),
+  }),
+  submittedAt: z.string().nullable(),
+  updatedAt: z.string(),
+  sections: z.array(
+    z.object({
+      key: z.string(),
+      title: z.string(),
+      description: z.string().nullable(),
+      marking: z.enum(sectionMarkings),
+      submittedAt: z.string().nullable(),
+      questions: z.array(
+        z.object({
+          id: z.uuid(),
+          prompt: z.string(),
+          type: z.enum(questionTypes),
+          required: z.boolean(),
+          isKnowledge: z.boolean(),
+          /** The answer as text; blank when unanswered. */
+          answer: z.string(),
+          correct: z.boolean().nullable(),
+          score: z.number().nullable(),
+        }),
+      ),
+    }),
+  ),
+});
+export type StageResponseDetail = z.infer<typeof stageResponseDetailSchema>;
 
 /** A delegate the stage applies to who has not submitted it (E5-9: the reminder list). */
 export const stageNonCompleterSchema = z.object({

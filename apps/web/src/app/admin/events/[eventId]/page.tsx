@@ -52,10 +52,20 @@ export default async function EventPage({ params }: { params: Promise<{ eventId:
           ) : null
         }
         actions={
-          event && event.status !== 'archived' ? (
-            <Link href="/admin/imports" className={consoleButton({ variant: 'accent' })}>
-              Import registrations
-            </Link>
+          event ? (
+            <>
+              <Link
+                href={`/admin/events/${event.id}/dashboard`}
+                className={consoleButton({ variant: 'secondary' })}
+              >
+                Dashboard
+              </Link>
+              {event.status !== 'archived' ? (
+                <Link href="/admin/imports" className={consoleButton({ variant: 'accent' })}>
+                  Import registrations
+                </Link>
+              ) : null}
+            </>
           ) : null
         }
       />

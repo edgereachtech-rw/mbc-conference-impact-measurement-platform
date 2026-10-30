@@ -365,6 +365,35 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   eligible registrations without a submitted response (name, email, organisation, signed up,
   started). The stage page shows them under "Not yet submitted (n)" with "Email these
   delegates", which opens the message composer (E2-14) with those delegates selected.
+- Sections submitted separately (decided 2026-10-30): `PUT .../assessments/:stage` takes
+  `submitSection` (a section id, or `general` for the questions outside any section). The
+  section's required questions must be answered; its answers then lock (422 `answers_invalid`,
+  "already submitted", on any change) and a second submission of it is 409
+  `already_submitted`. The response's `submittedAt` is set once every section with questions
+  is submitted (`submit: true` still submits them all at once). Section submissions live in
+  `assessment_section_submission` (migration `20261031210000_section_submissions`) and are
+  served to the delegate as `response.submittedSections`. Audit: `assessment.section_submitted`.
+- Delegate flow (2026-10-30): one section per step with a "Submit section" button (or "Submit
+  answers" when the stage has one group); a review popup lists the section's answers under its
+  title before anything is sent, and a thank-you popup follows (the final one lists every
+  section). Missing required answers raise a highlighted banner and highlight the questions.
+  Submitted sections are marked and read-only; the whole stage is read-only, section by
+  section, once submitted. The builder's section and question forms are popups too
+  (`components/console/dialog.tsx`: bottom sheet on phones, centred box on wider screens).
+- Admin view of responses (2026-10-30): `GET .../assessments/:stage/responses` lists every
+  delegate who started or submitted with sections submitted out of total; `GET
+.../responses/:delegateId` returns the full response, section by section (title, submission
+  time, each question with its answer as text, correct flag and weight), audited as
+  `assessment.response_viewed` without the answers. Shown on the stage page's Submissions tab
+  with a "View" popup per delegate. The CSV export prefixes each column with its section title.
+- Event dashboard (2026-10-30): `/admin/events/:id/dashboard`, from the "Dashboard" button on
+  the event page, shows `GET /api/v1/events/:id/dashboard` (admin only, counts only): registered
+  delegates (active, plus test where allowed) with signed-up and invited counts and the
+  in-person/online split, registrations by status, every assessment stage with its status, what
+  delegates currently see, question count, invited/started/submitted, response rate, knowledge
+  average and non-completers, and the messages sent (recipients, delivered, failed, last
+  subject). The stage summary is computed once (`stageSummaryFor` in the assessments router)
+  and shared by the stage page and the dashboard.
 - Stage page (2026-10-30): `/admin/events/:id/assessments/:stage` holds a stage's questions
   (the builder) and its submissions (counts, knowledge average, statement averages, CSV
   download, non-completers) as two tabs, linked from the stage card under Assessment

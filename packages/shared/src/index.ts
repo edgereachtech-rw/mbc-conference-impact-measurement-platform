@@ -25,3 +25,4 @@ export * from './schemas/messages.js';
 export * from './message-body.js';
 export * from './schemas/events.js';
 export * from './schemas/assessments.js';
+export * from './schemas/dashboard.js';

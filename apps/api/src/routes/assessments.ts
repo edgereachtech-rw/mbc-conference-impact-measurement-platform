@@ -2,16 +2,18 @@ import {
   answerIssue,
   answerScore,
   assessmentStages,
+  describeAnswer,
+  GENERAL_SECTION,
   isBlankAnswer,
   isKnowledgeQuestion,
   markedOptions,
-  multipleChoiceAnswer,
   questionCreateSchema,
   questionFieldsSchema,
   questionOrderSchema,
   questionPatchSchema,
   responseSaveSchema,
   sectionFieldsSchema,
+  sectionKeyOf,
   sectionOrderSchema,
   sectionPatchSchema,
   stageOrder,
@@ -26,6 +28,8 @@ import {
   type RatingScale,
   type SectionMarking,
   type StageNonCompleter,
+  type StageResponseDetail,
+  type StageResponseListItem,
   type StageSummary,
 } from '@mbc/shared';
 import { Router, type NextFunction, type Request, type Response } from 'express';
@@ -135,6 +139,139 @@ function round1(value: number): number {
   return Math.round(value * 10) / 10;
 }
 
+/** Any client that can read: the shared PrismaClient or the `tx` inside $transaction. */
+type Reader = Pick<PrismaClient, 'assessmentQuestion' | 'assessmentResponse' | 'delegate'>;
+
+/** Registration statuses a stage applies to (test registrations only where allowed). */
+export type EligibleStatuses = readonly ('active' | 'test')[];
+
+async function activeQuestionsOf(db: Reader, stageConfigId: string) {
+  const rows = await db.assessmentQuestion.findMany({
+    where: { stageConfigId, retiredAt: null },
+    include: QUESTION_INCLUDE,
+  });
+  return sortQuestions(rows).map(questionViewOf);
+}
+
+/**
+ * Answers point at the exact question version answered. For reporting, every version of a
+ * question (same question_key within the stage) counts as that question, so an edit after the
+ * first answers does not drop them. Returns, per active question, the ids to look for, the
+ * active one first.
+ */
+async function versionIdsFor(
+  db: Reader,
+  stageConfigId: string,
+  questions: readonly AssessmentQuestionView[],
+) {
+  const rows = await db.assessmentQuestion.findMany({
+    where: { stageConfigId },
+    select: { id: true, questionKey: true },
+  });
+  const keyOf = new Map(rows.map((r) => [r.id, r.questionKey]));
+  const byKey = new Map<string, string[]>();
+  for (const r of rows) byKey.set(r.questionKey, [...(byKey.get(r.questionKey) ?? []), r.id]);
+  return new Map(
+    questions.map((q) => {
+      const key = keyOf.get(q.id);
+      const others = (key ? (byKey.get(key) ?? []) : []).filter((id) => id !== q.id);
+      return [q.id, [q.id, ...others]];
+    }),
+  );
+}
+
+/** The answer to a question in one response, whichever version of it was answered. */
+function answerTo<A extends { questionId: string }>(
+  byId: ReadonlyMap<string, A>,
+  ids: readonly string[] | undefined,
+  questionId: string,
+): A | undefined {
+  for (const id of ids ?? [questionId]) {
+    const a = byId.get(id);
+    if (a) return a;
+  }
+  return undefined;
+}
+
+/**
+ * The stage summary (backlog E5-6, E5-9): invited, started, submitted, response rate, the
+ * knowledge average over delegates who answered every knowledge question in a submitted
+ * response, and per-statement averages of rating-scale questions. Shared by the summary route
+ * and the event dashboard.
+ */
+export async function stageSummaryFor(
+  db: Reader,
+  stage: { id: string; eventId: string; stage: AssessmentStage },
+  eligible: EligibleStatuses,
+): Promise<StageSummary> {
+  const [invited, responses, questions] = await Promise.all([
+    db.delegate.count({
+      where: { eventId: stage.eventId, registrationStatus: { in: [...eligible] } },
+    }),
+    db.assessmentResponse.findMany({
+      where: { stageConfigId: stage.id },
+      select: {
+        id: true,
+        submittedAt: true,
+        answers: { select: { questionId: true, score: true, correct: true } },
+      },
+    }),
+    activeQuestionsOf(db, stage.id),
+  ]);
+  const submitted = responses.filter((r) => r.submittedAt);
+  const versions = await versionIdsFor(db, stage.id, questions);
+  const knowledgeIds = questions.filter((q) => q.isKnowledge).map((q) => q.id);
+  let knowledge: StageSummary['knowledge'] = null;
+  if (knowledgeIds.length) {
+    const scores: number[] = [];
+    for (const r of submitted) {
+      const byQuestion = new Map(r.answers.map((a) => [a.questionId, a]));
+      const found = knowledgeIds.map((id) => answerTo(byQuestion, versions.get(id), id));
+      if (found.every(Boolean)) {
+        scores.push(found.reduce((n, a) => n + (a?.correct ? 1 : 0), 0));
+      }
+    }
+    const average = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : null;
+    knowledge = {
+      questions: knowledgeIds.length,
+      respondents: scores.length,
+      averageScore: average === null ? null : round1(average),
+      averagePercent: average === null ? null : round1((average / knowledgeIds.length) * 100),
+    };
+  }
+  const statements: StageSummary['statements'] = questions
+    .filter(
+      (q) =>
+        q.type === 'single_choice' &&
+        !q.isKnowledge &&
+        (q.options ?? []).some((o) => o.score !== null && o.score !== undefined),
+    )
+    .map((q) => {
+      const values = submitted
+        .map((r) =>
+          answerTo(new Map(r.answers.map((a) => [a.questionId, a])), versions.get(q.id), q.id),
+        )
+        .map((a) => a?.score)
+        .filter((s): s is number => typeof s === 'number');
+      return {
+        questionId: q.id,
+        questionKey: q.questionKey,
+        prompt: q.prompt,
+        responses: values.length,
+        average: values.length ? round1(values.reduce((a, b) => a + b, 0) / values.length) : null,
+      };
+    });
+  return {
+    stage: stage.stage,
+    invited,
+    started: responses.length,
+    submitted: submitted.length,
+    responseRate: invited ? round1((submitted.length / invited) * 100) : null,
+    knowledge,
+    statements,
+  };
+}
+
 /**
  * Questions per assessment stage (admin) and the delegate's answers (E1-4 and the assessment
  * groundwork). Admin routes are M.Bryan-only and audited; delegate routes resolve the delegate's
@@ -175,13 +312,7 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
   const stageFromReq = (req: Request, forWrite: boolean) =>
     loadStage(String(req.params.eventId), stageOf(String(req.params.stage)), forWrite);
 
-  async function activeQuestions(stageConfigId: string) {
-    const rows = await prisma().assessmentQuestion.findMany({
-      where: { stageConfigId, retiredAt: null },
-      include: QUESTION_INCLUDE,
-    });
-    return sortQuestions(rows).map(questionViewOf);
-  }
+  const activeQuestions = (stageConfigId: string) => activeQuestionsOf(prisma(), stageConfigId);
 
   async function activeSections(stageConfigId: string): Promise<AssessmentSectionView[]> {
     const rows = await prisma().assessmentSection.findMany({
@@ -196,41 +327,8 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
     questions: await activeQuestions(stageConfigId),
   });
 
-  /**
-   * Answers point at the exact question version answered. For reporting, every version of a
-   * question (same question_key within the stage) counts as that question, so an edit after the
-   * first answers does not drop them. Returns, per active question, the ids to look for, the
-   * active one first.
-   */
-  async function versionIdsOf(stageConfigId: string, questions: readonly AssessmentQuestionView[]) {
-    const rows = await prisma().assessmentQuestion.findMany({
-      where: { stageConfigId },
-      select: { id: true, questionKey: true },
-    });
-    const keyOf = new Map(rows.map((r) => [r.id, r.questionKey]));
-    const byKey = new Map<string, string[]>();
-    for (const r of rows) byKey.set(r.questionKey, [...(byKey.get(r.questionKey) ?? []), r.id]);
-    return new Map(
-      questions.map((q) => {
-        const key = keyOf.get(q.id);
-        const others = (key ? (byKey.get(key) ?? []) : []).filter((id) => id !== q.id);
-        return [q.id, [q.id, ...others]];
-      }),
-    );
-  }
-
-  /** The answer to a question in one response, whichever version of it was answered. */
-  function answerTo<A extends { questionId: string }>(
-    byId: ReadonlyMap<string, A>,
-    ids: readonly string[] | undefined,
-    questionId: string,
-  ): A | undefined {
-    for (const id of ids ?? [questionId]) {
-      const a = byId.get(id);
-      if (a) return a;
-    }
-    return undefined;
-  }
+  const versionIdsOf = (stageConfigId: string, questions: readonly AssessmentQuestionView[]) =>
+    versionIdsFor(prisma(), stageConfigId, questions);
 
   /** The section id when it belongs to the stage; null for "no section"; 422 otherwise. */
   async function sectionFor(stageConfigId: string, sectionId: string | null | undefined) {
@@ -637,72 +735,7 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
   router.get('/events/:eventId/assessments/:stage/summary', guard, async (req, res) => {
     requireAdmin(res);
     const stage = await stageFromReq(req, false);
-    const [invited, responses, questions] = await Promise.all([
-      prisma().delegate.count({
-        where: { eventId: stage.eventId, registrationStatus: { in: [...eligibleStatuses()] } },
-      }),
-      prisma().assessmentResponse.findMany({
-        where: { stageConfigId: stage.id },
-        select: {
-          id: true,
-          submittedAt: true,
-          answers: { select: { questionId: true, score: true, correct: true } },
-        },
-      }),
-      activeQuestions(stage.id),
-    ]);
-    const submitted = responses.filter((r) => r.submittedAt);
-    const versions = await versionIdsOf(stage.id, questions);
-    const knowledgeIds = questions.filter((q) => q.isKnowledge).map((q) => q.id);
-    let knowledge: StageSummary['knowledge'] = null;
-    if (knowledgeIds.length) {
-      const scores: number[] = [];
-      for (const r of submitted) {
-        const byQuestion = new Map(r.answers.map((a) => [a.questionId, a]));
-        const found = knowledgeIds.map((id) => answerTo(byQuestion, versions.get(id), id));
-        if (found.every(Boolean)) {
-          scores.push(found.reduce((n, a) => n + (a?.correct ? 1 : 0), 0));
-        }
-      }
-      const average = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : null;
-      knowledge = {
-        questions: knowledgeIds.length,
-        respondents: scores.length,
-        averageScore: average === null ? null : round1(average),
-        averagePercent: average === null ? null : round1((average / knowledgeIds.length) * 100),
-      };
-    }
-    const statements: StageSummary['statements'] = questions
-      .filter(
-        (q) =>
-          q.type === 'single_choice' &&
-          !q.isKnowledge &&
-          (q.options ?? []).some((o) => o.score !== null && o.score !== undefined),
-      )
-      .map((q) => {
-        const values = submitted
-          .map((r) =>
-            answerTo(new Map(r.answers.map((a) => [a.questionId, a])), versions.get(q.id), q.id),
-          )
-          .map((a) => a?.score)
-          .filter((s): s is number => typeof s === 'number');
-        return {
-          questionId: q.id,
-          questionKey: q.questionKey,
-          prompt: q.prompt,
-          responses: values.length,
-          average: values.length ? round1(values.reduce((a, b) => a + b, 0) / values.length) : null,
-        };
-      });
-    const summary: StageSummary = {
-      stage: stage.stage,
-      invited,
-      started: responses.length,
-      submitted: submitted.length,
-      responseRate: invited ? round1((submitted.length / invited) * 100) : null,
-      knowledge,
-      statements,
-    };
+    const summary = await stageSummaryFor(prisma(), stage, eligibleStatuses());
     res.json({ summary });
   });
 
@@ -737,31 +770,133 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
     res.json({ delegates });
   });
 
-  /** One answer as text for the export: option labels rather than codes, "Other" spelled out. */
-  function answerText(question: AssessmentQuestionView, value: unknown): string {
-    if (value === null || value === undefined) return '';
-    const labelOf = (code: string) =>
-      (question.options ?? []).find((o) => o.value === code)?.label ?? code;
-    switch (question.type) {
-      case 'single_choice':
-        return typeof value === 'string' ? labelOf(value) : String(value);
-      case 'multiple_choice': {
-        const answer = multipleChoiceAnswer(value);
-        if (!answer) return String(value);
-        return answer.selected
-          .map((code) => {
-            const option = (question.options ?? []).find((o) => o.value === code);
-            if (option?.other && answer.other) return `${option.label}: ${answer.other}`;
-            return option?.label ?? code;
-          })
-          .join('; ');
-      }
-      case 'yes_no':
-        return value === true ? 'Yes' : value === false ? 'No' : String(value);
-      default:
-        return typeof value === 'string' ? value : String(value);
+  /** The stage's sections that hold questions, in display order, keyed for submissions. */
+  async function sectionsForResponses(stageConfigId: string) {
+    const [sections, questions] = await Promise.all([
+      activeSections(stageConfigId),
+      activeQuestions(stageConfigId),
+    ]);
+    const keys: Array<{
+      key: string;
+      title: string;
+      description: string | null;
+      marking: AssessmentSectionView['marking'];
+    }> = [];
+    if (questions.some((q) => !q.sectionId)) {
+      keys.push({ key: GENERAL_SECTION, title: 'Questions', description: null, marking: 'none' });
     }
+    for (const section of sections) {
+      if (questions.some((q) => q.sectionId === section.id)) {
+        keys.push({
+          key: section.id,
+          title: section.title,
+          description: section.description,
+          marking: section.marking,
+        });
+      }
+    }
+    return { keys, questions };
   }
+
+  // Every delegate who started or submitted the stage, with their section progress.
+  router.get('/events/:eventId/assessments/:stage/responses', guard, async (req, res) => {
+    requireAdmin(res);
+    const stage = await stageFromReq(req, false);
+    const { keys } = await sectionsForResponses(stage.id);
+    const valid = new Set(keys.map((k) => k.key));
+    const rows = await prisma().assessmentResponse.findMany({
+      where: {
+        stageConfigId: stage.id,
+        delegate: { registrationStatus: { in: [...eligibleStatuses()] } },
+      },
+      select: {
+        delegateId: true,
+        submittedAt: true,
+        updatedAt: true,
+        delegate: { select: { name: true, email: true, organisation: true } },
+        _count: { select: { answers: true } },
+        sections: { select: { sectionKey: true } },
+      },
+      orderBy: [{ submittedAt: 'desc' }, { updatedAt: 'desc' }],
+    });
+    const responses: StageResponseListItem[] = rows.map((r) => ({
+      delegateId: r.delegateId,
+      name: r.delegate.name,
+      email: r.delegate.email,
+      organisation: r.delegate.organisation,
+      submittedAt: r.submittedAt ? r.submittedAt.toISOString() : null,
+      updatedAt: r.updatedAt.toISOString(),
+      sectionsSubmitted: r.sections.filter((x) => valid.has(x.sectionKey)).length,
+      sectionsTotal: keys.length,
+      answered: r._count.answers,
+    }));
+    res.json({ responses });
+  });
+
+  // One delegate's response: every section with its title, every question with its answer.
+  // Viewing is audited (who looked at whose answers), never the answers themselves.
+  router.get(
+    '/events/:eventId/assessments/:stage/responses/:delegateId',
+    guard,
+    async (req, res) => {
+      const principal = requireAdmin(res);
+      const stage = await stageFromReq(req, false);
+      const delegateId = String(req.params.delegateId);
+      if (!/^[0-9a-f-]{36}$/i.test(delegateId)) {
+        throw new HttpError(404, 'not_found', 'No response from this delegate.');
+      }
+      const response = await prisma().assessmentResponse.findFirst({
+        where: { stageConfigId: stage.id, delegateId },
+        select: {
+          id: true,
+          submittedAt: true,
+          updatedAt: true,
+          delegate: { select: { id: true, name: true, email: true, organisation: true } },
+          answers: { select: { questionId: true, value: true, correct: true, score: true } },
+          sections: { select: { sectionKey: true, submittedAt: true } },
+        },
+      });
+      if (!response) throw new HttpError(404, 'not_found', 'No response from this delegate.');
+      const { keys, questions } = await sectionsForResponses(stage.id);
+      const versions = await versionIdsOf(stage.id, questions);
+      const byId = new Map(response.answers.map((a) => [a.questionId, a]));
+      const submitted = new Map(response.sections.map((x) => [x.sectionKey, x.submittedAt]));
+      const detail: StageResponseDetail = {
+        delegate: response.delegate,
+        submittedAt: response.submittedAt ? response.submittedAt.toISOString() : null,
+        updatedAt: response.updatedAt.toISOString(),
+        sections: keys.map((k) => ({
+          ...k,
+          submittedAt: submitted.get(k.key)?.toISOString() ?? null,
+          questions: questions
+            .filter((q) => sectionKeyOf(q.sectionId) === k.key)
+            .map((q) => {
+              const a = answerTo(byId, versions.get(q.id), q.id);
+              return {
+                id: q.id,
+                prompt: q.prompt,
+                type: q.type,
+                required: q.required,
+                isKnowledge: q.isKnowledge,
+                answer: describeAnswer(q, a?.value),
+                correct: a?.correct ?? null,
+                score: a?.score ?? null,
+              };
+            }),
+        })),
+      };
+      await audit(prisma(), {
+        action: 'assessment.response_viewed',
+        entityType: 'assessment_response',
+        entityId: response.id,
+        eventId: stage.eventId,
+        actorUserId: principal.userId,
+        newValue: { stage: stage.stage, delegateId: response.delegate.id },
+        ...clientOf(res),
+      });
+      res.json({ response: detail });
+    },
+  );
 
   // Submitted responses of a stage as CSV, one row per delegate and one column per question
   // (E5-10: the summary of expectations and baseline results M.Bryan receives before the
@@ -770,8 +905,9 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
   router.get('/events/:eventId/assessments/:stage/responses.csv', guard, async (req, res) => {
     const principal = requireAdmin(res);
     const stage = await stageFromReq(req, false);
-    const [questions, responses] = await Promise.all([
+    const [questions, sections, responses] = await Promise.all([
       activeQuestions(stage.id),
+      activeSections(stage.id),
       prisma().assessmentResponse.findMany({
         where: { stageConfigId: stage.id, submittedAt: { not: null } },
         orderBy: { submittedAt: 'asc' },
@@ -794,6 +930,12 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
     ]);
     const versions = await versionIdsOf(stage.id, questions);
     const knowledge = questions.filter((q) => q.isKnowledge);
+    // Column headers carry the section title so the export reads section by section.
+    const titleOf = new Map(sections.map((x) => [x.id, x.title]));
+    const titled = (q: AssessmentQuestionView) => {
+      const title = q.sectionId ? titleOf.get(q.sectionId) : undefined;
+      return title ? `${title} · ${q.prompt}` : q.prompt;
+    };
     const header = [
       'Name',
       'Email',
@@ -803,8 +945,8 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
       'Attendance format',
       'Capacity',
       'Submitted at (UTC)',
-      ...questions.map((q) => q.prompt),
-      ...knowledge.map((q) => `${q.prompt} (correct?)`),
+      ...questions.map(titled),
+      ...knowledge.map((q) => `${titled(q)} (correct?)`),
       ...(knowledge.length ? [`Knowledge score (of ${knowledge.length})`] : []),
     ];
     const lines = [header.map(csvCell).join(',')];
@@ -821,7 +963,7 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
         d.attendanceFormat,
         d.capacity,
         r.submittedAt?.toISOString() ?? '',
-        ...questions.map((q) => answerText(q, answerOf(q)?.value)),
+        ...questions.map((q) => describeAnswer(q, answerOf(q)?.value)),
         ...knowledge.map((q) => {
           const a = answerOf(q);
           return a ? (a.correct ? 'Yes' : 'No') : '';
@@ -893,7 +1035,10 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
       include: {
         questions: { where: { retiredAt: null }, include: QUESTION_INCLUDE },
         sections: { orderBy: [{ order: 'asc' }, { createdAt: 'asc' }] },
-        responses: { where: { delegateId }, include: { answers: true } },
+        responses: {
+          where: { delegateId },
+          include: { answers: true, sections: { select: { sectionKey: true } } },
+        },
       },
     });
     return stages
@@ -924,6 +1069,7 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
                 submittedAt: response.submittedAt ? response.submittedAt.toISOString() : null,
                 updatedAt: response.updatedAt.toISOString(),
                 answers,
+                submittedSections: response.sections.map((x) => x.sectionKey),
               }
             : null,
           feedback,
@@ -944,7 +1090,7 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
     async (req, res) => {
       const delegate = await myRegistration(res, String(req.params.eventId));
       const stage = stageOf(String(req.params.stage));
-      const { answers, submit } = req.body as z.infer<typeof responseSaveSchema>;
+      const { answers, submit, submitSection } = req.body as z.infer<typeof responseSaveSchema>;
       const config = await prisma().assessmentStageConfig.findUnique({
         where: { eventId_stage: { eventId: delegate.eventId, stage } },
         include: {
@@ -955,6 +1101,7 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
               id: true,
               submittedAt: true,
               answers: { select: { questionId: true, value: true, correct: true } },
+              sections: { select: { sectionKey: true } },
             },
           },
         },
@@ -971,6 +1118,21 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
         );
       }
       const byId = new Map(config.questions.map((q) => [q.id, questionViewOf(q)]));
+      // Sections are submitted one at a time (keyed by section id, or "general" for questions
+      // outside any section); the response is submitted once every section with questions is.
+      const sectionKeys = new Set<string>();
+      for (const q of byId.values()) sectionKeys.add(sectionKeyOf(q.sectionId));
+      if (submitSection !== undefined && !sectionKeys.has(submitSection)) {
+        throw new HttpError(
+          422,
+          'validation_failed',
+          'submitSection: not a section of this assessment.',
+        );
+      }
+      const locked = new Set((existing?.sections ?? []).map((x) => x.sectionKey));
+      if (submitSection !== undefined && locked.has(submitSection)) {
+        throw new HttpError(409, 'already_submitted', 'You have already submitted this section.');
+      }
       const stored = new Map((existing?.answers ?? []).map((a) => [a.questionId, a]));
       const problems: Record<string, string> = {};
       const kept: Array<{
@@ -979,17 +1141,25 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
         correct: boolean | null;
         score: number | null;
       }> = [];
-      // Knowledge answers show their result at once, so they are kept once given (never re-tried).
+      // Answers of a submitted section, and knowledge answers (their result was shown at once),
+      // are kept as stored; an attempt to change them is refused.
       for (const [questionId, previous] of stored) {
         const question = byId.get(questionId);
-        if (question?.isKnowledge && previous.correct !== null) {
-          const incoming = answers[questionId];
-          if (!isBlankAnswer(incoming) && incoming !== previous.value) {
-            problems[questionId] = 'You have already answered this question; it cannot be changed.';
-          }
-          const scored = answerScore(question, previous.value);
-          kept.push({ questionId, value: previous.value as Prisma.InputJsonValue, ...scored });
+        if (!question) continue;
+        const sectionLocked = locked.has(sectionKeyOf(question.sectionId));
+        const knowledgeLocked = question.isKnowledge && previous.correct !== null;
+        if (!sectionLocked && !knowledgeLocked) continue;
+        const incoming = answers[questionId];
+        if (
+          !isBlankAnswer(incoming) &&
+          JSON.stringify(incoming) !== JSON.stringify(previous.value)
+        ) {
+          problems[questionId] = sectionLocked
+            ? 'This section is already submitted; its answers cannot be changed.'
+            : 'You have already answered this question; it cannot be changed.';
         }
+        const scored = answerScore(question, previous.value);
+        kept.push({ questionId, value: previous.value as Prisma.InputJsonValue, ...scored });
       }
       for (const [questionId, value] of Object.entries(answers)) {
         if (kept.some((k) => k.questionId === questionId) || problems[questionId]) continue;
@@ -1008,15 +1178,19 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
             ...answerScore(question, value),
           });
       }
-      if (submit) {
-        for (const question of byId.values()) {
-          if (
-            question.required &&
-            !kept.some((k) => k.questionId === question.id) &&
-            !problems[question.id]
-          ) {
-            problems[question.id] = 'This question needs an answer before you submit.';
-          }
+      const submitting = submit
+        ? [...sectionKeys]
+        : submitSection !== undefined
+          ? [submitSection]
+          : [];
+      for (const question of byId.values()) {
+        if (
+          question.required &&
+          submitting.includes(sectionKeyOf(question.sectionId)) &&
+          !kept.some((k) => k.questionId === question.id) &&
+          !problems[question.id]
+        ) {
+          problems[question.id] = 'This question needs an answer before you submit.';
         }
       }
       if (Object.keys(problems).length) {
@@ -1031,17 +1205,21 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
         return;
       }
       const at = clock();
+      const newKeys = submitting.filter((k) => !locked.has(k));
+      const completes =
+        (submit || submitSection !== undefined) &&
+        [...sectionKeys].every((k) => locked.has(k) || newKeys.includes(k));
       await prisma().$transaction(async (tx) => {
         const response = existing
           ? await tx.assessmentResponse.update({
               where: { id: existing.id },
-              data: { submittedAt: submit ? at : null },
+              data: { submittedAt: completes ? at : null },
             })
           : await tx.assessmentResponse.create({
               data: {
                 stageConfigId: config.id,
                 delegateId: delegate.id,
-                submittedAt: submit ? at : null,
+                submittedAt: completes ? at : null,
               },
             });
         await tx.assessmentAnswer.deleteMany({ where: { responseId: response.id } });
@@ -1056,13 +1234,34 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
             })),
           });
         }
+        if (newKeys.length) {
+          await tx.assessmentSectionSubmission.createMany({
+            data: newKeys.map((sectionKey) => ({
+              responseId: response.id,
+              sectionKey,
+              submittedAt: at,
+            })),
+          });
+        }
         await audit(tx, {
-          action: submit ? 'assessment.submitted' : 'assessment.saved',
+          action: completes
+            ? 'assessment.submitted'
+            : submitSection !== undefined
+              ? 'assessment.section_submitted'
+              : 'assessment.saved',
           entityType: 'assessment_response',
           entityId: response.id,
           eventId: delegate.eventId,
           actorUserId: principalOf(res).userId,
-          newValue: { stage, delegateId: delegate.id, answered: kept.length, questions: byId.size },
+          newValue: {
+            stage,
+            delegateId: delegate.id,
+            answered: kept.length,
+            questions: byId.size,
+            ...(submitSection !== undefined ? { section: submitSection } : {}),
+            sectionsSubmitted: locked.size + newKeys.length,
+            sectionsTotal: sectionKeys.size,
+          },
           ...clientOf(res),
         });
       });

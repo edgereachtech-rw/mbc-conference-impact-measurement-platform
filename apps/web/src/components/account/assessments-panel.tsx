@@ -2,16 +2,20 @@
 
 import {
   answerIssue,
+  describeAnswer,
+  GENERAL_SECTION,
   groupQuestions,
   isBlankAnswer,
   multipleChoiceAnswer,
+  sectionKeyOf,
   type DelegateQuestionView,
   type KnowledgeFeedback,
   type MyAssessment,
 } from '@mbc/shared';
-import { CheckCircle2Icon, Loader2Icon, XCircleIcon } from 'lucide-react';
+import { AlertCircleIcon, CheckCircle2Icon, Loader2Icon, XCircleIcon } from 'lucide-react';
 import { useEffect, useId, useState } from 'react';
 
+import { Dialog } from '@/components/console/dialog';
 import { consoleButton, StatePanel, StatusPill } from '@/components/console/page';
 import { ApiError, apiFetch } from '@/lib/api';
 import { formatInstant, stageLabels, stagePurpose, stageWhen } from '@/lib/events';
@@ -29,10 +33,13 @@ type State =
 
 /**
  * The delegate's assessments for one event: each enabled stage that is upcoming, open or closed.
- * An open stage shows its questions one section per step (answer, save a draft, submit once);
- * a closed or submitted stage shows the answers read-only. A knowledge question is saved the
- * moment it is answered, shows whether the answer was right, and cannot be changed afterwards.
- * Everything is served and checked by the API for the signed-in delegate only.
+ * An open stage shows its questions one section per step; each section is submitted on its own
+ * (after a review popup listing its answers) and locks, and the stage counts as submitted once
+ * every section is. Missing required answers are flagged in a highlighted banner and on the
+ * questions themselves. A closed or submitted stage shows the answers read-only, section by
+ * section. A knowledge question is saved the moment it is answered, shows whether the answer
+ * was right, and cannot be changed afterwards. Everything is served and checked by the API for
+ * the signed-in delegate only.
  */
 export function AssessmentsPanel({ eventId, timezone }: AssessmentsPanelProps) {
   const [state, setState] = useState<State>({ kind: 'loading' });
@@ -118,10 +125,16 @@ function AssessmentCard({
   );
   const [problems, setProblems] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<'draft' | 'submit' | 'check' | null>(null);
-  const [confirm, setConfirm] = useState(false);
   const [step, setStep] = useState(0);
   const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
+  /** The highlighted message shown when a submission is attempted with required answers missing. */
+  const [banner, setBanner] = useState<string | null>(null);
+  /** The section being confirmed in the review popup, and the outcome once it is submitted. */
+  const [review, setReview] = useState<null | { key: string; done: 'section' | 'all' | null }>(
+    null,
+  );
   const submitted = Boolean(assessment.response?.submittedAt);
+  const submittedKeys = new Set(assessment.response?.submittedSections ?? []);
   const feedback = assessment.feedback ?? {};
   const tone =
     assessment.status === 'open'
@@ -140,9 +153,12 @@ function AssessmentCard({
   const groups = groupQuestions(assessment.sections, assessment.questions).filter(
     (g) => g.questions.length > 0,
   );
+  const keyOf = (g: (typeof groups)[number]) => sectionKeyOf(g.section?.id ?? null);
   const stepped = canAnswer && groups.length > 1;
-  const current = stepped ? groups[Math.min(step, groups.length - 1)]! : null;
-  const lastStep = !stepped || step >= groups.length - 1;
+  const current = stepped ? groups[Math.min(step, groups.length - 1)]! : (groups[0] ?? null);
+  const currentKey = current ? keyOf(current) : GENERAL_SECTION;
+  const currentLocked = current ? submittedKeys.has(currentKey) : false;
+  const remaining = groups.filter((g) => !submittedKeys.has(keyOf(g))).length;
 
   function clearProblem(questionId: string) {
     setProblems((p) => {
@@ -156,19 +172,21 @@ function AssessmentCard({
     setAnswers((a) => ({ ...a, [questionId]: value }));
     clearProblem(questionId);
     setNotice(null);
+    setBanner(null);
   }
 
-  /** Local check before any request: blank required answers (on submit) and malformed values. */
+  /** Local check before any request: malformed values, and blank required answers of the questions given. */
   function validate(
-    submit: boolean,
-    only?: DelegateQuestionView[],
+    requiredIn: DelegateQuestionView[] | null,
     current: Record<string, unknown> = answers,
   ): Record<string, string> {
     const next: Record<string, string> = {};
-    for (const q of only ?? assessment.questions) {
+    for (const q of assessment.questions) {
       const value = current[q.id];
       if (isBlankAnswer(value)) {
-        if (submit && q.required) next[q.id] = 'This question needs an answer before you submit.';
+        if (q.required && requiredIn?.some((x) => x.id === q.id)) {
+          next[q.id] = 'This question needs an answer before you submit.';
+        }
         continue;
       }
       const issue = answerIssue(q, value);
@@ -176,10 +194,16 @@ function AssessmentCard({
     }
     return next;
   }
-  /** Shows the problems and jumps to the first step that holds one. */
+  /** Shows the problems, the highlighted banner, and jumps to the first step that holds one. */
   function showProblems(next: Record<string, string>) {
     setProblems(next);
-    setConfirm(false);
+    setReview(null);
+    const count = Object.keys(next).length;
+    setBanner(
+      count === 1
+        ? 'One question needs attention before you can submit. It is highlighted below.'
+        : `${count} questions need attention before you can submit. They are highlighted below.`,
+    );
     if (stepped) {
       const index = groups.findIndex((g) => g.questions.some((q) => next[q.id]));
       if (index >= 0) setStep(index);
@@ -187,43 +211,37 @@ function AssessmentCard({
   }
 
   async function save(
-    submit: boolean,
-    mode: 'draft' | 'submit' | 'check' = submit ? 'submit' : 'draft',
+    body: { submitSection?: string },
+    mode: 'draft' | 'submit' | 'check',
     current: Record<string, unknown> = answers,
   ) {
-    const next = validate(submit, undefined, current);
-    if (Object.keys(next).length) {
-      showProblems(next);
-      return;
-    }
     setBusy(mode);
     try {
       const result = await apiFetch<{ assessments: MyAssessment[] }>(
         `/me/events/${eventId}/assessments/${assessment.stage}`,
-        { method: 'PUT', body: JSON.stringify({ answers: current, submit }) },
+        { method: 'PUT', body: JSON.stringify({ answers: current, ...body }) },
       );
       onUpdated(result.assessments);
-      if (mode !== 'check') {
-        setNotice({
-          ok: true,
-          text: submit
-            ? 'Thank you, your answers are submitted.'
-            : 'Draft saved. You can come back to it.',
-        });
+      const next = result.assessments.find((a) => a.stage === assessment.stage);
+      if (mode === 'draft') setNotice({ ok: true, text: 'Draft saved. You can come back to it.' });
+      if (mode === 'submit') {
+        setReview((r) => (r ? { ...r, done: next?.response?.submittedAt ? 'all' : 'section' } : r));
+        setNotice(null);
       }
-      setConfirm(false);
+      return true;
     } catch (e) {
       if (e instanceof ApiError && e.code === 'answers_invalid') {
         const served = (e.body as { problems?: Record<string, string> } | undefined)?.problems;
         if (served && Object.keys(served).length) showProblems(served);
-        setNotice({ ok: false, text: 'Some answers need attention.' });
+        else setNotice({ ok: false, text: 'Some answers need attention.' });
       } else {
+        setReview(null);
         setNotice({
           ok: false,
           text: describeError(e, 'Your answers could not be saved.').message,
         });
       }
-      setConfirm(false);
+      return false;
     } finally {
       setBusy(null);
     }
@@ -235,21 +253,54 @@ function AssessmentCard({
     setAnswers(current);
     clearProblem(questionId);
     setNotice(null);
-    void save(false, 'check', current);
+    setBanner(null);
+    void save({}, 'check', current);
   }
 
-  function nextSection() {
-    if (!current) return;
-    const issues = validate(false, current.questions);
+  function saveDraft() {
+    const issues = validate(null);
     if (Object.keys(issues).length) {
-      setProblems(issues);
+      showProblems(issues);
       return;
     }
+    setBanner(null);
+    void save({}, 'draft');
+  }
+
+  /** Opens the review popup for the current section once its required answers are in. */
+  function startSubmit() {
+    if (!current) return;
+    const issues = validate(current.questions);
+    if (Object.keys(issues).length) {
+      showProblems(issues);
+      setNotice(null);
+      return;
+    }
+    setBanner(null);
     setNotice(null);
-    setStep((s) => Math.min(s + 1, groups.length - 1));
+    setReview({ key: currentKey, done: null });
+  }
+
+  function goTo(index: number) {
+    setNotice(null);
+    setBanner(null);
+    setStep(Math.max(0, Math.min(index, groups.length - 1)));
+  }
+
+  /** After a section is submitted, move on to the next one still open. */
+  function closeReview() {
+    const done = review?.done;
+    setReview(null);
+    if (done === 'section' && stepped) {
+      const next = groups.findIndex((g, i) => i > step && !submittedKeys.has(keyOf(g)));
+      const first = groups.findIndex((g) => !submittedKeys.has(keyOf(g)));
+      goTo(next >= 0 ? next : first >= 0 ? first : step);
+    }
   }
 
   const visibleGroups = stepped && current ? [current] : groups;
+  const reviewGroup = review ? groups.find((g) => keyOf(g) === review.key) : null;
+  const submitLabel = groups.length > 1 ? 'Submit section' : 'Submit answers';
 
   return (
     <article
@@ -261,6 +312,11 @@ function AssessmentCard({
       <div className="flex flex-wrap items-center gap-2">
         <StatusPill tone="neutral">{stageWhen[assessment.stage]}</StatusPill>
         <StatusPill tone={submitted ? 'positive' : tone}>{statusText}</StatusPill>
+        {canAnswer && groups.length > 1 ? (
+          <StatusPill tone={remaining === 0 ? 'positive' : 'attention'}>
+            {groups.length - remaining} of {groups.length} sections submitted
+          </StatusPill>
+        ) : null}
       </div>
       <div>
         <h3 className="font-corporate text-base font-semibold text-corp-ink md:text-lg">
@@ -287,21 +343,8 @@ function AssessmentCard({
           aria-label={`${stageLabels[assessment.stage]} questions`}
           onSubmit={(e) => {
             e.preventDefault();
-            if (!lastStep) {
-              nextSection();
-              return;
-            }
-            if (confirm) {
-              void save(true);
-              return;
-            }
-            const issues = validate(true);
-            if (Object.keys(issues).length) {
-              showProblems(issues);
-              setNotice(null);
-              return;
-            }
-            setConfirm(true);
+            if (currentLocked) return;
+            startSubmit();
           }}
           className="space-y-5"
         >
@@ -311,64 +354,94 @@ function AssessmentCard({
                 Section {step + 1} of {groups.length}
               </p>
               <ol className="flex flex-wrap gap-1" aria-label="Sections">
-                {groups.map((g, i) => (
-                  <li key={g.section?.id ?? 'general'}>
-                    <button
-                      type="button"
-                      aria-current={i === step ? 'step' : undefined}
-                      onClick={() => {
-                        setNotice(null);
-                        setStep(i);
-                      }}
-                      className={
-                        i === step
-                          ? 'min-h-9 rounded-none bg-corp-ink px-3 text-xs font-semibold text-white'
-                          : 'min-h-9 rounded-none border border-corp-line bg-white px-3 text-xs font-medium text-corp-text hover:bg-corp-surface'
-                      }
-                    >
-                      {g.section?.title ?? 'Start'}
-                    </button>
-                  </li>
-                ))}
+                {groups.map((g, i) => {
+                  const done = submittedKeys.has(keyOf(g));
+                  return (
+                    <li key={keyOf(g)}>
+                      <button
+                        type="button"
+                        aria-current={i === step ? 'step' : undefined}
+                        onClick={() => goTo(i)}
+                        className={
+                          i === step
+                            ? 'min-h-9 rounded-none bg-corp-ink px-3 text-xs font-semibold text-white'
+                            : done
+                              ? 'min-h-9 rounded-none border border-corp-green bg-corp-green-soft px-3 text-xs font-medium text-corp-green-text hover:bg-corp-surface'
+                              : 'min-h-9 rounded-none border border-corp-line bg-white px-3 text-xs font-medium text-corp-text hover:bg-corp-surface'
+                        }
+                      >
+                        {done ? '✓ ' : ''}
+                        {g.section?.title ?? 'Start'}
+                      </button>
+                    </li>
+                  );
+                })}
               </ol>
             </div>
           ) : null}
 
-          {visibleGroups.map((group) => (
-            <section
-              key={group.section?.id ?? 'general'}
-              aria-label={group.section?.title ?? 'Questions'}
-              className="space-y-4"
+          {banner ? (
+            <div
+              role="alert"
+              className="flex items-start gap-2 rounded-none border-2 border-danger bg-danger/10 px-4 py-3 text-sm font-semibold text-danger"
             >
-              {group.section ? (
-                <div>
-                  <h4 className="font-corporate text-base font-semibold text-corp-ink">
-                    {group.section.title}
-                  </h4>
-                  {group.section.description ? (
-                    <p className="text-sm text-corp-text">{group.section.description}</p>
-                  ) : null}
-                </div>
-              ) : null}
-              <ol className="space-y-5">
-                {group.questions.map((q) => (
-                  <li key={q.id} className="space-y-2">
-                    <QuestionField
-                      index={assessment.questions.findIndex((x) => x.id === q.id)}
-                      question={q}
-                      value={answers[q.id]}
-                      disabled={!canAnswer || busy !== null}
-                      problem={problems[q.id]}
-                      feedback={feedback[q.id]}
-                      checking={busy === 'check'}
-                      onChange={(value) => setAnswer(q.id, value)}
-                      onKnowledgeChoice={(value) => answerKnowledge(q.id, value)}
-                    />
-                  </li>
-                ))}
-              </ol>
-            </section>
-          ))}
+              <AlertCircleIcon className="mt-0.5 size-5 shrink-0" aria-hidden="true" />
+              <span>{banner}</span>
+            </div>
+          ) : null}
+
+          {visibleGroups.map((group) => {
+            const locked = submittedKeys.has(keyOf(group));
+            return (
+              <section
+                key={keyOf(group)}
+                aria-label={group.section?.title ?? 'Questions'}
+                className="space-y-4"
+              >
+                {group.section || (canAnswer && locked) ? (
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      {group.section ? (
+                        <h4 className="font-corporate text-base font-semibold text-corp-ink">
+                          {group.section.title}
+                        </h4>
+                      ) : null}
+                      {group.section?.description ? (
+                        <p className="text-sm text-corp-text">{group.section.description}</p>
+                      ) : null}
+                    </div>
+                    {canAnswer && locked ? (
+                      <StatusPill tone="positive">Submitted</StatusPill>
+                    ) : null}
+                  </div>
+                ) : null}
+                <ol className="space-y-5">
+                  {group.questions.map((q) => (
+                    <li
+                      key={q.id}
+                      className={
+                        problems[q.id]
+                          ? 'space-y-2 rounded-none border-l-4 border-danger bg-danger/5 py-2 pl-3'
+                          : 'space-y-2'
+                      }
+                    >
+                      <QuestionField
+                        index={assessment.questions.findIndex((x) => x.id === q.id)}
+                        question={q}
+                        value={answers[q.id]}
+                        disabled={!canAnswer || locked || busy !== null}
+                        problem={problems[q.id]}
+                        feedback={feedback[q.id]}
+                        checking={busy === 'check'}
+                        onChange={(value) => setAnswer(q.id, value)}
+                        onKnowledgeChoice={(value) => answerKnowledge(q.id, value)}
+                      />
+                    </li>
+                  ))}
+                </ol>
+              </section>
+            );
+          })}
 
           {notice ? (
             <p
@@ -376,7 +449,7 @@ function AssessmentCard({
               className={
                 notice.ok
                   ? 'text-sm font-semibold text-corp-green-text'
-                  : 'text-sm font-semibold text-brand-danger'
+                  : 'text-sm font-semibold text-danger'
               }
             >
               {notice.text}
@@ -384,49 +457,26 @@ function AssessmentCard({
           ) : null}
           {canAnswer ? (
             <div className="flex flex-col gap-2 border-t border-corp-line pt-4 sm:flex-row sm:items-center sm:justify-end">
-              {confirm ? (
-                <>
-                  <p className="text-sm text-corp-ink sm:mr-auto">
-                    Submit your answers? You cannot change them afterwards.
-                  </p>
-                  <button
-                    type="button"
-                    disabled={busy !== null}
-                    onClick={() => setConfirm(false)}
-                    className={consoleButton({ variant: 'ghost' })}
-                  >
-                    Back
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={busy !== null}
-                    className={consoleButton({ variant: 'accent' })}
-                  >
-                    {busy === 'submit' ? (
-                      <Loader2Icon className="animate-spin" aria-hidden="true" />
-                    ) : null}
-                    Submit now
-                  </button>
-                </>
+              {stepped && step > 0 ? (
+                <button
+                  type="button"
+                  disabled={busy !== null}
+                  onClick={() => goTo(step - 1)}
+                  className={`${consoleButton({ variant: 'ghost' })} sm:mr-auto`}
+                >
+                  Previous section
+                </button>
+              ) : null}
+              {currentLocked ? (
+                <p className="text-sm text-corp-muted">
+                  This section is submitted and cannot be changed.
+                </p>
               ) : (
                 <>
-                  {stepped && step > 0 ? (
-                    <button
-                      type="button"
-                      disabled={busy !== null}
-                      onClick={() => {
-                        setNotice(null);
-                        setStep((s) => Math.max(0, s - 1));
-                      }}
-                      className={`${consoleButton({ variant: 'ghost' })} sm:mr-auto`}
-                    >
-                      Previous section
-                    </button>
-                  ) : null}
                   <button
                     type="button"
                     disabled={busy !== null}
-                    onClick={() => void save(false)}
+                    onClick={saveDraft}
                     className={consoleButton({ variant: 'secondary' })}
                   >
                     {busy === 'draft' ? (
@@ -434,21 +484,25 @@ function AssessmentCard({
                     ) : null}
                     Save draft
                   </button>
-                  {lastStep ? (
-                    <button
-                      type="submit"
-                      disabled={busy !== null}
-                      className={consoleButton({ variant: 'accent' })}
-                    >
-                      Submit answers
-                    </button>
-                  ) : (
-                    <button type="submit" disabled={busy !== null} className={consoleButton()}>
-                      Next section
-                    </button>
-                  )}
+                  <button
+                    type="submit"
+                    disabled={busy !== null}
+                    className={consoleButton({ variant: 'accent' })}
+                  >
+                    {submitLabel}
+                  </button>
                 </>
               )}
+              {stepped && step < groups.length - 1 ? (
+                <button
+                  type="button"
+                  disabled={busy !== null}
+                  onClick={() => goTo(step + 1)}
+                  className={consoleButton()}
+                >
+                  Next section
+                </button>
+              ) : null}
             </div>
           ) : submitted ? (
             <p className="text-sm text-corp-muted">
@@ -461,7 +515,114 @@ function AssessmentCard({
           ) : null}
         </form>
       )}
+
+      {review && reviewGroup ? (
+        <Dialog
+          title={
+            review.done === 'all'
+              ? 'All sections submitted'
+              : review.done === 'section'
+                ? 'Section submitted'
+                : groups.length > 1
+                  ? 'Submit this section?'
+                  : 'Submit your answers?'
+          }
+          description={
+            review.done
+              ? 'Thank you. Your answers are recorded.'
+              : 'Check your answers below. Once submitted they cannot be changed.'
+          }
+          onClose={closeReview}
+          closeDisabled={busy === 'submit'}
+          size="md"
+          footer={
+            review.done ? (
+              <button
+                type="button"
+                onClick={closeReview}
+                className={consoleButton({ variant: 'accent' })}
+              >
+                {review.done === 'section' && remaining > 0 ? 'Continue' : 'Close'}
+              </button>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  disabled={busy === 'submit'}
+                  onClick={() => setReview(null)}
+                  className={consoleButton({ variant: 'ghost' })}
+                >
+                  Back
+                </button>
+                <button
+                  type="button"
+                  disabled={busy === 'submit'}
+                  onClick={() => void save({ submitSection: review.key }, 'submit')}
+                  className={consoleButton({ variant: 'accent' })}
+                >
+                  {busy === 'submit' ? (
+                    <Loader2Icon className="animate-spin" aria-hidden="true" />
+                  ) : null}
+                  Submit now
+                </button>
+              </>
+            )
+          }
+        >
+          <AnswerSummary
+            groups={review.done === 'all' ? groups : [reviewGroup]}
+            answers={answers}
+          />
+          {review.done === 'section' && remaining > 0 ? (
+            <p className="mt-4 text-sm text-corp-text">
+              {remaining} more section{remaining === 1 ? '' : 's'} to submit.
+            </p>
+          ) : null}
+        </Dialog>
+      ) : null}
     </article>
+  );
+}
+
+/** The delegate's answers, section by section: the section title first, then each question. */
+function AnswerSummary({
+  groups,
+  answers,
+}: {
+  groups: ReturnType<typeof groupQuestions<DelegateQuestionView>>;
+  answers: Record<string, unknown>;
+}) {
+  return (
+    <div className="space-y-5">
+      {groups.map((group) => (
+        <section
+          key={group.section?.id ?? GENERAL_SECTION}
+          aria-label={`Summary: ${group.section?.title ?? 'Questions'}`}
+          className="space-y-2"
+        >
+          <h3 className="border-b border-corp-line pb-1 font-corporate text-sm font-semibold text-corp-ink">
+            {group.section?.title ?? 'Questions'}
+          </h3>
+          <dl className="space-y-2">
+            {group.questions.map((q) => {
+              const text = describeAnswer(q, answers[q.id]);
+              return (
+                <div key={q.id}>
+                  <dt className="text-sm text-corp-text">{q.prompt}</dt>
+                  <dd
+                    className={
+                      text ? 'text-sm font-semibold text-corp-ink' : 'text-sm text-corp-muted'
+                    }
+                  >
+                    {text || 'No answer'}
+                  </dd>
+                </div>
+              );
+            })}
+          </dl>
+        </section>
+      ))}
+    </div>
   );
 }
 

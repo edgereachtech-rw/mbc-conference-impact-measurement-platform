@@ -144,6 +144,8 @@
   --color-warning-text: var(--brand-warning-text);
   --color-danger: var(--brand-danger);
   --color-danger-foreground: #ffffff;
+  /* Utilities named after the brand token (text-brand-danger, border-brand-danger). */
+  --color-brand-danger: var(--brand-danger);
   --color-footer: var(--brand-footer);
   --color-footer-foreground: var(--brand-footer-foreground);
   --color-footer-muted: var(--brand-footer-muted);

@@ -30,6 +30,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useId, useState } from 'react';
 
+import { Dialog } from '@/components/console/dialog';
 import { consoleButton, StatePanel, StatusPill } from '@/components/console/page';
 import { NativeSelect } from '@/components/imports/native-select';
 import { apiFetch } from '@/lib/api';
@@ -532,452 +533,480 @@ export function QuestionBuilder({
       ) : null}
 
       {sectionEditing ? (
-        <form
-          noValidate
-          aria-label={sectionEditing.id ? 'Edit section' : 'New section'}
-          className="space-y-3 rounded-none border border-corp-green bg-corp-surface/40 p-4"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void saveSection();
-          }}
+        <Dialog
+          title={sectionEditing.id ? 'Edit section' : 'New section'}
+          onClose={() => setSectionEditing(null)}
+          closeDisabled={busy}
+          size="md"
         >
-          <h4 className="font-corporate text-sm font-semibold text-corp-ink">
-            {sectionEditing.id ? 'Edit section' : 'New section'}
-          </h4>
-          <div className="space-y-1">
-            <label htmlFor={`${id}-section-title`} className="text-sm font-semibold text-corp-ink">
-              Section title
-            </label>
-            <input
-              id={`${id}-section-title`}
-              value={sectionEditing.title}
-              maxLength={200}
-              onChange={(e) => {
-                setSectionEditing((s) => (s ? { ...s, title: e.target.value } : s));
-                setErrors({});
-              }}
-              className={inputClass}
-            />
-            {fieldError('sectionTitle')}
-          </div>
-          <div className="space-y-1">
-            <label
-              htmlFor={`${id}-section-description`}
-              className="text-sm font-semibold text-corp-ink"
-            >
-              Introduction (optional)
-            </label>
-            <textarea
-              id={`${id}-section-description`}
-              rows={2}
-              maxLength={1000}
-              value={sectionEditing.description}
-              onChange={(e) =>
-                setSectionEditing((s) => (s ? { ...s, description: e.target.value } : s))
-              }
-              className="w-full rounded-none border border-corp-line bg-white px-3 py-2 text-base md:text-sm"
-            />
-          </div>
-          <div className="space-y-1">
-            <label
-              htmlFor={`${id}-section-marking`}
-              className="text-sm font-semibold text-corp-ink"
-            >
-              Marking
-            </label>
-            <NativeSelect
-              id={`${id}-section-marking`}
-              value={sectionEditing.marking}
-              onChange={(e) =>
-                setSectionEditing((x) =>
-                  x ? { ...x, marking: e.target.value as SectionMarking } : x,
-                )
-              }
-              className="rounded-none"
-            >
-              {sectionMarkings.map((m) => (
-                <option key={m} value={m}>
-                  {sectionMarkingLabels[m]}
-                </option>
-              ))}
-            </NativeSelect>
-            <p className="text-xs text-corp-muted">
-              Applies to the single-choice questions in this section. Rating scale: each option
-              carries a weight (for example Always 5 to Never 1) averaged in reports, with no right
-              answer. Knowledge: each question has one correct answer worth one point, shown to
-              delegates at once and locked.
-            </p>
-          </div>
-          <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => setSectionEditing(null)}
-              className={consoleButton({ variant: 'ghost' })}
-            >
-              Cancel
-            </button>
-            <button type="submit" disabled={busy} className={consoleButton({ variant: 'accent' })}>
-              {busy ? <Loader2Icon className="animate-spin" aria-hidden="true" /> : null}
-              {sectionEditing.id ? 'Save section' : 'Add section'}
-            </button>
-          </div>
-        </form>
+          <form
+            noValidate
+            aria-label={sectionEditing.id ? 'Edit section' : 'New section'}
+            className="space-y-3"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void saveSection();
+            }}
+          >
+            <h4 className="font-corporate text-sm font-semibold text-corp-ink">
+              {sectionEditing.id ? 'Edit section' : 'New section'}
+            </h4>
+            <div className="space-y-1">
+              <label
+                htmlFor={`${id}-section-title`}
+                className="text-sm font-semibold text-corp-ink"
+              >
+                Section title
+              </label>
+              <input
+                id={`${id}-section-title`}
+                value={sectionEditing.title}
+                maxLength={200}
+                onChange={(e) => {
+                  setSectionEditing((s) => (s ? { ...s, title: e.target.value } : s));
+                  setErrors({});
+                }}
+                className={inputClass}
+              />
+              {fieldError('sectionTitle')}
+            </div>
+            <div className="space-y-1">
+              <label
+                htmlFor={`${id}-section-description`}
+                className="text-sm font-semibold text-corp-ink"
+              >
+                Introduction (optional)
+              </label>
+              <textarea
+                id={`${id}-section-description`}
+                rows={2}
+                maxLength={1000}
+                value={sectionEditing.description}
+                onChange={(e) =>
+                  setSectionEditing((s) => (s ? { ...s, description: e.target.value } : s))
+                }
+                className="w-full rounded-none border border-corp-line bg-white px-3 py-2 text-base md:text-sm"
+              />
+            </div>
+            <div className="space-y-1">
+              <label
+                htmlFor={`${id}-section-marking`}
+                className="text-sm font-semibold text-corp-ink"
+              >
+                Marking
+              </label>
+              <NativeSelect
+                id={`${id}-section-marking`}
+                value={sectionEditing.marking}
+                onChange={(e) =>
+                  setSectionEditing((x) =>
+                    x ? { ...x, marking: e.target.value as SectionMarking } : x,
+                  )
+                }
+                className="rounded-none"
+              >
+                {sectionMarkings.map((m) => (
+                  <option key={m} value={m}>
+                    {sectionMarkingLabels[m]}
+                  </option>
+                ))}
+              </NativeSelect>
+              <p className="text-xs text-corp-muted">
+                Applies to the single-choice questions in this section. Rating scale: each option
+                carries a weight (for example Always 5 to Never 1) averaged in reports, with no
+                right answer. Knowledge: each question has one correct answer worth one point, shown
+                to delegates at once and locked.
+              </p>
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => setSectionEditing(null)}
+                className={consoleButton({ variant: 'ghost' })}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={busy}
+                className={consoleButton({ variant: 'accent' })}
+              >
+                {busy ? <Loader2Icon className="animate-spin" aria-hidden="true" /> : null}
+                {sectionEditing.id ? 'Save section' : 'Add section'}
+              </button>
+            </div>
+          </form>
+        </Dialog>
       ) : null}
 
       {editing ? (
-        <form
-          noValidate
-          aria-label={editing.id ? 'Edit question' : 'New question'}
-          className="space-y-4 rounded-none border border-corp-green bg-corp-surface/40 p-4"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void saveQuestion();
-          }}
+        <Dialog
+          title={editing.id ? 'Edit question' : 'New question'}
+          onClose={() => setEditing(null)}
+          closeDisabled={busy}
         >
-          <div className="space-y-1">
-            <label htmlFor={`${id}-prompt`} className="text-sm font-semibold text-corp-ink">
-              Question
-            </label>
-            <textarea
-              id={`${id}-prompt`}
-              rows={2}
-              maxLength={500}
-              value={editing.draft.prompt}
-              onChange={(e) => set('prompt', e.target.value)}
-              className="w-full rounded-none border border-corp-line bg-white px-3 py-2 text-base md:text-sm"
-            />
-            {fieldError('prompt')}
-          </div>
-          <div className="grid gap-4 md:grid-cols-3">
+          <form
+            noValidate
+            aria-label={editing.id ? 'Edit question' : 'New question'}
+            className="space-y-4"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void saveQuestion();
+            }}
+          >
             <div className="space-y-1">
-              <label htmlFor={`${id}-type`} className="text-sm font-semibold text-corp-ink">
-                Response type
+              <label htmlFor={`${id}-prompt`} className="text-sm font-semibold text-corp-ink">
+                Question
               </label>
-              <NativeSelect
-                id={`${id}-type`}
-                value={editing.draft.type}
-                onChange={(e) => set('type', e.target.value as QuestionType)}
-                className="rounded-none"
-              >
-                {questionTypes.map((t) => (
-                  <option key={t} value={t}>
-                    {questionTypeLabels[t]}
-                  </option>
-                ))}
-              </NativeSelect>
-            </div>
-            <div className="space-y-1">
-              <label htmlFor={`${id}-section`} className="text-sm font-semibold text-corp-ink">
-                Section
-              </label>
-              {sectionSelect(editing.draft.sectionId, (v) => set('sectionId', v), `${id}-section`)}
-            </div>
-            <div className="space-y-1">
-              <label htmlFor={`${id}-area`} className="text-sm font-semibold text-corp-ink">
-                Measurement area (optional)
-              </label>
-              <NativeSelect
-                id={`${id}-area`}
-                value={areaOther ? OTHER_AREA : editing.draft.area}
-                onChange={(e) => {
-                  if (e.target.value === OTHER_AREA) {
-                    set('areaOther', true);
-                    set('area', '');
-                  } else {
-                    set('areaOther', false);
-                    set('area', e.target.value);
-                  }
-                }}
-                className="rounded-none"
-              >
-                <option value="">Not set</option>
-                {stageAreas[stage].map((a) => (
-                  <option key={a} value={a}>
-                    {a}
-                  </option>
-                ))}
-                <option value={OTHER_AREA}>Other…</option>
-              </NativeSelect>
-              {areaOther ? (
-                <input
-                  aria-label="Other measurement area"
-                  value={editing.draft.area}
-                  maxLength={100}
-                  placeholder="Type the measurement area"
-                  onChange={(e) => set('area', e.target.value)}
-                  className={inputClass}
-                />
-              ) : null}
-              <p className="text-xs text-corp-muted">
-                What this question measures, for your reports. Delegates never see it.
-              </p>
-            </div>
-          </div>
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-1">
-              <label htmlFor={`${id}-help`} className="text-sm font-semibold text-corp-ink">
-                Help text (optional)
-              </label>
-              <input
-                id={`${id}-help`}
-                value={editing.draft.helpText}
+              <textarea
+                id={`${id}-prompt`}
+                rows={2}
                 maxLength={500}
-                onChange={(e) => set('helpText', e.target.value)}
-                className={inputClass}
+                value={editing.draft.prompt}
+                onChange={(e) => set('prompt', e.target.value)}
+                className="w-full rounded-none border border-corp-line bg-white px-3 py-2 text-base md:text-sm"
               />
+              {fieldError('prompt')}
             </div>
-          </div>
-          {isChoice ? (
-            <fieldset className="space-y-2">
-              <legend className="text-sm font-semibold text-corp-ink">Options</legend>
-              <p className="text-xs text-corp-muted">
-                {!isSingle
-                  ? 'Tick “Only” for an option that cannot be combined with others, such as “None of the above”, and “Text” for “Other, please specify”.'
-                  : marking === 'scored'
-                    ? 'This section is a rating scale: give each option a weight to average in reports and leave “Not applicable” blank so it never counts as a low rating.'
-                    : marking === 'knowledge'
-                      ? 'This section holds knowledge questions: tick the one correct answer. The question is worth one point; delegates see at once whether they were right and cannot change their answer.'
-                      : 'Delegates pick one option. To weight the options or mark a correct answer, put this question in a section whose marking says so.'}
-              </p>
-              <div className="flex flex-col gap-2 sm:flex-row">
+            <div className="grid gap-4 md:grid-cols-3">
+              <div className="space-y-1">
+                <label htmlFor={`${id}-type`} className="text-sm font-semibold text-corp-ink">
+                  Response type
+                </label>
                 <NativeSelect
-                  aria-label="Start from a preset"
-                  value=""
-                  onChange={(e) => {
-                    const preset = optionPresets.find((p) => p.id === e.target.value);
-                    if (preset) set('options', preset.options.map(optionDraftOf));
-                  }}
-                  className="rounded-none sm:max-w-xs"
+                  id={`${id}-type`}
+                  value={editing.draft.type}
+                  onChange={(e) => set('type', e.target.value as QuestionType)}
+                  className="rounded-none"
                 >
-                  <option value="">Start from a preset…</option>
-                  {optionPresets.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.label}
+                  {questionTypes.map((t) => (
+                    <option key={t} value={t}>
+                      {questionTypeLabels[t]}
                     </option>
                   ))}
                 </NativeSelect>
-                {copyable.length ? (
+              </div>
+              <div className="space-y-1">
+                <label htmlFor={`${id}-section`} className="text-sm font-semibold text-corp-ink">
+                  Section
+                </label>
+                {sectionSelect(
+                  editing.draft.sectionId,
+                  (v) => set('sectionId', v),
+                  `${id}-section`,
+                )}
+              </div>
+              <div className="space-y-1">
+                <label htmlFor={`${id}-area`} className="text-sm font-semibold text-corp-ink">
+                  Measurement area (optional)
+                </label>
+                <NativeSelect
+                  id={`${id}-area`}
+                  value={areaOther ? OTHER_AREA : editing.draft.area}
+                  onChange={(e) => {
+                    if (e.target.value === OTHER_AREA) {
+                      set('areaOther', true);
+                      set('area', '');
+                    } else {
+                      set('areaOther', false);
+                      set('area', e.target.value);
+                    }
+                  }}
+                  className="rounded-none"
+                >
+                  <option value="">Not set</option>
+                  {stageAreas[stage].map((a) => (
+                    <option key={a} value={a}>
+                      {a}
+                    </option>
+                  ))}
+                  <option value={OTHER_AREA}>Other…</option>
+                </NativeSelect>
+                {areaOther ? (
+                  <input
+                    aria-label="Other measurement area"
+                    value={editing.draft.area}
+                    maxLength={100}
+                    placeholder="Type the measurement area"
+                    onChange={(e) => set('area', e.target.value)}
+                    className={inputClass}
+                  />
+                ) : null}
+                <p className="text-xs text-corp-muted">
+                  What this question measures, for your reports. Delegates never see it.
+                </p>
+              </div>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-1">
+                <label htmlFor={`${id}-help`} className="text-sm font-semibold text-corp-ink">
+                  Help text (optional)
+                </label>
+                <input
+                  id={`${id}-help`}
+                  value={editing.draft.helpText}
+                  maxLength={500}
+                  onChange={(e) => set('helpText', e.target.value)}
+                  className={inputClass}
+                />
+              </div>
+            </div>
+            {isChoice ? (
+              <fieldset className="space-y-2">
+                <legend className="text-sm font-semibold text-corp-ink">Options</legend>
+                <p className="text-xs text-corp-muted">
+                  {!isSingle
+                    ? 'Tick “Only” for an option that cannot be combined with others, such as “None of the above”, and “Text” for “Other, please specify”.'
+                    : marking === 'scored'
+                      ? 'This section is a rating scale: give each option a weight to average in reports and leave “Not applicable” blank so it never counts as a low rating.'
+                      : marking === 'knowledge'
+                        ? 'This section holds knowledge questions: tick the one correct answer. The question is worth one point; delegates see at once whether they were right and cannot change their answer.'
+                        : 'Delegates pick one option. To weight the options or mark a correct answer, put this question in a section whose marking says so.'}
+                </p>
+                <div className="flex flex-col gap-2 sm:flex-row">
                   <NativeSelect
-                    aria-label="Copy options from another question"
+                    aria-label="Start from a preset"
                     value=""
                     onChange={(e) => {
-                      const from = copyable.find((q) => q.id === e.target.value);
-                      if (from?.options) set('options', from.options.map(optionDraftOf));
+                      const preset = optionPresets.find((p) => p.id === e.target.value);
+                      if (preset) set('options', preset.options.map(optionDraftOf));
                     }}
                     className="rounded-none sm:max-w-xs"
                   >
-                    <option value="">Copy options from…</option>
-                    {copyable.map((q) => (
-                      <option key={q.id} value={q.id}>
-                        {q.prompt}
+                    <option value="">Start from a preset…</option>
+                    {optionPresets.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.label}
                       </option>
                     ))}
                   </NativeSelect>
-                ) : null}
-              </div>
-              <ol className="space-y-2" aria-label="Options">
-                {editing.draft.options.map((o, i) => (
-                  <li
-                    key={i}
-                    className="grid gap-2 rounded-none border border-corp-line bg-white p-2 sm:grid-cols-[minmax(0,1fr)_7rem_auto] sm:items-center"
-                  >
-                    <input
-                      aria-label={`Option ${i + 1}`}
-                      placeholder={`Option ${i + 1}`}
-                      value={o.label}
-                      maxLength={200}
-                      onChange={(e) => setOption(i, { label: e.target.value })}
-                      className={smallInput}
-                    />
-                    <input
-                      aria-label={`Code for option ${i + 1}`}
-                      placeholder="Code"
-                      value={o.value}
-                      maxLength={100}
-                      onChange={(e) => setOption(i, { value: e.target.value })}
-                      className={smallInput}
-                    />
-                    <div className="flex flex-wrap items-center gap-3 text-sm text-corp-ink">
-                      {isSingle ? (
-                        <>
-                          {marking === 'scored' ? (
-                            <label className="flex items-center gap-1">
-                              Weight
-                              <input
-                                type="number"
-                                aria-label={`Weight for option ${i + 1}`}
-                                min={0}
-                                max={100}
-                                value={o.score}
-                                onChange={(e) => setOption(i, { score: e.target.value })}
-                                className="h-10 w-16 rounded-none border border-corp-line bg-white px-2 text-base md:text-sm"
-                              />
-                            </label>
-                          ) : null}
-                          {marking === 'knowledge' ? (
+                  {copyable.length ? (
+                    <NativeSelect
+                      aria-label="Copy options from another question"
+                      value=""
+                      onChange={(e) => {
+                        const from = copyable.find((q) => q.id === e.target.value);
+                        if (from?.options) set('options', from.options.map(optionDraftOf));
+                      }}
+                      className="rounded-none sm:max-w-xs"
+                    >
+                      <option value="">Copy options from…</option>
+                      {copyable.map((q) => (
+                        <option key={q.id} value={q.id}>
+                          {q.prompt}
+                        </option>
+                      ))}
+                    </NativeSelect>
+                  ) : null}
+                </div>
+                <ol className="space-y-2" aria-label="Options">
+                  {editing.draft.options.map((o, i) => (
+                    <li
+                      key={i}
+                      className="grid gap-2 rounded-none border border-corp-line bg-white p-2 sm:grid-cols-[minmax(0,1fr)_7rem_auto] sm:items-center"
+                    >
+                      <input
+                        aria-label={`Option ${i + 1}`}
+                        placeholder={`Option ${i + 1}`}
+                        value={o.label}
+                        maxLength={200}
+                        onChange={(e) => setOption(i, { label: e.target.value })}
+                        className={smallInput}
+                      />
+                      <input
+                        aria-label={`Code for option ${i + 1}`}
+                        placeholder="Code"
+                        value={o.value}
+                        maxLength={100}
+                        onChange={(e) => setOption(i, { value: e.target.value })}
+                        className={smallInput}
+                      />
+                      <div className="flex flex-wrap items-center gap-3 text-sm text-corp-ink">
+                        {isSingle ? (
+                          <>
+                            {marking === 'scored' ? (
+                              <label className="flex items-center gap-1">
+                                Weight
+                                <input
+                                  type="number"
+                                  aria-label={`Weight for option ${i + 1}`}
+                                  min={0}
+                                  max={100}
+                                  value={o.score}
+                                  onChange={(e) => setOption(i, { score: e.target.value })}
+                                  className="h-10 w-16 rounded-none border border-corp-line bg-white px-2 text-base md:text-sm"
+                                />
+                              </label>
+                            ) : null}
+                            {marking === 'knowledge' ? (
+                              <label className="flex min-h-tap items-center gap-1">
+                                <input
+                                  type="checkbox"
+                                  aria-label={`Correct answer: option ${i + 1}`}
+                                  checked={o.correct}
+                                  onChange={(e) => setOption(i, { correct: e.target.checked })}
+                                  className="size-5 accent-corp-green"
+                                />
+                                Correct
+                              </label>
+                            ) : null}
+                          </>
+                        ) : (
+                          <>
                             <label className="flex min-h-tap items-center gap-1">
                               <input
                                 type="checkbox"
-                                aria-label={`Correct answer: option ${i + 1}`}
-                                checked={o.correct}
-                                onChange={(e) => setOption(i, { correct: e.target.checked })}
+                                aria-label={`Only this option: option ${i + 1}`}
+                                checked={o.exclusive}
+                                onChange={(e) => setOption(i, { exclusive: e.target.checked })}
                                 className="size-5 accent-corp-green"
                               />
-                              Correct
+                              Only
                             </label>
-                          ) : null}
-                        </>
-                      ) : (
-                        <>
-                          <label className="flex min-h-tap items-center gap-1">
-                            <input
-                              type="checkbox"
-                              aria-label={`Only this option: option ${i + 1}`}
-                              checked={o.exclusive}
-                              onChange={(e) => setOption(i, { exclusive: e.target.checked })}
-                              className="size-5 accent-corp-green"
-                            />
-                            Only
-                          </label>
-                          <label className="flex min-h-tap items-center gap-1">
-                            <input
-                              type="checkbox"
-                              aria-label={`Asks for text: option ${i + 1}`}
-                              checked={o.other}
-                              onChange={(e) => setOption(i, { other: e.target.checked })}
-                              className="size-5 accent-corp-green"
-                            />
-                            Text
-                          </label>
-                        </>
-                      )}
-                      <button
-                        type="button"
-                        aria-label={`Remove option ${i + 1}`}
-                        onClick={() =>
-                          set(
-                            'options',
-                            editing.draft.options.filter((_, j) => j !== i),
-                          )
-                        }
-                        className={consoleButton({ variant: 'ghost', size: 'sm' })}
-                      >
-                        <XIcon aria-hidden="true" />
-                      </button>
-                    </div>
-                  </li>
-                ))}
-              </ol>
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
-                <button
-                  type="button"
-                  disabled={editing.draft.options.length >= 20}
-                  onClick={() => set('options', [...editing.draft.options, emptyOption()])}
-                  className={consoleButton({ variant: 'secondary', size: 'sm' })}
-                >
-                  <PlusIcon aria-hidden="true" /> Add option
-                </button>
-                <details className="text-sm">
-                  <summary className="min-h-tap cursor-pointer py-2 font-semibold text-corp-ink">
-                    Paste a list
-                  </summary>
-                  <PasteOptions
-                    onAdd={(rows) =>
-                      set('options', [...editing.draft.options, ...rows].slice(0, 20))
-                    }
-                  />
-                </details>
-              </div>
-              {fieldError('options')}
-            </fieldset>
-          ) : null}
-          {editing.draft.type === 'rating' ? (
-            <div className="grid gap-4 sm:grid-cols-4">
-              <div className="space-y-1">
-                <label htmlFor={`${id}-min`} className="text-sm font-semibold text-corp-ink">
-                  From
-                </label>
-                <NativeSelect
-                  id={`${id}-min`}
-                  value={editing.draft.scaleMin}
-                  onChange={(e) => set('scaleMin', e.target.value)}
-                  className="rounded-none"
-                >
-                  <option value="0">0</option>
-                  <option value="1">1</option>
-                </NativeSelect>
-              </div>
-              <div className="space-y-1">
-                <label htmlFor={`${id}-max`} className="text-sm font-semibold text-corp-ink">
-                  To
-                </label>
-                <NativeSelect
-                  id={`${id}-max`}
-                  value={editing.draft.scaleMax}
-                  onChange={(e) => set('scaleMax', e.target.value)}
-                  className="rounded-none"
-                >
-                  {[3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
-                    <option key={n} value={n}>
-                      {n}
-                    </option>
+                            <label className="flex min-h-tap items-center gap-1">
+                              <input
+                                type="checkbox"
+                                aria-label={`Asks for text: option ${i + 1}`}
+                                checked={o.other}
+                                onChange={(e) => setOption(i, { other: e.target.checked })}
+                                className="size-5 accent-corp-green"
+                              />
+                              Text
+                            </label>
+                          </>
+                        )}
+                        <button
+                          type="button"
+                          aria-label={`Remove option ${i + 1}`}
+                          onClick={() =>
+                            set(
+                              'options',
+                              editing.draft.options.filter((_, j) => j !== i),
+                            )
+                          }
+                          className={consoleButton({ variant: 'ghost', size: 'sm' })}
+                        >
+                          <XIcon aria-hidden="true" />
+                        </button>
+                      </div>
+                    </li>
                   ))}
-                </NativeSelect>
-                {fieldError('scaleMax')}
+                </ol>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
+                  <button
+                    type="button"
+                    disabled={editing.draft.options.length >= 20}
+                    onClick={() => set('options', [...editing.draft.options, emptyOption()])}
+                    className={consoleButton({ variant: 'secondary', size: 'sm' })}
+                  >
+                    <PlusIcon aria-hidden="true" /> Add option
+                  </button>
+                  <details className="text-sm">
+                    <summary className="min-h-tap cursor-pointer py-2 font-semibold text-corp-ink">
+                      Paste a list
+                    </summary>
+                    <PasteOptions
+                      onAdd={(rows) =>
+                        set('options', [...editing.draft.options, ...rows].slice(0, 20))
+                      }
+                    />
+                  </details>
+                </div>
+                {fieldError('options')}
+              </fieldset>
+            ) : null}
+            {editing.draft.type === 'rating' ? (
+              <div className="grid gap-4 sm:grid-cols-4">
+                <div className="space-y-1">
+                  <label htmlFor={`${id}-min`} className="text-sm font-semibold text-corp-ink">
+                    From
+                  </label>
+                  <NativeSelect
+                    id={`${id}-min`}
+                    value={editing.draft.scaleMin}
+                    onChange={(e) => set('scaleMin', e.target.value)}
+                    className="rounded-none"
+                  >
+                    <option value="0">0</option>
+                    <option value="1">1</option>
+                  </NativeSelect>
+                </div>
+                <div className="space-y-1">
+                  <label htmlFor={`${id}-max`} className="text-sm font-semibold text-corp-ink">
+                    To
+                  </label>
+                  <NativeSelect
+                    id={`${id}-max`}
+                    value={editing.draft.scaleMax}
+                    onChange={(e) => set('scaleMax', e.target.value)}
+                    className="rounded-none"
+                  >
+                    {[3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
+                      <option key={n} value={n}>
+                        {n}
+                      </option>
+                    ))}
+                  </NativeSelect>
+                  {fieldError('scaleMax')}
+                </div>
+                <div className="space-y-1">
+                  <label htmlFor={`${id}-minlabel`} className="text-sm font-semibold text-corp-ink">
+                    Low label
+                  </label>
+                  <input
+                    id={`${id}-minlabel`}
+                    value={editing.draft.minLabel}
+                    maxLength={60}
+                    onChange={(e) => set('minLabel', e.target.value)}
+                    className={inputClass}
+                    placeholder="Not at all"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label htmlFor={`${id}-maxlabel`} className="text-sm font-semibold text-corp-ink">
+                    High label
+                  </label>
+                  <input
+                    id={`${id}-maxlabel`}
+                    value={editing.draft.maxLabel}
+                    maxLength={60}
+                    onChange={(e) => set('maxLabel', e.target.value)}
+                    className={inputClass}
+                    placeholder="Very"
+                  />
+                </div>
               </div>
-              <div className="space-y-1">
-                <label htmlFor={`${id}-minlabel`} className="text-sm font-semibold text-corp-ink">
-                  Low label
-                </label>
-                <input
-                  id={`${id}-minlabel`}
-                  value={editing.draft.minLabel}
-                  maxLength={60}
-                  onChange={(e) => set('minLabel', e.target.value)}
-                  className={inputClass}
-                  placeholder="Not at all"
-                />
-              </div>
-              <div className="space-y-1">
-                <label htmlFor={`${id}-maxlabel`} className="text-sm font-semibold text-corp-ink">
-                  High label
-                </label>
-                <input
-                  id={`${id}-maxlabel`}
-                  value={editing.draft.maxLabel}
-                  maxLength={60}
-                  onChange={(e) => set('maxLabel', e.target.value)}
-                  className={inputClass}
-                  placeholder="Very"
-                />
-              </div>
+            ) : null}
+            <label className="flex min-h-tap items-center gap-2 text-sm text-corp-ink">
+              <input
+                type="checkbox"
+                checked={editing.draft.required}
+                onChange={(e) => set('required', e.target.checked)}
+                className="size-5 accent-corp-green"
+              />
+              Required: delegates must answer before submitting
+            </label>
+            <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => setEditing(null)}
+                className={consoleButton({ variant: 'ghost' })}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={busy}
+                className={consoleButton({ variant: 'accent' })}
+              >
+                {busy ? <Loader2Icon className="animate-spin" aria-hidden="true" /> : null}
+                {editing.id ? 'Save question' : 'Add question'}
+              </button>
             </div>
-          ) : null}
-          <label className="flex min-h-tap items-center gap-2 text-sm text-corp-ink">
-            <input
-              type="checkbox"
-              checked={editing.draft.required}
-              onChange={(e) => set('required', e.target.checked)}
-              className="size-5 accent-corp-green"
-            />
-            Required: delegates must answer before submitting
-          </label>
-          <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => setEditing(null)}
-              className={consoleButton({ variant: 'ghost' })}
-            >
-              Cancel
-            </button>
-            <button type="submit" disabled={busy} className={consoleButton({ variant: 'accent' })}>
-              {busy ? <Loader2Icon className="animate-spin" aria-hidden="true" /> : null}
-              {editing.id ? 'Save question' : 'Add question'}
-            </button>
-          </div>
-        </form>
+          </form>
+        </Dialog>
       ) : null}
 
       {loadError ? (

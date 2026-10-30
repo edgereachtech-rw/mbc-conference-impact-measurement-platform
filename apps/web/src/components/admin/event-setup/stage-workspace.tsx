@@ -74,6 +74,7 @@ export function StageWorkspace({ event, stage }: StageWorkspaceProps) {
             eventId={event.id}
             eventName={event.name}
             stage={stage}
+            timezone={event.timezone}
             readOnly={readOnly}
           />
         )}

@@ -687,4 +687,144 @@ describe.skipIf(!hasDatabase)('assessment questions and answers', () => {
       1,
     );
   });
+
+  it('submits sections separately, locks them, completes the response when every section is in, and lets admins view one delegate’s answers', async () => {
+    // The during-conference stage holds "About the day" (one question) and two questions outside
+    // any section (the general group) from the sections test.
+    const stageUrl = `/events/${eventId}/assessments/during_conference`;
+    const opened = await call('put', stageUrl, {
+      enabled: true,
+      status: 'open',
+      opensAt: '2026-11-16T09:00:00+01:00',
+      closesAt: '2026-11-20T18:00:00+01:00',
+    });
+    expect(opened.status, opened.text).toBe(200);
+    now = new Date('2026-11-18T12:00:00.000Z');
+    const me = `/me/events/${eventId}/assessments/during_conference`;
+    const listed = await call(
+      'get',
+      `/me/events/${eventId}/assessments`,
+      undefined,
+      cookies.delegate,
+    );
+    const during = listed.body.assessments.find(
+      (a: { stage: string }) => a.stage === 'during_conference',
+    );
+    const section = during.sections[0];
+    expect(section.title).toBe('About the day');
+    type Q = { id: string; prompt: string; sectionId: string | null };
+    const sectionQs: Q[] = during.questions.filter((q: Q) => q.sectionId === section.id);
+    const general: Q[] = during.questions.filter((q: Q) => !q.sectionId);
+    expect(sectionQs.length).toBeGreaterThanOrEqual(1);
+    expect(general.length).toBeGreaterThanOrEqual(1);
+    const inSection = sectionQs[0]!;
+    const sectionAnswers = Object.fromEntries(sectionQs.map((q) => [q.id, true]));
+    const generalAnswers = Object.fromEntries(general.map((q, i) => [q.id, i % 2 === 0]));
+
+    expect(
+      (await call('put', me, { answers: {}, submitSection: randomUUID() }, cookies.delegate))
+        .status,
+    ).toBe(422);
+    // A section cannot be submitted with a required question blank.
+    const missing = await call(
+      'put',
+      me,
+      { answers: {}, submitSection: section.id },
+      cookies.delegate,
+    );
+    expect(missing.status).toBe(422);
+    expect(Object.keys(missing.body.problems).sort()).toEqual(sectionQs.map((q) => q.id).sort());
+    // Submitting one section locks it; the response stays open for the rest.
+    const first = await call(
+      'put',
+      me,
+      { answers: sectionAnswers, submitSection: section.id },
+      cookies.delegate,
+    );
+    expect(first.status, first.text).toBe(200);
+    const afterFirst = first.body.assessments.find(
+      (a: { stage: string }) => a.stage === 'during_conference',
+    );
+    expect(afterFirst.response).toMatchObject({
+      submittedAt: null,
+      submittedSections: [section.id],
+    });
+    expect(afterFirst.canAnswer).toBe(true);
+    const change = await call('put', me, { answers: { [inSection.id]: false } }, cookies.delegate);
+    expect(change.status).toBe(422);
+    expect(change.body.problems[inSection.id]).toMatch(/already submitted/);
+    expect(
+      (
+        await call(
+          'put',
+          me,
+          { answers: sectionAnswers, submitSection: section.id },
+          cookies.delegate,
+        )
+      ).body.error.code,
+    ).toBe('already_submitted');
+
+    // Admins see the progress per delegate.
+    const listing = await call('get', `${stageUrl}/responses`);
+    expect(listing.status, listing.text).toBe(200);
+    expect(listing.body.responses).toEqual([
+      expect.objectContaining({
+        name: 'Dee Legate',
+        sectionsSubmitted: 1,
+        sectionsTotal: 2,
+        submittedAt: null,
+        answered: sectionQs.length,
+      }),
+    ]);
+    const delegateId = listing.body.responses[0].delegateId;
+
+    // The last section completes the response.
+    const done = await call(
+      'put',
+      me,
+      {
+        answers: { ...sectionAnswers, ...generalAnswers },
+        submitSection: 'general',
+      },
+      cookies.delegate,
+    );
+    expect(done.status, done.text).toBe(200);
+    const afterDone = done.body.assessments.find(
+      (a: { stage: string }) => a.stage === 'during_conference',
+    );
+    expect(afterDone.response.submittedAt).toBeTruthy();
+    expect([...afterDone.response.submittedSections].sort()).toEqual(
+      [section.id, 'general'].sort(),
+    );
+    expect(afterDone.canAnswer).toBe(false);
+
+    // One delegate's full response, section by section, admins only, viewing audited.
+    expect(
+      (await call('get', `${stageUrl}/responses/${delegateId}`, undefined, cookies.delegate))
+        .status,
+    ).toBe(403);
+    const detail = await call('get', `${stageUrl}/responses/${delegateId}`);
+    expect(detail.status, detail.text).toBe(200);
+    expect(
+      detail.body.response.sections.map(
+        (x: { title: string; questions: Array<{ prompt: string; answer: string }> }) => [
+          x.title,
+          x.questions.map((q) => [q.prompt, q.answer]),
+        ],
+      ),
+    ).toEqual([
+      ['Questions', general.map((q, i) => [q.prompt, i % 2 === 0 ? 'Yes' : 'No'])],
+      ['About the day', sectionQs.map((q) => [q.prompt, 'Yes'])],
+    ]);
+    expect(
+      detail.body.response.sections.every((x: { submittedAt: string | null }) => x.submittedAt),
+    ).toBe(true);
+    expect((await call('get', `${stageUrl}/responses/${randomUUID()}`)).status).toBe(404);
+    expect(
+      await prisma.auditLog.count({ where: { eventId, action: 'assessment.response_viewed' } }),
+    ).toBe(1);
+    expect(
+      await prisma.auditLog.count({ where: { eventId, action: 'assessment.section_submitted' } }),
+    ).toBe(1);
+  });
 });
