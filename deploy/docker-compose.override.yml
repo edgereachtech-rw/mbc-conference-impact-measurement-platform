@@ -42,7 +42,8 @@ services:
       - sh
       - -c
       - npm install -g pnpm@10.18.3 --no-fund --no-audit && pnpm --filter @mbc/shared build && pnpm --filter @mbc/web dev -H 0.0.0.0 -p 33333
-    ports:
+    # !override, or the base file's 0.0.0.0 binding wins the merge and the dev stack is public.
+    ports: !override
       - '127.0.0.1:33333:33333'
     environment:
       NODE_ENV: development
@@ -69,7 +70,7 @@ services:
       - sh
       - -c
       - npm install -g pnpm@10.18.3 --no-fund --no-audit && pnpm --filter @mbc/shared build && pnpm --filter @mbc/api dev
-    ports:
+    ports: !override
       - '127.0.0.1:44444:44444'
     environment:
       NODE_ENV: development
