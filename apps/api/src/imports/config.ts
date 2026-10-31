@@ -5,14 +5,16 @@ import { withoutBlankValues } from '../lib/env.js';
 /**
  * Import feature settings (backlog D9 Files, D10 dependencies, OQ-22).
  *
- *   IMPORT_UPLOADS_ENABLED       "true" to accept uploads at all; default false (fail closed).
- *   IMPORT_FILE_RETENTION_DAYS   the approved source-file retention period. Production refuses
- *                                to enable uploads without it (temporary safeguard, OQ-22). The
- *                                original file is not retained by this increment at all, so the
- *                                value records the approved policy for the retention job to come.
+ *   IMPORT_UPLOADS_ENABLED       kept for compatibility and ignored: uploads are always on by
+ *                                the decision of 2026-10-31. Set it to "false" and uploads still
+ *                                work, so remove it from your environment files rather than
+ *                                relying on it.
+ *   IMPORT_FILE_RETENTION_DAYS   the source-file retention period, if a policy has been approved.
+ *                                Optional everywhere now; nothing refuses to start without it.
  *
- * In production, uploads additionally require the migration gate (a durable
- * `migration.identity_backfill` pass report with no later unreported run), checked per request.
+ * Nothing gates an upload any more: neither the retention policy (OQ-22) nor the migration gate
+ * (a durable `migration.identity_backfill` pass report). Both waivers are recorded against D9 and
+ * D6.1 in docs/backlog.md.
  */
 const schema = z.object({
   IMPORT_UPLOADS_ENABLED: z.enum(['true', 'false']).optional(),
@@ -21,11 +23,12 @@ const schema = z.object({
 });
 
 export interface ImportConfig {
-  uploadsEnabled: boolean;
+  /** Always true (decision of 2026-10-31). */
+  uploadsEnabled: true;
   fileRetentionDays: number | null;
   production: boolean;
-  /** Whether the migration gate must have passed before an upload is accepted. */
-  requireMigrationGate: boolean;
+  /** Always false: the migration gate no longer holds uploads back. */
+  requireMigrationGate: false;
 }
 
 export function importConfigFromEnv(env: NodeJS.ProcessEnv = process.env): ImportConfig {
@@ -35,17 +38,10 @@ export function importConfigFromEnv(env: NodeJS.ProcessEnv = process.env): Impor
     throw new Error(`invalid import configuration: ${issues}`);
   }
   const e = parsed.data;
-  const production = e.NODE_ENV === 'production';
-  const uploadsEnabled = e.IMPORT_UPLOADS_ENABLED === 'true';
-  if (production && uploadsEnabled && !e.IMPORT_FILE_RETENTION_DAYS) {
-    throw new Error(
-      'invalid import configuration: IMPORT_UPLOADS_ENABLED=true requires IMPORT_FILE_RETENTION_DAYS (approved retention policy, OQ-22) in production',
-    );
-  }
   return {
-    uploadsEnabled,
+    uploadsEnabled: true,
     fileRetentionDays: e.IMPORT_FILE_RETENTION_DAYS ?? null,
-    production,
-    requireMigrationGate: production,
+    production: e.NODE_ENV === 'production',
+    requireMigrationGate: false,
   };
 }

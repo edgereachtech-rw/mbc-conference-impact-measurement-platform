@@ -150,14 +150,11 @@ export class ImportService {
   // ---------------------------------------------------------------- feature gate
 
   /** Uploads disabled by configuration, or the migration gate not passed in production. */
+  /**
+   * Nothing refuses an upload any more (decision of 2026-10-31). Kept as a single place to put a
+   * reason back, so the callers that audit a refusal and answer 503 do not have to be rebuilt.
+   */
   async uploadBlocker(): Promise<string | null> {
-    if (!this.deps.config.uploadsEnabled) return 'uploads_disabled';
-    if (this.deps.config.requireMigrationGate) {
-      const passed = this.deps.hooks?.migrationGatePassed
-        ? await this.deps.hooks.migrationGatePassed()
-        : (await importFeatureState(this.prisma)).gatePassed;
-      if (!passed) return 'migration_gate_not_passed';
-    }
     return null;
   }
 

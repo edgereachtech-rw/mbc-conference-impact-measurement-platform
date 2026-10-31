@@ -43,13 +43,11 @@ describe('migration gate reading (D9, fail closed)', () => {
       reader([row(5)], { last_value: 6n, is_called: true }),
     );
     expect(unreported.gatePassed).toBe(false);
-    expect(unreported.blockers.join(' ')).toMatch(/has no durable report/);
     // A row claiming an ordinal the sequence never issued cannot belong to a real run.
     const unissued = await importFeatureState(
       reader([row(9_000_000)], { last_value: 5n, is_called: true }),
     );
     expect(unissued.gatePassed).toBe(false);
-    expect(unissued.blockers.join(' ')).toMatch(/no run has been issued/);
     // Pass rows without full evidence, or without an ordinal, never count as passed.
     for (const value of [
       { ...fullPass, dryRun: true },
@@ -66,10 +64,11 @@ describe('migration gate reading (D9, fail closed)', () => {
       reader([row(null)], { last_value: 5n, is_called: true }),
     );
     expect(noOrdinal?.passed).toBe(false);
-    // Uploads are never enabled by the gate alone in this increment.
-    expect(
-      (await importFeatureState(reader([row(5)], { last_value: 5n, is_called: true })))
-        .uploadsEnabled,
-    ).toBe(false);
+    // Decision of 2026-10-31: uploads are always on and nothing is reported as blocking, even
+    // when the gate itself has not passed.
+    const failing = await importFeatureState(reader([], { last_value: 0n, is_called: false }));
+    expect(failing.gatePassed).toBe(false);
+    expect(failing.uploadsEnabled).toBe(true);
+    expect(failing.blockers).toEqual([]);
   });
 });

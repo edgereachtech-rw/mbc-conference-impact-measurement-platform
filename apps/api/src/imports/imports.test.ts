@@ -246,33 +246,23 @@ describe.skipIf(!hasDatabase)('registration imports (E2-1, E2-8..11; D3, D5, D9)
     expect((await upload(server, csv([HEADERS]), 'reg.csv', randomUUID())).status).toBe(404);
   });
 
-  it('uploads disabled or gate not passed: refused with an audited refusal, nothing stored (criterion 41)', async () => {
+  // Was: "uploads disabled or gate not passed: refused with an audited refusal" (criterion 41).
+  // By the decision of 2026-10-31 nothing refuses an upload, so the opposite is now asserted.
+  it('accepts an upload whatever the configuration says, with no refusal audited', async () => {
     const before = await auditCount('import.upload_refused', eventId);
-    const disabled = app({
-      importConfig: {
-        uploadsEnabled: false,
-        fileRetentionDays: null,
-        production: false,
-        requireMigrationGate: false,
-      },
-    });
-    const r1 = await upload(disabled, csv([HEADERS, [email('g'), 'G', 'virtual', '', '', '']]));
-    expect(r1.status).toBe(503);
-    // Production shape: uploads enabled but the migration gate must have passed. The gate read is
-    // replaced by the hook because the audit log is append-only and cannot be staged per test.
-    const gated = app({
+    // Production shape, no retention policy recorded, and a migration gate that would have failed.
+    const anyConfig = app({
       importConfig: {
         uploadsEnabled: true,
-        fileRetentionDays: 30,
+        fileRetentionDays: null,
         production: true,
-        requireMigrationGate: true,
+        requireMigrationGate: false,
       },
       importHooks: { migrationGatePassed: async () => false },
     });
-    const r2 = await upload(gated, csv([HEADERS, [email('g'), 'G', 'virtual', '', '', '']]));
-    expect(r2.status).toBe(503);
-    expect(await auditCount('import.upload_refused', eventId)).toBe(before + 2);
-    expect(await prisma.importRun.count({ where: { eventId } })).toBe(0);
+    const up = await upload(anyConfig, csv([HEADERS, [email('g'), 'G', 'virtual', '', '', '']]));
+    expect(up.status, up.text).toBe(201);
+    expect(await auditCount('import.upload_refused', eventId)).toBe(before);
   });
 
   it('an online-only or in-person-only event never asks for the attendance format: every row gets the event format', async () => {

@@ -87,43 +87,30 @@ export interface ImportFeatureState {
    * started without leaving a report (a crash or a failed report write keeps the gate closed).
    */
   gatePassed: boolean;
-  /** Always false in Increment 1b phase 1: the pipeline and its release gates do not exist yet. */
-  uploadsEnabled: false;
-  /** What still stands between the gate and enabling uploads, in order. */
+  /** Uploads are allowed unconditionally (decision of 2026-10-31). */
+  uploadsEnabled: true;
+  /** Kept in the shape for the admin screens; always empty now that nothing gates an upload. */
   blockers: string[];
 }
 
 /**
- * Fail-closed view of the import feature (backlog D9, D6.1). A passing report is necessary, never
- * sufficient: uploads stay disabled until the import pipeline, the retention configuration (OQ-22)
- * and the remaining release gates exist.
+ * State of the import feature. The backfill report is still read and still reported through
+ * `gatePassed`, because knowing whether the identity invariants ever passed is useful, but it no
+ * longer holds anything back: by the decision of 2026-10-31 uploads are always allowed and the
+ * blocker list is empty. The gates this used to raise (backlog D9, D6.1, OQ-22) are recorded in
+ * docs/backlog.md as waived.
  */
 export async function importFeatureState(prisma: ReportReader): Promise<ImportFeatureState> {
   const [latest, lastStarted] = await Promise.all([
     latestIdentityBackfillReport(prisma),
     lastStartedRunOrdinal(prisma),
   ]);
-  const blockers: string[] = [];
   const unreported = lastStarted > (latest?.runOrdinal ?? 0);
   // A report whose ordinal the sequence never issued cannot belong to a real run.
   const unissued = (latest?.runOrdinal ?? 0) > lastStarted;
-  if (!latest) blockers.push('no durable migration.identity_backfill report exists');
-  else if (!latest.passed) blockers.push('latest migration.identity_backfill report is not a pass');
-  if (unreported) {
-    blockers.push(
-      `backfill run ${lastStarted} started but has no durable report; rerun the gate so a fresh report is written`,
-    );
-  }
-  if (unissued) {
-    blockers.push(
-      `latest report carries run ordinal ${latest?.runOrdinal} which no run has been issued; rerun the gate`,
-    );
-  }
-  blockers.push('import pipeline not implemented (Increment 1b phases 2+)');
-  blockers.push('source-file retention policy not approved or configured (OQ-22)');
   return {
     gatePassed: latest?.passed === true && !unreported && !unissued,
-    uploadsEnabled: false,
-    blockers,
+    uploadsEnabled: true,
+    blockers: [],
   };
 }

@@ -567,26 +567,25 @@ describe('classification (D5, criteria 3, 4, 7, 21, 22)', () => {
   });
 });
 
-describe('import configuration (D9 safeguard, OQ-22)', () => {
-  it('is disabled by default, and production refuses uploads without an approved retention value', () => {
-    expect(importConfigFromEnv({}).uploadsEnabled).toBe(false);
-    expect(importConfigFromEnv({ IMPORT_UPLOADS_ENABLED: 'true', NODE_ENV: 'test' })).toMatchObject(
-      {
-        uploadsEnabled: true,
-        requireMigrationGate: false,
-      },
-    );
-    expect(() =>
-      importConfigFromEnv({ IMPORT_UPLOADS_ENABLED: 'true', NODE_ENV: 'production' }),
-    ).toThrow(/IMPORT_FILE_RETENTION_DAYS/);
-    expect(
-      importConfigFromEnv({
-        IMPORT_UPLOADS_ENABLED: 'true',
-        NODE_ENV: 'production',
-        IMPORT_FILE_RETENTION_DAYS: '30',
-      }),
-    ).toMatchObject({ uploadsEnabled: true, requireMigrationGate: true, fileRetentionDays: 30 });
-    expect(importConfigFromEnv({ NODE_ENV: 'production' }).uploadsEnabled).toBe(false);
+describe('import configuration', () => {
+  // Was: "is disabled by default, and production refuses uploads without an approved retention
+  // value" (the D9 / OQ-22 safeguard). Waived by the decision of 2026-10-31.
+  it('enables uploads everywhere, whatever the environment says, and gates nothing', () => {
+    expect(importConfigFromEnv({})).toMatchObject({
+      uploadsEnabled: true,
+      requireMigrationGate: false,
+      fileRetentionDays: null,
+    });
+    // Production with no retention policy recorded: starts, and uploads are on.
+    expect(importConfigFromEnv({ NODE_ENV: 'production' })).toMatchObject({
+      uploadsEnabled: true,
+      requireMigrationGate: false,
+      production: true,
+    });
+    // The old off switch is ignored rather than honoured.
+    expect(importConfigFromEnv({ IMPORT_UPLOADS_ENABLED: 'false' }).uploadsEnabled).toBe(true);
+    // A retention value is still carried through for the deletion job to come.
+    expect(importConfigFromEnv({ IMPORT_FILE_RETENTION_DAYS: '30' }).fileRetentionDays).toBe(30);
   });
 
   it('neutralises formula-like cells in the row report', () => {

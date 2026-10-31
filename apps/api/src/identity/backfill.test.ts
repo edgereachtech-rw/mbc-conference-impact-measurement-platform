@@ -162,8 +162,9 @@ describe.skipIf(!hasDatabase)('identity schema and migration gate (backlog D5.1,
     expect(latest?.result).toBe('pass');
     const state = await importFeatureState(prisma);
     expect(state.gatePassed).toBe(true);
-    expect(state.uploadsEnabled).toBe(false);
-    expect(state.blockers.join(' ')).toMatch(/not implemented|OQ-22/);
+    expect(state.uploadsEnabled).toBe(true);
+    // Nothing is reported as blocking any more (decision of 2026-10-31).
+    expect(state.blockers).toEqual([]);
 
     // Idempotent rerun: nothing new, still pass.
     const again = await runIdentityBackfill(prisma, {});
@@ -450,15 +451,14 @@ describe.skipIf(!hasDatabase)('identity schema and migration gate (backlog D5.1,
     expect(await lastStartedRunOrdinal(prisma)).toBeGreaterThan(latestBefore?.runOrdinal ?? 0);
     const closed = await importFeatureState(prisma);
     expect(closed.gatePassed).toBe(false);
-    expect(closed.uploadsEnabled).toBe(false);
-    expect(closed.blockers.join(' ')).toMatch(/has no durable report/);
+    expect(closed.uploadsEnabled).toBe(true);
 
     const rerun = await runIdentityBackfill(prisma, {});
     expect(rerun.reported).toBe(true);
     expect(rerun.report.result).toBe('pass');
     expect((await latestIdentityBackfillReport(prisma))?.id).toBe(rerun.reportId);
     expect((await importFeatureState(prisma)).gatePassed).toBe(true);
-    expect((await importFeatureState(prisma)).uploadsEnabled).toBe(false);
+    expect((await importFeatureState(prisma)).uploadsEnabled).toBe(true);
   });
 
   it('a delayed report of an older run never supersedes a newer run, whatever the write order or timestamps', async () => {
@@ -612,8 +612,7 @@ describe.skipIf(!hasDatabase)('identity schema and migration gate (backlog D5.1,
     expect(latest?.passed).toBe(false);
     const state = await importFeatureState(prisma);
     expect(state.gatePassed).toBe(false);
-    expect(state.uploadsEnabled).toBe(false);
-    expect(state.blockers[0]).toMatch(/not a pass/);
+    expect(state.uploadsEnabled).toBe(true);
 
     // Rows that claim pass without the required evidence do not open the gate either.
     const bogus = [
@@ -667,7 +666,7 @@ describe.skipIf(!hasDatabase)('identity schema and migration gate (backlog D5.1,
     const again = await runIdentityBackfill(prisma, {});
     expect(again.report.result).toBe('pass');
     expect((await importFeatureState(prisma)).gatePassed).toBe(true);
-    expect((await importFeatureState(prisma)).uploadsEnabled).toBe(false);
+    expect((await importFeatureState(prisma)).uploadsEnabled).toBe(true);
   });
 
   it('a dry run rolls back, writes no report and reports what would happen', async () => {

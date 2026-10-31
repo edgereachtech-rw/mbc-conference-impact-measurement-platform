@@ -191,6 +191,41 @@ Revised 2026-10-29: there is no sign-up. "First sign-in" replaces "sign-up" wher
 
 ---
 
+### Import gates waived (decision of 2026-10-31)
+
+Registration uploads are now **always allowed**. Three guards described in D9 and D6.1 below were
+removed from the code on request, so those sections no longer describe what runs:
+
+| Guard, as written below | State after this decision |
+| --- | --- |
+| `IMPORT_UPLOADS_ENABLED` defaults to false, fail closed | ignored; uploads are on in every environment, including production |
+| production refuses to start with uploads on and no `IMPORT_FILE_RETENTION_DAYS` (the temporary OQ-22 safeguard) | removed; production starts with no retention value and accepts uploads |
+| production requires a durable passing `migration.identity_backfill` report per upload | removed; the report is still written and still reported as `gatePassed`, but it holds nothing back |
+
+`importFeatureState` now returns an empty blocker list and `uploadsEnabled: true`, so the admin
+screens no longer show the "Registration imports are disabled" banner.
+
+What this leaves open, and who it falls to:
+
+- **OQ-22 is still undecided, and now unguarded.** D9 required the source-file retention policy to
+  be "approved by the product owner and the legal or privacy stakeholders before production
+  go-live", with the startup check as the interim protection against files accumulating under an
+  undefined rule. That check is gone, so nothing now prevents a production deployment from keeping
+  uploaded registration files, which carry delegate names and email addresses, indefinitely. The
+  deletion job of D9 is still unbuilt.
+- **The identity backfill gate no longer protects a production import.** D6.1 made a passing
+  backfill the precondition for importing against real data, because identity matching and the
+  duplicate rules depend on the invariants it checks (H1 to H4). An import may now run before that
+  has ever passed.
+- **Criterion 41 of the test plan no longer holds.** It asserted an audited refusal when uploads
+  were disabled or the gate had not passed; the test now asserts acceptance instead.
+
+Re-introducing any of the three is a configuration and code change, not a product decision, so it
+can be reversed. Nothing else in D9 or D6.1 changed: files still go to private object storage, the
+audit trail is unchanged, and parsing is still values-only.
+
+---
+
 ## E2/E3 design note: delegate identity, import and event history (authoritative, 2026-10-29)
 
 This note supersedes every earlier statement that a delegate "signs up" on the platform. It is the
