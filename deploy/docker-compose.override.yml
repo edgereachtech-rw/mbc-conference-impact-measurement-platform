@@ -44,7 +44,7 @@ services:
       - npm install -g pnpm@10.18.3 --no-fund --no-audit && pnpm --filter @mbc/shared build && pnpm --filter @mbc/web dev -H 0.0.0.0 -p 33333
     # !override, or the base file's 0.0.0.0 binding wins the merge and the dev stack is public.
     ports: !override
-      - '127.0.0.1:33333:33333'
+      - '33333:33333'
     environment:
       NODE_ENV: development
       HUSKY: '0'
@@ -71,7 +71,7 @@ services:
       - -c
       - npm install -g pnpm@10.18.3 --no-fund --no-audit && pnpm --filter @mbc/shared build && pnpm --filter @mbc/api dev
     ports: !override
-      - '127.0.0.1:44444:44444'
+      - '44444:44444'
     environment:
       NODE_ENV: development
       HUSKY: '0'
@@ -112,19 +112,19 @@ services:
 
   db:
     ports:
-      - '127.0.0.1:5432:5432'
+      - '5432:5432'
 
   garage:
     ports:
-      - '127.0.0.1:3900:3900'
-      - '127.0.0.1:3903:3903'
+      - '3900:3900'
+      - '3903:3903'
 
   mailpit:
     image: axllent/mailpit:v1.32.0
     restart: unless-stopped
     ports:
-      - '127.0.0.1:8025:8025' # web inbox
-      - '127.0.0.1:1025:1025' # SMTP for an API running on the host (MAILPIT_HOST=127.0.0.1)
+      - '8025:8025' # web inbox
+      - '1025:1025' # SMTP for an API running on the host (MAILPIT_HOST=127.0.0.1)
     expose:
       - '1025' # SMTP, reached by the api/worker containers as mailpit:1025
     environment:
