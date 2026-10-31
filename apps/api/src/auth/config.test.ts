@@ -23,7 +23,7 @@ describe('auth configuration', () => {
     expect(c.cookieSecure).toBe(false);
     expect(c.trustProxy).toBe(false);
     expect(c.production).toBe(false);
-    expect(c.allowedOrigins).toEqual(['http://localhost:3000']);
+    expect(c.allowedOrigins).toEqual(['http://localhost:33333']);
     expect(authConfigFromEnv({ SESSION_TTL_DAYS: '3', APP_URL: 'https://x.example/' }).appUrl).toBe(
       'https://x.example',
     );

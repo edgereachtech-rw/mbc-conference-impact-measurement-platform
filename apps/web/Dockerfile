@@ -32,7 +32,7 @@ RUN pnpm --filter @mbc/shared build \
 # ---------- runner: standalone output only ----------
 FROM ${NODE_IMAGE} AS runner
 ENV NODE_ENV=production \
-    PORT=3000 \
+    PORT=33333 \
     HOSTNAME=0.0.0.0 \
     NEXT_TELEMETRY_DISABLED=1
 WORKDIR /app
@@ -41,7 +41,7 @@ COPY --from=build --chown=node:node /app/apps/web/.next/standalone ./
 COPY --from=build --chown=node:node /app/apps/web/.next/static ./apps/web/.next/static
 COPY --from=build --chown=node:node /app/apps/web/public ./apps/web/public
 USER node
-EXPOSE 3000
+EXPOSE 33333
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD wget -qO- http://127.0.0.1:3000/ > /dev/null || exit 1
+  CMD wget -qO- http://127.0.0.1:33333/ > /dev/null || exit 1
 CMD ["node", "apps/web/server.js"]

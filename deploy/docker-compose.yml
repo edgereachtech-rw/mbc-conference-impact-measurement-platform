@@ -97,18 +97,18 @@ services:
       dockerfile: apps/web/Dockerfile
     restart: unless-stopped
     expose:
-      - '3000'
+      - '33333'
     environment:
       NODE_ENV: production
-      PORT: 3000
+      PORT: 33333
       HOSTNAME: 0.0.0.0
       APP_DOMAIN: ${APP_DOMAIN}
       SENTRY_DSN: ${SENTRY_DSN:-}
-      API_INTERNAL_URL: http://api:4000
+      API_INTERNAL_URL: http://api:44444
       SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
       SENTRY_RELEASE: ${IMAGE_TAG:-local}
     healthcheck:
-      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:3000/ > /dev/null || exit 1']
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:33333/ > /dev/null || exit 1']
       interval: 30s
       timeout: 5s
       start_period: 20s
@@ -127,17 +127,17 @@ services:
       dockerfile: apps/api/Dockerfile
     restart: unless-stopped
     expose:
-      - '4000'
+      - '44444'
     environment:
       <<: *app-env
-      PORT: 4000
+      PORT: 44444
     depends_on:
       db:
         condition: service_healthy
       garage:
         condition: service_healthy
     healthcheck:
-      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:4000/health > /dev/null || exit 1']
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:44444/health > /dev/null || exit 1']
       interval: 30s
       timeout: 5s
       start_period: 20s

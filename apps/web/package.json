@@ -4,9 +4,9 @@
   "private": true,
   "description": "Next.js delegate and admin web app (mobile-first, PWA)",
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -p 33333",
     "build": "next build",
-    "start": "next start",
+    "start": "next start -p 33333",
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run"
   },

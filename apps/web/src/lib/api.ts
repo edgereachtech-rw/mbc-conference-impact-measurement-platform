@@ -5,7 +5,7 @@
  * dev server rewrites it when API_PROXY_URL is set, see next.config.ts). The session cookie is
  * sent automatically and the Origin header satisfies the API's CSRF check.
  *
- * Server components: an absolute API_INTERNAL_URL (http://api:4000 in Docker) with the incoming
+ * Server components: an absolute API_INTERNAL_URL (http://api:44444 in Docker) with the incoming
  * request's cookie forwarded explicitly.
  */
 
@@ -57,7 +57,7 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
 
 /** Base URL for server-side calls (never used by the browser). */
 export function apiInternalUrl(): string {
-  return (process.env.API_INTERNAL_URL ?? 'http://127.0.0.1:4000').replace(/\/+$/, '');
+  return (process.env.API_INTERNAL_URL ?? 'http://127.0.0.1:44444').replace(/\/+$/, '');
 }
 
 /**

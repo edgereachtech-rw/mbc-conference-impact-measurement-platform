@@ -12,7 +12,7 @@ const nextConfig: NextConfig = {
   // query string, so keep that path out of the terminal. Production (next start) does not log requests.
   logging: { incomingRequests: { ignore: [new RegExp('^/signin/verify')] } },
   // Local development only: the browser calls same-origin /api/* exactly as it does behind Caddy,
-  // and the dev server forwards it to the API (API_PROXY_URL=http://127.0.0.1:4000).
+  // and the dev server forwards it to the API (API_PROXY_URL=http://127.0.0.1:44444).
   async rewrites() {
     const target = process.env.API_PROXY_URL?.replace(/\/+$/, '');
     if (!target) return [];

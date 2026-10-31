@@ -13,7 +13,7 @@ const { mailConfigFromEnv } = await import('./mail/config.js');
 const { importConfigFromEnv } = await import('./imports/config.js');
 
 const logger = getLogger();
-const port = Number(process.env.PORT ?? 4000);
+const port = Number(process.env.PORT ?? 44444);
 
 // Fail early and safely: an invalid or contradictory configuration (insecure cookies in production,
 // a placeholder secret, no proxy trust decision, a test mail transport) never serves a request.

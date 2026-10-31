@@ -6,8 +6,8 @@ local development (with `docker-compose.override.yml`), staging and production.
 | Service | Image                     | Role                                                                                         |
 | ------- | ------------------------- | -------------------------------------------------------------------------------------------- |
 | caddy   | caddy:2.11.7-alpine       | TLS, HTTP to HTTPS redirect, `/api/*` to api, rest to web. Only service with published ports |
-| web     | built from apps/web       | Next.js standalone server on 3000                                                            |
-| api     | built from apps/api       | Express API on 4000                                                                          |
+| web     | built from apps/web       | Next.js standalone server on 33333                                                           |
+| api     | built from apps/api       | Express API on 44444                                                                         |
 | worker  | same image as api         | pg-boss job runner (`node dist/worker.js`)                                                   |
 | db      | postgres:16.15-alpine3.23 | PostgreSQL 16, volume `pgdata`                                                               |
 | garage  | dxflrs/garage:v2.5.0      | S3-compatible object storage, volumes `garagemeta`, `garagedata`                             |
@@ -37,8 +37,8 @@ curl http://localhost/api/health
 
 What the override gives you:
 
-- http://localhost through Caddy (plain HTTP, no certificates), http://127.0.0.1:3000 (web) and
-  http://127.0.0.1:4000 (api) directly
+- http://localhost through Caddy (plain HTTP, no certificates), http://127.0.0.1:33333 (web) and
+  http://127.0.0.1:44444 (api) directly
 - hot reload: the repository is bind-mounted; `web` runs `next dev`, `api` runs `tsx watch`,
   `worker` runs `tsx watch src/worker.ts`. Dependencies are installed once by the `deps` service
   into Docker volumes, so your host `node_modules` is untouched

@@ -36,10 +36,10 @@ cp .env apps/api/.env && cp .env apps/web/.env  # each app loads the .env in its
 pnpm dev              # runs shared (tsc --watch), api (tsx watch) and web (next dev) in parallel
 ```
 
-| URL                          | What                                       |
-| ---------------------------- | ------------------------------------------ |
-| http://localhost:3000        | Web app (Next.js)                          |
-| http://localhost:4000/health | API health check: `{ status: "ok", time }` |
+| URL                           | What                                       |
+| ----------------------------- | ------------------------------------------ |
+| http://localhost:33333        | Web app (Next.js)                          |
+| http://localhost:44444/health | API health check: `{ status: "ok", time }` |
 
 To run the worker (needs PostgreSQL reachable at `DATABASE_URL`):
 

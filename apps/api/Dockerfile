@@ -40,11 +40,11 @@ RUN pnpm --filter @mbc/shared build \
 # ---------- runner ----------
 FROM ${NODE_IMAGE} AS runner
 ENV NODE_ENV=production \
-    PORT=4000
+    PORT=44444
 WORKDIR /app
 COPY --from=build --chown=node:node /out/api ./
 USER node
-EXPOSE 4000
+EXPOSE 44444
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD wget -qO- http://127.0.0.1:4000/health > /dev/null || exit 1
+  CMD wget -qO- http://127.0.0.1:44444/health > /dev/null || exit 1
 CMD ["node", "dist/server.js"]

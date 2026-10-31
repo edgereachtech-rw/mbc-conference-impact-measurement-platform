@@ -46,17 +46,17 @@ services:
     command:
       - sh
       - -c
-      - npm install -g pnpm@10.18.3 --no-fund --no-audit && pnpm --filter @mbc/shared build && pnpm --filter @mbc/web dev -H 0.0.0.0 -p 3000
+      - npm install -g pnpm@10.18.3 --no-fund --no-audit && pnpm --filter @mbc/shared build && pnpm --filter @mbc/web dev -H 0.0.0.0 -p 33333
     ports:
-      - '127.0.0.1:3000:3000'
+      - '127.0.0.1:33333:33333'
     environment:
       NODE_ENV: development
       HUSKY: '0'
       NEXT_TELEMETRY_DISABLED: '1'
       WATCHPACK_POLLING: 'true' # file events do not cross Windows/macOS bind mounts
       CHOKIDAR_USEPOLLING: 'true'
-      API_INTERNAL_URL: http://api:4000
-      API_PROXY_URL: http://api:4000
+      API_INTERNAL_URL: http://api:44444
+      API_PROXY_URL: http://api:44444
     volumes: *dev-volumes
     depends_on:
       deps:
@@ -73,7 +73,7 @@ services:
       - -c
       - npm install -g pnpm@10.18.3 --no-fund --no-audit && pnpm --filter @mbc/shared build && pnpm --filter @mbc/api dev
     ports:
-      - '127.0.0.1:4000:4000'
+      - '127.0.0.1:44444:44444'
     environment:
       NODE_ENV: development
       HUSKY: '0'
@@ -81,7 +81,7 @@ services:
       MAILPIT_HOST: mailpit
       MAILPIT_PORT: 1025
       APP_URL: http://localhost
-      AUTH_ALLOWED_ORIGINS: http://localhost,http://localhost:3000,http://127.0.0.1:3000
+      AUTH_ALLOWED_ORIGINS: http://localhost,http://localhost:33333,http://127.0.0.1:33333
       COOKIE_SECURE: 'false'
     volumes: *dev-volumes
     depends_on:

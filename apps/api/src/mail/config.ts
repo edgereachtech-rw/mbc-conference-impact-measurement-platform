@@ -20,7 +20,7 @@ const envSchema = z.object({
   SMTP_PASSWORD: z.string().optional(),
   MAIL_FROM: z.string().min(3),
   MAIL_CONTACT_EMAIL: z.email().optional(),
-  APP_URL: z.url().default('http://localhost:3000'),
+  APP_URL: z.url().default('http://localhost:33333'),
   MAILPIT_HOST: z.string().default('mailpit'),
   MAILPIT_PORT: z.coerce.number().int().positive().default(1025),
   NODE_ENV: z.string().optional(),

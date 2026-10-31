@@ -52,14 +52,14 @@
 
 	# API: the path is forwarded unchanged, so Express serves /api/v1/... and /api/health.
 	handle /api/* {
-		reverse_proxy api:4000 {
+		reverse_proxy api:44444 {
 			header_up X-Forwarded-Proto {scheme}
 		}
 	}
 
 	# Everything else: Next.js (pages, static assets, PWA manifest, icons).
 	handle {
-		reverse_proxy web:3000 {
+		reverse_proxy web:33333 {
 			header_up X-Forwarded-Proto {scheme}
 		}
 	}

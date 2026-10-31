@@ -30,7 +30,7 @@ const schema = z.object({
   AUTH_RATE_LIMIT_PER_EMAIL: z.coerce.number().int().positive().default(3),
   AUTH_RATE_LIMIT_PER_IP: z.coerce.number().int().positive().default(10),
   AUTH_VERIFY_LIMIT_PER_IP: z.coerce.number().int().positive().default(20),
-  APP_URL: z.url().default('http://localhost:3000'),
+  APP_URL: z.url().default('http://localhost:33333'),
   AUTH_ALLOWED_ORIGINS: z.string().optional(),
   COOKIE_SECURE: z.enum(['true', 'false']).optional(),
   NODE_ENV: z.string().optional(),
