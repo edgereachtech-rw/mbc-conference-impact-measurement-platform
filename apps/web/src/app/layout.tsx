@@ -6,6 +6,7 @@ import { SiteFooter } from '@/components/layout/site-footer';
 import { SiteHeader } from '@/components/layout/site-header';
 import { Toaster } from '@/components/ui/sonner';
 import { event } from '@/config/event';
+import { apiPublicUrl } from '@/lib/api';
 import { getSession } from '@/lib/session';
 import { cn } from '@/lib/utils';
 
@@ -60,10 +61,13 @@ export const viewport: Viewport = {
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
   const session = await getSession();
+  // Where the browser should call the API. Empty when it answers on this origin (the dev proxy).
+  const apiBase = apiPublicUrl();
 
   return (
     <html lang="en" className={cn(poppins.variable, oswald.variable, inter.variable)}>
       <body className="flex min-h-dvh flex-col">
+        {apiBase ? <meta name="mbc-api-base" content={apiBase} /> : null}
         <SiteHeader session={session} />
         <div className="flex flex-1 flex-col">{children}</div>
         <SiteFooter session={session} />

@@ -43,7 +43,7 @@ async function main() {
         viewport: { width: 390, height: 844 },
         deviceScaleFactor: 2,
         colorScheme,
-        ignoreHTTPSErrors: true, // the logo is loaded from the local stack's self-signed Caddy
+        ignoreHTTPSErrors: true, // the logo may come from a local stack with a self-signed certificate
       });
       const page = await context.newPage();
       await page.goto(`${mailpit}/view/${message.ID}.html`, { waitUntil: 'networkidle' });

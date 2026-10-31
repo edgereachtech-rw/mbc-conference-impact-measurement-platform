@@ -9,11 +9,11 @@ channel; the named primary and backup contacts live in the runbook (E0-11).
 
 | Signal | Where | Meaning |
 | --- | --- | --- |
-| `GET /api/health` | through Caddy, public | API process is up (liveness); does not touch the database |
-| `GET /api/ready` | through Caddy, public | API can serve: `200 {status:"ok", checks:{database:"ok"}}` or `503 {status:"error", checks:{database:"down"}}` |
-| `GET /` and `/signin` | through Caddy, public | Web app renders |
+| `GET /api/health` | on the API's own origin, public | API process is up (liveness); does not touch the database |
+| `GET /api/ready` | on the API's own origin, public | API can serve: `200 {status:"ok", checks:{database:"ok"}}` or `503 {status:"error", checks:{database:"down"}}` |
+| `GET /` and `/signin` | on the web app's origin, public | Web app renders |
 | Container healthchecks | `docker compose ps` | api (`/health`), web (`/`), worker (process), db (`pg_isready`), garage (`garage status`), backup (`crond`) |
-| JSON logs | `docker compose logs <service>` | pino (api, worker) with request ids; Caddy access log without query strings, headers or full IPs; rotated 5 x 10 MB per service |
+| JSON logs | `docker compose logs <service>` | pino (api, worker) with request ids, paths without query strings; rotated 5 x 10 MB per service |
 | Sentry events | Sentry project | Unhandled errors from web, api and worker, scrubbed of personal data, tagged with `service` and the image SHA as release |
 | Worker heartbeat | Healthchecks.io | One ping every `HEARTBEAT_INTERVAL_SECONDS` (120) while the worker runs |
 | Backup heartbeat | Healthchecks.io | `/start`, success or `/fail` on every backup run |
@@ -27,7 +27,7 @@ channel; the named primary and backup contacts live in the runbook (E0-11).
 | Sign-in page | `https://<APP_DOMAIN>/signin` | 1 min | not HTTP 200 or no body text "Sign in" for 2 consecutive checks |
 | API readiness | `https://<APP_DOMAIN>/api/ready` | 1 min | not HTTP 200 for 2 consecutive checks (database down or API down) |
 | One form URL | the Day 1 check-in URL once E7 exists | 1 min, conference days only | not HTTP 200 |
-| TLS certificate | `https://<APP_DOMAIN>` | daily | expires in fewer than 14 days (Caddy renews at 30 days, so this fires only if renewal is broken) |
+| TLS certificate | `https://<APP_DOMAIN>` | daily | expires in fewer than 14 days. The certificate belongs to the TLS terminator in front of the server, not to this stack, so renewal is watched there |
 
 Keep both the staging and the production domains monitored, with the staging alerts going to the
 dev channel only.
@@ -71,13 +71,13 @@ Install the provider's agent (Hetzner, DigitalOcean, or Netdata/Grafana Cloud ag
 | CPU (5 min average) | 80% | 85% for 10 min | Next.js build is not run on the server, so sustained load means traffic or a runaway job |
 | Memory | 80% | 85% | containers have limits (`deploy.resources.limits`); a service at its limit gets OOM-killed and restarts, which shows in `docker compose ps` |
 | Disk | 80% | 85% | Docker images and Postgres grow; `docker system prune -f` reclaims images, never volumes |
-| Container restarts | any restart of db, api, caddy in 10 min | 3 restarts | `docker events` or the agent's Docker integration |
+| Container restarts | any restart of db, api, web in 10 min | 3 restarts | `docker events` or the agent's Docker integration |
 
 ### 5. Log review
 
 `docker compose logs --since 24h api worker | grep -E '"level":(50|60)'` once a day during the
-conference window, plus the Caddy log for 5xx counts:
-`docker compose logs --since 1h caddy | grep -c '"status":5'`.
+conference window. For 5xx counts, the api log carries the status of every request:
+`docker compose logs --since 1h api | grep -c '"statusCode":5'`.
 
 ## Response
 

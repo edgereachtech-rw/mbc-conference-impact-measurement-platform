@@ -7,7 +7,7 @@ import { EmptyState } from '@/components/empty-state';
 import { ErrorState } from '@/components/error-state';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { apiFetch } from '@/lib/api';
+import { apiFetch, apiUrl } from '@/lib/api';
 import {
   describeError,
   formatDateTime,
@@ -151,7 +151,7 @@ export function RunHistory({ eventId, refreshKey }: RunHistoryProps) {
               </Button>
               <a
                 className="inline-flex h-11 items-center rounded-md border border-brand-primary/40 px-4 text-sm font-medium text-brand-primary"
-                href={`/api/v1/imports/${run.id}/report.csv`}
+                href={apiUrl(`/imports/${run.id}/report.csv`)}
                 download
               >
                 Report (CSV)

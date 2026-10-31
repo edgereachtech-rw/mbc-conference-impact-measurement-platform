@@ -14,7 +14,7 @@ import { useEffect, useState } from 'react';
 import { MessageComposer } from '@/components/admin/message-composer';
 import { Dialog } from '@/components/console/dialog';
 import { consoleButton, Panel, StatePanel, StatTile, StatusPill } from '@/components/console/page';
-import { apiFetch } from '@/lib/api';
+import { apiFetch, apiUrl } from '@/lib/api';
 import { formatInstant } from '@/lib/events';
 import { describeError } from '@/lib/imports';
 
@@ -222,7 +222,7 @@ export function StageSubmissions({
       <div className="flex flex-wrap items-center gap-2">
         {summary.submitted > 0 ? (
           <a
-            href={`/api/v1${base}/responses.csv`}
+            href={apiUrl(`${base}/responses.csv`)}
             download
             className={consoleButton({ variant: 'secondary' })}
           >

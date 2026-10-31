@@ -3,17 +3,12 @@
 #   - hot reload: the repo is bind-mounted and web/api/worker run `pnpm dev` (tsx watch / next dev)
 #   - ports on 127.0.0.1 for the web app, API, database, object storage and the Mailpit inbox
 #   - Mailpit instead of a real SMTP relay (UI at http://127.0.0.1:8025)
-#   - Caddy on plain http://localhost (no certificates)
+#   - the web app on http://127.0.0.1:33333 and the API on http://127.0.0.1:44444, plain HTTP
 #
 # For staging/production run with the production file only:
 #   docker compose -f docker-compose.yml up -d
 
 services:
-  caddy:
-    environment:
-      APP_DOMAIN: http://localhost
-      CSP_SCRIPT_EXTRA: " 'unsafe-eval'" # Next.js dev server / HMR needs eval
-
   # One-off: installs node_modules into shared volumes before the dev servers start, so the three
   # app containers do not race each other through `pnpm install`.
   deps:
@@ -56,7 +51,9 @@ services:
       WATCHPACK_POLLING: 'true' # file events do not cross Windows/macOS bind mounts
       CHOKIDAR_USEPOLLING: 'true'
       API_INTERNAL_URL: http://api:44444
-      API_PROXY_URL: http://api:44444
+      # The browser calls the API on its own origin, exactly as in production, so CORS and the
+      # shared session cookie are exercised locally too (both are 127.0.0.1, hence same-site).
+      API_PUBLIC_URL: http://127.0.0.1:44444
     volumes: *dev-volumes
     depends_on:
       deps:
@@ -80,8 +77,8 @@ services:
       MAIL_TRANSPORT: mailpit
       MAILPIT_HOST: mailpit
       MAILPIT_PORT: 1025
-      APP_URL: http://localhost
-      AUTH_ALLOWED_ORIGINS: http://localhost,http://localhost:33333,http://127.0.0.1:33333
+      APP_URL: http://127.0.0.1:33333
+      AUTH_ALLOWED_ORIGINS: http://localhost:33333
       COOKIE_SECURE: 'false'
     volumes: *dev-volumes
     depends_on:
@@ -104,7 +101,7 @@ services:
       MAIL_TRANSPORT: mailpit
       MAILPIT_HOST: mailpit
       MAILPIT_PORT: 1025
-      APP_URL: http://localhost
+      APP_URL: http://127.0.0.1:33333
     volumes: *dev-volumes
     depends_on:
       deps:

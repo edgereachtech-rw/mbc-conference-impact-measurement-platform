@@ -21,10 +21,11 @@ What is backed up:
 - **Object storage** (uploads, exports): `rclone sync` of the application bucket to
   `objects/` in the off-site bucket, encrypted at rest with an rclone `crypt` remote
   (`BACKUP_RCLONE_CRYPT_PASSWORD`). File names are encrypted too.
-- The Compose files, Caddyfile and migrations are in git; `deploy/.env` is not backed up by this
+- The Compose files and migrations are in git; `deploy/.env` is not backed up by this
   job and must be kept in the password manager (see below).
 
-What is not: Caddy certificates (re-issued automatically), container logs, the pg-boss queue
+What is not: TLS certificates (they belong to the terminator in front of the server), container
+logs, the pg-boss queue
 (jobs are re-created from the database state).
 
 ## Where the keys are kept (never on the server)
@@ -125,7 +126,7 @@ since the dump).
 
 ```bash
 cd /srv/mbc-impact/deploy
-docker compose -f docker-compose.yml stop api worker caddy          # stop writers, show maintenance
+docker compose -f docker-compose.yml stop api worker web           # stop writers and the site
 docker compose -f docker-compose.yml run --rm -v /tmp/age.key:/run/age.key:ro backup \
   /backup/restore.sh --latest --tier hourly --identity /run/age.key   # verified scratch copy first
 docker compose -f docker-compose.yml exec db psql -U "$DB_USER" -d postgres -c \
@@ -133,7 +134,7 @@ docker compose -f docker-compose.yml exec db psql -U "$DB_USER" -d postgres -c \
   "ALTER DATABASE \"$DB_NAME\" RENAME TO \"${DB_NAME}_broken_$(date +%Y%m%d%H%M)\";" -c \
   "ALTER DATABASE restore_test RENAME TO \"$DB_NAME\";"
 docker compose -f docker-compose.yml run --rm --no-deps api ./node_modules/.bin/prisma migrate status
-docker compose -f docker-compose.yml up -d api worker caddy
+docker compose -f docker-compose.yml up -d api worker web
 curl -fsS https://$APP_DOMAIN/api/health
 ```
 

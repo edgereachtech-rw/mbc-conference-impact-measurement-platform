@@ -91,7 +91,34 @@ Decisions 2026-10-29: the analyst role and the support role are not part of the 
 | ID | Story | Acceptance criteria | Pri | Inc |
 |---|---|---|---|---|
 | E0-1 | As the dev team, I want a monorepo with `apps/web`, `apps/api`, `packages/shared` so rules are written once | Shared Zod schemas, types and scoring rules imported by both apps; lint, type-check and tests run in CI | P0 | 1 |
-| E0-2 | As the dev team, I want Docker Compose deployment | Services: caddy, web, api, worker, db, garage (S3-compatible, replaces MinIO), backup. Only Caddy publishes ports. Healthchecks on api and db. Images pinned to exact versions. Named volumes never removed in production | P0 | 1 |
+| E0-2 | As the dev team, I want Docker Compose deployment | Services: web, api, worker, db, garage (S3-compatible, replaces MinIO), backup. Web and api publish ports; db, garage, worker and backup stay on the internal network. Healthchecks on api and db. Images pinned to exact versions. Named volumes never removed in production | P0 | 1 |
+
+Change of 2026-10-31 (decided by M.Bryan): the **Caddy reverse proxy was removed** from the stack.
+E0-2 originally read "Services: caddy, web, api, worker, db, garage, backup. Only Caddy publishes
+ports." What this changes, and what now has to hold instead:
+
+- **Two public origins.** The web container and the api container each publish a port. The browser
+  loads pages from the web origin and calls the API on its own origin, so the API answers CORS for
+  the web origin (`apps/api/src/lib/cors.ts`, allowlist = `APP_URL` + `AUTH_ALLOWED_ORIGINS`, the
+  same list the CSRF origin check uses). The web container tells the browser where the API is
+  through `API_PUBLIC_URL`, published as a meta tag by the root layout so one built image still
+  serves staging and production.
+- **The origins must be same-site.** The server-rendered pages read the session cookie from the
+  incoming request, so the cookie has to reach both origins: one hostname on two ports (cookies
+  ignore the port), or two subdomains of one domain with `COOKIE_DOMAIN` set. Two unrelated
+  domains cannot work without abandoning server-side session rendering. `SameSite` stays `Lax`.
+- **TLS leaves the stack.** There is no ACME client and no certificate volume any more. A TLS
+  terminator in front of the server (cloud load balancer, Cloudflare, host-level proxy) must serve
+  both origins over https, because the API still refuses to start in production unless `APP_URL`
+  is https. `TRUST_PROXY` now names that terminator's network.
+- **Dropped with it**, and not reimplemented: the security headers Caddy sent (HSTS, CSP,
+  X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy), gzip/zstd
+  compression, and the privacy-filtered access log (query strings removed, headers dropped, client
+  IPs masked). Logging now relies on the app logs alone, which was the accepted trade-off: pino
+  logs paths without query strings and the `/signin/verify` path is excluded from the Next dev
+  log, so link tokens stay out, but there is no IP masking or header filtering in front of them.
+  **Open: who provides the security headers and whether the terminator's access log needs the same
+  privacy treatment** (E17 / S16 reviews this).
 | E0-3 | As the dev team, I want CI/CD | Push to main builds images tagged with the commit, deploys to staging, runs migrations as a one-off command. Rollback = redeploy previous tag | P0 | 1 |
 | E0-4 | As the dev team, I want HTTPS on a dedicated subdomain | Valid certificate, HTTP redirects to HTTPS, one domain for web and `/api` (no CORS) | P0 | 1 |
 | E0-5 | As the dev team, I want a staging environment mirroring production | Separate database, subdomain and credentials. Seeded with test data flagged `is_test` | P0 | 1 |

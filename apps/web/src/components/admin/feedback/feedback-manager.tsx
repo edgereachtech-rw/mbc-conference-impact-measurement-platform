@@ -28,7 +28,7 @@ import { useCallback, useEffect, useId, useState } from 'react';
 import { Dialog } from '@/components/console/dialog';
 import { consoleButton, Panel, StatePanel, StatusPill } from '@/components/console/page';
 import { NativeSelect } from '@/components/imports/native-select';
-import { apiFetch } from '@/lib/api';
+import { apiFetch, apiUrl } from '@/lib/api';
 import { formatDateShort, formatInstant, isoToZonedLocal, zonedLocalToIso } from '@/lib/events';
 import { describeError } from '@/lib/imports';
 
@@ -322,7 +322,7 @@ function SessionCard({
                 <BarChart3Icon aria-hidden="true" /> Dashboard ({session.submitted})
               </button>
               <a
-                href={`/api/v1${base}/export.csv`}
+                href={apiUrl(`${base}/export.csv`)}
                 download
                 className={consoleButton({ variant: 'ghost', size: 'sm' })}
               >
@@ -670,7 +670,7 @@ function DashboardDialog({
       footer={
         <>
           <a
-            href={`/api/v1${base}/export.csv${anonymised ? '?anonymised=true' : ''}`}
+            href={apiUrl(`${base}/export.csv${anonymised ? '?anonymised=true' : ''}`)}
             download
             className={consoleButton({ variant: 'secondary' })}
           >

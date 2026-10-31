@@ -3,12 +3,22 @@
 #   cd deploy && cp .env.example .env   # fill in real values
 #   docker compose build && docker compose up -d
 #
-# Only `caddy` publishes ports. Every other service is reachable on the internal network only.
+# `web` and `api` publish ports (2026-10-31: the Caddy reverse proxy was removed). The browser
+# loads pages from web and calls the API directly on its own origin, so the API answers CORS for
+# the web origin. Every other service is reachable on the internal network only.
+#
+# TLS is NOT part of this stack any more. Put a TLS terminator in front of the server (a cloud
+# load balancer, Cloudflare, or a host-level proxy) and point APP_DOMAIN and API_DOMAIN at it;
+# the API refuses to start in production unless APP_URL is https.
+#
+# The two origins must be same-site so the server-rendered pages can read the session cookie:
+# either one hostname on two ports, or two subdomains of one domain with COOKIE_DOMAIN set.
+#
 # Images are pinned to exact tags; never use :latest.
 #
 # !!! NEVER run `docker compose down -v` in production: it deletes the named volumes
-# !!! (pgdata, garagemeta, garagedata, caddy_data) and with them the database, uploaded files and
-# !!! TLS certificates. Use `docker compose down` (no -v) or `docker compose stop`.
+# !!! (pgdata, garagemeta, garagedata) and with them the database and the uploaded files.
+# !!! Use `docker compose down` (no -v) or `docker compose stop`.
 #
 # Object storage: MinIO's Docker images are no longer published (minio/minio was removed from
 # Docker Hub and quay.io returns nothing as of 2026-10-28). This stack uses Garage
@@ -51,7 +61,11 @@ x-app-env: &app-env
   AUTH_RATE_LIMIT_PER_IP: ${AUTH_RATE_LIMIT_PER_IP:-10}
   AUTH_VERIFY_LIMIT_PER_IP: ${AUTH_VERIFY_LIMIT_PER_IP:-20}
   AUTH_ALLOWED_ORIGINS: ${AUTH_ALLOWED_ORIGINS:-}
-  # Caddy is the only client of the api container and lives on the private Docker network.
+  # Widens the session cookie to a parent domain when the web app and the API are different
+  # hostnames (app.example.com / api.example.com). Leave empty for one host on two ports.
+  COOKIE_DOMAIN: ${COOKIE_DOMAIN:-}
+  # Names the network a TLS terminator or load balancer reaches the container from, so
+  # X-Forwarded-* is honoured only from there. "false" trusts nobody.
   TRUST_PROXY: ${TRUST_PROXY:-uniquelocal}
   SENTRY_DSN: ${SENTRY_DSN:-}
   SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
@@ -61,50 +75,25 @@ x-app-env: &app-env
   SEED_TEST_DELEGATES: ${SEED_TEST_DELEGATES:-false}
 
 services:
-  # ---------------------------------------------------------------- reverse proxy (the only public service)
-  caddy:
-    image: caddy:2.11.7-alpine
-    restart: unless-stopped
-    ports:
-      - '80:80'
-      - '443:443'
-      - '443:443/udp' # HTTP/3
-    environment:
-      APP_DOMAIN: ${APP_DOMAIN}
-      ACME_EMAIL: ${ACME_EMAIL:-}
-      CSP_SCRIPT_EXTRA: ${CSP_SCRIPT_EXTRA:-}
-      CSP_CONNECT_EXTRA: ${CSP_CONNECT_EXTRA:-}
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data # certificates and ACME account; keep across updates
-      - caddy_config:/config
-    depends_on:
-      web:
-        condition: service_started
-      api:
-        condition: service_started
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-    logging: *default-logging
-
-  # ---------------------------------------------------------------- Next.js web app
+  # ---------------------------------------------------------------- Next.js web app (public)
   web:
     image: ${IMAGE_PREFIX:-mbc-impact}/web:${IMAGE_TAG:-local}
     build:
       context: ..
       dockerfile: apps/web/Dockerfile
     restart: unless-stopped
-    expose:
-      - '33333'
+    ports:
+      - '${WEB_PUBLISH:-33333}:33333'
     environment:
       NODE_ENV: production
       PORT: 33333
       HOSTNAME: 0.0.0.0
       APP_DOMAIN: ${APP_DOMAIN}
       SENTRY_DSN: ${SENTRY_DSN:-}
+      # Server components call the API over the private network...
       API_INTERNAL_URL: http://api:44444
+      # ...while the browser calls it on its public origin, published as a meta tag by the layout.
+      API_PUBLIC_URL: ${API_PUBLIC_URL}
       SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
       SENTRY_RELEASE: ${IMAGE_TAG:-local}
     healthcheck:
@@ -126,8 +115,8 @@ services:
       context: ..
       dockerfile: apps/api/Dockerfile
     restart: unless-stopped
-    expose:
-      - '44444'
+    ports:
+      - '${API_PUBLISH:-44444}:44444'
     environment:
       <<: *app-env
       PORT: 44444
@@ -287,5 +276,3 @@ volumes:
   pgdata:
   garagemeta:
   garagedata:
-  caddy_data:
-  caddy_config:

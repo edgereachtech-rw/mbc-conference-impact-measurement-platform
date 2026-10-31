@@ -6,6 +6,7 @@ import type { AuthService } from '../auth/service.js';
 import type { PrismaClient } from '../db.js';
 import type { ConflictResolver } from '../imports/resolution.js';
 import type { ImportService } from '../imports/service.js';
+import { cors } from '../lib/cors.js';
 import type { Logger } from '../lib/logger.js';
 import type { MailConfig } from '../mail/config.js';
 import type { Mailer } from '../mail/mailer.js';
@@ -47,9 +48,10 @@ export function apiRouter(deps: ApiDeps): Router {
   const middleware = createAuthMiddleware(deps.auth, deps.config);
   const router = Router();
 
-  router.use(
-    originCheck([deps.config.appUrl, ...(deps.allowedOrigins ?? deps.config.allowedOrigins)]),
-  );
+  const origins = [deps.config.appUrl, ...(deps.allowedOrigins ?? deps.config.allowedOrigins)];
+  // CORS first: a preflight carries no cookie and must be answered before anything reads one.
+  router.use(cors(origins));
+  router.use(originCheck(origins));
   router.use(middleware.loadSession);
 
   router.use('/auth', authRouter({ auth: deps.auth, config: deps.config, middleware }));

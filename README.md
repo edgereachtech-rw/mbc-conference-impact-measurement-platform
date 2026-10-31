@@ -18,7 +18,7 @@ acceptance criteria and the question bank. Engineering rules live in [CLAUDE.md]
 - `apps/api`: Express 5 REST API (`/api/v1` from the next increment) with Zod validation and Prisma
 - Worker: pg-boss job runner, shipped as a second entry point of `apps/api` (see below)
 - `packages/shared`: Zod schemas, types and definitions shared by web, api and worker
-- PostgreSQL 16, MinIO, SMTP relay, Caddy, Docker Compose (deployment arrives in a later increment)
+- PostgreSQL 16, Garage (S3-compatible object storage), SMTP relay, Docker Compose
 
 ## Prerequisites
 
@@ -232,8 +232,9 @@ Passwordless sign-in lives in `apps/api/src/auth` and `apps/api/src/routes`:
 
 Web: `/signin` (email, then code entry), `/signin/verify?token=…` (the emailed link; the token is
 exchanged with a POST so mail scanners cannot consume it), `/account` (gated). In development the
-Next dev server proxies `/api/*` to the API when `API_PROXY_URL` is set; behind Caddy the same
-path works without a proxy.
+Next dev server proxies `/api/*` to the API when `API_PROXY_URL` is set. In the Docker stacks the
+API has an origin of its own instead (`API_PUBLIC_URL`), so the browser calls it directly and the
+API answers CORS for the web origin.
 
 ## My Events, invitations and delegate accounts (Increments 1b and 1c)
 

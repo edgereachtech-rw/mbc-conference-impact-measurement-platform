@@ -10,7 +10,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { apiFetch, apiUpload } from '@/lib/api';
+import { apiFetch, apiUpload, apiUrl } from '@/lib/api';
 import {
   describeError,
   draftFromMapping,
@@ -464,7 +464,7 @@ export function ImportWizard() {
               <div className="flex flex-col gap-3 sm:flex-row">
                 <a
                   className="inline-flex h-11 items-center justify-center rounded-md border border-brand-primary/40 px-4 text-sm font-medium text-brand-primary"
-                  href={`/api/v1/imports/${result.run.id}/report.csv`}
+                  href={apiUrl(`/imports/${result.run.id}/report.csv`)}
                   download
                 >
                   Download row report (CSV)

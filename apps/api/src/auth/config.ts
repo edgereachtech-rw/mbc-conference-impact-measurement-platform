@@ -14,14 +14,17 @@ import { withoutBlankValues } from '../lib/env.js';
  *   APP_URL                     the web app origin; always an allowed origin; https in production
  *   AUTH_ALLOWED_ORIGINS        comma-separated extra origins for state-changing requests
  *   COOKIE_SECURE               "true"/"false"; false only when NODE_ENV is development or test
+ *   COOKIE_DOMAIN               optional parent domain for the session cookie, e.g. "example.com",
+ *                               so app.example.com and api.example.com both send it. Leave unset
+ *                               when the two share a host and differ only by port.
  *   SESSION_SECRET              keys the hashes of client addresses and email identities kept in
  *                               the sign-in attempt ledger and the audit log (32+ chars in production)
  *   AUTH_ALLOW_TEST_REGISTRATIONS "true" lets registrations with status test sign in (development
  *                               and staging rehearsals, OQ-27). Refused in production; never a default.
- *   TRUST_PROXY                 Express `trust proxy` value naming the reverse proxy network
- *                               (e.g. "uniquelocal" for Caddy on the Docker network); "false" or
- *                               unset trusts nobody, so forwarded headers are ignored. Required in
- *                               production so the decision is explicit.
+ *   TRUST_PROXY                 Express `trust proxy` value naming a reverse proxy network, for
+ *                               a load balancer or TLS terminator in front of the container;
+ *                               "false" or unset trusts nobody, so forwarded headers are ignored.
+ *                               Required in production so the decision is explicit.
  */
 const schema = z.object({
   SESSION_TTL_DAYS: z.coerce.number().positive().default(14),
@@ -33,6 +36,7 @@ const schema = z.object({
   APP_URL: z.url().default('http://localhost:33333'),
   AUTH_ALLOWED_ORIGINS: z.string().optional(),
   COOKIE_SECURE: z.enum(['true', 'false']).optional(),
+  COOKIE_DOMAIN: z.string().optional(),
   NODE_ENV: z.string().optional(),
   SESSION_SECRET: z.string().optional(),
   TRUST_PROXY: z.string().optional(),
@@ -51,6 +55,8 @@ export interface AuthConfig {
   allowedOrigins: string[];
   cookieName: string;
   cookieSecure: boolean;
+  /** Parent domain for the session cookie, or null for a host-only cookie. */
+  cookieDomain: string | null;
   /** Keys the HMAC of client addresses and email identities; never logged or stored. */
   hashSecret: string;
   /** Express `trust proxy` value, or false to ignore forwarded headers entirely. */
@@ -86,6 +92,17 @@ export function authConfigFromEnv(env: NodeJS.ProcessEnv = process.env): AuthCon
       problems.push('COOKIE_SECURE=false is only allowed when NODE_ENV is development or test');
     }
     cookieSecure = local ? false : true;
+  }
+
+  // Cookie domain: a bare hostname, never a scheme, port or leading dot.
+  let cookieDomain: string | null = null;
+  const domainRaw = e.COOKIE_DOMAIN?.trim().replace(/^\./, '') ?? '';
+  if (domainRaw) {
+    if (/[:/]/.test(domainRaw)) {
+      problems.push('COOKIE_DOMAIN must be a bare hostname without a scheme, port or path');
+    } else {
+      cookieDomain = domainRaw;
+    }
   }
 
   // Origins: APP_URL plus AUTH_ALLOWED_ORIGINS, each a bare http(s) origin.
@@ -155,6 +172,7 @@ export function authConfigFromEnv(env: NodeJS.ProcessEnv = process.env): AuthCon
     allowedOrigins: [...allowedOrigins],
     cookieName: COOKIE_NAME,
     cookieSecure,
+    cookieDomain,
     hashSecret,
     trustProxy,
     production,

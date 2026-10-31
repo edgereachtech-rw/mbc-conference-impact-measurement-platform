@@ -39,6 +39,7 @@ export function authRouter({ auth, config, middleware }: Deps): Router {
         name: config.cookieName,
         secure: config.cookieSecure,
         maxAgeSeconds: result.sessionMaxAgeSeconds,
+        domain: config.cookieDomain,
       }),
     );
     res.json({ ok: true, user: result.user, next: result.next });
@@ -54,7 +55,10 @@ export function authRouter({ auth, config, middleware }: Deps): Router {
   router.post('/sign-out', async (req, res) => {
     const raw = rawSessionToken(req, config.cookieName);
     if (raw) await auth.signOut(raw, clientOf(res));
-    res.setHeader('Set-Cookie', serializeClearedCookie(config.cookieName, config.cookieSecure));
+    res.setHeader(
+      'Set-Cookie',
+      serializeClearedCookie(config.cookieName, config.cookieSecure, config.cookieDomain),
+    );
     res.status(204).end();
   });
 

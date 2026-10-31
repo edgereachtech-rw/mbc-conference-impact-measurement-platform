@@ -104,7 +104,7 @@ jobs:
           # shellcheck disable=SC2086,SC2029
           ssh $SSH_OPTS "$SSH_USER@$SSH_HOST" \
             "cd '$DEPLOY_PATH/deploy' && docker compose -f docker-compose.yml ps && \
-             docker compose -f docker-compose.yml logs --no-color --tail=200 api web worker caddy" || true
+             docker compose -f docker-compose.yml logs --no-color --tail=200 api web worker" || true
 
       - name: Remove SSH key
         if: always()

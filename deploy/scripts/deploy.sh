@@ -5,7 +5,7 @@
 #   env:   IMAGE_PREFIX  (optional) registry prefix, e.g. ghcr.io/org/repo; stored in .env when given
 #
 # Steps: record the tag in deploy/.env -> pull images -> prisma migrate deploy (one-off container)
-#        -> docker compose up -d -> wait until /api/health answers through Caddy.
+#        -> docker compose up -d -> wait until the API's /api/health answers on its own origin.
 # On failure it prints the service status and the last log lines, then exits 1.
 set -eu
 
@@ -35,7 +35,7 @@ echo "==> deploying ${PREFIX}/{web,api,backup}:${TAG}"
 fail() {
   echo "!!! deploy failed: $1"
   $COMPOSE ps || true
-  $COMPOSE logs --no-color --tail=200 api web worker caddy || true
+  $COMPOSE logs --no-color --tail=200 api web worker || true
   exit 1
 }
 
@@ -52,10 +52,13 @@ fi
 echo "==> starting services"
 $COMPOSE up -d --remove-orphans || fail "docker compose up"
 
-APP_DOMAIN="$(grep '^APP_DOMAIN=' .env | cut -d= -f2-)"
-case "$APP_DOMAIN" in
-  http://*|https://*) URL="$APP_DOMAIN/api/health" ;;
-  *) URL="https://$APP_DOMAIN/api/health" ;;
+# The API has its own origin now; API_PUBLIC_URL is what the browser uses, so probe that.
+# Falls back to APP_DOMAIN for an older .env that predates the proxy removal.
+BASE="$(grep '^API_PUBLIC_URL=' .env | cut -d= -f2- || true)"
+[ -n "$BASE" ] || BASE="$(grep '^APP_DOMAIN=' .env | cut -d= -f2-)"
+case "$BASE" in
+  http://*|https://*) URL="$BASE/api/health" ;;
+  *) URL="https://$BASE/api/health" ;;
 esac
 
 echo "==> smoke test: $URL"

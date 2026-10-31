@@ -14,9 +14,13 @@ When the two disagree, stop and list the conflict instead of guessing.
 - apps/api: Express.js REST API under /api/v1, Zod validation, Prisma ORM
 - apps/worker: job runner using pg-boss (queue on PostgreSQL), same codebase/image as api
 - packages/shared: Zod schemas, types, question/scoring/status definitions shared by web and api
-- PostgreSQL 16, Garage (S3-compatible object storage, AGPL-3.0) via the S3 API, SMTP relay via Nodemailer, Caddy reverse proxy
+- PostgreSQL 16, Garage (S3-compatible object storage, AGPL-3.0) via the S3 API, SMTP relay via Nodemailer
   (Garage replaces MinIO: the minio/minio Docker repository is no longer published; the app only uses S3_* variables, so an external S3 bucket is a config change)
-- Docker Compose deployment on a single VPS. Only Caddy publishes ports.
+- Docker Compose deployment on a single VPS. No reverse proxy in the stack (Caddy removed
+  2026-10-31 by decision): web and api each publish a port and the browser calls the API on its
+  own origin, so the API answers CORS for the web origin. TLS is terminated in front of the
+  server. The two origins must stay same-site so the server-rendered pages can read the session
+  cookie (one host on two ports, or two subdomains with COOKIE_DOMAIN).
 
 ## Rules
 - Mobile-first. Delegates use phones. Test at 360px width first.
