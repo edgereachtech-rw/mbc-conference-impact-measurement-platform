@@ -6,7 +6,15 @@
  *   pnpm --filter @mbc/api db:seed            (development, via tsx)
  *   node dist/seed.js                          (inside the api image on staging)
  */
-import { ITTEC_PRE_CONFERENCE, loadTemplateInto } from './assessments/templates.js';
+import { assessmentStages } from '@mbc/shared';
+
+import { seedReferenceQuestions } from './assessments/ittec-references.js';
+import {
+  ITTEC_END_OF_CONFERENCE,
+  ITTEC_PRE_CONFERENCE,
+  loadTemplateInto,
+} from './assessments/templates.js';
+import { seedDailyReflections } from './reflections/ittec-daily.js';
 import { getPrisma, type PrismaClient } from './db.js';
 import { audit } from './lib/audit.js';
 import { normaliseEmail } from './lib/email.js';
@@ -80,7 +88,7 @@ export async function seed(prisma: PrismaClient, options: SeedOptions = {}): Pro
       update: {},
     });
   }
-  for (const stage of ['pre_conference', 'during_conference', 'follow_up'] as const) {
+  for (const stage of assessmentStages) {
     await prisma.assessmentStageConfig.upsert({
       where: { eventId_stage: { eventId: event.id, stage } },
       create: { eventId: event.id, stage },
@@ -98,6 +106,24 @@ export async function seed(prisma: PrismaClient, options: SeedOptions = {}): Pro
     );
     log(`pre-conference assessment: ${loaded.sections} sections, ${loaded.questions} questions`);
   }
+  // ITTEC's end-of-conference evaluation (section 10 wording), repeating the pre-conference
+  // knowledge and confidence sections so results pair per delegate.
+  const finalStage = await prisma.assessmentStageConfig.findUniqueOrThrow({
+    where: { eventId_stage: { eventId: event.id, stage: 'end_of_conference' } },
+    include: { _count: { select: { questions: true } } },
+  });
+  if (finalStage._count.questions === 0) {
+    const loaded = await prisma.$transaction((tx) =>
+      loadTemplateInto(tx, finalStage, ITTEC_END_OF_CONFERENCE),
+    );
+    log(`end-of-conference evaluation: ${loaded.sections} sections, ${loaded.questions} questions`);
+  }
+  // Which pre-conference prompts come back as references in Transfer Planning (pilot content).
+  const references = await prisma.$transaction((tx) => seedReferenceQuestions(tx, event.id));
+  if (references) log(`reference questions: ${references} set`);
+  // ITTEC's Day 1 and Day 2 reflections (agreed wording), as drafts the admin publishes.
+  const reflections = await prisma.$transaction((tx) => seedDailyReflections(tx, event.id));
+  if (reflections) log(`daily reflections: ${reflections} drafted`);
 
   for (const category of PARTICIPATION_CATEGORIES) {
     await prisma.participationCategory.upsert({

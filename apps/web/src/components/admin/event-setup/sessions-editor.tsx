@@ -31,6 +31,7 @@ interface SessionDraft {
   speaker: string;
   capacity: string;
   feedbackEnabled: boolean;
+  transferPlanningFinal: boolean;
 }
 
 function draftOf(session: EventSessionView | null, defaultDate: string): SessionDraft {
@@ -45,6 +46,7 @@ function draftOf(session: EventSessionView | null, defaultDate: string): Session
     speaker: session?.speaker ?? '',
     capacity: session?.capacity ? String(session.capacity) : '',
     feedbackEnabled: session?.feedbackEnabled ?? false,
+    transferPlanningFinal: session?.transferPlanningFinal ?? false,
   };
 }
 
@@ -309,6 +311,18 @@ export function SessionsEditor({ event, onSaved }: SessionsEditorProps) {
               />
               Collect session-specific feedback
             </label>
+            {editing.draft.sessionType === 'transfer_planning' ? (
+              <label className="flex min-h-tap items-center gap-2 text-sm text-corp-ink md:col-span-2">
+                <input
+                  type="checkbox"
+                  checked={editing.draft.transferPlanningFinal}
+                  onChange={(e) => set('transferPlanningFinal', e.target.checked)}
+                  className="size-5 accent-corp-green"
+                />
+                Final Transfer Planning session: delegates submit their plan from the start of this
+                session (otherwise the last planning session counts)
+              </label>
+            ) : null}
             <div className="space-y-1 md:col-span-2">
               <label htmlFor={`${id}-description`} className="text-sm font-semibold text-corp-ink">
                 Description (optional)
@@ -383,6 +397,9 @@ export function SessionsEditor({ event, onSaved }: SessionsEditorProps) {
                         <StatusPill tone="neutral">{sessionTypeLabels[s.sessionType]}</StatusPill>
                         {s.feedbackEnabled ? (
                           <StatusPill tone="positive">Feedback</StatusPill>
+                        ) : null}
+                        {s.transferPlanningFinal ? (
+                          <StatusPill tone="positive">Final planning session</StatusPill>
                         ) : null}
                       </div>
                       <p className="text-xs text-corp-muted">

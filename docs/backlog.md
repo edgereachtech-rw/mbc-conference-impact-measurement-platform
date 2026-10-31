@@ -463,6 +463,7 @@ Required changes when Increment 1b is implemented (impact only, not done here):
 
 | ID | Story | Acceptance criteria | Pri | Inc |
 |---|---|---|---|---|
+| E7-0 | As M.Bryan, I want Daily Learning Reflections configurable per event date (task of 2026-10-31) | Done 2026-10-31: enable per date, title, questions (short or long text, required, concern flag, add/edit/reorder/remove, versioned after answers), opening and closing times, preview, publish, close, disable while unanswered; delegates answer once with a review popup and confirmation; responses by delegate and by question with the non-submitters; concerns across dates in one list; ITTEC Day 1 and Day 2 wording seeded as drafts; separate from attendance and the assessments; admins only, audited | P0 | 3 |
 | E7-1 | As a delegate, I want a brief Day 1 check-in at the end of Day 1 | Three questions (Appendix A, Q-D1-1 to 3), open only from Day 1 end | P0 | 3 |
 | E7-2 | As M.Bryan, I want Day 1 Question 3 available promptly | Answers to Q-D1-3 appear in an admin "issues for attention" view within seconds of submission, with a notification email to a configured M.Bryan address. Shows delegate and time (S8.2) | P0 | 3 |
 | E7-3 | As a delegate, I want a separate Day 2 check-in | Four questions (Appendix A, Q-D2-1 to 4); separate form from the Transfer Planning session and the final evaluation; does not replace either (S8.3) | P0 | 3 |
@@ -480,6 +481,7 @@ Required changes when Increment 1b is implemented (impact only, not done here):
 | E8-4 | As a delegate, I want confirmation after submitting | Clear confirmation message | P0 | 3 |
 | E8-5 | As a delegate, I want only sessions I attended to be evaluated | Form limited to delegates recorded as attending the session (or the day, if session attendance not captured). Clear message otherwise | P0 | 3 |
 | E8-6 | As a delegate, I want the form to stay open after the five minutes | Available for the rest of the conference and follow-up period; no hard close at five minutes | P0 | 3 |
+| E8-0 | As M.Bryan, I want session feedback per session with a link and QR code (task of 2026-10-31) | Done 2026-10-31: enable per session (standard five questions created: three required ratings Excellent/Good/Fair/Poor, two optional written), deadline, five-minute period started by the organisers and never enforced as a cut-off, link and QR code to `/feedback/:code`, sign-in then the form with the session and speaker shown automatically, submission only with recorded session attendance, update in place (revisions kept, count unchanged), dashboard with question-specific percentages and written answers, anonymised speaker view, CSV export; separate from reflections and attendance | P0 | 3 |
 | E8-7 | As the platform, I prevent duplicate session feedback | One response per delegate per session (database constraint). Delegate may update; **dashboard counts only the latest response** | P0 | 3 |
 | E8-8 | As M.Bryan, I want per-session results | Title and speaker; number who submitted; for Q1-Q3 number and percentage per rating, using responses to that question as the denominator and displayed as "15 of 20 responses (75%)"; written responses to Q4-Q5 | P0 | 3 |
 | E8-9 | As M.Bryan, I want to view and export session feedback | Filter by session and day; CSV export | P0 | 3 |
@@ -504,6 +506,18 @@ Required changes when Increment 1b is implemented (impact only, not done here):
 | E9-10 | As both physical and virtual delegates, I want access during the scheduled sessions | Tested on both formats | P0 | 4 |
 | E9-11 | As a delegate, I want to access my plan after the conference | Plan page from the account home; read and update | P0 | 4 |
 | E9-12 | As M.Bryan, I want to review Transfer Plans | Searchable list, view versions, export, filter by status and by action | P0 | 4 |
+
+Implementation note (2026-10-31): E9-1 to E9-12 are built (see README, "Individual Transfer
+Plans"). Decisions taken: submission opens with the **start** of the final Transfer Planning
+session (the session flagged as final in the schedule, else the last one; any time when the
+event has none), so a plan is never locked by a session end time. Submission requires at least one
+action with an action text; the "required at submission" list proposed under A5 is **not**
+enforced until confirmed (OQ: confirm which of Q-TP-1, 2, 4, 5, 6, 13, 14 are mandatory). Every
+save after submission keeps the plan's status; version 1 as submitted is kept as a snapshot and
+every later save and progress record is in the audit history. Reminder preferences (E10-1, E10-2,
+E10-5, E10-6, E10-7, E10-8, E10-9) are built with the frequencies none, weekly, every two weeks
+and monthly; "once", "every other day", "twice a week", day and time, channel and end date
+(E10-2 to E10-4) remain open until the reminder content and cadence are confirmed.
 
 ---
 
@@ -545,6 +559,19 @@ Required changes when Increment 1b is implemented (impact only, not done here):
 | E11-13 | As a delegate with **no** pre-conference expectation, I want to add one | Message: "You did not record this before ITTEC. Looking back, what did you hope to gain from attending?"; text box and "Prefer not to answer". Answers labelled **"Recorded after the conference"** and reported separately. Then asks "To what extent was this expectation met?" (Met / Partly met / Not yet met / Not met / No longer applicable). **See OQ-4 on the two scales** | P0 | 4 |
 | E11-14 | As a delegate, I want the other expectation questions asked once | Which expectation was met most effectively; which remains partly met or unmet; what made ITTEC valuable; what would have made it more valuable. Duplicate "extent met" question removed per the developer instruction | P0 | 4 |
 | E11-15 | As M.Bryan, I want the final evaluation completion rate | Attendees invited, submitted, rate (S14.1) | P0 | 5 |
+
+Implementation note (2026-10-31): E11-1 to E11-14 are built as the `end_of_conference` stage (see
+README, "End-of-conference evaluation"). Decisions taken: physical and virtual experience
+questions are sections with an audience, filtered by the format on the registration (E11-2,
+E11-3); the knowledge and confidence repeats are **repeated sections** whose questions keep the
+pre-conference wording, options and marking and are paired per delegate (E11-4 to E11-7); the
+expectations questions are a built-in block that branches on whether the delegate's pre-event
+answer exists (E11-12, E11-13; OQ-4's two scales are kept as specified, one per branch) and the
+"extent met" question is asked once (E11-14); the plan status is filled in from the Transfer Plan
+and stays editable (E11-11). E11-15 (completion rate) is the stage summary's invited / submitted /
+rate, as for every stage. Note that repeating a section is a limited, section-level return of the
+"repeat from another stage" idea removed on 2026-10-30 for single questions: it exists only so
+paired results can be computed, and the repeated questions are locked.
 
 ---
 

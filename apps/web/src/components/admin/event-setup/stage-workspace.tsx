@@ -4,14 +4,16 @@ import type { AssessmentStage, EventDetail } from '@mbc/shared';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
+import { PairedResults } from './paired-results';
 import { QuestionBuilder } from './question-builder';
 import { StageSubmissions } from './stage-submissions';
 
-type Tab = 'questions' | 'submissions';
+type Tab = 'questions' | 'submissions' | 'paired';
 
 const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'questions', label: 'Questions' },
   { id: 'submissions', label: 'Submissions' },
+  { id: 'paired', label: 'Paired results' },
 ];
 
 interface StageWorkspaceProps {
@@ -69,6 +71,8 @@ export function StageWorkspace({ event, stage }: StageWorkspaceProps) {
             readOnly={readOnly}
             onChanged={() => router.refresh()}
           />
+        ) : tab === 'paired' ? (
+          <PairedResults eventId={event.id} stage={stage} />
         ) : (
           <StageSubmissions
             eventId={event.id}

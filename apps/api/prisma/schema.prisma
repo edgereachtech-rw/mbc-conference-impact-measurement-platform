@@ -83,6 +83,68 @@ enum AttendanceMethod {
   @@map("attendance_method")
 }
 
+/// Daily Learning Reflections (task of 2026-10-31): one optional questionnaire per event date,
+/// configured and published by admins, answered once by each delegate. Separate from attendance,
+/// session feedback, the Transfer Plan and the assessment stages.
+enum ReflectionStatus {
+  draft
+  published
+  closed
+
+  @@map("reflection_status")
+}
+
+enum ReflectionQuestionType {
+  short_text
+  long_text
+
+  @@map("reflection_question_type")
+}
+
+/// Session feedback (task of 2026-10-31): a questionnaire per session, answered after the
+/// session by delegates recorded as attending it; one response per delegate, updatable, with
+/// earlier revisions kept. Separate from reflections, attendance and the assessments.
+enum FeedbackQuestionType {
+  rating
+  long_text
+
+  @@map("feedback_question_type")
+}
+
+/// Individual Transfer Plan (task of 2026-10-31): one continuous plan per delegate per event,
+/// several planned actions, progress per action, reminder preferences, and the original
+/// submission kept as a snapshot. Separate from attendance, feedback and the assessments.
+enum TransferPlanStatus {
+  draft
+  submitted
+
+  @@map("transfer_plan_status")
+}
+
+/// Progress of one planned action (backlog E12-8, Appendix B). "Started", "in progress" and
+/// "completed" are not application; application is "applied" or "applied consistently".
+enum ActionProgressStatus {
+  not_started
+  started
+  in_progress
+  applied
+  applied_consistently
+  completed
+  changed
+  no_longer_applicable
+
+  @@map("action_progress_status")
+}
+
+enum ReminderFrequency {
+  none
+  weekly
+  fortnightly
+  monthly
+
+  @@map("reminder_frequency")
+}
+
 enum SessionType {
   keynote
   plenary
@@ -99,6 +161,7 @@ enum SessionType {
 enum AssessmentStage {
   pre_conference
   during_conference
+  end_of_conference
   follow_up
 
   @@map("assessment_stage")
@@ -118,6 +181,15 @@ enum AssessmentTarget {
   group
 
   @@map("assessment_target")
+}
+
+/// Who a section is shown to: everyone, or only delegates registered as physical or virtual.
+enum SectionAudience {
+  all
+  physical
+  virtual
+
+  @@map("section_audience")
 }
 
 /// How a section's single-choice questions are marked; see sectionMarkings in @mbc/shared.
@@ -330,6 +402,13 @@ model Event {
   attendanceTokens        AttendanceToken[]
   attendanceRecords       AttendanceRecord[]
   sessionAttendance       SessionAttendance[]
+  reflectionActivities    ReflectionActivity[]
+  reflectionQuestions     ReflectionQuestion[]
+  reflectionResponses     ReflectionResponse[]
+  feedbackQuestions       SessionFeedbackQuestion[]
+  feedbackResponses       SessionFeedbackResponse[]
+  transferPlans           TransferPlan[]
+  referenceQuestions      EventReferenceQuestion[]
 
   @@map("event")
 }
@@ -345,13 +424,96 @@ model EventDate {
   attendanceClosedByUserId String?   @map("attendance_closed_by_user_id") @db.Uuid
   createdAt                DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  event      Event              @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  event      Event               @relation(fields: [eventId], references: [id], onDelete: Cascade)
   sessions   EventSession[]
   tokens     AttendanceToken[]
   attendance AttendanceRecord[]
+  reflection ReflectionActivity?
 
   @@unique([eventId, date])
   @@map("event_date")
+}
+
+model ReflectionActivity {
+  id          String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventId     String           @map("event_id") @db.Uuid
+  eventDateId String           @unique @map("event_date_id") @db.Uuid
+  title       String
+  status      ReflectionStatus @default(draft)
+  opensAt     DateTime?        @map("opens_at") @db.Timestamptz(3)
+  closesAt    DateTime?        @map("closes_at") @db.Timestamptz(3)
+  publishedAt DateTime?        @map("published_at") @db.Timestamptz(3)
+  closedAt    DateTime?        @map("closed_at") @db.Timestamptz(3)
+  createdAt   DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  event     Event                @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  eventDate EventDate            @relation(fields: [eventDateId], references: [id], onDelete: Cascade)
+  questions ReflectionQuestion[]
+  responses ReflectionResponse[]
+
+  @@index([eventId])
+  @@map("reflection_activity")
+}
+
+/// Versioned like assessment questions: an edit after answers retires the row and creates
+/// version + 1 under the same key, so every answer keeps the wording it answered.
+model ReflectionQuestion {
+  id          String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  activityId  String                 @map("activity_id") @db.Uuid
+  eventId     String                 @map("event_id") @db.Uuid
+  questionKey String                 @default(dbgenerated("gen_random_uuid()")) @map("question_key") @db.Uuid
+  version     Int                    @default(1)
+  order       Int
+  prompt      String
+  type        ReflectionQuestionType @default(long_text)
+  required    Boolean                @default(true)
+  /// Answers are participant concerns the organisers must see promptly.
+  concern     Boolean                @default(false)
+  retiredAt   DateTime?              @map("retired_at") @db.Timestamptz(3)
+  createdAt   DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime               @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  activity ReflectionActivity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  event    Event              @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  answers  ReflectionAnswer[]
+
+  @@unique([questionKey, version])
+  @@index([activityId])
+  @@map("reflection_question")
+}
+
+model ReflectionResponse {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  activityId  String   @map("activity_id") @db.Uuid
+  eventId     String   @map("event_id") @db.Uuid
+  delegateId  String   @map("delegate_id") @db.Uuid
+  submittedAt DateTime @map("submitted_at") @db.Timestamptz(3)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  activity ReflectionActivity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  event    Event              @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  delegate Delegate           @relation(fields: [delegateId], references: [id], onDelete: Cascade)
+  answers  ReflectionAnswer[]
+
+  @@unique([activityId, delegateId])
+  @@index([delegateId])
+  @@map("reflection_response")
+}
+
+model ReflectionAnswer {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  responseId String   @map("response_id") @db.Uuid
+  questionId String   @map("question_id") @db.Uuid
+  value      String
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  response ReflectionResponse @relation(fields: [responseId], references: [id], onDelete: Cascade)
+  question ReflectionQuestion @relation(fields: [questionId], references: [id], onDelete: Restrict)
+
+  @@unique([responseId, questionId])
+  @@index([questionId])
+  @@map("reflection_answer")
 }
 
 /// One QR code per registered delegate per event date. The code carries a random token; only
@@ -419,25 +581,35 @@ model SessionAttendance {
 /// A programme session (E1 brief, section 5): optional, always on one of the event's selected dates.
 /// Times are wall-clock in the event's time zone (HH:MM); the date row fixes the day.
 model EventSession {
-  id              String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  eventId         String      @map("event_id") @db.Uuid
-  eventDateId     String      @map("event_date_id") @db.Uuid
-  title           String
-  sessionType     SessionType @map("session_type")
-  startTime       String      @map("start_time")
-  endTime         String      @map("end_time")
-  description     String?
-  venue           String?
-  speaker         String?
-  capacity        Int?
+  id                    String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventId               String      @map("event_id") @db.Uuid
+  eventDateId           String      @map("event_date_id") @db.Uuid
+  title                 String
+  sessionType           SessionType @map("session_type")
+  startTime             String      @map("start_time")
+  endTime               String      @map("end_time")
+  description           String?
+  venue                 String?
+  speaker               String?
+  capacity              Int?
+  /// The designated completion session for Transfer Planning (else the last such session).
+  transferPlanningFinal Boolean     @default(false) @map("transfer_planning_final")
   /// Session-specific feedback, configured separately and linked to this session (brief 6.2).
-  feedbackEnabled Boolean     @default(false) @map("feedback_enabled")
-  createdAt       DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt       DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+  feedbackEnabled       Boolean     @default(false) @map("feedback_enabled")
+  /// Short code in the session's feedback link and QR code; set when feedback is enabled.
+  feedbackCode          String?     @unique @map("feedback_code")
+  /// When the organisers started the encouraged five-minute period; informational, not a gate.
+  feedbackOpenedAt      DateTime?   @map("feedback_opened_at") @db.Timestamptz(3)
+  /// The configured deadline; the form stays open until then (never closed after five minutes).
+  feedbackClosesAt      DateTime?   @map("feedback_closes_at") @db.Timestamptz(3)
+  createdAt             DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt             DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  event      Event               @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  eventDate  EventDate           @relation(fields: [eventDateId], references: [id], onDelete: Restrict)
-  attendance SessionAttendance[]
+  event             Event                     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  eventDate         EventDate                 @relation(fields: [eventDateId], references: [id], onDelete: Restrict)
+  attendance        SessionAttendance[]
+  feedbackQuestions SessionFeedbackQuestion[]
+  feedbackResponses SessionFeedbackResponse[]
 
   @@index([eventId])
   @@index([eventDateId])
@@ -446,6 +618,189 @@ model EventSession {
 
 /// One of the three assessment stages of an event (E1 brief, section 6), enabled and scheduled
 /// independently. Questions are versioned data of later increments and hang off this row.
+/// Versioned like assessment questions: an edit after answers retires the row and creates
+/// version + 1 under the same key.
+model SessionFeedbackQuestion {
+  id          String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sessionId   String               @map("session_id") @db.Uuid
+  eventId     String               @map("event_id") @db.Uuid
+  questionKey String               @default(dbgenerated("gen_random_uuid()")) @map("question_key") @db.Uuid
+  version     Int                  @default(1)
+  order       Int
+  prompt      String
+  type        FeedbackQuestionType @default(rating)
+  required    Boolean              @default(true)
+  retiredAt   DateTime?            @map("retired_at") @db.Timestamptz(3)
+  createdAt   DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime             @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  session EventSession            @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  event   Event                   @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  answers SessionFeedbackAnswer[]
+
+  @@unique([questionKey, version])
+  @@index([sessionId])
+  @@map("session_feedback_question")
+}
+
+/// One logical response per delegate per session; an update replaces the answers, bumps the
+/// revision and keeps the previous answers in session_feedback_revision.
+model SessionFeedbackResponse {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sessionId   String   @map("session_id") @db.Uuid
+  eventId     String   @map("event_id") @db.Uuid
+  delegateId  String   @map("delegate_id") @db.Uuid
+  revision    Int      @default(1)
+  submittedAt DateTime @map("submitted_at") @db.Timestamptz(3)
+  updatedAt   DateTime @map("updated_at") @db.Timestamptz(3)
+
+  session   EventSession              @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  event     Event                     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  delegate  Delegate                  @relation(fields: [delegateId], references: [id], onDelete: Cascade)
+  answers   SessionFeedbackAnswer[]
+  revisions SessionFeedbackRevision[]
+
+  @@unique([sessionId, delegateId])
+  @@index([delegateId])
+  @@map("session_feedback_response")
+}
+
+model SessionFeedbackAnswer {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  responseId String   @map("response_id") @db.Uuid
+  questionId String   @map("question_id") @db.Uuid
+  value      String
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  response SessionFeedbackResponse @relation(fields: [responseId], references: [id], onDelete: Cascade)
+  question SessionFeedbackQuestion @relation(fields: [questionId], references: [id], onDelete: Restrict)
+
+  @@unique([responseId, questionId])
+  @@index([questionId])
+  @@map("session_feedback_answer")
+}
+
+/// Earlier revisions of a response, as submitted (question id to value), for the audit history.
+model SessionFeedbackRevision {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  responseId  String   @map("response_id") @db.Uuid
+  revision    Int
+  answers     Json
+  submittedAt DateTime @map("submitted_at") @db.Timestamptz(3)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  response SessionFeedbackResponse @relation(fields: [responseId], references: [id], onDelete: Cascade)
+
+  @@unique([responseId, revision])
+  @@map("session_feedback_revision")
+}
+
+model TransferPlan {
+  id                String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventId           String             @map("event_id") @db.Uuid
+  delegateId        String             @map("delegate_id") @db.Uuid
+  status            TransferPlanStatus @default(draft)
+  /// Bumped on every save; a save with an older version is refused (no silent overwrite).
+  version           Int                @default(1)
+  submittedAt       DateTime?          @map("submitted_at") @db.Timestamptz(3)
+  /// The plan exactly as submitted (TransferPlanView), never changed afterwards.
+  submittedSnapshot Json?              @map("submitted_snapshot")
+  reminderFrequency ReminderFrequency  @default(none) @map("reminder_frequency")
+  reminderStartOn   DateTime?          @map("reminder_start_on") @db.Date
+  nextReminderAt    DateTime?          @map("next_reminder_at") @db.Timestamptz(3)
+  updatedByUserId   String?            @map("updated_by_user_id") @db.Uuid
+  createdAt         DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  event     Event                     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  delegate  Delegate                  @relation(fields: [delegateId], references: [id], onDelete: Cascade)
+  actions   TransferPlanAction[]
+  reminders TransferPlanReminderLog[]
+
+  @@unique([eventId, delegateId])
+  @@index([nextReminderAt])
+  @@map("transfer_plan")
+}
+
+model TransferPlanAction {
+  id               String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  planId           String               @map("plan_id") @db.Uuid
+  order            Int
+  isPriority       Boolean              @default(false) @map("is_priority")
+  priorityLearning String               @default("") @map("priority_learning")
+  action           String               @default("")
+  opportunity      String               @default("")
+  firstStep        String               @default("") @map("first_step")
+  startOn          DateTime?            @map("start_on") @db.Date
+  targetOn         DateTime?            @map("target_on") @db.Date
+  stakeholders     String               @default("")
+  support          String               @default("")
+  barriers         String               @default("")
+  evidence         String               @default("")
+  expectedResult   String               @default("") @map("expected_result")
+  measure          String               @default("")
+  baseline         String               @default("")
+  reviewOn         DateTime?            @map("review_on") @db.Date
+  progressStatus   ActionProgressStatus @default(not_started) @map("progress_status")
+  createdAt        DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime             @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  plan     TransferPlan           @relation(fields: [planId], references: [id], onDelete: Cascade)
+  progress TransferPlanProgress[]
+
+  @@index([planId])
+  @@map("transfer_plan_action")
+}
+
+model TransferPlanProgress {
+  id               String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  actionId         String               @map("action_id") @db.Uuid
+  status           ActionProgressStatus
+  note             String?
+  evidence         String?
+  results          String?
+  challenges       String?
+  newTargetOn      DateTime?            @map("new_target_on") @db.Date
+  recordedAt       DateTime             @default(now()) @map("recorded_at") @db.Timestamptz(3)
+  recordedByUserId String               @map("recorded_by_user_id") @db.Uuid
+
+  action TransferPlanAction @relation(fields: [actionId], references: [id], onDelete: Cascade)
+
+  @@index([actionId])
+  @@map("transfer_plan_progress")
+}
+
+/// One row per reminder attempt, so scheduling and delivery stay traceable.
+model TransferPlanReminderLog {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  planId       String    @map("plan_id") @db.Uuid
+  scheduledFor DateTime  @map("scheduled_for") @db.Timestamptz(3)
+  sentAt       DateTime? @map("sent_at") @db.Timestamptz(3)
+  status       String
+  error        String?
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  plan TransferPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@index([planId])
+  @@map("transfer_plan_reminder_log")
+}
+
+/// The pre-event questions an event shows back beside the Transfer Plan and in the final
+/// evaluation (the first is the expectation the evaluation asks about), in the admin's order.
+/// Set per event; nothing is hard-coded.
+model EventReferenceQuestion {
+  id          String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventId     String @map("event_id") @db.Uuid
+  order       Int
+  questionKey String @map("question_key") @db.Uuid
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, questionKey])
+  @@map("event_reference_question")
+}
+
 model AssessmentStageConfig {
   id          String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   eventId     String                @map("event_id") @db.Uuid
@@ -470,21 +825,28 @@ model AssessmentStageConfig {
 
 /// A titled group of questions within one stage; delegates see one section per step.
 model AssessmentSection {
-  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  stageConfigId String   @map("stage_config_id") @db.Uuid
-  eventId       String   @map("event_id") @db.Uuid
-  title         String
-  description   String?
-  order         Int
-  marking       SectionMarking @default(none)
-  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  id              String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  stageConfigId   String          @map("stage_config_id") @db.Uuid
+  eventId         String          @map("event_id") @db.Uuid
+  title           String
+  description     String?
+  order           Int
+  marking         SectionMarking  @default(none)
+  audience        SectionAudience @default(all)
+  /// Set when the section repeats another stage's section (same wording, options and marking)
+  /// so the two stages' answers can be paired per delegate (backlog E11-4 to E11-7).
+  sourceSectionId String?         @map("source_section_id") @db.Uuid
+  createdAt       DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   stage     AssessmentStageConfig @relation(fields: [stageConfigId], references: [id], onDelete: Cascade)
   event     Event                 @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  source    AssessmentSection?    @relation("SectionMirror", fields: [sourceSectionId], references: [id], onDelete: SetNull)
+  mirrors   AssessmentSection[]   @relation("SectionMirror")
   questions AssessmentQuestion[]
 
   @@index([stageConfigId])
+  @@index([sourceSectionId])
   @@map("assessment_section")
 }
 
@@ -492,29 +854,34 @@ model AssessmentSection {
 /// the same question_key and version + 1 and retires this one; answers keep pointing at the version
 /// they answered (CLAUDE.md: questions are data, versioned; responses store the question version).
 model AssessmentQuestion {
-  id               String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  stageConfigId    String       @map("stage_config_id") @db.Uuid
-  eventId          String       @map("event_id") @db.Uuid
-  questionKey      String       @default(dbgenerated("gen_random_uuid()")) @map("question_key") @db.Uuid
+  id                String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  stageConfigId     String       @map("stage_config_id") @db.Uuid
+  eventId           String       @map("event_id") @db.Uuid
+  questionKey       String       @default(dbgenerated("gen_random_uuid()")) @map("question_key") @db.Uuid
   /// Optional section the question is shown under; null means the first, untitled group.
-  sectionId        String?      @map("section_id") @db.Uuid
-  version          Int          @default(1)
-  order            Int
-  prompt           String
-  helpText         String?      @map("help_text")
-  type             QuestionType
-  required         Boolean      @default(true)
-  area             String?
-  options          Json?
-  scale            Json?
-  retiredAt        DateTime?    @map("retired_at") @db.Timestamptz(3)
-  createdAt        DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt        DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+  sectionId         String?      @map("section_id") @db.Uuid
+  version           Int          @default(1)
+  order             Int
+  prompt            String
+  helpText          String?      @map("help_text")
+  type              QuestionType
+  required          Boolean      @default(true)
+  area              String?
+  options           Json?
+  scale             Json?
+  /// The question_key this question repeats from another stage (mirrored sections); answers to
+  /// the two are paired per delegate in reports. Wording and options stay locked.
+  sourceQuestionKey String?      @map("source_question_key") @db.Uuid
+  /// A built-in block question (expectations, readiness); see builtinBlocks in @mbc/shared.
+  builtin           String?
+  retiredAt         DateTime?    @map("retired_at") @db.Timestamptz(3)
+  createdAt         DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  stage          AssessmentStageConfig @relation(fields: [stageConfigId], references: [id], onDelete: Cascade)
-  event          Event                 @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  section        AssessmentSection?    @relation(fields: [sectionId], references: [id], onDelete: SetNull)
-  answers        AssessmentAnswer[]
+  stage   AssessmentStageConfig @relation(fields: [stageConfigId], references: [id], onDelete: Cascade)
+  event   Event                 @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  section AssessmentSection?    @relation(fields: [sectionId], references: [id], onDelete: SetNull)
+  answers AssessmentAnswer[]
 
   @@unique([questionKey, version])
   @@index([stageConfigId])
@@ -531,8 +898,8 @@ model AssessmentResponse {
   createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  stage    AssessmentStageConfig @relation(fields: [stageConfigId], references: [id], onDelete: Cascade)
-  delegate Delegate              @relation(fields: [delegateId], references: [id], onDelete: Cascade)
+  stage    AssessmentStageConfig         @relation(fields: [stageConfigId], references: [id], onDelete: Cascade)
+  delegate Delegate                      @relation(fields: [delegateId], references: [id], onDelete: Cascade)
   answers  AssessmentAnswer[]
   sections AssessmentSectionSubmission[]
 
@@ -692,6 +1059,9 @@ model Delegate {
   attendanceTokens    AttendanceToken[]
   attendanceRecords   AttendanceRecord[]
   sessionAttendance   SessionAttendance[]
+  reflectionResponses ReflectionResponse[]
+  sessionFeedback     SessionFeedbackResponse[]
+  transferPlans       TransferPlan[]
 
   @@index([eventId])
   @@index([email])

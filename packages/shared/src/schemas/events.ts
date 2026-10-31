@@ -35,7 +35,12 @@ export const sessionTypes = [
 ] as const;
 export type SessionType = (typeof sessionTypes)[number];
 
-export const assessmentStages = ['pre_conference', 'during_conference', 'follow_up'] as const;
+export const assessmentStages = [
+  'pre_conference',
+  'during_conference',
+  'end_of_conference',
+  'follow_up',
+] as const;
 export type AssessmentStage = (typeof assessmentStages)[number];
 
 export const assessmentStageStatuses = ['draft', 'scheduled', 'open', 'closed'] as const;
@@ -182,6 +187,8 @@ export const sessionFieldsSchema = z.object({
   capacity: z.number().int().min(1).max(100_000).nullable().optional(),
   /** Session-specific feedback form, configured separately and linked to this session. */
   feedbackEnabled: z.boolean().default(false),
+  /** For a transfer_planning session: the designated completion session (else the last one). */
+  transferPlanningFinal: z.boolean().default(false),
 });
 
 export function sessionTimeIssue(startTime: string, endTime: string): string | null {
@@ -259,6 +266,7 @@ export const eventSessionViewSchema = z.object({
   speaker: z.string().nullable(),
   capacity: z.number().int().nullable(),
   feedbackEnabled: z.boolean(),
+  transferPlanningFinal: z.boolean(),
 });
 export type EventSessionView = z.infer<typeof eventSessionViewSchema>;
 
@@ -336,6 +344,7 @@ export type EventDetail = z.infer<typeof eventDetailSchema>;
 export const assessmentStageNames: Record<AssessmentStage, string> = {
   pre_conference: 'pre-conference',
   during_conference: 'during-conference',
+  end_of_conference: 'end-of-conference',
   follow_up: 'follow-up',
 };
 

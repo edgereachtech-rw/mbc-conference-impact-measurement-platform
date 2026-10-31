@@ -17,12 +17,15 @@ import { delegateAccountRouter, type AccountStatusHooks } from './delegate-accou
 import { delegateRouter } from './delegates.js';
 import { eventDelegateRouter } from './event-delegates.js';
 import { eventSetupRouter } from './event-setup.js';
+import { feedbackRouter } from './feedback.js';
 import { eventRouter } from './events.js';
 import { importRouter } from './imports.js';
 import { invitationRouter } from './invitations.js';
 import { meEventsRouter } from './me-events.js';
 import { messageRouter } from './messages.js';
+import { reflectionRouter } from './reflections.js';
 import { staffRouter } from './staff.js';
+import { transferPlanRouter } from './transfer-plans.js';
 
 export interface ApiDeps {
   prisma: () => PrismaClient;
@@ -65,6 +68,15 @@ export function apiRouter(deps: ApiDeps): Router {
   );
   router.use(
     attendanceRouter({ prisma: deps.prisma, config: deps.config, middleware, now: deps.now }),
+  );
+  router.use(
+    reflectionRouter({ prisma: deps.prisma, config: deps.config, middleware, now: deps.now }),
+  );
+  router.use(
+    feedbackRouter({ prisma: deps.prisma, config: deps.config, middleware, now: deps.now }),
+  );
+  router.use(
+    transferPlanRouter({ prisma: deps.prisma, config: deps.config, middleware, now: deps.now }),
   );
   router.use(
     meEventsRouter({ prisma: deps.prisma, config: deps.config, middleware, now: deps.now }),

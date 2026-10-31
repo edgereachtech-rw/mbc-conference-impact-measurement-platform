@@ -41,6 +41,7 @@ const base: EventDetail = {
       speaker: 'Dr A',
       capacity: 200,
       feedbackEnabled: true,
+      transferPlanningFinal: false,
     },
   ],
   assessmentStages: [],
@@ -103,6 +104,7 @@ describe('SessionsEditor', () => {
       sessionType: 'plenary',
       capacity: 30,
       feedbackEnabled: false,
+      transferPlanningFinal: false,
     });
     expect(onSaved).toHaveBeenCalled();
   });

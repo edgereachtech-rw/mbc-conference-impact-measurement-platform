@@ -27,3 +27,6 @@ export * from './schemas/events.js';
 export * from './schemas/assessments.js';
 export * from './schemas/dashboard.js';
 export * from './schemas/attendance.js';
+export * from './schemas/reflections.js';
+export * from './schemas/feedback.js';
+export * from './schemas/transfer-plans.js';

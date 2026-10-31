@@ -179,6 +179,46 @@ export function StageSubmissions({
         </Panel>
       ) : null}
 
+      {summary.distributions.some((d) => d.responses > 0) ? (
+        <Panel>
+          <h3 className="font-corporate text-sm font-semibold text-corp-ink">
+            How delegates answered each choice question
+          </h3>
+          <p className="mt-1 text-xs text-corp-muted">
+            Share of the answers given, including “Not applicable”; blanks are not counted.
+          </p>
+          <ul className="mt-3 divide-y divide-corp-line" aria-label="Answer distributions">
+            {summary.distributions
+              .filter((d) => d.responses > 0)
+              .map((d) => (
+                <li key={d.questionId} className="py-3">
+                  <p className="text-sm font-semibold text-corp-ink">{d.prompt}</p>
+                  <p className="text-xs text-corp-muted">
+                    {[
+                      d.sectionTitle,
+                      `${d.responses} answer${d.responses === 1 ? '' : 's'}`,
+                      d.builtin === 'expectation_met_post' ? 'Recorded after the conference' : null,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </p>
+                  <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-corp-text">
+                    {d.options.map((o) => (
+                      <li key={o.value}>
+                        <span className="font-semibold text-corp-ink tabular-nums">
+                          {o.percent ?? 0}%
+                        </span>{' '}
+                        {o.label}{' '}
+                        <span className="text-xs text-corp-muted tabular-nums">({o.count})</span>
+                      </li>
+                    ))}
+                  </ul>
+                </li>
+              ))}
+          </ul>
+        </Panel>
+      ) : null}
+
       <div className="flex flex-wrap items-center gap-2">
         {summary.submitted > 0 ? (
           <a

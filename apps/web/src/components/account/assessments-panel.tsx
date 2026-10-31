@@ -2,8 +2,10 @@
 
 import {
   answerIssue,
+  BUILTIN,
   describeAnswer,
   GENERAL_SECTION,
+  PREFER_NOT_TO_ANSWER,
   groupQuestions,
   isBlankAnswer,
   multipleChoiceAnswer,
@@ -44,6 +46,8 @@ type State =
 export function AssessmentsPanel({ eventId, timezone }: AssessmentsPanelProps) {
   const [state, setState] = useState<State>({ kind: 'loading' });
   const [attempt, setAttempt] = useState(0);
+  /** The stage tab the delegate chose; until then the first stage still open to answer. */
+  const [chosen, setChosen] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -94,17 +98,60 @@ export function AssessmentsPanel({ eventId, timezone }: AssessmentsPanelProps) {
       />
     );
   }
+  const list = state.assessments;
+  const fallback =
+    list.find((a) => a.status === 'open' && !a.response?.submittedAt)?.stage ?? list[0]!.stage;
+  const stage = list.some((a) => a.stage === chosen) ? chosen! : fallback;
+  const shown = list.find((a) => a.stage === stage)!;
   return (
     <div className="space-y-4">
-      {state.assessments.map((a) => (
+      {list.length > 1 ? (
+        <div
+          role="tablist"
+          aria-label="Assessment stages"
+          className="-mx-gutter flex gap-1 overflow-x-auto border-b border-corp-line px-gutter md:mx-0 md:px-0"
+        >
+          {list.map((a) => {
+            const done = Boolean(a.response?.submittedAt);
+            return (
+              <button
+                key={a.stage}
+                type="button"
+                role="tab"
+                id={`stage-tab-${a.stage}`}
+                aria-selected={a.stage === stage}
+                aria-controls={`stage-panel-${a.stage}`}
+                onClick={() => setChosen(a.stage)}
+                className={
+                  a.stage === stage
+                    ? '-mb-px flex shrink-0 flex-col items-start border-b-2 border-corp-accent px-3 py-2 text-left text-sm font-semibold whitespace-nowrap text-corp-ink'
+                    : 'flex shrink-0 flex-col items-start border-b-2 border-transparent px-3 py-2 text-left text-sm font-medium whitespace-nowrap text-corp-muted hover:text-corp-ink'
+                }
+              >
+                <span>{stageLabels[a.stage]}</span>
+                <span className="text-xs font-normal text-corp-muted">
+                  {done
+                    ? 'Submitted'
+                    : a.status === 'open'
+                      ? 'Open'
+                      : a.status === 'closed'
+                        ? 'Closed'
+                        : 'Opens later'}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+      <div role="tabpanel" id={`stage-panel-${stage}`} aria-labelledby={`stage-tab-${stage}`}>
         <AssessmentCard
-          key={a.stage}
+          key={shown.stage}
           eventId={eventId}
           timezone={timezone}
-          assessment={a}
+          assessment={shown}
           onUpdated={(assessments) => setState({ kind: 'ready', assessments })}
         />
-      ))}
+      </div>
     </div>
   );
 }
@@ -120,9 +167,14 @@ function AssessmentCard({
   assessment: MyAssessment;
   onUpdated: (assessments: MyAssessment[]) => void;
 }) {
-  const [answers, setAnswers] = useState<Record<string, unknown>>(
-    assessment.response?.answers ?? {},
-  );
+  const [answers, setAnswers] = useState<Record<string, unknown>>(() => {
+    const stored = assessment.response?.answers ?? {};
+    // The plan status comes filled in from the Transfer Plan (E11-11); the delegate may change it.
+    const planQuestion = assessment.questions.find((q) => q.builtin === BUILTIN.planStatus);
+    return planQuestion && stored[planQuestion.id] === undefined && assessment.context.planStatus
+      ? { ...stored, [planQuestion.id]: assessment.context.planStatus }
+      : stored;
+  });
   const [problems, setProblems] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<'draft' | 'submit' | 'check' | null>(null);
   const [step, setStep] = useState(0);
@@ -150,11 +202,18 @@ function AssessmentCard({
         ? 'Closed'
         : 'Opens later';
   const canAnswer = assessment.canAnswer && !submitted;
+  const recordedAfter = assessment.questions.find(
+    (q) => q.builtin === BUILTIN.expectationRecordedAfter,
+  );
+  /** A delegate who prefers not to record an expectation is not asked whether it was met. */
+  const declined = recordedAfter ? answers[recordedAfter.id] === PREFER_NOT_TO_ANSWER : false;
+  const learnReference = assessment.context.references[0] ?? null;
   const groups = groupQuestions(assessment.sections, assessment.questions).filter(
     (g) => g.questions.length > 0,
   );
   const keyOf = (g: (typeof groups)[number]) => sectionKeyOf(g.section?.id ?? null);
-  const stepped = canAnswer && groups.length > 1;
+  // Sections are shown one at a time whenever there is more than one, also read-only.
+  const stepped = groups.length > 1;
   const current = stepped ? groups[Math.min(step, groups.length - 1)]! : (groups[0] ?? null);
   const currentKey = current ? keyOf(current) : GENERAL_SECTION;
   const currentLocked = current ? submittedKeys.has(currentKey) : false;
@@ -182,6 +241,7 @@ function AssessmentCard({
   ): Record<string, string> {
     const next: Record<string, string> = {};
     for (const q of assessment.questions) {
+      if (q.builtin === BUILTIN.expectationMetPost && declined) continue;
       const value = current[q.id];
       if (isBlankAnswer(value)) {
         if (q.required && requiredIn?.some((x) => x.id === q.id)) {
@@ -416,28 +476,63 @@ function AssessmentCard({
                   </div>
                 ) : null}
                 <ol className="space-y-5">
-                  {group.questions.map((q) => (
-                    <li
-                      key={q.id}
-                      className={
-                        problems[q.id]
-                          ? 'space-y-2 rounded-none border-l-4 border-danger bg-danger/5 py-2 pl-3'
-                          : 'space-y-2'
-                      }
-                    >
-                      <QuestionField
-                        index={assessment.questions.findIndex((x) => x.id === q.id)}
-                        question={q}
-                        value={answers[q.id]}
-                        disabled={!canAnswer || locked || busy !== null}
-                        problem={problems[q.id]}
-                        feedback={feedback[q.id]}
-                        checking={busy === 'check'}
-                        onChange={(value) => setAnswer(q.id, value)}
-                        onKnowledgeChoice={(value) => answerKnowledge(q.id, value)}
-                      />
-                    </li>
-                  ))}
+                  {group.questions.map((q) => {
+                    if (q.builtin === BUILTIN.expectationMetPost && declined) return null;
+                    const isRecordedAfter = q.builtin === BUILTIN.expectationRecordedAfter;
+                    return (
+                      <li
+                        key={q.id}
+                        className={
+                          problems[q.id]
+                            ? 'space-y-2 rounded-none border-l-4 border-danger bg-danger/5 py-2 pl-3'
+                            : 'space-y-2'
+                        }
+                      >
+                        {q.builtin === BUILTIN.expectationMetPre && learnReference?.answer ? (
+                          <div
+                            role="note"
+                            aria-label="Before the conference, you said"
+                            className="space-y-1 border-l-4 border-corp-accent bg-corp-accent-soft/40 p-3 text-sm"
+                          >
+                            <p className="text-xs font-semibold tracking-[0.08em] text-corp-muted uppercase">
+                              Before the conference, you said
+                            </p>
+                            {learnReference.prompt ? (
+                              <p className="text-xs text-corp-muted">{learnReference.prompt}</p>
+                            ) : null}
+                            <p className="text-corp-text">{learnReference.answer}</p>
+                          </div>
+                        ) : null}
+                        <QuestionField
+                          index={assessment.questions.findIndex((x) => x.id === q.id)}
+                          question={q}
+                          value={answers[q.id]}
+                          disabled={
+                            !canAnswer || locked || busy !== null || (isRecordedAfter && declined)
+                          }
+                          problem={problems[q.id]}
+                          feedback={feedback[q.id]}
+                          checking={busy === 'check'}
+                          onChange={(value) => setAnswer(q.id, value)}
+                          onKnowledgeChoice={(value) => answerKnowledge(q.id, value)}
+                        />
+                        {isRecordedAfter && canAnswer && !locked ? (
+                          <label className="flex min-h-tap items-center gap-2 text-sm text-corp-ink">
+                            <input
+                              type="checkbox"
+                              checked={declined}
+                              disabled={busy !== null}
+                              onChange={(e) =>
+                                setAnswer(q.id, e.target.checked ? PREFER_NOT_TO_ANSWER : '')
+                              }
+                              className="size-5 accent-corp-green"
+                            />
+                            Prefer not to answer
+                          </label>
+                        ) : null}
+                      </li>
+                    );
+                  })}
                 </ol>
               </section>
             );
@@ -455,7 +550,7 @@ function AssessmentCard({
               {notice.text}
             </p>
           ) : null}
-          {canAnswer ? (
+          {canAnswer || stepped ? (
             <div className="flex flex-col gap-2 border-t border-corp-line pt-4 sm:flex-row sm:items-center sm:justify-end">
               {stepped && step > 0 ? (
                 <button
@@ -467,32 +562,34 @@ function AssessmentCard({
                   Previous section
                 </button>
               ) : null}
-              {currentLocked ? (
-                <p className="text-sm text-corp-muted">
-                  This section is submitted and cannot be changed.
-                </p>
-              ) : (
-                <>
-                  <button
-                    type="button"
-                    disabled={busy !== null}
-                    onClick={saveDraft}
-                    className={consoleButton({ variant: 'secondary' })}
-                  >
-                    {busy === 'draft' ? (
-                      <Loader2Icon className="animate-spin" aria-hidden="true" />
-                    ) : null}
-                    Save draft
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={busy !== null}
-                    className={consoleButton({ variant: 'accent' })}
-                  >
-                    {submitLabel}
-                  </button>
-                </>
-              )}
+              {canAnswer ? (
+                currentLocked ? (
+                  <p className="text-sm text-corp-muted">
+                    This section is submitted and cannot be changed.
+                  </p>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      disabled={busy !== null}
+                      onClick={saveDraft}
+                      className={consoleButton({ variant: 'secondary' })}
+                    >
+                      {busy === 'draft' ? (
+                        <Loader2Icon className="animate-spin" aria-hidden="true" />
+                      ) : null}
+                      Save draft
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={busy !== null}
+                      className={consoleButton({ variant: 'accent' })}
+                    >
+                      {submitLabel}
+                    </button>
+                  </>
+                )
+              ) : null}
               {stepped && step < groups.length - 1 ? (
                 <button
                   type="button"
@@ -504,13 +601,14 @@ function AssessmentCard({
                 </button>
               ) : null}
             </div>
-          ) : submitted ? (
+          ) : null}
+          {submitted ? (
             <p className="text-sm text-corp-muted">
               Submitted{' '}
               {assessment.response?.submittedAt
                 ? formatInstant(assessment.response.submittedAt, timezone)
                 : ''}
-              . Your answers are shown above.
+              . Your answers are shown above{stepped ? ', section by section' : ''}.
             </p>
           ) : null}
         </form>

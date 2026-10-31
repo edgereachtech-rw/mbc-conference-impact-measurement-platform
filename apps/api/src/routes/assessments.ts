@@ -1,9 +1,16 @@
 import {
   answerIssue,
   answerScore,
+  assessmentStageNames,
   assessmentStages,
+  BUILTIN,
+  builtinBlockSchema,
   describeAnswer,
   GENERAL_SECTION,
+  hiddenBuiltinsFor,
+  isLockedQuestion,
+  PREFER_NOT_TO_ANSWER,
+  sectionMirrorSchema,
   isBlankAnswer,
   isKnowledgeQuestion,
   markedOptions,
@@ -24,6 +31,7 @@ import {
   type DelegateQuestionView,
   type KnowledgeFeedback,
   type MyAssessment,
+  type PairedResults,
   type QuestionOption,
   type RatingScale,
   type SectionMarking,
@@ -35,6 +43,8 @@ import {
 import { Router, type NextFunction, type Request, type Response } from 'express';
 import type { z } from 'zod';
 
+import { builtinKindsIn, createBuiltinBlock, mirrorSectionInto } from '../assessments/blocks.js';
+import { planStatusFor, referenceAnswersFor } from '../assessments/references.js';
 import type { AuthConfig } from '../auth/config.js';
 import { clientOf, principalOf, type createAuthMiddleware } from '../auth/middleware.js';
 import { canConfigureEvents, EVENT_SETUP_ROLES } from '../auth/policies.js';
@@ -53,8 +63,13 @@ interface Deps {
 
 const QUESTION_INCLUDE = {
   _count: { select: { answers: true } },
-  section: { select: { id: true, order: true, marking: true } },
+  section: { select: { id: true, order: true, marking: true, title: true, audience: true } },
 } as const;
+
+const SECTION_INCLUDE = {
+  source: { select: { title: true, stage: { select: { stage: true } } } },
+} as const;
+type SectionRow = Prisma.AssessmentSectionGetPayload<{ include: typeof SECTION_INCLUDE }>;
 
 type QuestionRow = Prisma.AssessmentQuestionGetPayload<{ include: typeof QUESTION_INCLUDE }>;
 
@@ -78,6 +93,8 @@ export function questionViewOf(q: QuestionRow): AssessmentQuestionView {
     scale: (q.scale as RatingScale | null) ?? null,
     isKnowledge: isKnowledgeQuestion({ type: q.type, options }),
     responseCount: q._count.answers,
+    sourceQuestionKey: q.sourceQuestionKey,
+    builtin: q.builtin,
   };
 }
 
@@ -119,21 +136,26 @@ function sortQuestions<
   );
 }
 
-function sectionViewOf(s: {
-  id: string;
-  title: string;
-  description: string | null;
-  order: number;
-  marking: SectionMarking;
-}): AssessmentSectionView {
+function sectionViewOf(s: SectionRow): AssessmentSectionView {
   return {
     id: s.id,
     title: s.title,
     description: s.description,
     order: s.order,
     marking: s.marking,
+    audience: s.audience,
+    sourceSectionId: s.sourceSectionId,
+    sourceLabel: s.source
+      ? `${assessmentStageNames[s.source.stage.stage]} · ${s.source.title}`
+      : null,
   };
 }
+
+/** Whether a section is shown to a delegate registered in the given format. */
+const audienceAllows = (
+  section: { audience: 'all' | 'physical' | 'virtual' } | null | undefined,
+  format: 'physical' | 'virtual',
+) => !section || section.audience === 'all' || section.audience === format;
 
 function round1(value: number): number {
   return Math.round(value * 10) / 10;
@@ -141,6 +163,22 @@ function round1(value: number): number {
 
 /** Any client that can read: the shared PrismaClient or the `tx` inside $transaction. */
 type Reader = Pick<PrismaClient, 'assessmentQuestion' | 'assessmentResponse' | 'delegate'>;
+
+/** Delegates who submitted a stage: their answers by question id, by delegate. */
+async function submittedAnswersBy(db: Reader, stageConfigId: string, eligible: EligibleStatuses) {
+  const rows = await db.assessmentResponse.findMany({
+    where: {
+      stageConfigId,
+      submittedAt: { not: null },
+      delegate: { registrationStatus: { in: [...eligible] } },
+    },
+    select: {
+      delegateId: true,
+      answers: { select: { questionId: true, score: true, correct: true } },
+    },
+  });
+  return new Map(rows.map((r) => [r.delegateId, new Map(r.answers.map((a) => [a.questionId, a]))]));
+}
 
 /** Registration statuses a stage applies to (test registrations only where allowed). */
 export type EligibleStatuses = readonly ('active' | 'test')[];
@@ -213,7 +251,7 @@ export async function stageSummaryFor(
       select: {
         id: true,
         submittedAt: true,
-        answers: { select: { questionId: true, score: true, correct: true } },
+        answers: { select: { questionId: true, value: true, score: true, correct: true } },
       },
     }),
     activeQuestionsOf(db, stage.id),
@@ -261,6 +299,40 @@ export async function stageSummaryFor(
         average: values.length ? round1(values.reduce((a, b) => a + b, 0) / values.length) : null,
       };
     });
+  const sectionTitles = new Map<string, string>();
+  const sectionRows = await db.assessmentQuestion.findMany({
+    where: { stageConfigId: stage.id, retiredAt: null, sectionId: { not: null } },
+    select: { sectionId: true, section: { select: { title: true } } },
+  });
+  for (const r of sectionRows)
+    if (r.sectionId && r.section) sectionTitles.set(r.sectionId, r.section.title);
+  const distributions: StageSummary['distributions'] = questions
+    .filter((q) => q.type === 'single_choice' && (q.options ?? []).length > 0)
+    .map((q) => {
+      const chosen = submitted
+        .map((r) =>
+          answerTo(new Map(r.answers.map((a) => [a.questionId, a])), versions.get(q.id), q.id),
+        )
+        .map((a) => (typeof a?.value === 'string' ? a.value : null))
+        .filter((v): v is string => v !== null);
+      return {
+        questionId: q.id,
+        questionKey: q.questionKey,
+        prompt: q.prompt,
+        sectionTitle: q.sectionId ? (sectionTitles.get(q.sectionId) ?? null) : null,
+        builtin: q.builtin,
+        responses: chosen.length,
+        options: (q.options ?? []).map((o) => {
+          const count = chosen.filter((v) => v === o.value).length;
+          return {
+            value: o.value,
+            label: o.label,
+            count,
+            percent: chosen.length ? round1((count / chosen.length) * 100) : null,
+          };
+        }),
+      };
+    });
   return {
     stage: stage.stage,
     invited,
@@ -269,7 +341,113 @@ export async function stageSummaryFor(
     responseRate: invited ? round1((submitted.length / invited) * 100) : null,
     knowledge,
     statements,
+    distributions,
   };
+}
+
+/**
+ * Paired results of every mirrored section of a stage (backlog E11-5, E11-7): the same
+ * delegates' answers before and after, matched through each question's source key, every
+ * version of either question counting as that question.
+ */
+export async function pairedResultsFor(
+  db: Reader & Pick<PrismaClient, 'assessmentSection'>,
+  stage: { id: string; eventId: string; stage: AssessmentStage },
+  eligible: EligibleStatuses,
+): Promise<PairedResults> {
+  const sections = await db.assessmentSection.findMany({
+    where: { stageConfigId: stage.id, sourceSectionId: { not: null } },
+    include: {
+      source: { select: { title: true, stageConfigId: true, stage: { select: { stage: true } } } },
+      questions: { where: { retiredAt: null }, include: QUESTION_INCLUDE },
+    },
+    orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
+  });
+  const after = await submittedAnswersBy(db, stage.id, eligible);
+  const out: PairedResults['sections'] = [];
+  for (const section of sections) {
+    if (!section.source) continue;
+    const questions = sortQuestions(section.questions)
+      .map(questionViewOf)
+      .filter((q) => q.sourceQuestionKey);
+    const sourceRows = await db.assessmentQuestion.findMany({
+      where: {
+        stageConfigId: section.source.stageConfigId,
+        questionKey: { in: questions.map((q) => q.sourceQuestionKey!) },
+      },
+      select: { id: true, questionKey: true },
+    });
+    const beforeIds = new Map<string, string[]>();
+    for (const r of sourceRows) {
+      beforeIds.set(r.questionKey, [...(beforeIds.get(r.questionKey) ?? []), r.id]);
+    }
+    const afterIds = await versionIdsFor(db, stage.id, questions);
+    const before = await submittedAnswersBy(db, section.source.stageConfigId, eligible);
+    const delegates = [...after.keys()].filter((d) => before.has(d));
+    const pairOf = (delegateId: string, q: AssessmentQuestionView) => ({
+      before: answerTo(before.get(delegateId)!, beforeIds.get(q.sourceQuestionKey!), ''),
+      after: answerTo(after.get(delegateId)!, afterIds.get(q.id), q.id),
+    });
+    let knowledge: PairedResults['sections'][number]['knowledge'] = null;
+    if (section.marking === 'knowledge') {
+      const knowledgeQuestions = questions.filter((q) => q.isKnowledge);
+      const scores: Array<[number, number]> = [];
+      for (const d of delegates) {
+        const pairs = knowledgeQuestions.map((q) => pairOf(d, q));
+        if (!pairs.every((p) => p.before && p.after)) continue;
+        scores.push([
+          pairs.filter((p) => p.before?.correct).length,
+          pairs.filter((p) => p.after?.correct).length,
+        ]);
+      }
+      const n = knowledgeQuestions.length;
+      const avg = (pick: 0 | 1) =>
+        scores.length && n
+          ? round1((scores.reduce((s, x) => s + x[pick], 0) / scores.length / n) * 100)
+          : null;
+      const b = avg(0);
+      const a = avg(1);
+      knowledge = {
+        questions: n,
+        paired: scores.length,
+        averageBeforePercent: b,
+        averageAfterPercent: a,
+        changePoints: a !== null && b !== null ? round1(a - b) : null,
+      };
+    }
+    const statements = questions
+      .filter((q) => section.marking === 'scored' && q.type === 'single_choice')
+      .map((q) => {
+        const pairs = delegates
+          .map((d) => pairOf(d, q))
+          .filter(
+            (p): p is { before: { score: number }; after: { score: number } } & typeof p =>
+              typeof p.before?.score === 'number' && typeof p.after?.score === 'number',
+          );
+        const mean = (pick: 'before' | 'after') =>
+          pairs.length ? round1(pairs.reduce((s, p) => s + p[pick].score, 0) / pairs.length) : null;
+        const b = mean('before');
+        const a = mean('after');
+        return {
+          questionId: q.id,
+          prompt: q.prompt,
+          paired: pairs.length,
+          averageBefore: b,
+          averageAfter: a,
+          change: a !== null && b !== null ? round1(a - b) : null,
+        };
+      });
+    out.push({
+      sectionId: section.id,
+      title: section.title,
+      sourceStage: section.source.stage.stage,
+      sourceTitle: section.source.title,
+      marking: section.marking,
+      knowledge,
+      statements,
+    });
+  }
+  return { stage: stage.stage, sections: out };
 }
 
 /**
@@ -317,6 +495,7 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
   async function activeSections(stageConfigId: string): Promise<AssessmentSectionView[]> {
     const rows = await prisma().assessmentSection.findMany({
       where: { stageConfigId },
+      include: SECTION_INCLUDE,
       orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
     });
     return rows.map(sectionViewOf);
@@ -426,6 +605,21 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
       });
       if (!current) throw new HttpError(404, 'not_found', 'Question not found.');
       const patch = req.body as z.infer<typeof questionPatchSchema>;
+      if (
+        isLockedQuestion(current) &&
+        (patch.prompt !== undefined ||
+          patch.type !== undefined ||
+          patch.options !== undefined ||
+          patch.scale !== undefined)
+      ) {
+        throw new HttpError(
+          409,
+          'locked_question',
+          current.builtin
+            ? 'Built-in questions keep their wording and options; change whether they are required or add help text.'
+            : 'A repeated question keeps the wording and options of the original so answers can be paired.',
+        );
+      }
       const sectionId =
         patch.sectionId === undefined
           ? current.sectionId
@@ -484,6 +678,8 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
               version: current.version + 1,
               order: current.order,
               sectionId,
+              sourceQuestionKey: current.sourceQuestionKey,
+              builtin: current.builtin,
               ...data,
             },
             include: QUESTION_INCLUDE,
@@ -610,8 +806,10 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
             title: input.title,
             description: input.description ?? null,
             marking: input.marking,
+            audience: input.audience,
             order: (last._max.order ?? 0) + 1,
           },
+          include: SECTION_INCLUDE,
         });
         await audit(tx, {
           action: 'assessment.section_created',
@@ -625,6 +823,94 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
         return row;
       });
       res.status(201).json({ section: sectionViewOf(section), ...(await lists(stage.id)) });
+    },
+  );
+
+  router.post(
+    '/events/:eventId/assessments/:stage/sections/mirror',
+    guard,
+    validated(sectionMirrorSchema),
+    async (req, res) => {
+      const principal = requireAdmin(res);
+      const stage = await stageFromReq(req, true);
+      const input = req.body as z.infer<typeof sectionMirrorSchema>;
+      const source = await prisma().assessmentSection.findFirst({
+        where: { id: input.sourceSectionId, eventId: stage.eventId },
+        select: { id: true, stageConfigId: true, title: true },
+      });
+      if (!source) {
+        throw new HttpError(
+          422,
+          'validation_failed',
+          'sourceSectionId: not a section of this event.',
+        );
+      }
+      if (source.stageConfigId === stage.id) {
+        throw new HttpError(
+          422,
+          'validation_failed',
+          'A section cannot repeat a section of its own stage.',
+        );
+      }
+      const already = await prisma().assessmentSection.findFirst({
+        where: { stageConfigId: stage.id, sourceSectionId: source.id },
+        select: { id: true },
+      });
+      if (already) {
+        throw new HttpError(409, 'already_mirrored', 'This stage already repeats that section.');
+      }
+      const created = await prisma().$transaction(async (tx) => {
+        const result = await mirrorSectionInto(tx, stage, source.id, { title: input.title });
+        if (!result) throw new HttpError(422, 'validation_failed', 'Source section not found.');
+        await audit(tx, {
+          action: 'assessment.section_mirrored',
+          entityType: 'assessment_section',
+          entityId: result.section.id,
+          eventId: stage.eventId,
+          actorUserId: principal.userId,
+          newValue: { stage: stage.stage, sourceSectionId: source.id, questions: result.questions },
+          ...clientOf(res),
+        });
+        return result.section;
+      });
+      const sections = await activeSections(stage.id);
+      res.status(201).json({
+        section: sections.find((s) => s.id === created.id) ?? null,
+        ...(await lists(stage.id)),
+      });
+    },
+  );
+
+  router.post(
+    '/events/:eventId/assessments/:stage/sections/builtin',
+    guard,
+    validated(builtinBlockSchema),
+    async (req, res) => {
+      const principal = requireAdmin(res);
+      const stage = await stageFromReq(req, true);
+      const { kind } = req.body as z.infer<typeof builtinBlockSchema>;
+      const present = await builtinKindsIn(prisma(), stage.id);
+      if (present.includes(kind)) {
+        throw new HttpError(409, 'already_present', 'This stage already has that block.');
+      }
+      const created = await prisma().$transaction(async (tx) => {
+        const result = await createBuiltinBlock(tx, stage, kind);
+        await audit(tx, {
+          action: 'assessment.builtin_added',
+          entityType: 'assessment_section',
+          entityId: result.section.id,
+          eventId: stage.eventId,
+          actorUserId: principal.userId,
+          newValue: { stage: stage.stage, kind, questions: result.questions },
+          ...clientOf(res),
+        });
+        return result.section;
+      });
+      const sections = await activeSections(stage.id);
+      res.status(201).json({
+        section: sections.find((s) => s.id === created.id) ?? null,
+        ...(await lists(stage.id)),
+      });
     },
   );
 
@@ -647,6 +933,7 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
             ...(patch.title !== undefined ? { title: patch.title } : {}),
             ...(patch.description !== undefined ? { description: patch.description ?? null } : {}),
             ...(patch.marking !== undefined ? { marking: patch.marking } : {}),
+            ...(patch.audience !== undefined ? { audience: patch.audience } : {}),
           },
         });
         await audit(tx, {
@@ -737,6 +1024,12 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
     const stage = await stageFromReq(req, false);
     const summary = await stageSummaryFor(prisma(), stage, eligibleStatuses());
     res.json({ summary });
+  });
+
+  router.get('/events/:eventId/assessments/:stage/paired', guard, async (req, res) => {
+    requireAdmin(res);
+    const stage = await stageFromReq(req, false);
+    res.json({ paired: await pairedResultsFor(prisma(), stage, eligibleStatuses()) });
   });
 
   // Delegates the stage applies to who have not submitted it, for reminders (E5-9).
@@ -1008,10 +1301,20 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
         registrationStatus: { in: [...eligibleStatuses()] },
         event: { status: 'active' },
       },
-      select: { id: true, eventId: true },
+      select: { id: true, eventId: true, attendanceFormat: true },
     });
     if (!delegate) throw new HttpError(404, 'not_found', 'No event of yours has this id.');
     return delegate;
+  }
+
+  /** What the built-in blocks need: reference answers and the plan status, once per request. */
+  async function contextFor(eventId: string, delegateId: string) {
+    const [references, planStatus] = await Promise.all([
+      referenceAnswersFor(prisma(), eventId, delegateId),
+      planStatusFor(prisma(), eventId, delegateId),
+    ]);
+    const hasPreAnswer = Boolean(references[0]?.answer);
+    return { references, planStatus, hidden: new Set(hiddenBuiltinsFor(hasPreAnswer)) };
   }
 
   // Shared with the admin stage card, so both sides report the same state (a scheduled stage
@@ -1028,13 +1331,19 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
     return { correct: answer.correct, correctValue: right.value, correctLabel: right.label };
   }
 
-  async function myAssessments(delegateId: string, eventId: string): Promise<MyAssessment[]> {
+  async function myAssessments(delegate: {
+    id: string;
+    eventId: string;
+    attendanceFormat: 'physical' | 'virtual';
+  }): Promise<MyAssessment[]> {
     const at = clock();
+    const { id: delegateId, eventId } = delegate;
+    const context = await contextFor(eventId, delegateId);
     const stages = await prisma().assessmentStageConfig.findMany({
       where: { eventId, enabled: true },
       include: {
         questions: { where: { retiredAt: null }, include: QUESTION_INCLUDE },
-        sections: { orderBy: [{ order: 'asc' }, { createdAt: 'asc' }] },
+        sections: { include: SECTION_INCLUDE, orderBy: [{ order: 'asc' }, { createdAt: 'asc' }] },
         responses: {
           where: { delegateId },
           include: { answers: true, sections: { select: { sectionKey: true } } },
@@ -1047,7 +1356,15 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
       .sort((a, b) => stageOrder[a.s.stage] - stageOrder[b.s.stage])
       .map(({ s, state }) => {
         const response = s.responses[0] ?? null;
-        const views = sortQuestions(s.questions).map(questionViewOf);
+        // Sections for other formats and the other branch of the expectations block are left out.
+        const sections = s.sections.filter((x) => audienceAllows(x, delegate.attendanceFormat));
+        const views = sortQuestions(s.questions)
+          .filter(
+            (q) =>
+              audienceAllows(q.section, delegate.attendanceFormat) &&
+              !(q.builtin && context.hidden.has(q.builtin)),
+          )
+          .map(questionViewOf);
         const byId = new Map(views.map((q) => [q.id, q]));
         const answers: Record<string, unknown> = {};
         const feedback: Record<string, KnowledgeFeedback> = {};
@@ -1062,7 +1379,7 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
           status: state as 'upcoming' | 'open' | 'closed',
           opensAt: s.opensAt ? s.opensAt.toISOString() : null,
           closesAt: s.closesAt ? s.closesAt.toISOString() : null,
-          sections: state === 'upcoming' ? [] : s.sections.map(sectionViewOf),
+          sections: state === 'upcoming' ? [] : sections.map(sectionViewOf),
           questions: state === 'upcoming' ? [] : views.map(delegateViewOf),
           response: response
             ? {
@@ -1074,13 +1391,14 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
             : null,
           feedback,
           canAnswer: state === 'open' && !response?.submittedAt,
+          context: { references: context.references, planStatus: context.planStatus },
         };
       });
   }
 
   router.get('/me/events/:eventId/assessments', middleware.requireAuth, async (req, res) => {
     const delegate = await myRegistration(res, String(req.params.eventId));
-    res.json({ assessments: await myAssessments(delegate.id, delegate.eventId) });
+    res.json({ assessments: await myAssessments(delegate) });
   });
 
   router.put(
@@ -1117,7 +1435,16 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
           'You have already submitted this assessment.',
         );
       }
-      const byId = new Map(config.questions.map((q) => [q.id, questionViewOf(q)]));
+      const context = await contextFor(delegate.eventId, delegate.id);
+      const byId = new Map(
+        config.questions
+          .filter(
+            (q) =>
+              audienceAllows(q.section, delegate.attendanceFormat) &&
+              !(q.builtin && context.hidden.has(q.builtin)),
+          )
+          .map((q) => [q.id, questionViewOf(q)]),
+      );
       // Sections are submitted one at a time (keyed by section id, or "general" for questions
       // outside any section); the response is submitted once every section with questions is.
       const sectionKeys = new Set<string>();
@@ -1183,7 +1510,14 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
         : submitSection !== undefined
           ? [submitSection]
           : [];
+      // A delegate who prefers not to record an expectation is not asked whether it was met.
+      const declined = [...byId.values()].some(
+        (q) =>
+          q.builtin === BUILTIN.expectationRecordedAfter &&
+          kept.find((k) => k.questionId === q.id)?.value === PREFER_NOT_TO_ANSWER,
+      );
       for (const question of byId.values()) {
+        if (declined && question.builtin === BUILTIN.expectationMetPost) continue;
         if (
           question.required &&
           submitting.includes(sectionKeyOf(question.sectionId)) &&
@@ -1265,7 +1599,7 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
           ...clientOf(res),
         });
       });
-      res.json({ assessments: await myAssessments(delegate.id, delegate.eventId) });
+      res.json({ assessments: await myAssessments(delegate) });
     },
   );
 

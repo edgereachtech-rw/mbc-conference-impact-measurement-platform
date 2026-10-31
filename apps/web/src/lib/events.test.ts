@@ -36,6 +36,7 @@ describe('event helpers', () => {
           speaker: null,
           capacity: null,
           feedbackEnabled: false,
+          transferPlanningFinal: false,
         },
         {
           id: 's1',
@@ -50,6 +51,7 @@ describe('event helpers', () => {
           speaker: null,
           capacity: null,
           feedbackEnabled: true,
+          transferPlanningFinal: false,
         },
       ],
     });

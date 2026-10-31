@@ -124,7 +124,7 @@ describe.skipIf(!hasDatabase)('event setup (E1 brief)', () => {
     eventIds.push(supplied.body.event.id);
   });
 
-  it('creates a draft with non-consecutive dates in order, derived start and end, three disabled stages, and audits it', async () => {
+  it('creates a draft with non-consecutive dates in order, derived start and end, four disabled stages, and audits it', async () => {
     const code = `transfer-summit-b-${tag}`;
     const res = await call('post', '/events', {
       ...profile,
@@ -157,6 +157,7 @@ describe.skipIf(!hasDatabase)('event setup (E1 brief)', () => {
     ).toEqual([
       ['pre_conference', false, 'draft'],
       ['during_conference', false, 'draft'],
+      ['end_of_conference', false, 'draft'],
       ['follow_up', false, 'draft'],
     ]);
     expect(await prisma.participationCategory.count({ where: { eventId: ev.id } })).toBe(2);
@@ -367,10 +368,11 @@ describe.skipIf(!hasDatabase)('event setup (E1 brief)', () => {
     expect(stages.map((s) => [s.stage, s.enabled, s.status])).toEqual([
       ['pre_conference', true, 'scheduled'],
       ['during_conference', false, 'draft'],
+      ['end_of_conference', false, 'draft'],
       ['follow_up', true, 'draft'],
     ]);
     expect(stages[0]?.opensAt).toBe('2026-11-01T08:00:00.000Z');
-    expect(stages[2]).toMatchObject({ target: 'group', targetGroup: 'Nominated delegates' });
+    expect(stages[3]).toMatchObject({ target: 'group', targetGroup: 'Nominated delegates' });
     expect(
       await prisma.auditLog.count({
         where: { action: 'event.assessment_configured', eventId: id },

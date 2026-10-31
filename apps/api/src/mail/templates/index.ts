@@ -3,7 +3,8 @@ import { type EmailBranding, type RenderedEmail, renderLayout } from './layout.j
 export type { EmailBranding, EmailButton, EmailContent, RenderedEmail } from './layout.js';
 export { renderLayout, escapeHtml } from './layout.js';
 
-export type TemplateName = 'invitation' | 'magic-link' | 'test-delivery' | 'admin-message';
+export type TemplateName =
+  'invitation' | 'magic-link' | 'test-delivery' | 'admin-message' | 'transfer-plan-reminder';
 
 /** Formats an expiry for humans: "15 minutes", "7 days". */
 function describeDuration(minutes: number): string {
@@ -132,9 +133,45 @@ export function renderAdminMessage(
   });
 }
 
+// ------------------------------------------------------------------ transfer plan reminder (E12)
+
+export interface TransferPlanReminderInput {
+  recipientName?: string;
+  /** The delegate's first-priority action, shown so the reminder is concrete; empty when none. */
+  priorityAction?: string;
+  /** Absolute link to the delegate's plan page. */
+  planUrl: string;
+  /** How often the delegate chose to be reminded, in words ("every two weeks"). */
+  frequency: string;
+}
+
+/** A reminder the delegate asked for: a nudge to record progress on their plan. */
+export function renderTransferPlanReminder(
+  branding: EmailBranding,
+  input: TransferPlanReminderInput,
+): RenderedEmail {
+  const paragraphs = [
+    input.recipientName ? `Hello ${input.recipientName},` : 'Hello,',
+    `You asked to be reminded ${input.frequency} about the plan you made at ${branding.eventName}. Take two minutes to record where each action stands: what you have tried, what is working, and what has changed.`,
+  ];
+  if (input.priorityAction) {
+    paragraphs.push(`Your first priority: ${input.priorityAction}`);
+  }
+  return renderLayout(branding, {
+    subject: `How is your ${branding.eventName} plan going?`,
+    preheader: 'A reminder you asked for: record progress on your plan.',
+    eyebrow: 'Transfer plan',
+    title: 'Record your progress',
+    paragraphs,
+    button: { label: 'Open my plan', url: input.planUrl },
+    notes: ['You can change how often you hear from us, or stop reminders, on your plan page.'],
+  });
+}
+
 export const templates = {
   invitation: renderInvitation,
   'admin-message': renderAdminMessage,
   'magic-link': renderMagicLink,
   'test-delivery': renderTestDelivery,
+  'transfer-plan-reminder': renderTransferPlanReminder,
 } as const;

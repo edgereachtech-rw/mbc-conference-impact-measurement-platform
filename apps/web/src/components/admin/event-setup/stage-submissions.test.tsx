@@ -41,6 +41,21 @@ describe('StageSubmissions', () => {
                   average: 4,
                 },
               ],
+              distributions: [
+                {
+                  questionId: 'q2',
+                  questionKey: 'k2',
+                  prompt: 'Your overall conference experience.',
+                  sectionTitle: 'Your conference experience',
+                  builtin: null,
+                  responses: 4,
+                  options: [
+                    { value: 'excellent', label: 'Excellent', count: 3, percent: 75 },
+                    { value: 'good', label: 'Good', count: 1, percent: 25 },
+                    { value: 'na', label: 'Not applicable', count: 0, percent: 0 },
+                  ],
+                },
+              ],
             },
           });
         }
@@ -176,6 +191,11 @@ describe('StageSubmissions', () => {
       /1.*33\.3% of invited/,
     );
     expect(screen.getByText(/Average 3 of 5 \(60%\) across 1 submitted response/)).toBeTruthy();
+    const distributions = screen.getByRole('list', { name: 'Answer distributions' });
+    expect(distributions.textContent).toMatch(/Your overall conference experience\./);
+    expect(distributions.textContent).toMatch(/Your conference experience · 4 answers/);
+    expect(distributions.textContent).toMatch(/75%\s*Excellent\s*\(3\)/);
+    expect(distributions.textContent).toMatch(/0%\s*Not applicable\s*\(0\)/);
     expect(screen.getByText(/Rating-scale statements/).closest('table')?.textContent).toMatch(
       /I follow up after training\.14/,
     );
@@ -232,6 +252,7 @@ describe('StageSubmissions', () => {
                 responseRate: 100,
                 knowledge: null,
                 statements: [],
+                distributions: [],
               },
             })
           : url.endsWith('/responses')

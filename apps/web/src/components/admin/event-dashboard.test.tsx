@@ -43,6 +43,7 @@ const dashboard: Dashboard = {
         submitted: 8,
         responseRate: 20,
         knowledge: { questions: 5, respondents: 8, averageScore: 2.5, averagePercent: 50 },
+        distributions: [],
       },
       nonCompleters: 32,
     },

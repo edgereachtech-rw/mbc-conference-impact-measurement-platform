@@ -7,6 +7,9 @@ import { useState } from 'react';
 
 import { AttendanceManager } from '@/components/admin/attendance/attendance-manager';
 import { EventWorkspace } from '@/components/admin/event-workspace';
+import { FeedbackManager } from '@/components/admin/feedback/feedback-manager';
+import { ReflectionsManager } from '@/components/admin/reflections/reflections-manager';
+import { TransferPlansManager } from '@/components/admin/transfer-plans/transfer-plans-manager';
 import { consoleButton } from '@/components/console/page';
 import { apiFetch } from '@/lib/api';
 import { describeError } from '@/lib/imports';
@@ -18,7 +21,16 @@ import { PublishPanel } from './publish-panel';
 import { SessionsEditor } from './sessions-editor';
 
 type Tab =
-  'profile' | 'dates' | 'sessions' | 'assessments' | 'publish' | 'delegates' | 'attendance';
+  | 'profile'
+  | 'dates'
+  | 'sessions'
+  | 'assessments'
+  | 'publish'
+  | 'delegates'
+  | 'attendance'
+  | 'reflections'
+  | 'feedback'
+  | 'transfer-plans';
 
 const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'profile', label: 'Event profile' },
@@ -28,6 +40,9 @@ const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'publish', label: 'Review and publication' },
   { id: 'delegates', label: 'Delegates' },
   { id: 'attendance', label: 'Attendance' },
+  { id: 'reflections', label: 'Daily reflections' },
+  { id: 'feedback', label: 'Session feedback' },
+  { id: 'transfer-plans', label: 'Transfer plans' },
 ];
 
 interface EventSettingsProps {
@@ -191,6 +206,9 @@ export function EventSettings({ initialEvent }: EventSettingsProps) {
           </div>
         ) : null}
         {tab === 'attendance' ? <AttendanceManager event={event} /> : null}
+        {tab === 'reflections' ? <ReflectionsManager event={event} /> : null}
+        {tab === 'feedback' ? <FeedbackManager event={event} /> : null}
+        {tab === 'transfer-plans' ? <TransferPlansManager event={event} /> : null}
       </div>
     </section>
   );

@@ -56,12 +56,14 @@ export const sessionTypeLabels: Record<SessionType, string> = {
 export const stageLabels: Record<AssessmentStage, string> = {
   pre_conference: 'Pre-conference assessment',
   during_conference: 'During-conference assessment',
+  end_of_conference: 'End-of-conference evaluation',
   follow_up: 'Follow-up assessment',
 };
 
 export const stageWhen: Record<AssessmentStage, string> = {
   pre_conference: 'Before the event',
   during_conference: 'During the event',
+  end_of_conference: 'At the close of the event',
   follow_up: 'After the event',
 };
 
@@ -70,6 +72,8 @@ export const stagePurpose: Record<AssessmentStage, string> = {
     'Establish participants’ baseline knowledge, confidence, expectations and learning needs before they attend.',
   during_conference:
     'Measure learning, engagement and experience while the event is taking place. Session-specific feedback is linked to each session separately.',
+  end_of_conference:
+    'Evaluate the experience, repeat the knowledge and confidence questions for paired results, and record learning gained, readiness to apply and how far expectations were met.',
   follow_up:
     'Find out whether participants retained and applied what they learned after attending.',
 };
@@ -88,6 +92,14 @@ export const stageAreas: Record<AssessmentStage, string[]> = {
     'Session relevance and usefulness',
     'Participant engagement',
     'Session feedback and satisfaction',
+  ],
+  end_of_conference: [
+    'Conference experience',
+    'Knowledge gained',
+    'Changes in confidence',
+    'Learning gained and unresolved needs',
+    'Readiness to apply',
+    'Expectations met',
   ],
   follow_up: [
     'Knowledge retention',

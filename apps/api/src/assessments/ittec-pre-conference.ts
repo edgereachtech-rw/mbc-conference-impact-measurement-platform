@@ -1,4 +1,10 @@
-import type { QuestionFields, SectionMarking } from '@mbc/shared';
+import type {
+  AssessmentStage,
+  BuiltinBlockKind,
+  QuestionFields,
+  SectionAudience,
+  SectionMarking,
+} from '@mbc/shared';
 
 /**
  * ITTEC 2026 pre-conference assessment content (docs/full_platform_requirement.md, section 7).
@@ -12,13 +18,19 @@ export interface TemplateSection {
   description: string | null;
   /** Marking of the section's single-choice questions; "none" when omitted. */
   marking?: SectionMarking;
+  /** Who sees the section; everyone when omitted. */
+  audience?: SectionAudience;
+  /** Repeat the named section of another stage of the same event (questions come from it). */
+  mirrorOf?: { stage: AssessmentStage; title: string };
+  /** Add a built-in block instead of the listed questions. */
+  builtin?: BuiltinBlockKind;
   questions: QuestionFields[];
 }
 
 export interface AssessmentTemplate {
   id: string;
   label: string;
-  stage: 'pre_conference' | 'during_conference' | 'follow_up';
+  stage: AssessmentStage;
   sections: TemplateSection[];
 }
 

@@ -108,7 +108,7 @@ describe.skipIf(!hasDatabase)('GET /events/:eventId/dashboard', () => {
     expect((await get(`/events/${randomUUID()}/dashboard`)).status).toBe(404);
     expect((await get(`/events/not-an-id/dashboard`)).status).toBe(404);
 
-    // Nothing configured yet: three stages, all disabled, no summaries.
+    // Nothing configured yet: four stages, all disabled, no summaries.
     const empty = await get(`/events/${eventId}/dashboard`);
     expect(empty.status, empty.text).toBe(200);
     expect(empty.body.dashboard).toMatchObject({
@@ -127,6 +127,7 @@ describe.skipIf(!hasDatabase)('GET /events/:eventId/dashboard', () => {
     expect(empty.body.dashboard.stages.map((s: { stage: string }) => s.stage)).toEqual([
       'pre_conference',
       'during_conference',
+      'end_of_conference',
       'follow_up',
     ]);
     expect(empty.body.dashboard.stages[0]).toMatchObject({

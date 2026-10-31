@@ -9,6 +9,13 @@ import {
   questionTypeLabels,
   questionTypes,
   sectionFieldsSchema,
+  assessmentStages,
+  builtinBlockKinds,
+  builtinBlockLabels,
+  isLockedQuestion,
+  sectionAudienceLabels,
+  sectionAudiences,
+  type SectionAudience,
   sectionMarkingLabels,
   sectionMarkings,
   type AssessmentQuestionView,
@@ -253,7 +260,13 @@ export function QuestionBuilder({
     title: string;
     description: string;
     marking: SectionMarking;
+    audience: SectionAudience;
   }>(null);
+  /** "Repeat a section": the other stages' sections, loaded when the popup opens. */
+  const [mirroring, setMirroring] = useState<null | {
+    sections: Array<{ stage: AssessmentStage; section: AssessmentSectionView }> | null;
+  }>(null);
+  const [addingBlock, setAddingBlock] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<{ message: string; requestId?: string } | null>(null);
@@ -343,7 +356,15 @@ export function QuestionBuilder({
       setErrors(next);
       return;
     }
-    const body = { ...parsed.data, sectionId: editing.draft.sectionId || null };
+    // A repeated or built-in question keeps its wording and options: only the rest is sent.
+    const body = lockedEditing
+      ? {
+          helpText: parsed.data.helpText,
+          required: parsed.data.required,
+          area: parsed.data.area,
+          sectionId: editing.draft.sectionId || null,
+        }
+      : { ...parsed.data, sectionId: editing.draft.sectionId || null };
     const ok = await run(
       () =>
         apiFetch<Lists>(editing.id ? `${base}/questions/${editing.id}` : `${base}/questions`, {
@@ -390,6 +411,7 @@ export function QuestionBuilder({
       title: sectionEditing.title,
       description: sectionEditing.description,
       marking: sectionEditing.marking,
+      audience: sectionEditing.audience,
     });
     if (!parsed.success) {
       setErrors({ sectionTitle: parsed.error.issues[0]?.message ?? 'Give the section a title' });
@@ -404,6 +426,47 @@ export function QuestionBuilder({
       'The section could not be saved.',
     );
     if (ok) setSectionEditing(null);
+  }
+  async function openMirror() {
+    setErrors({});
+    setFailure(null);
+    setMirroring({ sections: null });
+    try {
+      const others = assessmentStages.filter((s) => s !== stage);
+      const results = await Promise.all(
+        others.map((s) => apiFetch<Lists>(`/events/${eventId}/assessments/${s}/questions`)),
+      );
+      setMirroring({
+        sections: results.flatMap((r, i) =>
+          r.sections.map((section) => ({ stage: others[i]!, section })),
+        ),
+      });
+    } catch (e) {
+      setMirroring(null);
+      setFailure(describeError(e, 'The other stages could not be loaded.'));
+    }
+  }
+  async function mirror(sourceSectionId: string) {
+    const ok = await run(
+      () =>
+        apiFetch<Lists>(`${base}/sections/mirror`, {
+          method: 'POST',
+          body: JSON.stringify({ sourceSectionId }),
+        }),
+      'The section could not be repeated.',
+    );
+    if (ok) setMirroring(null);
+  }
+  async function addBlock(kind: (typeof builtinBlockKinds)[number]) {
+    const ok = await run(
+      () =>
+        apiFetch<Lists>(`${base}/sections/builtin`, {
+          method: 'POST',
+          body: JSON.stringify({ kind }),
+        }),
+      'The block could not be added.',
+    );
+    if (ok) setAddingBlock(false);
   }
   async function removeSection(sectionId: string) {
     const ok = await run(
@@ -445,6 +508,9 @@ export function QuestionBuilder({
       (editing.draft.area !== '' && !stageAreas[stage].includes(editing.draft.area))
     : false;
   const isSingle = editing?.draft.type === 'single_choice';
+  const lockedEditing = Boolean(
+    editing?.id && lists?.questions.some((q) => q.id === editing.id && isLockedQuestion(q)),
+  );
   /** Marking comes from the section a question sits in; none outside a section. */
   const markingOf = (sectionId: string): SectionMarking =>
     lists?.sections.find((x) => x.id === sectionId)?.marking ?? 'none';
@@ -456,7 +522,8 @@ export function QuestionBuilder({
         )
       : [];
   const groups = lists ? groupQuestions(lists.sections, lists.questions) : [];
-  const anyBusy = busy || editing !== null || sectionEditing !== null;
+  const anyBusy =
+    busy || editing !== null || sectionEditing !== null || mirroring !== null || addingBlock;
 
   const sectionSelect = (value: string, onChange: (v: string) => void, selectId: string) => (
     <NativeSelect
@@ -498,11 +565,37 @@ export function QuestionBuilder({
               onClick={() => {
                 setErrors({});
                 setFailure(null);
-                setSectionEditing({ id: null, title: '', description: '', marking: 'none' });
+                setSectionEditing({
+                  id: null,
+                  title: '',
+                  description: '',
+                  marking: 'none',
+                  audience: 'all',
+                });
               }}
               className={consoleButton({ variant: 'secondary' })}
             >
               <FolderPlusIcon aria-hidden="true" /> Add section
+            </button>
+            <button
+              type="button"
+              disabled={anyBusy}
+              onClick={() => void openMirror()}
+              className={consoleButton({ variant: 'ghost' })}
+            >
+              Repeat a section
+            </button>
+            <button
+              type="button"
+              disabled={anyBusy}
+              onClick={() => {
+                setErrors({});
+                setFailure(null);
+                setAddingBlock(true);
+              }}
+              className={consoleButton({ variant: 'ghost' })}
+            >
+              Add built-in block
             </button>
             <button
               type="button"
@@ -618,6 +711,34 @@ export function QuestionBuilder({
                 to delegates at once and locked.
               </p>
             </div>
+            <div className="space-y-1">
+              <label
+                htmlFor={`${id}-section-audience`}
+                className="text-sm font-semibold text-corp-ink"
+              >
+                Shown to
+              </label>
+              <NativeSelect
+                id={`${id}-section-audience`}
+                value={sectionEditing.audience}
+                onChange={(e) =>
+                  setSectionEditing((x) =>
+                    x ? { ...x, audience: e.target.value as SectionAudience } : x,
+                  )
+                }
+                className="rounded-none"
+              >
+                {sectionAudiences.map((a) => (
+                  <option key={a} value={a}>
+                    {sectionAudienceLabels[a]}
+                  </option>
+                ))}
+              </NativeSelect>
+              <p className="text-xs text-corp-muted">
+                By the format on the delegate’s registration: a section for in-person delegates
+                never reaches online delegates, and the other way round.
+              </p>
+            </div>
             <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
               <button
                 type="button"
@@ -640,6 +761,87 @@ export function QuestionBuilder({
         </Dialog>
       ) : null}
 
+      {mirroring ? (
+        <Dialog
+          title="Repeat a section"
+          description="Ask the same questions again, with the same wording, options and marking, so the answers of the same delegates can be paired before and after. The repeated questions stay locked."
+          onClose={() => setMirroring(null)}
+          closeDisabled={busy}
+          size="md"
+        >
+          {mirroring.sections === null ? (
+            <p className="text-sm text-corp-muted" role="status">
+              Loading the other stages…
+            </p>
+          ) : mirroring.sections.length === 0 ? (
+            <p className="text-sm text-corp-muted">The other stages have no sections yet.</p>
+          ) : (
+            <ul className="divide-y divide-corp-line" aria-label="Sections of other stages">
+              {mirroring.sections.map(({ stage: s, section }) => {
+                const already = lists?.sections.some((x) => x.sourceSectionId === section.id);
+                return (
+                  <li
+                    key={section.id}
+                    className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div className="min-w-0">
+                      <p className="font-semibold text-corp-ink">{section.title}</p>
+                      <p className="text-xs text-corp-muted">
+                        {stageLabels[s]} · {sectionMarkingLabels[section.marking]}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={busy || already}
+                      onClick={() => void mirror(section.id)}
+                      className={consoleButton({ variant: 'secondary', size: 'sm' })}
+                    >
+                      {already ? 'Already repeated' : 'Repeat here'}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </Dialog>
+      ) : null}
+
+      {addingBlock ? (
+        <Dialog
+          title="Add a built-in block"
+          description="Blocks the platform knows how to run. Their questions keep their wording; you can still reorder them and choose which are required."
+          onClose={() => setAddingBlock(false)}
+          closeDisabled={busy}
+          size="md"
+        >
+          <ul className="divide-y divide-corp-line" aria-label="Built-in blocks">
+            {builtinBlockKinds.map((kind) => {
+              const present = lists?.questions.some(
+                (q) =>
+                  q.builtin &&
+                  q.builtin.startsWith(kind === 'expectations' ? 'expectation' : 'readiness'),
+              );
+              return (
+                <li
+                  key={kind}
+                  className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <p className="text-sm text-corp-text">{builtinBlockLabels[kind]}</p>
+                  <button
+                    type="button"
+                    disabled={busy || present}
+                    onClick={() => void addBlock(kind)}
+                    className={consoleButton({ variant: 'secondary', size: 'sm' })}
+                  >
+                    {present ? 'Already added' : 'Add block'}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </Dialog>
+      ) : null}
+
       {editing ? (
         <Dialog
           title={editing.id ? 'Edit question' : 'New question'}
@@ -655,6 +857,16 @@ export function QuestionBuilder({
               void saveQuestion();
             }}
           >
+            {lockedEditing ? (
+              <p
+                role="note"
+                className="rounded-none border border-corp-line bg-corp-accent-soft px-3 py-2 text-sm text-corp-ink"
+              >
+                This question repeats another one or belongs to a built-in block, so its wording,
+                type and options stay as they are. Help text, the section and whether it is required
+                can change.
+              </p>
+            ) : null}
             <div className="space-y-1">
               <label htmlFor={`${id}-prompt`} className="text-sm font-semibold text-corp-ink">
                 Question
@@ -663,6 +875,7 @@ export function QuestionBuilder({
                 id={`${id}-prompt`}
                 rows={2}
                 maxLength={500}
+                disabled={lockedEditing}
                 value={editing.draft.prompt}
                 onChange={(e) => set('prompt', e.target.value)}
                 className="w-full rounded-none border border-corp-line bg-white px-3 py-2 text-base md:text-sm"
@@ -677,6 +890,7 @@ export function QuestionBuilder({
                 <NativeSelect
                   id={`${id}-type`}
                   value={editing.draft.type}
+                  disabled={lockedEditing}
                   onChange={(e) => set('type', e.target.value as QuestionType)}
                   className="rounded-none"
                 >
@@ -753,7 +967,7 @@ export function QuestionBuilder({
               </div>
             </div>
             {isChoice ? (
-              <fieldset className="space-y-2">
+              <fieldset className="space-y-2" disabled={lockedEditing}>
                 <legend className="text-sm font-semibold text-corp-ink">Options</legend>
                 <p className="text-xs text-corp-muted">
                   {!isSingle
@@ -1065,6 +1279,14 @@ export function QuestionBuilder({
                           : ''}
                       </StatusPill>
                     ) : null}
+                    {group.section && group.section.audience !== 'all' ? (
+                      <StatusPill tone="neutral">
+                        {sectionAudienceLabels[group.section.audience]}
+                      </StatusPill>
+                    ) : null}
+                    {group.section?.sourceLabel ? (
+                      <StatusPill tone="neutral">Repeats {group.section.sourceLabel}</StatusPill>
+                    ) : null}
                   </div>
                   {group.section && !readOnly ? (
                     <div className="flex flex-wrap gap-1">
@@ -1097,6 +1319,7 @@ export function QuestionBuilder({
                             title: group.section!.title,
                             description: group.section!.description ?? '',
                             marking: group.section!.marking,
+                            audience: group.section!.audience,
                           });
                         }}
                         className={consoleButton({ variant: 'ghost', size: 'sm' })}
@@ -1176,6 +1399,11 @@ export function QuestionBuilder({
                             ) : group.section?.marking === 'knowledge' &&
                               q.type === 'single_choice' ? (
                               <StatusPill tone="attention">No correct answer ticked</StatusPill>
+                            ) : null}
+                            {isLockedQuestion(q) ? (
+                              <StatusPill tone="neutral">
+                                {q.builtin ? 'Built-in' : 'Repeated'} · wording locked
+                              </StatusPill>
                             ) : null}
                             {q.version > 1 ? <span>version {q.version}</span> : null}
                             {q.responseCount > 0 ? <span>{q.responseCount} answers</span> : null}

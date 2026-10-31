@@ -19,8 +19,11 @@ const question = (id: string, extra: Record<string, unknown>) => ({
   scale: null,
   isKnowledge: false,
   responseCount: 0,
+  sourceQuestionKey: null,
+  builtin: null,
   ...extra,
 });
+const noContext: MyAssessment['context'] = { references: [], planStatus: null };
 const open: MyAssessment = {
   stage: 'pre_conference',
   status: 'open',
@@ -46,6 +49,7 @@ const open: MyAssessment = {
   response: null,
   feedback: {},
   canAnswer: true,
+  context: noContext,
 };
 const upcoming: MyAssessment = {
   stage: 'follow_up',
@@ -57,6 +61,7 @@ const upcoming: MyAssessment = {
   response: null,
   feedback: {},
   canAnswer: false,
+  context: noContext,
 };
 const CORRECT = { correct: true, correctValue: 'b', correctLabel: 'Examine the gap' };
 const scored: MyAssessment = {
@@ -94,8 +99,20 @@ const sectioned: MyAssessment = {
       description: 'Think about today.',
       order: 1,
       marking: 'none',
+      audience: 'all',
+      sourceSectionId: null,
+      sourceLabel: null,
     },
-    { id: 's2', title: 'About you', description: null, order: 2, marking: 'none' },
+    {
+      id: 's2',
+      title: 'About you',
+      description: null,
+      order: 2,
+      marking: 'none',
+      audience: 'all',
+      sourceSectionId: null,
+      sourceLabel: null,
+    },
   ],
   questions: [
     question('a', { type: 'yes_no', prompt: 'Did you attend the keynote?', sectionId: 's1' }),
@@ -169,10 +186,19 @@ describe('AssessmentsPanel', () => {
     const calls = stub([open, upcoming]);
     const user = userEvent.setup();
     render(<AssessmentsPanel eventId="e1" timezone="Africa/Lagos" />);
+    const tabs = await screen.findByRole('tablist', { name: 'Assessment stages' });
+    expect(
+      within(tabs)
+        .getAllByRole('tab')
+        .map((t) => t.textContent),
+    ).toEqual(['Pre-conference assessmentOpen', 'Follow-up assessmentOpens later']);
+    await user.click(within(tabs).getByRole('tab', { name: /Follow-up assessment/ }));
+    expect(screen.getByRole('article', { name: 'Follow-up assessment' }).textContent).toMatch(
+      /Opens later/,
+    );
+    await user.click(within(tabs).getByRole('tab', { name: /Pre-conference assessment/ }));
     const card = await screen.findByRole('article', { name: 'Pre-conference assessment' });
     expect(within(card).getByText('Open')).toBeTruthy();
-    const later = screen.getByRole('article', { name: 'Follow-up assessment' });
-    expect(later.textContent).toMatch(/Opens later/);
 
     // Nothing answered: a highlighted banner plus one message per required question, no request.
     await user.click(within(card).getByRole('button', { name: 'Submit answers' }));
@@ -272,9 +298,14 @@ describe('AssessmentsPanel', () => {
     expect(within(all).getByRole('region', { name: 'Summary: About you' })).toBeTruthy();
     await user.click(within(all).getByRole('button', { name: 'Close' }));
     expect(within(card).getByText('Submitted')).toBeTruthy();
-    // Read-only afterwards, every section visible under its title.
+    // Read-only afterwards, still one section at a time, every section marked as submitted.
     expect(within(card).getByRole('region', { name: 'About the sessions' })).toBeTruthy();
+    expect(within(card).queryByRole('region', { name: 'About you' })).toBeNull();
+    expect(within(card).getByText(/shown above, section by section/)).toBeTruthy();
+    await user.click(within(card).getByRole('button', { name: 'Next section' }));
     expect(within(card).getByRole('region', { name: 'About you' })).toBeTruthy();
+    expect(within(card).getByRole('button', { name: '✓ About the sessions' })).toBeTruthy();
+    expect(within(card).queryByRole('button', { name: /Save draft|Submit/ })).toBeNull();
   });
 
   it('saves a knowledge answer at once, shows the result and locks it, and handles exclusive and "Other" options', async () => {
@@ -308,6 +339,116 @@ describe('AssessmentsPanel', () => {
     expect(puts(calls).at(-1)).toEqual({
       answers: { k: 'a', m: { selected: ['other'], other: 'A coaching log' } },
       submitSection: 'general',
+    });
+  });
+
+  const block = {
+    id: 'x',
+    title: 'Your expectations',
+    description: null,
+    order: 1,
+    marking: 'none' as const,
+    audience: 'all' as const,
+    sourceSectionId: null,
+    sourceLabel: null,
+  };
+
+  it('shows the pre-event answer above the expectations block and fills in the plan status', async () => {
+    const withBlock: MyAssessment = {
+      ...open,
+      stage: 'end_of_conference',
+      sections: [block],
+      questions: [
+        question('p', {
+          type: 'single_choice',
+          prompt: 'To what extent did the conference provide what you hoped to gain?',
+          sectionId: 'x',
+          builtin: 'expectation_met_pre',
+          options: [
+            { value: 'fully', label: 'Fully' },
+            { value: 'partly', label: 'Partly' },
+          ],
+        }),
+        question('s', {
+          type: 'single_choice',
+          prompt: 'Have you completed your Individual Transfer Plan?',
+          sectionId: 'x',
+          builtin: 'plan_status',
+          options: [
+            { value: 'yes', label: 'Yes' },
+            { value: 'started', label: 'Started but not completed' },
+            { value: 'no', label: 'No' },
+          ],
+        }),
+      ] as MyAssessment['questions'],
+      context: {
+        references: [
+          {
+            questionKey: '55555555-5555-4555-8555-555555555555',
+            prompt: 'What would you like to learn or gain from the conference?',
+            answer: 'How to measure transfer',
+          },
+        ],
+        planStatus: 'started',
+      },
+    };
+    stub([withBlock]);
+    render(<AssessmentsPanel eventId="e1" timezone="Africa/Lagos" />);
+    const card = await screen.findByRole('article', { name: 'End-of-conference evaluation' });
+    expect(
+      within(card).getByRole('note', { name: 'Before the conference, you said' }).textContent,
+    ).toMatch(/How to measure transfer/);
+    expect(
+      (within(card).getByLabelText('Started but not completed') as HTMLInputElement).checked,
+    ).toBe(true);
+  });
+
+  it('lets a delegate without a recorded expectation decline, and then skips whether it was met', async () => {
+    const after: MyAssessment = {
+      ...open,
+      stage: 'end_of_conference',
+      sections: [block],
+      questions: [
+        question('r', {
+          type: 'long_text',
+          prompt:
+            'You did not record this before the conference. Looking back, what did you hope to gain from attending?',
+          sectionId: 'x',
+          builtin: 'expectation_recorded_after',
+          required: false,
+        }),
+        question('m', {
+          type: 'single_choice',
+          prompt: 'To what extent was this expectation met?',
+          sectionId: 'x',
+          builtin: 'expectation_met_post',
+          options: [
+            { value: 'met', label: 'Met' },
+            { value: 'not_met', label: 'Not met' },
+          ],
+        }),
+      ] as MyAssessment['questions'],
+      context: {
+        references: [
+          { questionKey: '55555555-5555-4555-8555-555555555555', prompt: 'x', answer: null },
+        ],
+        planStatus: 'no',
+      },
+    };
+    const calls = stub([after]);
+    const user = userEvent.setup();
+    render(<AssessmentsPanel eventId="e1" timezone="Africa/Lagos" />);
+    const card = await screen.findByRole('article', { name: 'End-of-conference evaluation' });
+    expect(within(card).getByText(/To what extent was this expectation met/)).toBeTruthy();
+    expect(within(card).queryByRole('note')).toBeNull();
+    await user.click(within(card).getByLabelText('Prefer not to answer'));
+    expect(within(card).queryByText(/To what extent was this expectation met/)).toBeNull();
+    await user.click(within(card).getByRole('button', { name: 'Submit answers' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Submit your answers?' });
+    await user.click(within(dialog).getByRole('button', { name: 'Submit now' }));
+    expect(puts(calls).at(-1)).toMatchObject({
+      answers: { r: 'Prefer not to answer' },
+      submitSection: 'x',
     });
   });
 

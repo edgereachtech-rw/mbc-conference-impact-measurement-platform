@@ -125,11 +125,21 @@ export function markedOptions(
   }));
 }
 
+/** Who a section is shown to (backlog E11-2, E11-3): by the delegate's registered format. */
+export const sectionAudiences = ['all', 'physical', 'virtual'] as const;
+export type SectionAudience = (typeof sectionAudiences)[number];
+export const sectionAudienceLabels: Record<SectionAudience, string> = {
+  all: 'Every delegate',
+  physical: 'In-person delegates only',
+  virtual: 'Online delegates only',
+};
+
 /** A titled group of questions within a stage (shown as one step to delegates). */
 export const sectionFieldsSchema = z.object({
   title: z.string().trim().min(1, 'Give the section a title').max(200),
   description: optionalText(1_000),
   marking: z.enum(sectionMarkings).default('none'),
+  audience: z.enum(sectionAudiences).default('all'),
 });
 export type SectionFields = z.infer<typeof sectionFieldsSchema>;
 export const sectionPatchSchema = sectionFieldsSchema.partial();
@@ -141,6 +151,17 @@ export const assessmentSectionViewSchema = z.object({
   description: z.string().nullable(),
   order: z.number().int(),
   marking: z.enum(sectionMarkings),
+  audience: z.enum(sectionAudiences),
+  /** The section of another stage this one repeats, for paired results; null otherwise. */
+  sourceSectionId: z.uuid().nullable(),
+  /** "Pre-conference assessment · Baseline knowledge assessment", for the builder. */
+  sourceLabel: z.string().nullable(),
+});
+
+/** Repeat a section of another stage of the same event, questions included, locked for pairing. */
+export const sectionMirrorSchema = z.object({
+  sourceSectionId: z.uuid(),
+  title: z.string().trim().min(1).max(200).optional(),
 });
 export type AssessmentSectionView = z.infer<typeof assessmentSectionViewSchema>;
 
@@ -162,6 +183,136 @@ export type QuestionPatch = z.infer<typeof questionPatchSchema>;
 
 export const questionOrderSchema = z.object({ questionIds: z.array(z.uuid()).min(1).max(200) });
 
+// ------------------------------------------------------------------ built-in blocks
+
+/**
+ * Blocks whose behaviour the platform knows (backlog E11-10 to E11-13): the expectations block
+ * shows the delegate's own pre-event answer and asks how far it was met, or lets a delegate
+ * without one record it after the event; the readiness block prefills the plan status from
+ * the Transfer Plan. An admin adds a block to any stage; its questions are ordinary, versioned
+ * questions with a `builtin` marker, locked in wording so reports stay comparable.
+ */
+export const builtinBlockKinds = ['expectations', 'readiness'] as const;
+export type BuiltinBlockKind = (typeof builtinBlockKinds)[number];
+export const builtinBlockLabels: Record<BuiltinBlockKind, string> = {
+  expectations: 'Expectations: how far the conference met what delegates hoped to gain',
+  readiness: 'Readiness to apply, with the plan status filled in from the Transfer Plan',
+};
+
+export const BUILTIN = {
+  expectationMetPre: 'expectation_met_pre',
+  expectationExplain: 'expectation_explain',
+  expectationRecordedAfter: 'expectation_recorded_after',
+  expectationMetPost: 'expectation_met_post',
+  readiness: 'readiness',
+  planStatus: 'plan_status',
+  readinessSupport: 'readiness_support',
+} as const;
+
+/** What a delegate without a pre-event expectation may answer instead of writing one. */
+export const PREFER_NOT_TO_ANSWER = 'Prefer not to answer';
+
+export const planStatusValues = ['yes', 'started', 'no'] as const;
+export type PlanStatusValue = (typeof planStatusValues)[number];
+
+export interface BuiltinQuestion extends QuestionFields {
+  builtin: string;
+}
+const choice = (
+  builtin: string,
+  prompt: string,
+  options: Array<[string, string]>,
+  helpText: string | null = null,
+): BuiltinQuestion => ({
+  builtin,
+  prompt,
+  helpText,
+  type: 'single_choice',
+  required: true,
+  area: null,
+  options: options.map(([value, label]) => ({ value, label })),
+});
+const textQuestion = (
+  builtin: string,
+  prompt: string,
+  helpText: string | null = null,
+  required = false,
+): BuiltinQuestion => ({ builtin, prompt, helpText, type: 'long_text', required, area: null });
+
+export const builtinBlocks: Record<
+  BuiltinBlockKind,
+  { title: string; description: string; questions: BuiltinQuestion[] }
+> = {
+  expectations: {
+    title: 'Your expectations',
+    description: 'How far the conference provided what you hoped to gain.',
+    questions: [
+      choice(
+        BUILTIN.expectationMetPre,
+        'To what extent did the conference provide what you hoped to gain?',
+        [
+          ['fully', 'Fully'],
+          ['partly', 'Partly'],
+          ['not_yet_sure', 'Not yet sure'],
+          ['not_at_all', 'Not at all'],
+          ['no_longer_applicable', 'No longer applicable'],
+        ],
+      ),
+      textQuestion(
+        BUILTIN.expectationExplain,
+        'Please explain your response. What did you gain, and what is still missing?',
+      ),
+      textQuestion(
+        BUILTIN.expectationRecordedAfter,
+        'You did not record this before the conference. Looking back, what did you hope to gain from attending?',
+        'Recorded after the conference.',
+      ),
+      choice(BUILTIN.expectationMetPost, 'To what extent was this expectation met?', [
+        ['met', 'Met'],
+        ['partly_met', 'Partly met'],
+        ['not_yet_met', 'Not yet met'],
+        ['not_met', 'Not met'],
+        ['no_longer_applicable', 'No longer applicable'],
+      ]),
+    ],
+  },
+  readiness: {
+    title: 'Readiness to apply',
+    description: 'How ready you are to begin applying your priority learning.',
+    questions: [
+      choice(BUILTIN.readiness, 'How ready are you to begin applying your priority learning?', [
+        ['ready_now', 'Ready to begin now'],
+        ['ready_with_support', 'Ready, but support is needed'],
+        ['not_yet_ready', 'Not yet ready'],
+        ['not_applicable', 'Not applicable'],
+      ]),
+      choice(
+        BUILTIN.planStatus,
+        'Have you completed your Individual Transfer Plan?',
+        [
+          ['yes', 'Yes'],
+          ['started', 'Started but not completed'],
+          ['no', 'No'],
+        ],
+        'Filled in from your plan; change it if it is not right.',
+      ),
+      textQuestion(BUILTIN.readinessSupport, 'What support would help you begin?'),
+    ],
+  },
+};
+export const builtinBlockSchema = z.object({ kind: z.enum(builtinBlockKinds) });
+
+/**
+ * Which built-in expectation questions a delegate does not see: with a pre-event answer the
+ * "record it now" pair is hidden; without one, the "was it provided" pair is hidden. Hidden
+ * questions are never required and never answered.
+ */
+export function hiddenBuiltinsFor(hasPreAnswer: boolean): readonly string[] {
+  return hasPreAnswer
+    ? [BUILTIN.expectationRecordedAfter, BUILTIN.expectationMetPost]
+    : [BUILTIN.expectationMetPre, BUILTIN.expectationExplain];
+}
+
 export const assessmentQuestionViewSchema = z.object({
   id: z.uuid(),
   /** Stable across versions; answers point at a version (`id`). */
@@ -180,8 +331,16 @@ export const assessmentQuestionViewSchema = z.object({
   isKnowledge: z.boolean(),
   /** Answers stored against this version; editing then creates a new version. */
   responseCount: z.number().int(),
+  /** The question of another stage this one repeats (its key); wording and options are locked. */
+  sourceQuestionKey: z.uuid().nullable(),
+  /** A built-in block question; wording and options are locked. See builtinBlocks. */
+  builtin: z.string().nullable(),
 });
 export type AssessmentQuestionView = z.infer<typeof assessmentQuestionViewSchema>;
+
+/** Mirrored and built-in questions keep their wording, type and options. */
+export const isLockedQuestion = (q: { sourceQuestionKey: string | null; builtin: string | null }) =>
+  Boolean(q.sourceQuestionKey || q.builtin);
 
 /** What delegates see: never the correct answers before they have answered. */
 export const delegateQuestionViewSchema = assessmentQuestionViewSchema.extend({
@@ -459,6 +618,14 @@ export const myAssessmentSchema = z.object({
   feedback: z.record(z.uuid(), knowledgeFeedbackSchema),
   /** The delegate may save or submit now: open, inside the window, not yet submitted. */
   canAnswer: z.boolean(),
+  /** What the built-in blocks show back: the pre-event reference answers and the plan status. */
+  context: z.object({
+    /** The event's reference answers in order; the first is the expectation the block asks about. */
+    references: z.array(
+      z.object({ questionKey: z.uuid(), prompt: z.string(), answer: z.string().nullable() }),
+    ),
+    planStatus: z.enum(planStatusValues).nullable(),
+  }),
 });
 export type MyAssessment = z.infer<typeof myAssessmentSchema>;
 
@@ -491,7 +658,67 @@ export const stageSummarySchema = z.object({
       average: z.number().nullable(),
     }),
   ),
+  /** Every single-choice question of submitted responses: how often each option was chosen. */
+  distributions: z.array(
+    z.object({
+      questionId: z.uuid(),
+      questionKey: z.uuid(),
+      prompt: z.string(),
+      sectionTitle: z.string().nullable(),
+      builtin: z.string().nullable(),
+      responses: z.number().int(),
+      options: z.array(
+        z.object({
+          value: z.string(),
+          label: z.string(),
+          count: z.number().int(),
+          /** Share of the answers given, rounded to one decimal; null without answers. */
+          percent: z.number().nullable(),
+        }),
+      ),
+    }),
+  ),
 });
+
+/**
+ * Paired results of a mirrored section (backlog E11-5, E11-7): only delegates who submitted
+ * both stages and answered the question both times count, so the change is the same people's
+ * change. Knowledge: delegates who answered every question both times, averages in percent,
+ * change in percentage points. Statements: per statement, "Not applicable" and blanks
+ * excluded; labelled self-reported in the screens.
+ */
+export const pairedResultsSchema = z.object({
+  stage: z.enum(assessmentStages),
+  sections: z.array(
+    z.object({
+      sectionId: z.uuid(),
+      title: z.string(),
+      sourceStage: z.enum(assessmentStages),
+      sourceTitle: z.string(),
+      marking: z.enum(sectionMarkings),
+      knowledge: z
+        .object({
+          questions: z.number().int(),
+          paired: z.number().int(),
+          averageBeforePercent: z.number().nullable(),
+          averageAfterPercent: z.number().nullable(),
+          changePoints: z.number().nullable(),
+        })
+        .nullable(),
+      statements: z.array(
+        z.object({
+          questionId: z.uuid(),
+          prompt: z.string(),
+          paired: z.number().int(),
+          averageBefore: z.number().nullable(),
+          averageAfter: z.number().nullable(),
+          change: z.number().nullable(),
+        }),
+      ),
+    }),
+  ),
+});
+export type PairedResults = z.infer<typeof pairedResultsSchema>;
 export type StageSummary = z.infer<typeof stageSummarySchema>;
 
 /** One delegate's response to a stage as the admin list shows it. */
@@ -577,5 +804,6 @@ export function groupQuestions<Q extends { sectionId: string | null }>(
 export const stageOrder: Record<AssessmentStage, number> = {
   pre_conference: 0,
   during_conference: 1,
-  follow_up: 2,
+  end_of_conference: 2,
+  follow_up: 3,
 };

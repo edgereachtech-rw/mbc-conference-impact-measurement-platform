@@ -60,6 +60,7 @@ export function AssessmentConfig({ event, onSaved }: AssessmentConfigProps) {
 const TONE: Record<AssessmentStage, 'positive' | 'neutral' | 'attention'> = {
   pre_conference: 'neutral',
   during_conference: 'positive',
+  end_of_conference: 'positive',
   follow_up: 'attention',
 };
 

@@ -308,7 +308,14 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   questions and moves them to the first group. Migration `20261031150000_assessment_sections`.
 - Rules: an enabled stage with no questions cannot be scheduled or opened (422
   `stage_without_questions`) and blocks publishing the event; the publish checklist says so.
-- Delegate (`/account/events/:id`, "Your assessments"): `GET /api/v1/me/events/:id/assessments`
+- The delegate event page (`/account/events/:id`, 2026-10-31) is arranged in tabs in journey
+  order: Overview (event facts, registration, journey), Assessments, Attendance, Daily
+  reflections, Session feedback, Transfer plan. A link with a hash such as `#transfer-plan` (the
+  reminder email) opens that tab; choosing a tab writes the hash so a reload keeps it.
+- The Assessments tab shows one tab per enabled stage (with its state: open, submitted, closed,
+  opens later), the stage still open to answer first; inside a stage, sections are shown one at a
+  time with section buttons and Previous / Next, while answering and read-only alike.
+- Delegate (`/account/events/:id`, "Assessments" tab): `GET /api/v1/me/events/:id/assessments`
   lists the enabled stages as upcoming, open or closed for the signed-in delegate's own
   registration; `PUT /api/v1/me/events/:id/assessments/:stage` saves a draft or submits
   (`submit: true`) after validating each answer against its question type and requiring every
@@ -386,6 +393,123 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   time, each question with its answer as text, correct flag and weight), audited as
   `assessment.response_viewed` without the answers. Shown on the stage page's Submissions tab
   with a "View" popup per delegate. The CSV export prefixes each column with its section title.
+- Session feedback (task of 2026-10-31; backlog E8): a questionnaire per session, reached by the
+  session's link or QR code, answered after the session by delegates recorded as attending it
+  (session attendance, E6), one logical response per delegate, updatable. Tables:
+  `event_session.feedback_code` (the link/QR code, kept across disable/enable),
+  `feedback_opened_at` (when the organisers started the encouraged five-minute period, never a
+  gate) and `feedback_closes_at` (the deadline; the form stays open until then);
+  `session_feedback_question` (rating Excellent/Good/Fair/Poor or written answer, required
+  flag, versioned after answers); `session_feedback_response` (unique per delegate and session,
+  revision, first submitted and last updated); `session_feedback_answer`;
+  `session_feedback_revision` (earlier answers kept on every update). Migration
+  `20261031240000_session_feedback`. Admin routes under `/api/v1/events/:id/feedback`: list;
+  `sessions/:sid` PATCH `{ enabled, closesAt }` (enabling creates the code and, for a session
+  without questions, the standard five questions); `sessions/:sid/open` (starts the five-minute
+  period); questions POST/PATCH/DELETE and `questions/order`; `sessions/:sid/dashboard`
+  (submission count = latest per delegate, rating distribution per question with percentages
+  over that question's valid answers, written answers; `?anonymised=true` leaves delegate names
+  out for the speaker; viewing audited); `sessions/:sid/export.csv` (same figures, same
+  `anonymised` switch, audited). Delegate routes: `GET /me/feedback/:code` (the session,
+  speaker, questions, own response, attendance eligibility), `PUT /me/feedback/:code` (create
+  or update; 403 `not_attended`, 409 `feedback_closed`, 422 `answers_invalid`; never touches
+  attendance), `GET /me/events/:id/feedback` (the delegate's sessions with feedback). Screens:
+  the event page's "Session feedback" tab (enable, deadline, link and QR code, start the
+  period, questions, dashboard with the speaker view, export) and the page `/feedback/:code`
+  (sign-in first, then the form; the delegate's event page lists their sessions too).
+- End-of-conference evaluation (task of 2026-10-31; backlog E11): a fourth assessment stage,
+  `end_of_conference`, between the during-conference stage and the follow-ups (migrations
+  `20261031260000_end_of_conference_stage`, which adds the enum value on its own because
+  PostgreSQL cannot use a new enum value in the transaction that adds it, and
+  `20261031261000_end_of_conference_sections`, which gives every existing event the stage,
+  disabled). Built on the stage machinery with three additions that any stage can use:
+  (1) a section's **audience** (`assessment_section.audience`: every delegate, in-person only,
+  online only) filters what a delegate sees and must answer by the format on their
+  registration; (2) **repeated sections** (`POST .../sections/mirror { sourceSectionId }`): the
+  section of another stage is copied with its marking and questions, each copy carrying
+  `source_question_key`, so the two stages' answers pair per delegate; repeated and built-in
+  questions keep their wording, type and options (409 `locked_question`; required, help text
+  and section may change); (3) **built-in blocks** (`POST .../sections/builtin { kind }`):
+  `expectations` shows the delegate's own pre-event "what you hoped to learn" answer (the
+  event's first reference question, set under Transfer plans) and asks how far it was provided
+  (Fully / Partly / Not yet sure / Not at all / No longer applicable) plus an explanation; a
+  delegate without one is asked to record it now ("Recorded after the conference" help text,
+  "Prefer not to answer" allowed) and then whether it was met (Met / Partly met / Not yet met /
+  Not met / No longer applicable); each delegate sees only their branch, and a declined
+  expectation waives the "met" question; `readiness` asks readiness to apply, the plan status
+  (filled in from the Transfer Plan: submitted = Yes, draft with an action = Started, else No;
+  the delegate may change it) and the support needed. `GET /me/events/:id/assessments` adds
+  `context` (reference answers and plan status) and leaves out hidden sections and branches;
+  `PUT` refuses answers to them. Reports: `GET .../assessments/:stage/paired` (per repeated
+  section: knowledge = delegates who answered every question at both stages, averages in
+  percent, change in percentage points; rating scales = per statement, "Not applicable" and
+  unanswered excluded, labelled self-reported; never two different groups) and the stage summary's
+  new `distributions` (every single-choice question: count and share per option, "Not
+  applicable" included). Screens: the stage page gains a "Paired results" tab and, under
+  Questions, "Repeat a section", "Add built-in block", a "Shown to" choice per section and
+  locked-wording markers; the Submissions tab lists the distributions. The ITTEC evaluation
+  (Appendix A6 wording: experience ratings, in-person and online sections, the repeated
+  knowledge and confidence sections, learning gained, unresolved needs, readiness, expectations
+  and value) is seeded once as the ITTEC event's own data by `db:seed`.
+- Individual Transfer Plans (task of 2026-10-31; backlog E9, E10, E12-8 to 12-12): one
+  continuous plan per delegate per event, created on first access, saved as a draft in any
+  session of type Transfer Planning, submitted once the designated final planning session has
+  started (the session flagged "final" in Sessions and schedule, else the last one; at any time
+  when none is scheduled), then kept open after the event for changes and progress. Tables:
+  `transfer_plan` (status draft/submitted, `version` bumped on every save so a save carrying an
+  older version is refused with 409 `stale_plan`, `submitted_snapshot` = the plan exactly as
+  submitted, reminder frequency none/weekly/fortnightly/monthly, start date, next reminder
+  time), `transfer_plan_action` (order, first-priority flag, the 13 per-action fields of
+  Appendix A5, latest progress status), `transfer_plan_progress` (every status change with its
+  note, evidence, results, challenges and new target date: Appendix B statuses; applied,
+  applied consistently, completed, changed and no longer applicable require a note),
+  `transfer_plan_reminder_log` (one row per reminder attempt) and `event_reference_question`
+  (the pre-conference questions the event shows back beside the plan, as many as the admin
+  ticks, in question order; the first is the expectation the end-of-conference evaluation asks
+  about; the ITTEC seed picks the two pilot prompts once, an admin can change the list;
+  migration `20261031270000_reference_question_list`). `event_session.transfer_planning_final` marks the final session. Migration
+  `20261031250000_transfer_plans`. Delegate routes: `GET /me/events/:id/transfer-plan` (the
+  plan, the planning sessions, whether submission is open, the reference answers, reminder
+  attempts), `PUT` (replace the actions, keep ids, one first priority, reminder preferences),
+  `POST .../submit` (`{ version }`; 422 `plan_empty` without an action, 409 `not_yet`
+  before the final session starts, 409 `already_submitted`), `POST
+.../actions/:actionId/progress`. Admin routes: `GET /events/:id/transfer-plans` (every plan
+  with actions counted once in their latest status, plus the sessions), `GET
+.../transfer-plans/:delegateId` (current plan, the snapshot, references, audit history,
+  reminders; viewing audited), `GET/PUT /events/:id/reference-questions`. The worker runs
+  `transfer-plan-reminders` every 15 minutes (`apps/api/src/reminders/transfer-plans.ts`):
+  due plans of active events get the branded reminder with the first-priority action and a link
+  to the plan; the next time is moved before sending so a restart never sends twice; each
+  attempt is logged. Screens: "Your transfer plan" on the delegate's event page (actions with
+  the grouped fields, first priority, "Not yet known"/"Not applicable" shortcuts for measure and
+  baseline, reminders, review popup before submitting, progress popup per action, stale-save
+  warning with reload) and the event page's "Transfer plans" tab (counts, sessions, reference
+  questions, searchable list with status and action-status filters, CSV export, one plan in full
+  with "Current" and "As submitted" views and its history).
+- Daily reflections (task of 2026-10-31): one optional questionnaire per
+  event date, never created automatically. Tables `reflection_activity` (one per event date:
+  title, status draft/published/closed, opens/closes, published/closed times),
+  `reflection_question` (order, prompt, short or long text, required, `concern` flag; versioned
+  like assessment questions, so an edit after answers retires the row and creates version + 1
+  under the same key), `reflection_response` (one per delegate per activity, submitted time) and
+  `reflection_answer`. Migration `20261031230000_reflections`. Admin routes under
+  `/api/v1/events/:id/reflections`: list every date with its activity and the concerns;
+  `dates/:dateId` POST enables a date (409 when already enabled, 404 for a date outside the
+  event); `:activityId` PATCH (title, window), `publish` (needs a question), `close`, DELETE
+  (disable, only without responses); `:activityId/questions` POST/PATCH/DELETE and
+  `questions/order` PUT; `:activityId/responses` (by delegate, answers mapped to the current
+  question version, plus who has not submitted; viewing audited); `concerns` (every answer to a
+  concern question across dates, newest first). Delegate routes `GET /me/events/:id/reflections`
+  (published activities as upcoming, open or closed, with the delegate's own submission) and
+  `POST /me/events/:id/reflections/:activityId` (once; 409 `reflection_not_open` or
+  `already_submitted`; 422 `answers_invalid` with per-question problems; unknown questions
+  refused). Submissions never touch attendance, and the audit row holds counts only. ITTEC's
+  Day 1 and Day 2 questionnaires (agreed wording, Day 1 question 3 flagged as a concern) are
+  seeded as drafts by `db:seed`; the admin sets the window and publishes. Screens: the event
+  page's "Daily reflections" tab (concerns first, then a card per date with settings, questions,
+  preview, publish/close/disable, responses by delegate or by question) and the delegate's event
+  page section "Daily reflections" (form, highlighted missing answers, review popup,
+  confirmation, read-only answers once submitted).
 - Attendance (attendance requirements, 2026-10-30; backlog E6): recorded per delegate per event
   date, admins only, never inferred from registration or an assessment. Tables
   `attendance_token` (one QR code per delegate per date: a keyed hash of delegate and date,

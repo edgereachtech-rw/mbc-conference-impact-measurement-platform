@@ -11,6 +11,9 @@ const { mailConfigFromEnv } = await import('./mail/config.js');
 const { PgBoss } = await import('pg-boss');
 const { startHeartbeat } = await import('./lib/heartbeat.js');
 const { createLogger } = await import('./lib/logger.js');
+const { getPrisma } = await import('./db.js');
+const { createMailer } = await import('./mail/index.js');
+const { registerTransferPlanReminders } = await import('./reminders/transfer-plans.js');
 
 const logger = createLogger(undefined, undefined).child({ service: 'worker' });
 
@@ -43,7 +46,14 @@ let heartbeat: { stop(): void } | undefined;
 
 async function main() {
   await boss.start();
-  // Jobs are registered here in later increments (reminders, exports).
+  await registerTransferPlanReminders({
+    boss,
+    prisma: () => getPrisma(),
+    mailer: createMailer(mailConfigFromEnv()),
+    mailConfig: mailConfigFromEnv(),
+    appUrl: authConfigFromEnv().appUrl,
+    logger,
+  });
 
   const heartbeatUrl = process.env.HEALTHCHECKS_WORKER_URL;
   if (heartbeatUrl) {

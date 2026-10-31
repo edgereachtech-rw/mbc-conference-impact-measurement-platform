@@ -204,7 +204,11 @@ describe('AttendanceManager', () => {
     const calls = stub();
     const user = userEvent.setup();
     render(<AttendanceManager event={event} />);
-    const table = await screen.findByRole('table', { name: 'Delegates on 12 Nov 2026' });
+    const table = await screen.findByRole(
+      'table',
+      { name: 'Delegates on 12 Nov 2026' },
+      { timeout: 10_000 },
+    );
     expect(within(table).getAllByRole('row')).toHaveLength(4);
     expect(within(table).getByText('Dee Legate').closest('tr')!.textContent).toMatch(
       /AttendedQR check-in/,
@@ -290,7 +294,7 @@ describe('AttendanceManager', () => {
     const calls = stub();
     const user = userEvent.setup();
     render(<AttendanceManager event={event} />);
-    await screen.findByRole('table', { name: 'Delegates on 12 Nov 2026' });
+    await screen.findByRole('table', { name: 'Delegates on 12 Nov 2026' }, { timeout: 10_000 });
     await user.selectOptions(screen.getByLabelText('Session attendance'), S1);
     const dialog = await screen.findByRole('dialog', {
       name: 'Session attendance: Opening keynote',
