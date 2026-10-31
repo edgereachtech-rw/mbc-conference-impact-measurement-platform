@@ -3,9 +3,24 @@
 #   cd deploy && cp .env.example .env   # fill in real values
 #   docker compose build && docker compose up -d
 #
-# `web` and `api` publish ports (2026-10-31: the Caddy reverse proxy was removed). The browser
-# loads pages from web and calls the API directly on its own origin, so the API answers CORS for
-# the web origin. Every other service is reachable on the internal network only.
+# Published ports (2026-10-31: the Caddy reverse proxy was removed; every service except the
+# database is reachable from outside):
+#   web      WEB_PUBLISH           the pages delegates load
+#   api      API_PUBLISH           the browser calls it directly on its own origin, so the API
+#                                  answers CORS for the web origin
+#   garage   GARAGE_S3_PUBLISH     S3 API, authenticated with the S3 access keys
+#            GARAGE_ADMIN_PUBLISH  admin API: full control of the object store behind one bearer
+#                                  token, over plain HTTP. Keep it on 127.0.0.1 unless something
+#                                  off-host manages Garage.
+#   mailpit  MAILPIT_UI_PUBLISH    web inbox of every email the platform sends, sign-in links
+#                                  included, so MAILPIT_UI_AUTH is not optional out there
+#            MAILPIT_SMTP_PUBLISH  SMTP
+#   db       not published         PostgreSQL stays on the internal network
+#   worker   nothing to publish    a pg-boss consumer; it opens no listening socket
+#   backup   nothing to publish    busybox crond; it opens no listening socket
+#
+# Ports bind to every interface. Where a TLS terminator or firewall fronts the server, restrict
+# the source there, or give a variable a loopback form such as 127.0.0.1:3903.
 #
 # TLS is NOT part of this stack any more. Put a TLS terminator in front of the server (a cloud
 # load balancer, Cloudflare, or a host-level proxy) and point APP_DOMAIN and API_DOMAIN at it;
@@ -17,7 +32,8 @@
 # Images are pinned to exact tags; never use :latest.
 #
 # !!! NEVER run `docker compose down -v` in production: it deletes the named volumes
-# !!! (pgdata, garagemeta, garagedata) and with them the database and the uploaded files.
+# !!! (pgdata, garagemeta, garagedata, mailpitdata) and with them the database, the uploaded
+# !!! files and the captured email.
 # !!! Use `docker compose down` (no -v) or `docker compose stop`.
 #
 # Object storage: MinIO's Docker images are no longer published (minio/minio was removed from
@@ -52,7 +68,7 @@ x-app-env: &app-env
   MAIL_CONTACT_EMAIL: ${MAIL_CONTACT_EMAIL:-}
   MAIL_ORGANISER_NAME: ${MAIL_ORGANISER_NAME:-}
   MAIL_TRANSPORT: ${MAIL_TRANSPORT:-smtp}
-  APP_URL: https://${APP_DOMAIN}
+  APP_URL: ${APP_URL:-https://${APP_DOMAIN}}
   SESSION_SECRET: ${SESSION_SECRET}
   SESSION_TTL_DAYS: ${SESSION_TTL_DAYS:-14}
   SESSION_IDLE_DAYS: ${SESSION_IDLE_DAYS:-7}
@@ -197,9 +213,13 @@ services:
     restart: unless-stopped
     # Single node, one replica: this stack runs on one VPS. Off-site copies are the backup job's duty.
     command: ['/garage', 'server']
-    expose:
-      - '3900' # S3 API
-      - '3903' # admin API (metrics, health)
+    ports:
+      # S3 API. The api and worker containers still reach it as garage:3900 over the internal
+      # network (S3_ENDPOINT); this publishes it for browsers and external S3 tooling.
+      - '${GARAGE_S3_PUBLISH:-3900}:3900'
+      # Admin API: metrics, health, bucket and key management. GARAGE_ADMIN_TOKEN is the only
+      # thing standing in front of it, and it is served over plain HTTP.
+      - '${GARAGE_ADMIN_PUBLISH:-3903}:3903'
     environment:
       GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET}
       GARAGE_ADMIN_TOKEN: ${GARAGE_ADMIN_TOKEN}
@@ -272,7 +292,43 @@ services:
           memory: 512M
     logging: *default-logging
 
+  # ---------------------------------------------------------------- Mailpit: outgoing mail inbox
+  # Keeps a copy of every email the platform sends. That includes magic sign-in links, so reading
+  # this inbox is as good as signing in as any delegate or admin: set MAILPIT_UI_AUTH before the
+  # port is reachable, and put the UI behind the same TLS terminator as the rest (it speaks plain
+  # HTTP) or keep MAILPIT_UI_PUBLISH on 127.0.0.1.
+  #
+  # To route the platform's own mail here, point the SMTP settings at it. MAIL_TRANSPORT stays
+  # "smtp", the only transport the API accepts in production:
+  #   SMTP_HOST=mailpit  SMTP_PORT=1025  SMTP_USER / SMTP_PASSWORD matching MAILPIT_SMTP_AUTH
+  mailpit:
+    image: axllent/mailpit:v1.32.0
+    restart: unless-stopped
+    ports:
+      - '${MAILPIT_UI_PUBLISH:-8025}:8025'
+      - '${MAILPIT_SMTP_PUBLISH:-1025}:1025'
+    environment:
+      TZ: ${EVENT_TIMEZONE:-Africa/Lagos}
+      # "user:password", comma-separated for several accounts. Empty leaves the inbox open to
+      # anyone who reaches the port.
+      MP_UI_AUTH: ${MAILPIT_UI_AUTH:-}
+      MP_SMTP_AUTH: ${MAILPIT_SMTP_AUTH:-}
+      # Nothing inside the Docker network speaks TLS, and Mailpit refuses SMTP credentials over a
+      # plain connection unless this says otherwise.
+      MP_SMTP_AUTH_ALLOW_INSECURE: 'true'
+      # Survive restarts, and cap how much is kept.
+      MP_DATABASE: /data/mailpit.db
+      MP_MAX_MESSAGES: ${MAILPIT_MAX_MESSAGES:-5000}
+    volumes:
+      - mailpitdata:/data
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    logging: *default-logging
+
 volumes:
   pgdata:
   garagemeta:
   garagedata:
+  mailpitdata:
