@@ -172,7 +172,13 @@ describe.skipIf(!hasDatabase)('event dashboards and reports', () => {
     await record(delegateIds.dee!, ids.day2, 'attended', 'physical');
   });
   afterAll(async () => {
-    if (eventId) await prisma.event.delete({ where: { id: eventId } }).catch(() => undefined);
+    if (eventId) {
+      // Answers hold their question with onDelete: Restrict, so deleting the event while any
+      // response exists fails and would leave this event's delegates behind for every later
+      // test to scan. Clearing the responses first lets the event cascade take the rest.
+      await prisma.assessmentResponse.deleteMany({ where: { stage: { eventId } } });
+      await prisma.event.delete({ where: { id: eventId } });
+    }
     for (const id of identityIds) await deleteIdentity(prisma, id);
     await prisma.userAccount.deleteMany({ where: { id: { in: accountIds } } });
     await prisma.$disconnect();
