@@ -13,17 +13,26 @@ import {
 } from '@/lib/my-events';
 
 import { AssessmentsPanel } from './assessments-panel';
+import { JourneyPanel } from './journey-panel';
 import { AttendanceCodes } from './attendance-codes';
 import { JourneyStrip } from './journey-strip';
 import { ReflectionsPanel } from './reflections-panel';
 import { SessionFeedbackList } from './session-feedback-list';
 import { TransferPlanPanel } from './transfer-plan-panel';
 
-type Tab = 'overview' | 'assessments' | 'attendance' | 'reflections' | 'feedback' | 'transfer-plan';
+type Tab =
+  | 'overview'
+  | 'journey'
+  | 'assessments'
+  | 'attendance'
+  | 'reflections'
+  | 'feedback'
+  | 'transfer-plan';
 
 /** In journey order: before the event, at the event, after it. */
 const TABS: Array<{ id: Tab; label: string; hint: string }> = [
   { id: 'overview', label: 'Overview', hint: 'The event and your registration' },
+  { id: 'journey', label: 'My journey', hint: 'What you have given and where you stand' },
   { id: 'assessments', label: 'Assessments', hint: 'Before, during and after the event' },
   { id: 'attendance', label: 'Attendance', hint: 'Your check-in codes and record' },
   { id: 'reflections', label: 'Daily reflections', hint: 'A short reflection per day' },
@@ -91,6 +100,7 @@ export function EventDetail({ event, contactEmail }: { event: MyEvent; contactEm
           </div>
         ) : null}
         {tab === 'overview' ? <Overview event={event} contactEmail={contactEmail} /> : null}
+        {tab === 'journey' ? <JourneyPanel eventId={event.id} timezone={event.timezone} /> : null}
         {tab === 'assessments' ? (
           <AssessmentsPanel eventId={event.id} timezone={event.timezone} />
         ) : null}

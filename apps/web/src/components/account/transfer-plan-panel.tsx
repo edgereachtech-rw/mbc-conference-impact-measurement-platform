@@ -32,6 +32,8 @@ import { ApiError, apiFetch } from '@/lib/api';
 import { formatDateShort, formatInstant } from '@/lib/events';
 import { describeError } from '@/lib/imports';
 
+import { ActionMeasures, EvidenceDialog, MeasuresDialog } from './measures-evidence';
+
 interface TransferPlanPanelProps {
   eventId: string;
   timezone: string;
@@ -233,7 +235,11 @@ function PlanEditor({
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<{ message: string; stale?: boolean } | null>(null);
   const [dialog, setDialog] = useState<
-    null | { kind: 'review' } | { kind: 'progress'; action: PlanActionView }
+    | null
+    | { kind: 'review' }
+    | { kind: 'progress'; action: PlanActionView }
+    | { kind: 'measures'; action: PlanActionView }
+    | { kind: 'evidence'; action: PlanActionView }
   >(null);
   const id = useId();
   const submitted = plan.status === 'submitted';
@@ -405,6 +411,9 @@ function PlanEditor({
             onMove={(delta) => move(a.key, delta)}
             onRemove={() => remove(a.key)}
             onProgress={(action) => setDialog({ kind: 'progress', action })}
+            dirty={dirty}
+            onMeasures={(action) => setDialog({ kind: 'measures', action })}
+            onEvidence={(action) => setDialog({ kind: 'evidence', action })}
             timezone={timezone}
           />
         ))}
@@ -575,6 +584,38 @@ function PlanEditor({
           }}
         />
       ) : null}
+      {dialog?.kind === 'measures' ? (
+        <MeasuresDialog
+          eventId={eventId}
+          action={dialog.action}
+          version={plan.version}
+          onClose={() => setDialog(null)}
+          onSaved={(result) => {
+            setDialog(null);
+            onUpdated(result, 'Measures saved.');
+          }}
+          onStale={(message) => {
+            setDialog(null);
+            setFailure({ message, stale: true });
+          }}
+        />
+      ) : null}
+      {dialog?.kind === 'evidence' ? (
+        <EvidenceDialog
+          eventId={eventId}
+          action={dialog.action}
+          version={plan.version}
+          onClose={() => setDialog(null)}
+          onSaved={(result) => {
+            setDialog(null);
+            onUpdated(result, 'Evidence saved.');
+          }}
+          onStale={(message) => {
+            setDialog(null);
+            setFailure({ message, stale: true });
+          }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -614,6 +655,9 @@ function ActionCard({
   onMove,
   onRemove,
   onProgress,
+  dirty,
+  onMeasures,
+  onEvidence,
   timezone,
 }: {
   draft: ActionDraft;
@@ -626,6 +670,10 @@ function ActionCard({
   onMove: (delta: -1 | 1) => void;
   onRemove: () => void;
   onProgress: (action: PlanActionView) => void;
+  /** Unsaved plan edits; the measure and evidence dialogs wait for a save. */
+  dirty: boolean;
+  onMeasures: (action: PlanActionView) => void;
+  onEvidence: (action: PlanActionView) => void;
   timezone: string;
 }) {
   const id = useId();
@@ -814,6 +862,15 @@ function ActionCard({
       ) : (
         <p className="text-xs text-corp-muted">Save the plan to record progress on this action.</p>
       )}
+      {saved ? (
+        <ActionMeasures
+          action={saved}
+          disabled={disabled}
+          dirty={dirty}
+          onMeasures={() => onMeasures(saved)}
+          onEvidence={() => onEvidence(saved)}
+        />
+      ) : null}
     </article>
   );
 }

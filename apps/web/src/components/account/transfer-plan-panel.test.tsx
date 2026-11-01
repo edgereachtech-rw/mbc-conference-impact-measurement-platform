@@ -36,6 +36,8 @@ function action(partial: Partial<PlanActionView> = {}): PlanActionView {
     reviewOn: null,
     progressStatus: 'not_started',
     progress: [],
+    measures: [],
+    evidenceRecords: [],
     ...partial,
   };
 }

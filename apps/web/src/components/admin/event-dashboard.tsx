@@ -1,30 +1,20 @@
 'use client';
 
 import type { EventDashboard as Dashboard } from '@mbc/shared';
-import { RefreshCwIcon } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
-import { consoleButton, Panel, StatePanel, StatTile, StatusPill } from '@/components/console/page';
+import { consoleButton, Panel, StatusPill } from '@/components/console/page';
 import { apiFetch } from '@/lib/api';
-import {
-  formatDateShort,
-  formatInstant,
-  stageLabels,
-  stageStatusLabels,
-  stageWhen,
-} from '@/lib/events';
+import { formatInstant, stageLabels, stageStatusLabels, stageWhen } from '@/lib/events';
 import { describeError } from '@/lib/imports';
+
+import { ReportWorkspace } from './reports/report-workspace';
 
 interface EventDashboardProps {
   eventId: string;
   timezone: string;
 }
-
-type State =
-  | { kind: 'loading' }
-  | { kind: 'ready'; dashboard: Dashboard }
-  | { kind: 'error'; message: string; requestId?: string };
 
 const statusLabels: Record<keyof Dashboard['delegates']['byStatus'], string> = {
   active: 'Active',
@@ -41,141 +31,58 @@ const windowText: Record<Dashboard['stages'][number]['window'], string> = {
   closed: 'Closed',
 };
 
-const percent = (part: number, whole: number) =>
-  whole ? `${Math.round((part / whole) * 1000) / 10}%` : null;
-
 /**
- * The event's summary page: delegates, each assessment stage with its response counts, and the
- * messages sent, in one admin-only call. Counts only; names and answers live on their own pages.
+ * The event's dashboard (task of 2026-10-31, §2): the whole reporting document, from delegate
+ * participation to expectations and results, with the filters of §6. Underneath it, the two
+ * things that belong to running the event rather than reporting on it: how the registrations
+ * stand, the messages sent, and the way in to each assessment stage.
  */
 export function EventDashboard({ eventId, timezone }: EventDashboardProps) {
-  const [state, setState] = useState<State>({ kind: 'loading' });
-  const [attempt, setAttempt] = useState(0);
+  return (
+    <div className="space-y-8">
+      <ReportWorkspace eventId={eventId} timezone={timezone} kinds={['dashboard']} />
+      <EventAdminPanels eventId={eventId} timezone={timezone} />
+    </div>
+  );
+}
+
+/** Registrations by status, the messages sent, and a link into every assessment stage. */
+function EventAdminPanels({ eventId, timezone }: EventDashboardProps) {
+  const [dashboard, setDashboard] = useState<Dashboard | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     apiFetch<{ dashboard: Dashboard }>(`/events/${eventId}/dashboard`).then(
-      (result) => {
-        if (!cancelled) setState({ kind: 'ready', dashboard: result.dashboard });
+      (r) => {
+        if (!cancelled) setDashboard(r.dashboard);
       },
       (e: unknown) => {
-        if (!cancelled) {
-          const failure = describeError(e, 'The dashboard could not be loaded.');
-          setState({ kind: 'error', message: failure.message, requestId: failure.requestId });
-        }
+        if (!cancelled) setError(describeError(e, 'The event panels could not be loaded.').message);
       },
     );
     return () => {
       cancelled = true;
     };
-  }, [eventId, attempt]);
+  }, [eventId]);
 
-  if (state.kind === 'loading') {
-    return <StatePanel kind="loading" title="Loading the dashboard…" />;
-  }
-  if (state.kind === 'error') {
+  if (error) {
     return (
-      <StatePanel
-        kind="error"
-        title="Dashboard unavailable"
-        description={state.message}
-        requestId={state.requestId}
-        action={
-          <button
-            type="button"
-            onClick={() => setAttempt((n) => n + 1)}
-            className={consoleButton({ variant: 'secondary' })}
-          >
-            Try again
-          </button>
-        }
-      />
+      <p role="alert" className="text-sm font-semibold text-brand-danger">
+        {error}
+      </p>
     );
   }
-  const { event, delegates, stages, attendance, messages, generatedAt } = state.dashboard;
+  if (!dashboard) return null;
+  const { delegates, stages, messages, event } = dashboard;
 
   return (
     <div className="space-y-6">
-      <section aria-label="Delegates" className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <StatTile
-          label="Registered delegates"
-          value={delegates.registered}
-          hint={
-            delegates.registered
-              ? `${delegates.signedUp} signed up (${percent(delegates.signedUp, delegates.registered)})`
-              : 'No registrations yet'
-          }
-          tone={delegates.registered ? 'positive' : 'neutral'}
-        />
-        <StatTile
-          label="Invited"
-          value={delegates.invited}
-          hint={
-            delegates.registered
-              ? `${percent(delegates.invited, delegates.registered)} of registered`
-              : undefined
-          }
-        />
-        <StatTile
-          label="In person · Online"
-          value={`${delegates.physical} · ${delegates.virtual}`}
-          hint="Attendance format from the registrations"
-        />
-        <StatTile
-          label="Sessions"
-          value={event.sessions}
-          hint={`${event.days} event day${event.days === 1 ? '' : 's'} · ${event.timezone}`}
-        />
-      </section>
-
-      <section aria-label="Attendance" className="space-y-3">
-        <h2 className="font-corporate text-h3 text-corp-ink">Attendance</h2>
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-          <StatTile
-            label="Attended at least one day"
-            value={attendance.attendees}
-            tone={attendance.attendees > 0 ? 'positive' : 'neutral'}
-            hint={
-              attendance.rate === null
-                ? 'Nobody registered'
-                : `${attendance.rate}% of ${attendance.registered} registered`
-            }
-          />
-          <StatTile label="Every day" value={attendance.attended} hint="Attended all dates" />
-          <StatTile label="Partially" value={attendance.partial} hint="Some dates only" />
-          <StatTile
-            label="Absent · Pending"
-            value={`${attendance.absent} · ${attendance.pending}`}
-            hint="Absent once a date is closed"
-          />
-        </div>
-        {attendance.dates.length ? (
-          <Panel>
-            <dl aria-label="Attendance by date" className="divide-y divide-corp-line text-sm">
-              {attendance.dates.map((d) => (
-                <div
-                  key={d.id}
-                  className="flex flex-wrap items-center justify-between gap-2 py-1.5"
-                >
-                  <dt className="text-corp-text">
-                    {formatDateShort(d.date)}
-                    {d.closedAt ? ' · closed' : ' · open'}
-                  </dt>
-                  <dd className="text-corp-ink tabular-nums">
-                    {d.counts.attended + d.counts.partial} of {d.counts.registered} attended
-                    {d.counts.rate !== null ? ` (${d.counts.rate}%)` : ''} · {d.counts.physical} in
-                    person · {d.counts.virtual} online · {d.counts.absent} absent
-                  </dd>
-                </div>
-              ))}
-            </dl>
-          </Panel>
-        ) : null}
-      </section>
-
-      <section aria-label="Assessment stages" className="space-y-3">
+      <section aria-labelledby="dashboard-stages" className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="font-corporate text-h3 text-corp-ink">Assessment stages</h2>
+          <h2 id="dashboard-stages" className="font-corporate text-h3 text-corp-ink">
+            Assessment configuration
+          </h2>
           <Link
             href={`/admin/events/${event.id}`}
             className={consoleButton({ variant: 'ghost', size: 'sm' })}
@@ -183,10 +90,10 @@ export function EventDashboard({ eventId, timezone }: EventDashboardProps) {
             Configure stages
           </Link>
         </div>
-        <div className="grid gap-3 xl:grid-cols-3">
+        <div className="grid gap-3 xl:grid-cols-4">
           {stages.map((s) => (
             <Panel key={s.stage}>
-              <article aria-label={stageLabels[s.stage]} className="space-y-3">
+              <article aria-label={stageLabels[s.stage]} className="space-y-2">
                 <div className="flex flex-wrap items-center gap-2">
                   <StatusPill tone="neutral">{stageWhen[s.stage]}</StatusPill>
                   <StatusPill tone={s.enabled ? 'positive' : 'neutral'}>
@@ -206,44 +113,6 @@ export function EventDashboard({ eventId, timezone }: EventDashboardProps) {
                     ? `${formatInstant(s.opensAt, timezone)} to ${formatInstant(s.closesAt, timezone)} · ${s.questions} question${s.questions === 1 ? '' : 's'}`
                     : 'Not used for this event'}
                 </p>
-                {s.summary ? (
-                  <dl
-                    aria-label={`Responses: ${stageLabels[s.stage]}`}
-                    className="grid grid-cols-3 gap-2 rounded-none border border-corp-line bg-corp-surface p-2 text-center"
-                  >
-                    {(
-                      [
-                        ['Invited', String(s.summary.invited)],
-                        ['Started', String(s.summary.started)],
-                        [
-                          'Submitted',
-                          s.summary.responseRate === null
-                            ? String(s.summary.submitted)
-                            : `${s.summary.submitted} (${s.summary.responseRate}%)`,
-                        ],
-                      ] as const
-                    ).map(([label, value]) => (
-                      <div key={label}>
-                        <dt className="text-[0.65rem] font-semibold tracking-[0.08em] text-corp-muted uppercase">
-                          {label}
-                        </dt>
-                        <dd className="text-base font-semibold text-corp-ink tabular-nums">
-                          {value}
-                        </dd>
-                      </div>
-                    ))}
-                    <div className="col-span-3 border-t border-corp-line pt-1 text-left text-xs text-corp-text">
-                      {s.summary.knowledge
-                        ? s.summary.knowledge.averageScore === null
-                          ? `Knowledge: ${s.summary.knowledge.questions} questions, no complete answers yet.`
-                          : `Knowledge: average ${s.summary.knowledge.averageScore} of ${s.summary.knowledge.questions} (${s.summary.knowledge.averagePercent}%) from ${s.summary.knowledge.respondents}.`
-                        : 'No knowledge questions.'}{' '}
-                      {s.nonCompleters} not yet submitted.
-                    </div>
-                  </dl>
-                ) : s.enabled ? (
-                  <p className="text-sm text-corp-muted">No questions yet, so nothing to count.</p>
-                ) : null}
                 <Link
                   href={`/admin/events/${event.id}/assessments/${s.stage}`}
                   className={consoleButton({ variant: 'secondary', size: 'sm' })}
@@ -275,8 +144,9 @@ export function EventDashboard({ eventId, timezone }: EventDashboardProps) {
             ))}
           </dl>
           <p className="mt-2 text-xs text-corp-muted">
-            Active registrations are the ones delegates can sign in with; test ones only where the
-            platform allows them.
+            Only active registrations (and test ones where the platform allows them) are counted in
+            the report above; cancelled, pending and duplicate registrations are excluded
+            everywhere.
           </p>
         </Panel>
         <Panel>
@@ -302,17 +172,6 @@ export function EventDashboard({ eventId, timezone }: EventDashboardProps) {
               : 'No message sent yet.'}
           </p>
         </Panel>
-      </div>
-
-      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-corp-muted">
-        <span>Figures as of {formatInstant(generatedAt, timezone)}.</span>
-        <button
-          type="button"
-          onClick={() => setAttempt((n) => n + 1)}
-          className={consoleButton({ variant: 'ghost', size: 'sm' })}
-        >
-          <RefreshCwIcon aria-hidden="true" /> Refresh
-        </button>
       </div>
     </div>
   );

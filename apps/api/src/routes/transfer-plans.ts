@@ -1,12 +1,22 @@
 import {
   actionProgressSchema,
   actionProgressStatuses,
+  evidenceSaveSchema,
+  evidenceSupports,
+  measureSummaries,
+  measuresSaveSchema,
   nextReminderAfter,
   planHasContent,
   referenceQuestionsSaveSchema,
+  summariseMeasures,
   transferPlanSaveSchema,
   transferPlanSubmitSchema,
   type ActionProgressStatus,
+  type EvidenceSupport,
+  type EvidenceView,
+  type MeasureReportRow,
+  type MeasureSummary,
+  type MeasureView,
   type MyTransferPlan,
   type PlanActionView,
   type TransferPlanAdminDetail,
@@ -53,14 +63,23 @@ function validated<T extends z.ZodTypeAny>(schema: T) {
   };
 }
 
+const ACTION_INCLUDE = {
+  progress: { orderBy: { recordedAt: 'desc' } },
+  measures: {
+    orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
+    include: { readings: { orderBy: { recordedAt: 'desc' } } },
+  },
+  evidenceRecords: { orderBy: [{ order: 'asc' }, { createdAt: 'asc' }] },
+} satisfies Prisma.TransferPlanActionInclude;
 const PLAN_INCLUDE = {
   actions: {
     orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
-    include: { progress: { orderBy: { recordedAt: 'desc' } } },
+    include: ACTION_INCLUDE,
   },
   reminders: { orderBy: { createdAt: 'desc' }, take: 20 },
 } satisfies Prisma.TransferPlanInclude;
 type PlanRow = Prisma.TransferPlanGetPayload<{ include: typeof PLAN_INCLUDE }>;
+export type ActionRow = PlanRow['actions'][number];
 
 const DELEGATE_SELECT = {
   id: true,
@@ -70,7 +89,62 @@ const DELEGATE_SELECT = {
   attendanceFormat: true,
 } as const;
 
-function actionViewOf(a: PlanRow['actions'][number]): PlanActionView {
+export function measureViewOf(m: ActionRow['measures'][number]): MeasureView {
+  return {
+    id: m.id,
+    order: m.order,
+    status: m.status,
+    kind: m.kind,
+    name: m.name,
+    importance: m.importance,
+    unit: m.unit,
+    direction: m.direction,
+    baselineValue: m.baselineValue,
+    baselineOn: isoDate(m.baselineOn),
+    targetValue: m.targetValue,
+    targetOn: isoDate(m.targetOn),
+    actualValue: m.actualValue,
+    actualOn: isoDate(m.actualOn),
+    source: m.source,
+    influences: m.influences,
+    support: m.support,
+    readings: m.readings.map((r) => ({
+      id: r.id,
+      value: r.value,
+      readingOn: isoDate(r.readingOn),
+      source: r.source,
+      support: r.support,
+      recordedAt: r.recordedAt.toISOString(),
+    })),
+    updatedAt: m.updatedAt.toISOString(),
+  };
+}
+
+export function evidenceViewOf(e: ActionRow['evidenceRecords'][number]): EvidenceView {
+  return {
+    id: e.id,
+    order: e.order,
+    type: e.type,
+    description: e.description,
+    evidenceOn: isoDate(e.evidenceOn),
+    support: e.support,
+    supportedBy: e.supportedBy,
+    reference: e.reference,
+    updatedAt: e.updatedAt.toISOString(),
+  };
+}
+
+/** Evidence records counted by how they are supported; never "verified". */
+function evidenceCounts(records: ReadonlyArray<{ support: EvidenceSupport }>) {
+  const counts = Object.fromEntries(evidenceSupports.map((s) => [s, 0])) as Record<
+    EvidenceSupport,
+    number
+  >;
+  for (const e of records) counts[e.support] += 1;
+  return counts;
+}
+
+function actionViewOf(a: ActionRow): PlanActionView {
   return {
     id: a.id,
     order: a.order,
@@ -100,6 +174,8 @@ function actionViewOf(a: PlanRow['actions'][number]): PlanActionView {
       newTargetOn: isoDate(p.newTargetOn),
       recordedAt: p.recordedAt.toISOString(),
     })),
+    measures: a.measures.map(measureViewOf),
+    evidenceRecords: a.evidenceRecords.map(evidenceViewOf),
   };
 }
 
@@ -480,6 +556,189 @@ export function transferPlanRouter({ prisma, config, middleware, now }: Deps): R
     },
   );
 
+  /** The delegate's own action, by id, with the plan it belongs to. */
+  async function myAction(res: Response, eventId: string, actionId: string) {
+    const { principal, delegate } = await myRegistration(res, eventId);
+    if (!UUID.test(actionId)) throw new HttpError(404, 'not_found', 'Action not found.');
+    const plan = await loadOrCreatePlan(delegate.eventId, delegate.id);
+    const action = plan.actions.find((a) => a.id === actionId);
+    if (!action) throw new HttpError(404, 'not_found', 'Action not found.');
+    return { principal, delegate, plan, action };
+  }
+
+  const stale = () =>
+    new HttpError(
+      409,
+      'stale_plan',
+      'Your plan changed since you opened it, possibly in another tab. Reload it and apply your changes again.',
+    );
+
+  // Business and workplace measures of one action (backlog E14-1, E14-2): the list is replaced,
+  // ids are kept, and an actual result that changes leaves the earlier one behind as a reading.
+  // Saving bumps the plan's version like any other change; no second plan is ever created.
+  router.put(
+    '/me/events/:eventId/transfer-plan/actions/:actionId/measures',
+    middleware.requireAuth,
+    validated(measuresSaveSchema),
+    async (req, res) => {
+      const { principal, delegate, plan, action } = await myAction(
+        res,
+        String(req.params.eventId),
+        String(req.params.actionId),
+      );
+      const input = req.body as z.infer<typeof measuresSaveSchema>;
+      if (input.version !== plan.version) throw stale();
+      const known = new Map(action.measures.map((m) => [m.id, m]));
+      for (const m of input.measures) {
+        if (m.id && !known.has(m.id)) {
+          throw new HttpError(
+            422,
+            'validation_failed',
+            'measures: an id does not belong to this action.',
+          );
+        }
+      }
+      const keepIds = new Set(input.measures.filter((m) => m.id).map((m) => m.id!));
+      const removed = action.measures.filter((m) => !keepIds.has(m.id)).map((m) => m.id);
+      let readings = 0;
+      await prisma().$transaction(async (tx) => {
+        if (removed.length) {
+          await tx.transferPlanMeasure.deleteMany({
+            where: { id: { in: removed }, actionId: action.id },
+          });
+        }
+        for (const [index, m] of input.measures.entries()) {
+          const data = {
+            order: index + 1,
+            status: m.status,
+            kind: m.kind,
+            name: m.name,
+            importance: m.importance,
+            unit: m.unit,
+            direction: m.direction,
+            baselineValue: m.baselineValue,
+            baselineOn: dayOf(m.baselineOn),
+            targetValue: m.targetValue,
+            targetOn: dayOf(m.targetOn),
+            actualValue: m.actualValue,
+            actualOn: dayOf(m.actualOn),
+            source: m.source,
+            influences: m.influences,
+            support: m.support,
+          };
+          const before = m.id ? known.get(m.id) : undefined;
+          if (!before) {
+            await tx.transferPlanMeasure.create({ data: { ...data, actionId: action.id } });
+            continue;
+          }
+          await tx.transferPlanMeasure.update({ where: { id: before.id }, data });
+          const resultChanged =
+            before.actualValue !== m.actualValue ||
+            isoDate(before.actualOn) !== (m.actualOn ?? null);
+          if (before.actualValue !== '' && resultChanged) {
+            await tx.transferPlanMeasureReading.create({
+              data: {
+                measureId: before.id,
+                value: before.actualValue,
+                readingOn: before.actualOn,
+                source: before.source,
+                support: before.support,
+                recordedAt: before.updatedAt,
+              },
+            });
+            readings += 1;
+          }
+        }
+        await tx.transferPlan.update({
+          where: { id: plan.id },
+          data: { version: plan.version + 1, updatedByUserId: principal.userId },
+        });
+        await audit(tx, {
+          action: 'transfer_plan.measures_saved',
+          entityType: 'transfer_plan_action',
+          entityId: action.id,
+          eventId: delegate.eventId,
+          actorUserId: principal.userId,
+          newValue: {
+            measures: input.measures.length,
+            removed: removed.length,
+            readings,
+            summary: summariseMeasures(input.measures),
+          },
+          ...clientOf(res),
+        });
+      });
+      res.json(await myView(delegate.eventId, delegate.id));
+    },
+  );
+
+  // Evidence of application on one action (backlog E14-3 to E14-5): descriptions, their type,
+  // date and whether each is self-reported or supported by another source. No file is taken.
+  router.put(
+    '/me/events/:eventId/transfer-plan/actions/:actionId/evidence',
+    middleware.requireAuth,
+    validated(evidenceSaveSchema),
+    async (req, res) => {
+      const { principal, delegate, plan, action } = await myAction(
+        res,
+        String(req.params.eventId),
+        String(req.params.actionId),
+      );
+      const input = req.body as z.infer<typeof evidenceSaveSchema>;
+      if (input.version !== plan.version) throw stale();
+      const known = new Set(action.evidenceRecords.map((e) => e.id));
+      for (const e of input.evidence) {
+        if (e.id && !known.has(e.id)) {
+          throw new HttpError(
+            422,
+            'validation_failed',
+            'evidence: an id does not belong to this action.',
+          );
+        }
+      }
+      const keepIds = new Set(input.evidence.filter((e) => e.id).map((e) => e.id!));
+      const removed = action.evidenceRecords.filter((e) => !keepIds.has(e.id)).map((e) => e.id);
+      await prisma().$transaction(async (tx) => {
+        if (removed.length) {
+          await tx.transferPlanEvidence.deleteMany({
+            where: { id: { in: removed }, actionId: action.id },
+          });
+        }
+        for (const [index, e] of input.evidence.entries()) {
+          const data = {
+            order: index + 1,
+            type: e.type,
+            description: e.description,
+            evidenceOn: dayOf(e.evidenceOn),
+            support: e.support,
+            supportedBy: e.supportedBy,
+            reference: e.reference,
+          };
+          if (e.id) await tx.transferPlanEvidence.update({ where: { id: e.id }, data });
+          else await tx.transferPlanEvidence.create({ data: { ...data, actionId: action.id } });
+        }
+        await tx.transferPlan.update({
+          where: { id: plan.id },
+          data: { version: plan.version + 1, updatedByUserId: principal.userId },
+        });
+        await audit(tx, {
+          action: 'transfer_plan.evidence_saved',
+          entityType: 'transfer_plan_action',
+          entityId: action.id,
+          eventId: delegate.eventId,
+          actorUserId: principal.userId,
+          newValue: {
+            evidence: input.evidence.length,
+            removed: removed.length,
+            ...evidenceCounts(input.evidence),
+          },
+          ...clientOf(res),
+        });
+      });
+      res.json(await myView(delegate.eventId, delegate.id));
+    },
+  );
+
   // ---------------------------------------------------------------- admin
 
   async function loadEvent(eventId: string) {
@@ -501,7 +760,13 @@ export function transferPlanRouter({ prisma, config, middleware, now }: Deps): R
         delegate: { select: DELEGATE_SELECT },
         actions: {
           orderBy: { order: 'asc' },
-          select: { action: true, isPriority: true, progressStatus: true },
+          select: {
+            action: true,
+            isPriority: true,
+            progressStatus: true,
+            measures: { select: { status: true, baselineValue: true, actualValue: true } },
+            evidenceRecords: { select: { support: true } },
+          },
         },
       },
       orderBy: [{ updatedAt: 'desc' }],
@@ -511,7 +776,14 @@ export function transferPlanRouter({ prisma, config, middleware, now }: Deps): R
         ActionProgressStatus,
         number
       >;
-      for (const a of p.actions) progress[a.progressStatus] += 1;
+      const measures = Object.fromEntries(measureSummaries.map((s) => [s, 0])) as Record<
+        MeasureSummary,
+        number
+      >;
+      for (const a of p.actions) {
+        progress[a.progressStatus] += 1;
+        measures[summariseMeasures(a.measures)] += 1;
+      }
       return {
         delegate: p.delegate,
         status: p.status,
@@ -521,10 +793,61 @@ export function transferPlanRouter({ prisma, config, middleware, now }: Deps): R
         updatedAt: p.updatedAt.toISOString(),
         progress,
         reminderFrequency: p.reminderFrequency,
+        measures,
+        evidence: evidenceCounts(p.actions.flatMap((a) => a.evidenceRecords)),
       };
     });
     const sessions = await planningSessions(event.id);
     res.json({ plans: items, sessions });
+  });
+
+  // Every planned action with its measures and evidence classification (backlog E14-4,
+  // E16-6). Evidence text is left out unless asked for (?evidence=true), and asking is audited:
+  // it does not belong in a general report or export by default.
+  router.get('/events/:eventId/transfer-plans/measures', guard, async (req, res) => {
+    const principal = requireAdmin(res);
+    const event = await loadEvent(String(req.params.eventId));
+    const includeEvidence = req.query.evidence === 'true' || req.query.evidence === '1';
+    const plans = await prisma().transferPlan.findMany({
+      where: { eventId: event.id, delegate: { registrationStatus: { in: [...eligible()] } } },
+      include: {
+        delegate: { select: DELEGATE_SELECT },
+        actions: { orderBy: { order: 'asc' }, include: ACTION_INCLUDE },
+      },
+      orderBy: [{ delegate: { name: 'asc' } }],
+    });
+    const rows: MeasureReportRow[] = plans.flatMap((p) =>
+      p.actions.map((a) => ({
+        delegate: p.delegate,
+        planStatus: p.status,
+        action: {
+          id: a.id,
+          order: a.order,
+          action: a.action,
+          isPriority: a.isPriority,
+          progressStatus: a.progressStatus,
+        },
+        summary: summariseMeasures(a.measures),
+        measures: a.measures.map(measureViewOf),
+        evidence: evidenceCounts(a.evidenceRecords),
+        evidenceRecords: includeEvidence ? a.evidenceRecords.map(evidenceViewOf) : null,
+      })),
+    );
+    if (includeEvidence) {
+      await audit(prisma(), {
+        action: 'transfer_plan.evidence_exported',
+        entityType: 'event',
+        entityId: event.id,
+        eventId: event.id,
+        actorUserId: principal.userId,
+        newValue: {
+          rows: rows.length,
+          evidence: rows.reduce((n, r) => n + (r.evidenceRecords?.length ?? 0), 0),
+        },
+        ...clientOf(res),
+      });
+    }
+    res.json({ rows });
   });
 
   router.get('/events/:eventId/transfer-plans/:delegateId', guard, async (req, res) => {

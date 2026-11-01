@@ -52,6 +52,14 @@ const progress = {
   changed: 0,
   no_longer_applicable: 0,
 };
+const measureCounts = {
+  none: 0,
+  not_yet_known: 0,
+  not_applicable: 0,
+  identified: 0,
+  baseline_only: 0,
+  with_result: 0,
+};
 const plans: TransferPlanListItem[] = [
   {
     delegate: {
@@ -68,6 +76,8 @@ const plans: TransferPlanListItem[] = [
     updatedAt: '2026-11-24T09:00:00.000Z',
     progress: { ...progress, applied: 1, not_started: 1 },
     reminderFrequency: 'weekly',
+    measures: { ...measureCounts, with_result: 1, none: 1 },
+    evidence: { self_reported: 1, supported: 0 },
   },
   {
     delegate: {
@@ -84,6 +94,8 @@ const plans: TransferPlanListItem[] = [
     updatedAt: '2026-11-12T16:10:00.000Z',
     progress,
     reminderFrequency: 'none',
+    measures: measureCounts,
+    evidence: { self_reported: 0, supported: 0 },
   },
 ];
 
@@ -129,6 +141,8 @@ const detail: TransferPlanAdminDetail = {
             recordedAt: '2026-11-24T09:00:00.000Z',
           },
         ],
+        measures: [],
+        evidenceRecords: [],
       },
     ],
   },
@@ -195,6 +209,7 @@ function stub() {
           ],
         });
       }
+      if (url.includes('/transfer-plans/measures')) return json({ rows: [] });
       if (url.endsWith(`/transfer-plans/${DEE}`)) return json({ plan: detail });
       return json({
         plans,

@@ -388,6 +388,253 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
     expect(list.body.sessions).toHaveLength(2);
   });
 
+  it('keeps measures and evidence on the action of the existing plan, with history and server-side rules', async () => {
+    const mine = await call('get', `/me/events/${eventId}/transfer-plan`, undefined, cookies.dee);
+    const planId = mine.body.plan.id as string;
+    const version = mine.body.plan.version as number;
+    const [first, second] = mine.body.plan.actions as Array<{ id: string }>;
+    const path = (actionId: string, kind: 'measures' | 'evidence') =>
+      `/me/events/${eventId}/transfer-plan/actions/${actionId}/${kind}`;
+    const actionOf = (body: { plan: { actions: Array<{ id: string }> } }, id: string) =>
+      body.plan.actions.find((a) => a.id === id) as unknown as {
+        measures: Array<Record<string, unknown> & { id: string; readings: unknown[] }>;
+        evidenceRecords: Array<Record<string, unknown> & { support: string }>;
+      };
+
+    // Several measures on one action, each incomplete in its own way: a quantitative one with
+    // a unit and a baseline only, a qualitative one, one not yet known and one not applicable.
+    const saved = await call(
+      'put',
+      path(first!.id, 'measures'),
+      {
+        version,
+        measures: [
+          {
+            name: 'Turnaround time',
+            importance: 'Clients wait for it',
+            kind: 'quantitative',
+            unit: 'days',
+            direction: 'lower',
+            baselineValue: '12',
+            baselineOn: '2026-11-01',
+            targetValue: '8',
+            targetOn: '2027-03-31',
+          },
+          {
+            name: 'Handover quality',
+            kind: 'qualitative',
+            baselineValue: 'Two rounds of corrections on most briefs',
+          },
+          { status: 'not_yet_known' },
+          { status: 'not_applicable', name: 'Revenue' },
+        ],
+      },
+      cookies.dee,
+    );
+    expect(saved.status, saved.text).toBe(200);
+    expect(saved.body.plan.id).toBe(planId);
+    expect(saved.body.plan.version).toBe(version + 1);
+    const measures = actionOf(saved.body, first!.id).measures;
+    expect(measures).toHaveLength(4);
+    expect(measures[0]).toMatchObject({
+      order: 1,
+      status: 'identified',
+      name: 'Turnaround time',
+      unit: 'days',
+      direction: 'lower',
+      baselineValue: '12',
+      baselineOn: '2026-11-01',
+      targetValue: '8',
+      actualValue: '',
+      actualOn: null,
+      support: 'self_reported',
+      readings: [],
+    });
+    expect(measures[1]).toMatchObject({ kind: 'qualitative', direction: 'unspecified' });
+    expect(measures[2]).toMatchObject({ status: 'not_yet_known', name: '' });
+    expect(actionOf(saved.body, second!.id).measures).toEqual([]);
+
+    // A quantitative value must be a number; the unit lives in its own field.
+    const text = await call(
+      'put',
+      path(first!.id, 'measures'),
+      { version: version + 1, measures: [{ kind: 'quantitative', baselineValue: '12 days' }] },
+      cookies.dee,
+    );
+    expect(text.status).toBe(422);
+    expect(text.body.error.code).toBe('validation_failed');
+
+    // An actual result arrives later on the same measure; dropping a measure removes it.
+    const ids = measures.map((m) => m.id);
+    const withResult = await call(
+      'put',
+      path(first!.id, 'measures'),
+      {
+        version: version + 1,
+        measures: [
+          {
+            ...measures[0],
+            actualValue: '10',
+            actualOn: '2027-01-15',
+            source: 'Team tracker',
+            influences: 'Two colleagues joined in January',
+          },
+          measures[1],
+          measures[2],
+        ],
+      },
+      cookies.dee,
+    );
+    expect(withResult.status, withResult.text).toBe(200);
+    const m1 = actionOf(withResult.body, first!.id).measures;
+    expect(m1.map((m) => m.id)).toEqual(ids.slice(0, 3));
+    expect(m1[0]).toMatchObject({ actualValue: '10', actualOn: '2027-01-15', readings: [] });
+
+    // Replacing the result keeps the earlier reading, with its date, source and support.
+    const replaced = await call(
+      'put',
+      path(first!.id, 'measures'),
+      {
+        version: version + 2,
+        measures: [
+          {
+            ...m1[0],
+            actualValue: '9',
+            actualOn: '2027-02-15',
+            support: 'supported',
+            source: 'Monthly operations report',
+          },
+          m1[1],
+          m1[2],
+        ],
+      },
+      cookies.dee,
+    );
+    expect(replaced.status, replaced.text).toBe(200);
+    const m2 = actionOf(replaced.body, first!.id).measures[0]!;
+    expect(m2).toMatchObject({ id: ids[0], actualValue: '9', support: 'supported' });
+    expect(m2.readings).toHaveLength(1);
+    expect(m2.readings[0]).toMatchObject({
+      value: '10',
+      readingOn: '2027-01-15',
+      source: 'Team tracker',
+      support: 'self_reported',
+    });
+
+    // Stale versions, foreign ids, other delegates and admins are all refused.
+    const stale = await call(
+      'put',
+      path(first!.id, 'measures'),
+      { version: version + 1, measures: [] },
+      cookies.dee,
+    );
+    expect(stale.status).toBe(409);
+    expect(stale.body.error.code).toBe('stale_plan');
+    const foreignId = await call(
+      'put',
+      path(first!.id, 'measures'),
+      { version: version + 3, measures: [{ id: randomUUID() }] },
+      cookies.dee,
+    );
+    expect(foreignId.status).toBe(422);
+    expect(
+      (await call('put', path(first!.id, 'measures'), { version: 1, measures: [] }, cookies.ada))
+        .status,
+    ).toBe(404);
+    expect(
+      (await call('put', path(first!.id, 'measures'), { version: 1, measures: [] })).status,
+    ).toBe(403);
+
+    // Evidence: a description is the only requirement; each record says how it is supported.
+    const noText = await call(
+      'put',
+      path(first!.id, 'evidence'),
+      { version: version + 3, evidence: [{ type: 'example', description: ' ' }] },
+      cookies.dee,
+    );
+    expect(noText.status).toBe(422);
+    const evidence = await call(
+      'put',
+      path(first!.id, 'evidence'),
+      {
+        version: version + 3,
+        evidence: [
+          {
+            type: 'example',
+            description: 'Set up the measures before the January workshop',
+            evidenceOn: '2027-01-10',
+          },
+          {
+            type: 'confirmation',
+            description: 'My manager confirmed the new turnaround in the February review',
+            support: 'supported',
+            supportedBy: 'Line manager',
+            reference: 'February review notes',
+          },
+        ],
+      },
+      cookies.dee,
+    );
+    expect(evidence.status, evidence.text).toBe(200);
+    expect(evidence.body.plan.id).toBe(planId);
+    expect(evidence.body.plan.version).toBe(version + 4);
+    const records = actionOf(evidence.body, first!.id).evidenceRecords;
+    expect(records.map((e) => e.support)).toEqual(['self_reported', 'supported']);
+    expect(records[1]).toMatchObject({
+      order: 2,
+      type: 'confirmation',
+      supportedBy: 'Line manager',
+      reference: 'February review notes',
+    });
+    expect(
+      (await call('put', path(first!.id, 'evidence'), { version: 1, evidence: [] }, cookies.ada))
+        .status,
+    ).toBe(404);
+
+    // One plan throughout; the snapshot taken at submission is untouched; the history shows both saves.
+    expect(await prisma.transferPlan.count({ where: { eventId, delegateId: deeId } })).toBe(1);
+    const detail = await call('get', `/events/${eventId}/transfer-plans/${deeId}`);
+    expect(detail.status, detail.text).toBe(200);
+    expect(detail.body.plan.snapshot.actions[0].measures).toEqual([]);
+    expect(actionOf(detail.body.plan, first!.id).measures[0]!.readings).toHaveLength(1);
+    expect(detail.body.plan.history.map((h: { action: string }) => h.action)).toEqual(
+      expect.arrayContaining(['transfer_plan.measures_saved', 'transfer_plan.evidence_saved']),
+    );
+
+    // The organisers: counts on the list; the report carries the classification but no evidence
+    // text unless asked, and asking is audited; delegates get nothing.
+    const list = await call('get', `/events/${eventId}/transfer-plans`);
+    const dee = list.body.plans.find((p: { delegate: { id: string } }) => p.delegate.id === deeId);
+    expect(dee.measures).toMatchObject({ with_result: 1, none: 1 });
+    expect(dee.evidence).toEqual({ self_reported: 1, supported: 1 });
+    const report = await call('get', `/events/${eventId}/transfer-plans/measures`);
+    expect(report.status, report.text).toBe(200);
+    const row = report.body.rows.find((r: { action: { id: string } }) => r.action.id === first!.id);
+    expect(row).toMatchObject({
+      planStatus: 'submitted',
+      summary: 'with_result',
+      evidence: { self_reported: 1, supported: 1 },
+      evidenceRecords: null,
+    });
+    expect(row.measures[0]).toMatchObject({ name: 'Turnaround time', actualValue: '9' });
+    expect(JSON.stringify(report.body)).not.toContain('February review notes');
+    const full = await call('get', `/events/${eventId}/transfer-plans/measures?evidence=true`);
+    expect(full.status, full.text).toBe(200);
+    expect(
+      full.body.rows.find((r: { action: { id: string } }) => r.action.id === first!.id)
+        .evidenceRecords,
+    ).toHaveLength(2);
+    expect(
+      await prisma.auditLog.count({
+        where: { eventId, action: 'transfer_plan.evidence_exported' },
+      }),
+    ).toBe(1);
+    expect(
+      (await call('get', `/events/${eventId}/transfer-plans/measures`, undefined, cookies.dee))
+        .status,
+    ).toBe(403);
+  });
+
   it('sends the reminders delegates asked for, once per interval, and logs each attempt', async () => {
     const mailer = new MemoryMailer();
     const deps = {

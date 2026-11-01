@@ -145,6 +145,56 @@ enum ReminderFrequency {
   @@map("reminder_frequency")
 }
 
+/// Business and workplace measures on a planned action (backlog E14-1, E14-2). A measure can be
+/// named, or recorded as not yet known or not applicable, in which case no value is required.
+enum MeasureStatus {
+  identified
+  not_yet_known
+  not_applicable
+
+  @@map("measure_status")
+}
+
+/// Quantitative measures carry numeric values with a unit; qualitative ones carry text.
+enum MeasureKind {
+  quantitative
+  qualitative
+
+  @@map("measure_kind")
+}
+
+/// Which way the measure improves. A lower error rate or a shorter turnaround time is an
+/// improvement, so an increase is never assumed to be positive. "target" means closer to the
+/// target is better; "unspecified" means no comparison is drawn.
+enum ImprovementDirection {
+  higher
+  lower
+  target
+  unspecified
+
+  @@map("improvement_direction")
+}
+
+/// Whether a result or an evidence record rests on the delegate's own account or is supported
+/// by another source (backlog E14-4, S12.2). Neither is "independently verified".
+enum EvidenceSupport {
+  self_reported
+  supported
+
+  @@map("evidence_support")
+}
+
+enum EvidenceType {
+  example
+  work_product
+  confirmation
+  organisational_measure
+  case_example
+  other
+
+  @@map("evidence_type")
+}
+
 enum SessionType {
   keynote
   plenary
@@ -409,6 +459,7 @@ model Event {
   feedbackResponses       SessionFeedbackResponse[]
   transferPlans           TransferPlan[]
   referenceQuestions      EventReferenceQuestion[]
+  reportApprovals         EventReportApproval[]
 
   @@map("event")
 }
@@ -745,11 +796,91 @@ model TransferPlanAction {
   createdAt        DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt        DateTime             @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  plan     TransferPlan           @relation(fields: [planId], references: [id], onDelete: Cascade)
-  progress TransferPlanProgress[]
+  plan            TransferPlan           @relation(fields: [planId], references: [id], onDelete: Cascade)
+  progress        TransferPlanProgress[]
+  measures        TransferPlanMeasure[]
+  evidenceRecords TransferPlanEvidence[]
 
   @@index([planId])
   @@map("transfer_plan_action")
+}
+
+/// One business or workplace measure of a planned action (backlog E14-1, E14-2). Values are
+/// text so qualitative measures fit; a quantitative measure's values are validated as numbers
+/// on the way in and read with `unit` and `direction`. Every field is optional: a delegate can
+/// save an incomplete measure and return to it.
+model TransferPlanMeasure {
+  id            String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  actionId      String               @map("action_id") @db.Uuid
+  order         Int
+  status        MeasureStatus        @default(identified)
+  kind          MeasureKind          @default(quantitative)
+  /// What is tracked (application rate, turnaround time, error rate, ...). Free text, never a fixed list.
+  name          String               @default("")
+  /// Why the measure matters.
+  importance    String               @default("")
+  unit          String               @default("")
+  direction     ImprovementDirection @default(unspecified)
+  baselineValue String               @default("") @map("baseline_value")
+  baselineOn    DateTime?            @map("baseline_on") @db.Date
+  targetValue   String               @default("") @map("target_value")
+  targetOn      DateTime?            @map("target_on") @db.Date
+  actualValue   String               @default("") @map("actual_value")
+  actualOn      DateTime?            @map("actual_on") @db.Date
+  /// Where the information came from.
+  source        String               @default("")
+  /// Other factors that may have influenced the result.
+  influences    String               @default("")
+  /// How the actual result is supported.
+  support       EvidenceSupport      @default(self_reported)
+  createdAt     DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime             @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  action   TransferPlanAction           @relation(fields: [actionId], references: [id], onDelete: Cascade)
+  readings TransferPlanMeasureReading[]
+
+  @@index([actionId])
+  @@map("transfer_plan_measure")
+}
+
+/// Every actual result a measure has carried, appended when the result changes, so an earlier
+/// reading stays available after the delegate updates it.
+model TransferPlanMeasureReading {
+  id         String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  measureId  String          @map("measure_id") @db.Uuid
+  value      String
+  readingOn  DateTime?       @map("reading_on") @db.Date
+  source     String          @default("")
+  support    EvidenceSupport @default(self_reported)
+  recordedAt DateTime        @default(now()) @map("recorded_at") @db.Timestamptz(3)
+
+  measure TransferPlanMeasure @relation(fields: [measureId], references: [id], onDelete: Cascade)
+
+  @@index([measureId])
+  @@map("transfer_plan_measure_reading")
+}
+
+/// Evidence of application on a planned action (backlog E14-3 to E14-5): a description, its
+/// type, date and whether it is self-reported or supported by another source. `reference` is a
+/// link or document name the delegate chooses to give; no file is stored.
+model TransferPlanEvidence {
+  id          String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  actionId    String          @map("action_id") @db.Uuid
+  order       Int
+  type        EvidenceType    @default(example)
+  description String          @default("")
+  evidenceOn  DateTime?       @map("evidence_on") @db.Date
+  support     EvidenceSupport @default(self_reported)
+  /// Who or what supports it (a role or a document, never required to be a name).
+  supportedBy String          @default("") @map("supported_by")
+  reference   String          @default("")
+  createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  action TransferPlanAction @relation(fields: [actionId], references: [id], onDelete: Cascade)
+
+  @@index([actionId])
+  @@map("transfer_plan_evidence")
 }
 
 model TransferPlanProgress {
@@ -799,6 +930,31 @@ model EventReferenceQuestion {
 
   @@unique([eventId, questionKey])
   @@map("event_reference_question")
+}
+
+/// Review record for a report meant for an external audience (backlog E16-4, E16-5, task of
+/// 2026-10-31): a nominating organisation, a sponsor or a partner. Nothing external can be
+/// downloaded or shared until an admin has approved that kind, scope and set of sections; a
+/// later approval of the same kind and scope supersedes the earlier one. Never sent anywhere.
+model EventReportApproval {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventId          String    @map("event_id") @db.Uuid
+  /// "organisation" or "sponsor".
+  kind             String
+  /// The nominating organisation for an organisation report; empty for a sponsor report.
+  scope            String    @default("")
+  /// The sections the approval covers, in report order.
+  sections         Json
+  note             String    @default("")
+  approvedAt       DateTime  @default(now()) @map("approved_at") @db.Timestamptz(3)
+  approvedByUserId String    @map("approved_by_user_id") @db.Uuid
+  revokedAt        DateTime? @map("revoked_at") @db.Timestamptz(3)
+  revokedByUserId  String?   @map("revoked_by_user_id") @db.Uuid
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([eventId, kind, scope])
+  @@map("event_report_approval")
 }
 
 model AssessmentStageConfig {

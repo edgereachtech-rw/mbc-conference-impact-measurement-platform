@@ -9,6 +9,7 @@ import { AttendanceManager } from '@/components/admin/attendance/attendance-mana
 import { EventWorkspace } from '@/components/admin/event-workspace';
 import { FeedbackManager } from '@/components/admin/feedback/feedback-manager';
 import { ReflectionsManager } from '@/components/admin/reflections/reflections-manager';
+import { ReportWorkspace } from '@/components/admin/reports/report-workspace';
 import { TransferPlansManager } from '@/components/admin/transfer-plans/transfer-plans-manager';
 import { consoleButton } from '@/components/console/page';
 import { apiFetch } from '@/lib/api';
@@ -30,7 +31,8 @@ type Tab =
   | 'attendance'
   | 'reflections'
   | 'feedback'
-  | 'transfer-plans';
+  | 'transfer-plans'
+  | 'reports';
 
 const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'profile', label: 'Event profile' },
@@ -43,6 +45,7 @@ const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'reflections', label: 'Daily reflections' },
   { id: 'feedback', label: 'Session feedback' },
   { id: 'transfer-plans', label: 'Transfer plans' },
+  { id: 'reports', label: 'Reports' },
 ];
 
 interface EventSettingsProps {
@@ -209,6 +212,14 @@ export function EventSettings({ initialEvent }: EventSettingsProps) {
         {tab === 'reflections' ? <ReflectionsManager event={event} /> : null}
         {tab === 'feedback' ? <FeedbackManager event={event} /> : null}
         {tab === 'transfer-plans' ? <TransferPlansManager event={event} /> : null}
+        {tab === 'reports' ? (
+          <ReportWorkspace
+            eventId={event.id}
+            timezone={event.timezone}
+            kinds={['conference', 'follow_up', 'organisation', 'sponsor']}
+            readOnly={event.status === 'archived'}
+          />
+        ) : null}
       </div>
     </section>
   );

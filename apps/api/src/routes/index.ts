@@ -26,6 +26,8 @@ import { meEventsRouter } from './me-events.js';
 import { messageRouter } from './messages.js';
 import { reflectionRouter } from './reflections.js';
 import { staffRouter } from './staff.js';
+import { journeyRouter } from './journey.js';
+import { reportRouter } from './reports.js';
 import { transferPlanRouter } from './transfer-plans.js';
 
 export interface ApiDeps {
@@ -82,6 +84,10 @@ export function apiRouter(deps: ApiDeps): Router {
   );
   router.use(
     meEventsRouter({ prisma: deps.prisma, config: deps.config, middleware, now: deps.now }),
+  );
+  router.use(reportRouter({ prisma: deps.prisma, config: deps.config, middleware, now: deps.now }));
+  router.use(
+    journeyRouter({ prisma: deps.prisma, config: deps.config, middleware, now: deps.now }),
   );
   router.use(
     delegateAccountRouter({

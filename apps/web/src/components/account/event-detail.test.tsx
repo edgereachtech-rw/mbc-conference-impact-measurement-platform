@@ -96,6 +96,7 @@ describe('EventDetail', () => {
         .map((t) => t.textContent),
     ).toEqual([
       'Overview',
+      'My journey',
       'Assessments',
       'Attendance',
       'Daily reflections',

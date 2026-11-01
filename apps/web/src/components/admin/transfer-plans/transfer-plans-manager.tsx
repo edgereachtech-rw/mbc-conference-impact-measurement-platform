@@ -4,6 +4,10 @@ import {
   actionProgressLabels,
   actionProgressStatuses,
   appliedStatuses,
+  evidenceSupportLabels,
+  evidenceSupports,
+  measureSummaries,
+  measureSummaryLabels,
   planActionFieldLabels,
   reminderFrequencyLabels,
   type ActionProgressStatus,
@@ -16,6 +20,7 @@ import {
 import { DownloadIcon, EyeIcon, Loader2Icon } from 'lucide-react';
 import { useCallback, useEffect, useId, useState } from 'react';
 
+import { EvidenceLine, MeasureLine } from '@/components/account/measures-evidence';
 import { Dialog } from '@/components/console/dialog';
 import {
   consoleButton,
@@ -29,6 +34,8 @@ import { NativeSelect } from '@/components/imports/native-select';
 import { apiFetch } from '@/lib/api';
 import { formatDateShort, formatInstant } from '@/lib/events';
 import { describeError } from '@/lib/imports';
+
+import { MeasuresReport } from './measures-report';
 
 interface TransferPlansManagerProps {
   event: EventDetail;
@@ -126,6 +133,7 @@ export function TransferPlansManager({ event }: TransferPlansManagerProps) {
   );
   const actions = list.plans.reduce((n, p) => n + p.actions, 0);
   const reminders = list.plans.filter((p) => p.reminderFrequency !== 'none').length;
+  const withResult = list.plans.reduce((n, p) => n + (p.measures?.with_result ?? 0), 0);
   const needle = search.trim().toLowerCase();
   const rows = list.plans.filter((p) => {
     if (status !== 'all' && p.status !== status) return false;
@@ -153,6 +161,8 @@ export function TransferPlansManager({ event }: TransferPlansManagerProps) {
       'Actions',
       'First priority',
       ...actionProgressStatuses.map((s) => actionProgressLabels[s]),
+      ...measureSummaries.map((s) => `Actions: ${measureSummaryLabels[s].toLowerCase()}`),
+      ...evidenceSupports.map((s) => `Evidence ${evidenceSupportLabels[s].toLowerCase()}`),
       'Reminders',
       'Updated at',
     ];
@@ -167,6 +177,8 @@ export function TransferPlansManager({ event }: TransferPlansManagerProps) {
         p.actions,
         p.priorityAction,
         ...actionProgressStatuses.map((s) => p.progress[s] ?? 0),
+        ...measureSummaries.map((s) => p.measures?.[s] ?? 0),
+        ...evidenceSupports.map((s) => p.evidence?.[s] ?? 0),
         reminderFrequencyLabels[p.reminderFrequency],
         p.updatedAt,
       ]
@@ -204,6 +216,11 @@ export function TransferPlansManager({ event }: TransferPlansManagerProps) {
           hint={`of ${actions} planned actions, in their latest status`}
         />
         <StatTile label="Reminders on" value={reminders} hint="Delegates who asked for reminders" />
+        <StatTile
+          label="Actions with a result"
+          value={withResult}
+          hint="A measure with an actual result; self-reported unless marked supported"
+        />
       </div>
 
       <Panel>
@@ -315,6 +332,7 @@ export function TransferPlansManager({ event }: TransferPlansManagerProps) {
                   <th className="px-4 py-2">Status</th>
                   <th className="px-4 py-2">First priority</th>
                   <th className="px-4 py-2">Progress</th>
+                  <th className="px-4 py-2">Measures and evidence</th>
                   <th className="px-4 py-2">Reminders</th>
                   <th className="px-4 py-2">Updated</th>
                   <th className="px-4 py-2">
@@ -353,6 +371,19 @@ export function TransferPlansManager({ event }: TransferPlansManagerProps) {
                         .map((s) => `${p.progress[s]} ${actionProgressLabels[s].toLowerCase()}`)
                         .join(' · ') || '—'}
                     </td>
+                    <td className="px-4 py-2 text-xs text-corp-text">
+                      {measureSummaries
+                        .filter((s) => (p.measures?.[s] ?? 0) > 0)
+                        .map((s) => `${p.measures[s]} ${measureSummaryLabels[s].toLowerCase()}`)
+                        .join(' · ') || '—'}
+                      <p className="text-corp-muted">
+                        Evidence:{' '}
+                        {evidenceSupports
+                          .filter((s) => (p.evidence?.[s] ?? 0) > 0)
+                          .map((s) => `${p.evidence[s]} ${evidenceSupportLabels[s].toLowerCase()}`)
+                          .join(', ') || 'none'}
+                      </p>
+                    </td>
                     <td className="px-4 py-2 text-corp-text">
                       {reminderFrequencyLabels[p.reminderFrequency]}
                     </td>
@@ -375,6 +406,8 @@ export function TransferPlansManager({ event }: TransferPlansManagerProps) {
           </TableScroll>
         )}
       </Panel>
+
+      <MeasuresReport eventId={event.id} slug={event.slug} />
 
       {viewing ? (
         <PlanDialog
@@ -680,6 +713,32 @@ function ActionSummary({
             </div>
           ))}
       </dl>
+      {(action.measures ?? []).length > 0 ? (
+        <section aria-label="Measures" className="space-y-2">
+          <p className="text-xs font-semibold text-corp-muted">Measures</p>
+          <ul className="space-y-2">
+            {action.measures.map((m) => (
+              <li key={m.id}>
+                <MeasureLine measure={m} />
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+      {(action.evidenceRecords ?? []).length > 0 ? (
+        <section aria-label="Evidence" className="space-y-2">
+          <p className="text-xs font-semibold text-corp-muted">
+            Evidence (self-reported unless marked supported by another source)
+          </p>
+          <ul className="space-y-2">
+            {action.evidenceRecords.map((e) => (
+              <li key={e.id}>
+                <EvidenceLine record={e} />
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
       {action.progress.length > 0 ? (
         <details>
           <summary className="cursor-pointer text-xs font-semibold text-corp-green-text">

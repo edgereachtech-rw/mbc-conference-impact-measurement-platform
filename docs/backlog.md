@@ -682,6 +682,23 @@ paired results can be computed, and the repeated questions are locked.
 | E14-4 | As M.Bryan, I want evidence labelled | Each item labelled **self-reported** or **supported by another source**; reports keep the distinction (S12.2, S13.3) | P1 | 5 |
 | E14-5 | As a delegate, I do not have to disclose confidential organisational information | Notice on every evidence form; all fields optional | P0 | 4 |
 
+**Implementation note (2026-10-31).** E14-1, E14-2, E14-4 and E14-5 are built on the Individual
+Transfer Plan: measures and evidence hang off a planned action of the existing plan (tables
+`transfer_plan_measure`, `transfer_plan_measure_reading`, `transfer_plan_evidence`), a save
+bumps the plan's version and never creates another plan, and the admin "Measures and evidence"
+report separates actions with no measure, not yet known, not applicable, identified without
+values, baseline only and actual result, and evidence self-reported from evidence supported by
+another source. Quantitative values are read in the measure's unit and stated direction of
+improvement (lower can be better); nothing is calculated from a planned action or a self-reported
+result alone, and nothing is labelled independently verified. E14-3 is built as **text evidence
+only**: a required description, type, date, support classification and an optional text
+reference (a link or document name). The optional file upload is **not built**: this row makes it
+conditional on type and size limits and virus scanning, no scanner exists in the stack, and the
+retention policy for uploaded files (OQ-22) is unapproved; the cut list below names this upload
+as the first item to drop. Of E14-3's "description text required" and E14-5's "all fields
+optional", the description stays required once a record exists; adding a record at all is
+optional, and every other field is optional.
+
 ---
 
 ## E15. M.Bryan dashboard and core indicators (S13.1, S14)
@@ -709,6 +726,22 @@ paired results can be computed, and the repeated questions are locked.
 | E15-17 | Interpretation labels | Self-reported information labelled; respondent numbers beside every percentage; knowledge, confidence and satisfaction shown separately; intended vs actual application distinguished; missing-response limitations shown (S15.2) | P0 | 5 |
 | E15-18 | Indicator logic as database views with a test dataset | SQL views implement each rule; a seeded dataset with known results is used by automated tests; the dashboard matches it exactly | P0 | 5 |
 
+**Implementation note (2026-11-01).** E15-1 to E15-17 are built as one report document produced by
+`apps/api/src/reports/build.ts` and rendered by the dashboard and every report, so no figure can
+differ between them. Each figure carries its count, its denominator and its definition in words;
+missing answers are never zero but one of ten named states; self-reported information is labelled
+and nothing is called independently verified. **E15-18 is met in substance but not in form:** the
+indicator logic is TypeScript in that one builder, not SQL views, and the known-results dataset is
+built by the API test (`apps/api/src/routes/reports.test.ts`) rather than seeded, with every
+figure worked out by hand in the assertions (participation split four ways, a paired knowledge
+change of +25 points over 2 paired delegates, "Not applicable" excluded from a confidence average,
+expectations before and after kept apart, plan states, follow-up non-responders counted apart from
+those reporting no progress, and a lower-is-better measure read as improved). The test also checks
+the dashboard answers for a 254-delegate event within 15 seconds. Choosing a single typed builder
+over SQL views keeps one definition of every rule next to the types the screens use; a view layer
+can be added later without changing the contract. Nothing is ITTEC-specific: there is no Day 1 or
+Day 2 anywhere, only the event's configured dates and titles.
+
 ---
 
 ## E16. Reports and exports (S13.3, S16)
@@ -724,6 +757,21 @@ paired results can be computed, and the repeated questions are locked.
 | E16-7 | As M.Bryan, I want PDF/DOCX report generation | Worker renders report templates to PDF/DOCX | P2 | Post |
 | E16-8 | As M.Bryan, I want to control what is included in reports | Include/exclude sections; identifiable comments only with recorded permission (S6.4, S16) | P1 | 5 |
 | E16-9 | As M.Bryan, I want a full export of M.Bryan's data in a usable format | One-click full export (CSV/JSON bundle) for ownership and handover | P0 | 5 |
+
+**Implementation note (2026-11-01).** E16-2, E16-3, E16-6 and E16-8 are built: the immediate
+conference report and the follow-up report are two kinds of the one report document, each section
+can be included or left out, and every table keeps the self-reported and supported-by-another-source
+distinction. E16-4 and E16-5 are built earlier than their "Post" increment said, because the
+approval gate they describe is what makes an external report safe to produce at all: an
+organisation or sponsor report is reduced to aggregates (no delegate reference, no written answer,
+no individual plan, measure or evidence record — each count is kept, the content withheld), and
+`event_report_approval` records which kind, scope and sections M.Bryan approved. An export whose
+approved sections do not cover what is shown is refused (409 `approval_required`). Nothing is ever
+sent: the platform has no distribution path, by design (task §10). Still open: **E16-1** (the
+per-data-set CSV and XLSX exports; the report's own CSV covers the figures, not the raw records),
+**E16-7** (PDF and DOCX rendering in the worker) and **E16-9** (the full handover bundle). Two
+inputs the reports name but the platform does not collect: nominating organisation expectations
+and support requests (E13), both reported as "not collected by the platform" rather than as zero.
 
 ---
 

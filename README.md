@@ -487,6 +487,112 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   warning with reload) and the event page's "Transfer plans" tab (counts, sessions, reference
   questions, searchable list with status and action-status filters, CSV export, one plan in full
   with "Current" and "As submitted" views and its history).
+- Business measures and evidence on Transfer Plans (task of 2026-10-31; backlog E14-1 to E14-5,
+  E16-6): each planned action of the delegate's existing plan can carry any number of measures
+  and any number of evidence records; saving either bumps the plan's `version` like every other
+  change (409 `stale_plan` on an old version) and never creates a second plan, and the snapshot
+  taken at submission is untouched. Tables, both cascading from `transfer_plan_action`:
+  `transfer_plan_measure` (order; `status` identified / not_yet_known / not_applicable, the
+  last two needing no value; `kind` quantitative / qualitative; the measure's name, why it
+  matters, `unit`, `direction` of improvement higher / lower / target / unspecified; baseline,
+  target and actual values as text with their own dates; information source; other influencing
+  factors; `support` self_reported / supported for the actual result) with
+  `transfer_plan_measure_reading` (append-only: every earlier actual result with its date, source
+  and support, written when a result is replaced, so history survives updates), and
+  `transfer_plan_evidence` (order; `type` example / work_product / confirmation /
+  organisational_measure / case_example / other; description, the only required field; date;
+  `support` self_reported / supported; who or what supports it; `reference`, a link or document
+  name the delegate chooses to give). Migration `20261031280000_transfer_plan_measures`.
+  Interpretation (`compareMeasure` and `summariseMeasures` in `packages/shared`): a
+  quantitative measure's values must be plain numbers, validated on the server, and are read
+  with the unit and the delegate's direction of improvement, so a lower error rate or a shorter
+  turnaround time counts as "improved" and an increase is never assumed to be positive; "closer
+  to the target" compares distances; a qualitative measure, a missing number, an unstated
+  direction or a result dated before its baseline is "not comparable". An action's measures
+  summarise to one of: no measure recorded, not yet known, not applicable, identified with no
+  values, baseline but no result, actual result recorded. Classification: a result and an
+  evidence record are each "self-reported" or "supported by another source"; the platform never
+  calls either independently verified, and no attachment is taken (see below), so nothing can be
+  mistaken for verification. Delegate routes: `PUT
+/me/events/:id/transfer-plan/actions/:actionId/measures` and `.../evidence` (`{ version,
+measures | evidence }`, the list replaced with ids kept; own actions only, 404 otherwise;
+  audited as counts). Admin routes: `GET /events/:id/transfer-plans` now counts each plan's
+  actions by measure summary and its evidence by support; `GET
+/events/:id/transfer-plans/measures` returns one row per planned action with its measures and
+  evidence counts, and evidence text only with `?evidence=true`, which is audited
+  (`transfer_plan.evidence_exported`); the per-delegate detail carries both lists. Screens:
+  "Measures and evidence" under each saved action on the delegate's plan (two popups, both
+  with the confidentiality notice; a measure can be "not yet known" or "not applicable", values
+  can be numbers with a unit or words; the buttons wait for unsaved plan edits to be saved) and,
+  on the event page's "Transfer plans" tab, an "Actions with a result" tile, a measures column,
+  the counts in the plans CSV, measures and evidence in the plan popup, and a "Measures and
+  evidence" panel (one row per action, filter by summary, CSV export; evidence text appears in
+  the table and the export only after "Load evidence text"). Not built: file attachments.
+  Backlog E14-3 makes upload conditional on type and size limits and virus scanning, and the
+  retention policy for uploaded files (OQ-22) is still unapproved, so evidence is described in
+  words with an optional text reference; the cut list in the backlog names this upload as the
+  first thing to drop.
+- Event dashboards and reports (task of 2026-11-01; backlog E15, E16): one builder
+  (`apps/api/src/reports/build.ts`) reads the existing records and produces one report document;
+  the dashboard page and every report render that same document, so a figure can never differ
+  between them. Nothing is stored and no data-entry workflow was added: the sources are the
+  registrations, the platform accounts and first sign-ins, the attendance records, the assessment
+  configurations and responses (every stage the event configured), the Daily Learning Reflections,
+  the session feedback, the Individual Transfer Plans with their actions, progress, measures and
+  evidence, and the reminder logs. Six sections, each optional per report (backlog E16-8):
+  **delegate participation** (registered, platform accounts, signed in, attended, assessed — four
+  different figures, each with its own denominator; by attendance format; by event date; every
+  stage's completion and response rate; session-feedback response rates against the delegates
+  recorded as attending; and the definitions in words), **expectations and baseline** (the event's
+  reference questions first, then its other questions, the baseline knowledge average over
+  delegates who answered every knowledge question, and the self-reported confidence and practice
+  statements), **conference experience and learning** (experience ratings split by the audience
+  each section addresses — all, in-person, online — written feedback, the reflections by the
+  event's own configured dates and titles, session feedback per session, knowledge before and
+  after, and the paired comparisons of every mirrored section), **expectations assessed at the
+  end** (how far pre-event expectations were met, kept apart from expectations first recorded
+  after the event, with "prefer not to answer" counted separately), **Transfer Planning and
+  application** (plans started, submitted, incomplete and empty as four different states, the
+  completion rate against delegates recorded as attending, actions by status, support needs,
+  barriers, overdue targets and reviews, reminder preferences and delivery, applied actions and
+  applied delegates, the follow-up stage with delegates who have not answered counted apart from
+  those who answered and report no progress, and the measure and evidence counts), and
+  **expectations and results** (progress against delegate expectations at follow-up, each measure
+  read in its own unit and stated direction of improvement, how each result is supported, the
+  evidence records and the other factors delegates named). Every figure carries its count, its
+  denominator and its definition; a figure nobody could answer yet is a **state**, never a zero
+  (`not_configured`, `not_yet_available`, `no_response`, `not_applicable`, `not_yet_known`,
+  `incomplete`, `no_progress`, `no_evidence`, `not_collected`, `withheld`). Self-reported
+  information is labelled as such, nothing is called independently verified, and no business
+  result is attributed to the event. Nothing is ITTEC-specific: dates, sessions, stages and
+  questions are whatever the event configured, and an event with one date or none works the same.
+  **Five report kinds.** `dashboard`, `conference` (immediate conference report) and
+  `follow_up` are internal. `organisation` (one nominating organisation, scoped to its nominees)
+  and `sponsor` are external: `apps/api/src/reports/audience.ts` reduces them to aggregates,
+  withholding every delegate reference, written answer, individual plan action, measure row and
+  evidence example while keeping its count, and both need an approval before they can be
+  downloaded. **Approval (backlog E16-4, E16-5):** `event_report_approval` records which kind,
+  which scope and which sections M.Bryan approved, by whom and when; a later approval supersedes
+  the earlier one and either can be withdrawn. An export of an external report whose approved
+  sections do not cover the sections shown is refused with 409 `approval_required`. The platform
+  never publishes, emails or sends a report anywhere: an approved report is a file the organisers
+  share themselves. Migration `20261031290000_report_approvals`. Routes (admin only):
+  `GET /events/:id/reports/:kind` with `?sections=`, `?format=`, `?organisation=`, `?from=`,
+  `?to=` (the period applies to progress records, measure results, evidence and follow-up
+  responses; participation and event-time results cover the whole event),
+  `GET /events/:id/reports/organisations`, `POST .../approve`, `POST .../revoke`, and
+  `GET .../export.md` or `.csv` (Markdown document or one row per figure with its denominator
+  and definition). Viewing an external report, approving, withdrawing and every export are
+  audited with counts only. Delegate route: `GET /me/events/:id/journey`, resolved from the
+  signed-in session and taking no delegate id, so nobody can read another delegate's journey.
+  Screens: the event dashboard at `/admin/events/:id/dashboard` (the whole document with the
+  filters, then the event's own panels: registrations by status, messages, and a way into each
+  assessment stage), a "Reports" tab on the event page for the other four kinds with the approval
+  controls and the downloads, and "My journey" on the delegate's event page (their attendance by
+  date, each stage's state, reflections and feedback given, and their plan in numbers). Not
+  built: support requests (backlog E13) and nominating organisation expectations are not collected
+  by the platform, so both report as `not_collected` rather than as zero; PDF and DOCX rendering
+  (E16-7) and the full data export (E16-9) are untouched.
 - Daily reflections (task of 2026-10-31): one optional questionnaire per
   event date, never created automatically. Tables `reflection_activity` (one per event date:
   title, status draft/published/closed, opens/closes, published/closed times),

@@ -157,20 +157,31 @@ const audienceAllows = (
   format: 'physical' | 'virtual',
 ) => !section || section.audience === 'all' || section.audience === format;
 
-function round1(value: number): number {
+export function round1(value: number): number {
   return Math.round(value * 10) / 10;
 }
 
 /** Any client that can read: the shared PrismaClient or the `tx` inside $transaction. */
-type Reader = Pick<PrismaClient, 'assessmentQuestion' | 'assessmentResponse' | 'delegate'>;
+export type Reader = Pick<PrismaClient, 'assessmentQuestion' | 'assessmentResponse' | 'delegate'>;
 
 /** Delegates who submitted a stage: their answers by question id, by delegate. */
-async function submittedAnswersBy(db: Reader, stageConfigId: string, eligible: EligibleStatuses) {
+/** Delegates a report is scoped to (a format or an organisation filter); absent means everyone eligible. */
+export interface ReportScope {
+  delegateIds: readonly string[];
+}
+
+export async function submittedAnswersBy(
+  db: Reader,
+  stageConfigId: string,
+  eligible: EligibleStatuses,
+  scope?: ReportScope,
+) {
   const rows = await db.assessmentResponse.findMany({
     where: {
       stageConfigId,
       submittedAt: { not: null },
       delegate: { registrationStatus: { in: [...eligible] } },
+      ...(scope ? { delegateId: { in: [...scope.delegateIds] } } : {}),
     },
     select: {
       delegateId: true,
@@ -183,7 +194,7 @@ async function submittedAnswersBy(db: Reader, stageConfigId: string, eligible: E
 /** Registration statuses a stage applies to (test registrations only where allowed). */
 export type EligibleStatuses = readonly ('active' | 'test')[];
 
-async function activeQuestionsOf(db: Reader, stageConfigId: string) {
+export async function activeQuestionsOf(db: Reader, stageConfigId: string) {
   const rows = await db.assessmentQuestion.findMany({
     where: { stageConfigId, retiredAt: null },
     include: QUESTION_INCLUDE,
@@ -197,7 +208,7 @@ async function activeQuestionsOf(db: Reader, stageConfigId: string) {
  * first answers does not drop them. Returns, per active question, the ids to look for, the
  * active one first.
  */
-async function versionIdsFor(
+export async function versionIdsFor(
   db: Reader,
   stageConfigId: string,
   questions: readonly AssessmentQuestionView[],
@@ -219,7 +230,7 @@ async function versionIdsFor(
 }
 
 /** The answer to a question in one response, whichever version of it was answered. */
-function answerTo<A extends { questionId: string }>(
+export function answerTo<A extends { questionId: string }>(
   byId: ReadonlyMap<string, A>,
   ids: readonly string[] | undefined,
   questionId: string,
@@ -241,13 +252,19 @@ export async function stageSummaryFor(
   db: Reader,
   stage: { id: string; eventId: string; stage: AssessmentStage },
   eligible: EligibleStatuses,
+  scope?: ReportScope,
 ): Promise<StageSummary> {
   const [invited, responses, questions] = await Promise.all([
-    db.delegate.count({
-      where: { eventId: stage.eventId, registrationStatus: { in: [...eligible] } },
-    }),
+    scope
+      ? scope.delegateIds.length
+      : db.delegate.count({
+          where: { eventId: stage.eventId, registrationStatus: { in: [...eligible] } },
+        }),
     db.assessmentResponse.findMany({
-      where: { stageConfigId: stage.id },
+      where: {
+        stageConfigId: stage.id,
+        ...(scope ? { delegateId: { in: [...scope.delegateIds] } } : {}),
+      },
       select: {
         id: true,
         submittedAt: true,
@@ -354,6 +371,7 @@ export async function pairedResultsFor(
   db: Reader & Pick<PrismaClient, 'assessmentSection'>,
   stage: { id: string; eventId: string; stage: AssessmentStage },
   eligible: EligibleStatuses,
+  scope?: ReportScope,
 ): Promise<PairedResults> {
   const sections = await db.assessmentSection.findMany({
     where: { stageConfigId: stage.id, sourceSectionId: { not: null } },
@@ -363,7 +381,7 @@ export async function pairedResultsFor(
     },
     orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
   });
-  const after = await submittedAnswersBy(db, stage.id, eligible);
+  const after = await submittedAnswersBy(db, stage.id, eligible, scope);
   const out: PairedResults['sections'] = [];
   for (const section of sections) {
     if (!section.source) continue;
@@ -382,7 +400,7 @@ export async function pairedResultsFor(
       beforeIds.set(r.questionKey, [...(beforeIds.get(r.questionKey) ?? []), r.id]);
     }
     const afterIds = await versionIdsFor(db, stage.id, questions);
-    const before = await submittedAnswersBy(db, section.source.stageConfigId, eligible);
+    const before = await submittedAnswersBy(db, section.source.stageConfigId, eligible, scope);
     const delegates = [...after.keys()].filter((d) => before.has(d));
     const pairOf = (delegateId: string, q: AssessmentQuestionView) => ({
       before: answerTo(before.get(delegateId)!, beforeIds.get(q.sourceQuestionKey!), ''),
