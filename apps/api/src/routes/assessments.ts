@@ -50,7 +50,9 @@ import { clientOf, principalOf, type createAuthMiddleware } from '../auth/middle
 import { canConfigureEvents, EVENT_SETUP_ROLES } from '../auth/policies.js';
 import type { PrismaClient } from '../db.js';
 import { Prisma } from '../generated/prisma/client.js';
+import { MEDIA_TYPES, toXlsx } from '../export/xlsx.js';
 import { csvCell } from '../imports/service.js';
+import { organiserName } from '../mail/branding.js';
 import { audit } from '../lib/audit.js';
 import { HttpError } from '../lib/errors.js';
 
@@ -1213,8 +1215,12 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
   // (E5-10: the summary of expectations and baseline results M.Bryan receives before the
   // conference). Knowledge questions add a "correct" column and a total. The download is
   // audited without any of its contents.
-  router.get('/events/:eventId/assessments/:stage/responses.csv', guard, async (req, res) => {
+  // One row per submitted response, as a spreadsheet (xlsx) or as CSV for a data pipeline.
+  router.get('/events/:eventId/assessments/:stage/responses.:format', guard, async (req, res) => {
     const principal = requireAdmin(res);
+    const format = String(req.params.format);
+    if (format !== 'csv' && format !== 'xlsx')
+      throw new HttpError(404, 'not_found', 'No such format.');
     const stage = await stageFromReq(req, false);
     const [questions, sections, responses] = await Promise.all([
       activeQuestions(stage.id),
@@ -1260,7 +1266,7 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
       ...knowledge.map((q) => `${titled(q)} (correct?)`),
       ...(knowledge.length ? [`Knowledge score (of ${knowledge.length})`] : []),
     ];
-    const lines = [header.map(csvCell).join(',')];
+    const rows: Array<Array<string | number>> = [];
     for (const r of responses) {
       const byId = new Map(r.answers.map((a) => [a.questionId, a]));
       const answerOf = (q: AssessmentQuestionView) => answerTo(byId, versions.get(q.id), q.id);
@@ -1279,11 +1285,12 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
           const a = answerOf(q);
           return a ? (a.correct ? 'Yes' : 'No') : '';
         }),
+        // A score is a number so a spreadsheet can total and chart it without retyping.
         ...(knowledge.length
-          ? [String(knowledge.reduce((n, q) => n + (answerOf(q)?.correct ? 1 : 0), 0))]
+          ? [knowledge.reduce((n, q) => n + (answerOf(q)?.correct ? 1 : 0), 0)]
           : []),
       ];
-      lines.push(cells.map(csvCell).join(','));
+      rows.push(cells);
     }
     await audit(prisma(), {
       action: 'assessment.exported',
@@ -1291,14 +1298,28 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
       entityId: stage.id,
       eventId: stage.eventId,
       actorUserId: principal.userId,
-      newValue: { stage: stage.stage, rows: responses.length, questions: questions.length },
+      newValue: {
+        stage: stage.stage,
+        format,
+        rows: responses.length,
+        questions: questions.length,
+      },
       ...clientOf(res),
     });
-    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader(
-      'Content-Disposition',
-      `attachment; filename="${stage.stage}-responses-${clock().toISOString().slice(0, 10)}.csv"`,
-    );
+    const name = `${stage.stage}-responses-${clock().toISOString().slice(0, 10)}`;
+    res.setHeader('Content-Type', format === 'xlsx' ? MEDIA_TYPES.xlsx : 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${name}.${format}"`);
+    if (format === 'xlsx') {
+      res.send(
+        await toXlsx([{ name: 'Responses', header, rows }], {
+          title: `${stage.stage} responses`,
+          organiser: organiserName(),
+        }),
+      );
+      return;
+    }
+    const lines = [header.map(csvCell).join(',')];
+    for (const row of rows) lines.push(row.map((c) => csvCell(String(c))).join(','));
     res.send(`\uFEFF${lines.join('\r\n')}\r\n`);
   });
 

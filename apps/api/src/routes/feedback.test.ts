@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
+import ExcelJS from 'exceljs';
+
 import { DEFAULT_FEEDBACK_QUESTIONS } from '@mbc/shared';
 import { pino } from 'pino';
 import request from 'supertest';
@@ -41,6 +43,23 @@ describe.skipIf(!hasDatabase)('session feedback', () => {
       allowedOrigins: [ORIGIN],
       now: () => now,
     });
+  /** A binary download read back as a workbook: supertest buffers only unparsed bodies. */
+  async function workbookFrom(path: string, cookie?: string) {
+    const res = await request(app())
+      .get(path)
+      .set('Origin', ORIGIN)
+      .set('Cookie', cookie ?? cookies.admin ?? '')
+      .buffer(true)
+      .parse((r: NodeJS.EventEmitter, callback) => {
+        const chunks: Buffer[] = [];
+        r.on('data', (c: Buffer) => chunks.push(c));
+        r.on('end', () => callback(null, Buffer.concat(chunks)));
+      });
+    const workbook = new ExcelJS.Workbook();
+    if (res.status === 200) await workbook.xlsx.load(res.body as unknown as ArrayBuffer);
+    return { res, workbook };
+  }
+
   const call = (
     method: 'post' | 'patch' | 'put' | 'delete' | 'get',
     path: string,
@@ -406,8 +425,24 @@ describe.skipIf(!hasDatabase)('session feedback', () => {
     expect(text).not.toContain('Vee Virtual');
     const named = await call('get', `${base}/export.csv`);
     expect(named.text).toContain('Vee Virtual,Shorter slides.');
+
+    // The same block layout as a spreadsheet, with the counts as numbers; names still withheld.
+    const { res: sheetRes, workbook } = await workbookFrom(
+      `/api/v1${base}/export.xlsx?anonymised=true`,
+    );
+    expect(sheetRes.status).toBe(200);
+    expect(sheetRes.headers['content-type']).toContain('spreadsheetml.sheet');
+    expect(sheetRes.headers['content-disposition']).toMatch(/-anonymised\.xlsx/);
+    const sheet = workbook.getWorksheet('Session feedback')!;
+    const rows = sheet.getRows(1, sheet.rowCount) ?? [];
+    const valueOf = (label: string) =>
+      rows.find((r) => r.getCell(1).value === label)?.getCell(2).value;
+    expect(valueOf('Session')).toBe('Measuring transfer');
+    expect(valueOf('Feedback submissions (latest per delegate)')).toBe(2);
+    expect(JSON.stringify(workbook.model)).not.toContain('Vee Virtual');
+    // Three downloads in this test: anonymised CSV, named CSV, anonymised spreadsheet.
     expect(await prisma.auditLog.count({ where: { eventId, action: 'feedback.exported' } })).toBe(
-      2,
+      3,
     );
 
     // Editing an answered rating question's wording versions it; the distribution follows the key.

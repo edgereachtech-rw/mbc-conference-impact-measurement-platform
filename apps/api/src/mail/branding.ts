@@ -2,8 +2,12 @@ import type { PrismaClient } from '../db.js';
 import type { MailConfig } from './config.js';
 import type { EmailBranding } from './templates/layout.js';
 
-/** Organiser name is not event data; it comes from the environment with a neutral default. */
-const organiser = () => process.env.MAIL_ORGANISER_NAME ?? 'the conference organisers';
+/**
+ * Organiser name is not event data; it comes from the environment with a neutral default. Used by
+ * the email layouts and by the PDF, Word and Excel downloads, which carry it as the author.
+ */
+export const organiserName = () => process.env.MAIL_ORGANISER_NAME ?? 'the conference organisers';
+const organiser = organiserName;
 
 function formatDateRange(startsOn: Date, endsOn: Date, timezone: string): string {
   const day = new Intl.DateTimeFormat('en-GB', { day: 'numeric', timeZone: timezone });

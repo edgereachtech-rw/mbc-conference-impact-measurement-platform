@@ -160,17 +160,21 @@ export function importRouter({ imports, resolver, middleware }: Deps): Router {
     res.json(await imports.getRun(String(req.params.runId), outcome));
   });
 
-  router.get('/imports/:runId/report.csv', adminOnly, async (req, res) => {
+  router.get('/imports/:runId/report.:format', adminOnly, async (req, res) => {
     const principal = assertPolicy(res);
-    const { fileName, csv } = await imports.reportCsv(
+    const format = String(req.params.format);
+    if (format !== 'csv' && format !== 'xlsx')
+      throw new HttpError(404, 'not_found', 'No such format.');
+    const { fileName, body, contentType } = await imports.report(
       String(req.params.runId),
+      format,
       { userId: principal.userId },
       clientOf(res),
     );
-    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Type', contentType);
     res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
     res.setHeader('Cache-Control', 'no-store');
-    res.send(csv);
+    res.send(body);
   });
 
   return router;

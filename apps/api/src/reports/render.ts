@@ -21,11 +21,14 @@ import {
   type TextAnswers,
 } from '@mbc/shared';
 
+import type { Sheet } from '../export/xlsx.js';
+
 /**
- * Renders a report as Markdown (the document an admin reads or shares) and as CSV (every
- * figure as one row, for spreadsheets). Both carry the event, the reporting date, the period,
- * the population, response numbers and denominators, the limitations, and the self-reported
- * labels; an external report that is not approved is headed DRAFT.
+ * Renders a report as Markdown (the document an admin reads or shares, and the source the PDF and
+ * Word downloads are laid out from) and as a table (every figure as one row, served as CSV and as
+ * an Excel workbook). All of them carry the event, the reporting date, the period, the population,
+ * response numbers and denominators, the limitations, and the self-reported labels; an external
+ * report that is not approved is headed DRAFT.
  */
 
 const stageNames: Record<string, string> = {
@@ -490,8 +493,16 @@ const csvCell = (v: string | number | null | undefined) => {
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 };
 
+/** The tabular form of a report: the same rows behind the CSV and the Excel workbook. */
+export interface ReportTable {
+  /** Key and value pairs that head the download: event, report, period, approval, limitations. */
+  meta: string[][];
+  header: string[];
+  rows: Array<Array<string | number | null>>;
+}
+
 /** Every figure as one row: section, metric, count, denominator, percent, state, definition. */
-export function renderCsv(report: EventReport): string {
+export function reportTable(report: EventReport): ReportTable {
   const rows: Array<Array<string | number | null>> = [];
   const add = (
     section: string,
@@ -720,6 +731,11 @@ export function renderCsv(report: EventReport): string {
     ],
     ...report.limitations.map((l) => ['Limitation', l]),
   ];
+  return { meta, header, rows };
+}
+
+export function renderCsv(report: EventReport): string {
+  const { meta, header, rows } = reportTable(report);
   return (
     [
       ...meta.map((m) => m.map(csvCell).join(',')),
@@ -728,4 +744,17 @@ export function renderCsv(report: EventReport): string {
       ...rows.map((r) => r.map(csvCell).join(',')),
     ].join('\n') + '\n'
   );
+}
+
+/**
+ * The same figures as an Excel workbook: one sheet of the report's own particulars (so a shared
+ * file still says which event, which period and whether it was approved) and one sheet of figures
+ * with a frozen, filterable heading row. Counts stay numbers so they can be totalled.
+ */
+export function reportSheets(report: EventReport): Sheet[] {
+  const { meta, header, rows } = reportTable(report);
+  return [
+    { name: 'Report', header: ['Field', 'Value'], rows: meta },
+    { name: 'Figures', header, rows, percentColumns: [4] },
+  ];
 }

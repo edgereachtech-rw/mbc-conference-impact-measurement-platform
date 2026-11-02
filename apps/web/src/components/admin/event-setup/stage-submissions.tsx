@@ -29,7 +29,7 @@ interface StageSubmissionsProps {
 
 /**
  * Submissions of one assessment stage (backlog E5-6, E5-9, E5-10): who was invited, started and
- * submitted, the knowledge average, the statement averages, the CSV export, every delegate's
+ * submitted, the knowledge average, the statement averages, the spreadsheet export, every delegate's
  * response with its section progress (and the full answers of one delegate, section by
  * section), and the list of delegates who have not submitted, with a reminder through the
  * message composer.
@@ -222,15 +222,15 @@ export function StageSubmissions({
       <div className="flex flex-wrap items-center gap-2">
         {summary.submitted > 0 ? (
           <a
-            href={apiUrl(`${base}/responses.csv`)}
+            href={apiUrl(`${base}/responses.xlsx`)}
             download
             className={consoleButton({ variant: 'secondary' })}
           >
-            <DownloadIcon aria-hidden="true" /> Download responses (CSV)
+            <DownloadIcon aria-hidden="true" /> Download responses (Excel)
           </a>
         ) : (
           <p className="text-sm text-corp-muted">
-            The CSV export appears once the first response is submitted.
+            The download appears once the first response is submitted.
           </p>
         )}
       </div>

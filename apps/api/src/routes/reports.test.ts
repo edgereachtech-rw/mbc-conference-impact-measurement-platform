@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import type { EventReport } from '@mbc/shared';
+import ExcelJS from 'exceljs';
 import { pino } from 'pino';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -60,6 +61,19 @@ describe.skipIf(!hasDatabase)('event dashboards and reports', () => {
       .set('Origin', ORIGIN)
       .set('Cookie', cookie ?? '')
       .send(body);
+  /** A binary download: supertest buffers the body only when told not to parse it. */
+  const download = (path: string, cookie = cookies.admin) =>
+    request(app())
+      .get(`/api/v1${path}`)
+      .set('Origin', ORIGIN)
+      .set('Cookie', cookie ?? '')
+      .buffer(true)
+      .parse((res, callback) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (c: Buffer) => chunks.push(c));
+        res.on('end', () => callback(null, Buffer.concat(chunks)));
+      });
+
   /** Moves the clock in steps short enough to keep every session inside its idle window. */
   async function tick(iso: string) {
     const target = new Date(iso);
@@ -711,6 +725,52 @@ describe.skipIf(!hasDatabase)('event dashboards and reports', () => {
     const csv = await call('get', `/events/${eventId}/reports/follow_up/export.csv`);
     expect(csv.status).toBe(200);
     expect(csv.text).toContain('Plans submitted,1,4,25');
+
+    // The same report as the files an admin actually sends out: PDF, Word and Excel.
+    const pdf = await download(`/events/${eventId}/reports/conference/export.pdf`);
+    expect(pdf.status, String(pdf.status)).toBe(200);
+    expect(pdf.headers['content-type']).toBe('application/pdf');
+    expect(pdf.headers['content-disposition']).toContain(`-conference-report.pdf`);
+    expect(pdf.body.subarray(0, 5).toString()).toBe('%PDF-');
+
+    const docx = await download(`/events/${eventId}/reports/conference/export.docx`);
+    expect(docx.status).toBe(200);
+    expect(docx.headers['content-type']).toContain('wordprocessingml.document');
+    expect(docx.body.subarray(0, 2).toString()).toBe('PK');
+    expect(docx.body.toString('latin1')).toContain('word/document.xml');
+
+    const xlsx = await download(`/events/${eventId}/reports/follow_up/export.xlsx`);
+    expect(xlsx.status).toBe(200);
+    expect(xlsx.headers['content-type']).toContain('spreadsheetml.sheet');
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(xlsx.body as unknown as ArrayBuffer);
+    expect(workbook.worksheets.map((w) => w.name)).toEqual(['Report', 'Figures']);
+    const figures = workbook.getWorksheet('Figures')!;
+    const plans = figures
+      .getRows(2, figures.rowCount)
+      ?.find((r) => r.getCell(2).value === 'Plans submitted');
+    // The hand-computed figure, as numbers a spreadsheet can total: 1 of 4 delegates, 25%.
+    expect(plans?.getCell(3).value).toBe(1);
+    expect(plans?.getCell(4).value).toBe(4);
+    expect(plans?.getCell(5).value).toBe(25);
+    expect(workbook.getWorksheet('Report')!.getRow(1).values).toEqual([
+      undefined,
+      'Field',
+      'Value',
+    ]);
+
+    expect((await call('get', `/events/${eventId}/reports/conference/export.rtf`)).status).toBe(
+      404,
+    );
+
+    // An external report that is not approved is refused in every format, not just Markdown.
+    for (const format of ['pdf', 'docx', 'xlsx'] as const) {
+      const denied = await call(
+        'get',
+        `/events/${eventId}/reports/organisation/export.${format}?organisation=Acme`,
+      );
+      expect(denied.status, format).toBe(409);
+    }
     const refused = await call(
       'get',
       `/events/${eventId}/reports/organisation/export.md?organisation=Acme`,
@@ -774,7 +834,8 @@ describe.skipIf(!hasDatabase)('event dashboards and reports', () => {
     expect(counts).toMatchObject({
       'report.approved': 1,
       'report.approval_revoked': 1,
-      'report.exported': 3,
+      // Every download is audited with its format: md, csv, pdf, docx, xlsx and the approved one.
+      'report.exported': 6,
     });
     expect(counts['report.viewed']).toBeGreaterThanOrEqual(3);
   });

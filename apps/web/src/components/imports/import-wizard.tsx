@@ -464,10 +464,10 @@ export function ImportWizard() {
               <div className="flex flex-col gap-3 sm:flex-row">
                 <a
                   className="inline-flex h-11 items-center justify-center rounded-md border border-brand-primary/40 px-4 text-sm font-medium text-brand-primary"
-                  href={apiUrl(`/imports/${result.run.id}/report.csv`)}
+                  href={apiUrl(`/imports/${result.run.id}/report.xlsx`)}
                   download
                 >
-                  Download row report (CSV)
+                  Download row report (Excel)
                 </a>
                 <Button type="button" variant="outline" onClick={() => setTab('history')}>
                   View history and conflicts

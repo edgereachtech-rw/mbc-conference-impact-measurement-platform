@@ -5,6 +5,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { MeasuresReport } from './measures-report';
 
+const MEDIA_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
 afterEach(() => vi.unstubAllGlobals());
 
 const json = (body: unknown, status = 200) =>
@@ -133,6 +135,76 @@ describe('MeasuresReport', () => {
     expect(screen.getByText(/recorded in the audit log/)).toBeTruthy();
     expect(screen.getByText('Supported by: Line manager')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Load evidence text' })).toBeNull();
+  });
+
+  it('posts the shown rows to be formatted as a spreadsheet, and reports a refusal', async () => {
+    const calls: Array<{ url: string; method?: string; body?: unknown }> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        calls.push({
+          url,
+          method: init?.method,
+          body: init?.body ? (JSON.parse(String(init.body)) as unknown) : undefined,
+        });
+        if (init?.method === 'POST') {
+          return new Response(new Blob(['xlsx']), {
+            status: 200,
+            headers: { 'content-type': MEDIA_TYPE },
+          });
+        }
+        return json({ rows: rows(false), evidenceIncluded: false });
+      }),
+    );
+    // jsdom has no object URLs or real navigation, so the save is stubbed and the click ignored.
+    const created: string[] = [];
+    vi.stubGlobal('URL', {
+      ...URL,
+      createObjectURL: vi.fn(() => {
+        created.push('blob:x');
+        return 'blob:x';
+      }),
+      revokeObjectURL: vi.fn(),
+    });
+    const user = userEvent.setup();
+    render(<MeasuresReport eventId="e1" slug="summit" />);
+    await screen.findByRole('table');
+
+    await user.click(screen.getByRole('button', { name: /Export to Excel/ }));
+    const post = calls.find((c) => c.method === 'POST')!;
+    expect(post.url).toBe('/api/v1/exports/workbook');
+    const body = post.body as {
+      filename: string;
+      title: string;
+      sheets: Array<{ name: string; header: string[]; rows: unknown[][] }>;
+    };
+    expect(body.filename).toBe('summit-measures-and-evidence');
+    expect(body.sheets).toHaveLength(1);
+    expect(body.sheets[0]!.header[0]).toBe('Delegate');
+    // One row per action (the second action has no measure, so it still gets a row).
+    expect(body.sheets[0]!.rows).toHaveLength(2);
+    expect(body.sheets[0]!.rows[0]![0]).toBe('Dee Legate');
+    // The evidence counts travel as numbers so the spreadsheet can total them.
+    expect(body.sheets[0]!.rows[0]!.some((cell) => typeof cell === 'number')).toBe(true);
+    expect(created).toHaveLength(1);
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('says so when the spreadsheet cannot be created', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init?: RequestInit) => {
+        if (init?.method === 'POST') {
+          return json({ error: { code: 'forbidden', message: 'Admins only.' } }, 403);
+        }
+        return json({ rows: rows(false), evidenceIncluded: false });
+      }),
+    );
+    const user = userEvent.setup();
+    render(<MeasuresReport eventId="e1" slug="summit" />);
+    await screen.findByRole('table');
+    await user.click(screen.getByRole('button', { name: /Export to Excel/ }));
+    expect((await screen.findByRole('alert')).textContent).toMatch(/Admins only/);
   });
 
   it('filters actions by what their measures say', async () => {

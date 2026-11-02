@@ -55,6 +55,17 @@
 
 Decisions 2026-10-29: the analyst role and the support role are not part of the approved requirements and are not replaced; M.Bryan acts as admin, as in the original requirements. The Increment 1 code contains both roles. They are retired in Increment 1b under the explicit plan in design note D8 item 7: existing accounts with those roles are reviewed and revoked or migrated under written authorisation, never silently promoted to admin.
 
+**Decision 2026-11-02 (product owner): downloads are PDF, Word and Excel.** Reports downloaded as
+Markdown and tables as CSV; both were asked to be changed to the formats a client opens. Reports now
+download as PDF or Word (.docx) and their figures as Excel (.xlsx), and every other CSV download has
+an .xlsx twin that the screens link to. The CSV and Markdown endpoints still work for anything that
+already consumes them, so nothing that was automated against them breaks. The report is still
+written once as Markdown and the PDF and Word files are laid out from it, so the three can never
+disagree. Two new dependencies, pinned: `docx` and `pdfkit`; Excel uses the `exceljs` already in
+the project. Affects E16-7 (export of the report), E16-9 (data export), E8-0 and E8-8 (session
+feedback export), E2-4/E5 (assessment responses export) and D9 (import row report) — the figures,
+the approval gate and the audit entries are unchanged, only the file formats.
+
 **Decision 2026-11-02 (product owner): the speaker role is removed too.** Admin is the only staff role an admin can create or assign, so `staffRoles` is `['admin']` and the API refuses any other role with 422. `speaker` is retired exactly as `analyst` and `support` are (D8 item 7): an account still carrying it cannot request a link, cannot verify and holds no usable session, every route answers 401, the `user_role` enum keeps the value until no account carries one, and such an account is deactivated rather than promoted. What this costs: **E8-10 (the speaker-facing feedback view) is removed, not deferred** — it was never built, and without an account there is nobody to show it to. What replaces it: feedback results reach a speaker as an export. The dashboard and CSV already take `?anonymised=true`, which leaves delegate identities out (S8.4), and an admin sends that to the speaker. Nothing else changes: every feedback route was already admin-only, so no working access was withdrawn.
 
 ---

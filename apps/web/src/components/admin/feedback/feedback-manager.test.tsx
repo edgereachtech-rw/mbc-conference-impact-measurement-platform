@@ -208,9 +208,9 @@ describe('FeedbackManager', () => {
     expect(written.textContent).toMatch(/Measure first\.Dee Legate/);
     expect(
       within(dash)
-        .getByRole('link', { name: /Export CSV/ })
+        .getByRole('link', { name: /Export to Excel/ })
         .getAttribute('href'),
-    ).toBe(`/api/v1/events/e1/feedback/sessions/${S1}/export.csv`);
+    ).toBe(`/api/v1/events/e1/feedback/sessions/${S1}/export.xlsx`);
     await user.click(within(dash).getByLabelText(/Speaker view/));
     const anonymised = await within(dash).findByRole('region', {
       name: enabled.questions[1]!.prompt,
@@ -219,8 +219,8 @@ describe('FeedbackManager', () => {
     expect(anonymised.textContent).not.toContain('Dee Legate');
     expect(
       within(dash)
-        .getByRole('link', { name: /Export anonymised CSV/ })
+        .getByRole('link', { name: /Export anonymised to Excel/ })
         .getAttribute('href'),
-    ).toBe(`/api/v1/events/e1/feedback/sessions/${S1}/export.csv?anonymised=true`);
+    ).toBe(`/api/v1/events/e1/feedback/sessions/${S1}/export.xlsx?anonymised=true`);
   });
 });

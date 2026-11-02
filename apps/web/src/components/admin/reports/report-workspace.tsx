@@ -306,16 +306,22 @@ export function ReportWorkspace({ eventId, timezone, kinds, readOnly = false }: 
             {report && downloadable ? (
               <>
                 <a
-                  href={apiUrl(`/events/${eventId}/reports/${kind}/export.md${query}`)}
+                  href={apiUrl(`/events/${eventId}/reports/${kind}/export.pdf${query}`)}
                   className={consoleButton({ variant: 'ghost', size: 'sm' })}
                 >
-                  <DownloadIcon aria-hidden="true" /> Download the report
+                  <DownloadIcon aria-hidden="true" /> Report (PDF)
                 </a>
                 <a
-                  href={apiUrl(`/events/${eventId}/reports/${kind}/export.csv${query}`)}
+                  href={apiUrl(`/events/${eventId}/reports/${kind}/export.docx${query}`)}
                   className={consoleButton({ variant: 'ghost', size: 'sm' })}
                 >
-                  <DownloadIcon aria-hidden="true" /> Download the figures (CSV)
+                  <DownloadIcon aria-hidden="true" /> Report (Word)
+                </a>
+                <a
+                  href={apiUrl(`/events/${eventId}/reports/${kind}/export.xlsx${query}`)}
+                  className={consoleButton({ variant: 'ghost', size: 'sm' })}
+                >
+                  <DownloadIcon aria-hidden="true" /> Figures (Excel)
                 </a>
               </>
             ) : null}

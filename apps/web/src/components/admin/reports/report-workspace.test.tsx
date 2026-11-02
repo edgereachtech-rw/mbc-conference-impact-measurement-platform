@@ -41,12 +41,16 @@ describe('ReportWorkspace', () => {
     expect(await screen.findByText('Event dashboard')).toBeTruthy();
     expect(reportUrls(calls)).toEqual(['/api/v1/events/e1/reports/dashboard']);
     expect(screen.queryByRole('tablist', { name: 'Report' })).toBeNull();
-    expect(screen.getByRole('link', { name: 'Download the report' }).getAttribute('href')).toBe(
-      '/api/v1/events/e1/reports/dashboard/export.md',
+    // The formats an admin sends out: the document as PDF or Word, the figures as a spreadsheet.
+    expect(screen.getByRole('link', { name: 'Report (PDF)' }).getAttribute('href')).toBe(
+      '/api/v1/events/e1/reports/dashboard/export.pdf',
     );
-    expect(
-      screen.getByRole('link', { name: 'Download the figures (CSV)' }).getAttribute('href'),
-    ).toBe('/api/v1/events/e1/reports/dashboard/export.csv');
+    expect(screen.getByRole('link', { name: 'Report (Word)' }).getAttribute('href')).toBe(
+      '/api/v1/events/e1/reports/dashboard/export.docx',
+    );
+    expect(screen.getByRole('link', { name: 'Figures (Excel)' }).getAttribute('href')).toBe(
+      '/api/v1/events/e1/reports/dashboard/export.xlsx',
+    );
     expect(screen.queryByRole('button', { name: /Approve these sections/ })).toBeNull();
     expect(screen.getByRole('region', { name: 'Delegate participation' })).toBeTruthy();
   });
@@ -136,7 +140,8 @@ describe('ReportWorkspace', () => {
     const user = userEvent.setup();
     render(<ReportWorkspace eventId="e1" timezone="Africa/Lagos" kinds={['sponsor']} />);
     expect(await screen.findByText('Not approved')).toBeTruthy();
-    expect(screen.queryByRole('link', { name: 'Download the report' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Report (PDF)' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Figures (Excel)' })).toBeNull();
     expect(screen.getByText(/aggregates only, and M.Bryan must approve it/)).toBeTruthy();
     expect(screen.getByText(/never publishes or emails a report/)).toBeTruthy();
 
@@ -151,7 +156,7 @@ describe('ReportWorkspace', () => {
       note: 'Agreed on 1 December',
     });
     expect(await screen.findByText(/Approved for sharing\./)).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Download the report' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Report (PDF)' })).toBeTruthy();
     await user.click(screen.getByRole('button', { name: 'Withdraw the approval' }));
     expect(calls.filter((c) => c.method === 'POST').at(-1)!.url).toBe(
       '/api/v1/events/e1/reports/sponsor/revoke',

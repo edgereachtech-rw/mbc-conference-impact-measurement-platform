@@ -25,7 +25,9 @@ import { clientOf, principalOf, type createAuthMiddleware } from '../auth/middle
 import { canConfigureEvents, EVENT_SETUP_ROLES } from '../auth/policies.js';
 import type { PrismaClient } from '../db.js';
 import type { Prisma } from '../generated/prisma/client.js';
+import { MEDIA_TYPES, toXlsx } from '../export/xlsx.js';
 import { csvCell } from '../imports/service.js';
+import { organiserName } from '../mail/branding.js';
 import { audit } from '../lib/audit.js';
 import { HttpError } from '../lib/errors.js';
 
@@ -520,34 +522,38 @@ export function feedbackRouter({ prisma, config, middleware, now }: Deps): Route
     res.json({ dashboard });
   });
 
-  // CSV: the session block, one distribution table per rating question, then the written
-  // responses of the latest revision per delegate. anonymised=true leaves delegate names out.
+  // The session block, one distribution table per rating question, then the written responses of
+  // the latest revision per delegate, as a spreadsheet (xlsx) or CSV. anonymised=true leaves
+  // delegate names out, which is how results are shared with a speaker.
   router.get(
-    '/events/:eventId/feedback/sessions/:sessionId/export.csv',
+    '/events/:eventId/feedback/sessions/:sessionId/export.:format',
     guard,
     async (req, res) => {
       const principal = requireAdmin(res);
+      const format = String(req.params.format);
+      if (format !== 'csv' && format !== 'xlsx')
+        throw new HttpError(404, 'not_found', 'No such format.');
       const event = await loadEvent(String(req.params.eventId));
       const session = await loadSession(event.id, String(req.params.sessionId));
       const anonymised = String(req.query.anonymised ?? '') === 'true';
       const d = await dashboardOf(event, session, anonymised);
-      const lines: string[][] = [
+      const lines: Array<Array<string | number>> = [
         ['Event', d.event.name],
         ['Session', d.session.title],
         ['Date', d.session.date],
         ['Time', `${d.session.startTime}-${d.session.endTime}`],
         ['Speaker or facilitator', d.session.speaker ?? ''],
-        ['Delegates recorded as attending', String(d.session.attended)],
-        ['Feedback submissions (latest per delegate)', String(d.session.submitted)],
+        ['Delegates recorded as attending', d.session.attended],
+        ['Feedback submissions (latest per delegate)', d.session.submitted],
         ['Generated at (UTC)', d.generatedAt],
         [],
       ];
       for (const dist of d.distributions) {
         lines.push([dist.prompt], ['Rating', 'Responses', 'Percentage']);
         for (const r of dist.ratings) {
-          lines.push([feedbackRatingLabels[r.rating], String(r.count), `${r.percent}%`]);
+          lines.push([feedbackRatingLabels[r.rating], r.count, `${r.percent}%`]);
         }
-        lines.push(['Total', String(dist.total), dist.total ? '100%' : '0%'], []);
+        lines.push(['Total', dist.total, dist.total ? '100%' : '0%'], []);
       }
       for (const w of d.written) {
         lines.push(
@@ -571,15 +577,27 @@ export function feedbackRouter({ prisma, config, middleware, now }: Deps): Route
         entityId: session.id,
         eventId: event.id,
         actorUserId: principal.userId,
-        newValue: { anonymised, responses: d.session.submitted },
+        newValue: { anonymised, format, responses: d.session.submitted },
         ...clientOf(res),
       });
-      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      const name = `session-feedback-${d.session.date}${anonymised ? '-anonymised' : ''}`;
       res.setHeader(
-        'Content-Disposition',
-        `attachment; filename="session-feedback-${d.session.date}${anonymised ? '-anonymised' : ''}.csv"`,
+        'Content-Type',
+        format === 'xlsx' ? MEDIA_TYPES.xlsx : 'text/csv; charset=utf-8',
       );
-      res.send(`\uFEFF${lines.map((l) => l.map(csvCell).join(',')).join('\r\n')}\r\n`);
+      res.setHeader('Content-Disposition', `attachment; filename="${name}.${format}"`);
+      if (format === 'xlsx') {
+        res.send(
+          await toXlsx([{ name: 'Session feedback', rows: lines }], {
+            title: `${d.session.title} feedback`,
+            organiser: organiserName(),
+          }),
+        );
+        return;
+      }
+      res.send(
+        `\uFEFF${lines.map((l) => l.map((c) => csvCell(String(c))).join(',')).join('\r\n')}\r\n`,
+      );
     },
   );
 

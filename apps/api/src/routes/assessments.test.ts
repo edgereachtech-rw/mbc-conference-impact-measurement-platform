@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
+import ExcelJS from 'exceljs';
+
 import { pino } from 'pino';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -37,6 +39,23 @@ describe.skipIf(!hasDatabase)('assessment questions and answers', () => {
       allowedOrigins: [ORIGIN],
       now: () => now,
     });
+  /** A binary download read back as a workbook: supertest buffers only unparsed bodies. */
+  async function workbookFrom(path: string, cookie?: string) {
+    const res = await request(app())
+      .get(path)
+      .set('Origin', ORIGIN)
+      .set('Cookie', cookie ?? cookies.admin ?? '')
+      .buffer(true)
+      .parse((r, callback) => {
+        const chunks: Buffer[] = [];
+        r.on('data', (c: Buffer) => chunks.push(c));
+        r.on('end', () => callback(null, Buffer.concat(chunks)));
+      });
+    const workbook = new ExcelJS.Workbook();
+    if (res.status === 200) await workbook.xlsx.load(res.body as unknown as ArrayBuffer);
+    return { res, workbook };
+  }
+
   const call = (
     method: 'post' | 'patch' | 'put' | 'delete' | 'get',
     path: string,
@@ -671,6 +690,22 @@ describe.skipIf(!hasDatabase)('assessment questions and answers', () => {
     expect(knowledgeColumns).toBe(1);
     expect(lines[0]).toContain('What does Return on Expectations assess? (correct?)');
     expect(lines[0]).toContain('Knowledge score (of 1)');
+
+    // The same rows as a spreadsheet: the headings are a real header row and the score a number.
+    const { res: sheetRes, workbook } = await workbookFrom(`/api/v1${stageUrl}/responses.xlsx`);
+    expect(sheetRes.status).toBe(200);
+    expect(sheetRes.headers['content-type']).toContain('spreadsheetml.sheet');
+    expect(sheetRes.headers['content-disposition']).toMatch(
+      /pre_conference-responses-2026-11-17\.xlsx/,
+    );
+    const responses = workbook.getWorksheet('Responses')!;
+    expect(responses.getRow(1).getCell(1).value).toBe('Name');
+    expect(responses.getRow(1).font?.bold).toBe(true);
+    const scoreColumn = (responses.getRow(1).values as unknown[]).findIndex(
+      (v) => typeof v === 'string' && v.startsWith('Knowledge score'),
+    );
+    expect(typeof responses.getRow(2).getCell(scoreColumn).value).toBe('number');
+    expect((await workbookFrom(`/api/v1${stageUrl}/responses.rtf`)).res.status).toBe(404);
     // The confidence question was re-versioned after it was answered: the answer still shows
     // under its current wording (answers are matched by question key, not version id).
     expect(lines[0]).toContain('How confident do you feel today?');
@@ -683,8 +718,9 @@ describe.skipIf(!hasDatabase)('assessment questions and answers', () => {
     expect(lines[1]).toContain('"A transfer plan; Other, please specify: A coaching log"');
     const tail = lines[1]!.split(',').slice(-(knowledgeColumns + 1));
     expect(tail).toEqual(['No', '0']);
+    // Two downloads in this test: the CSV and the spreadsheet; each is audited with its format.
     expect(await prisma.auditLog.count({ where: { eventId, action: 'assessment.exported' } })).toBe(
-      1,
+      2,
     );
   });
 

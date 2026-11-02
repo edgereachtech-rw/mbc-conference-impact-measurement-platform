@@ -29,22 +29,18 @@ import {
 import { NativeSelect } from '@/components/imports/native-select';
 import { apiFetch } from '@/lib/api';
 import { describeError } from '@/lib/imports';
+import { downloadWorkbook, workbookProblem } from '@/lib/workbook';
 
 interface MeasuresReportProps {
   eventId: string;
   slug: string;
 }
 
-const csvCell = (v: string | number | null | undefined) => {
-  const s = v === null || v === undefined ? '' : String(v);
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-};
-
 /**
  * Measures and evidence across every planned action of the event (backlog E14-4, E16-6,
  * S13.3). Each row is one action: what its measures say, each measure read in its own unit
  * and direction, and how many evidence records are self-reported or supported by another
- * source. Evidence text stays out of the table and the CSV until the admin loads it, which
+ * source. Evidence text stays out of the table and the download until the admin loads it, which
  * the API audits. Nothing here calls a result verified or infers business impact from a plan.
  */
 export function MeasuresReport({ eventId, slug }: MeasuresReportProps) {
@@ -53,6 +49,7 @@ export function MeasuresReport({ eventId, slug }: MeasuresReportProps) {
   const [error, setError] = useState<{ message: string; requestId?: string } | null>(null);
   const [filter, setFilter] = useState<'all' | MeasureSummary>('all');
   const [loadingEvidence, setLoadingEvidence] = useState(false);
+  const [exportProblem, setExportProblem] = useState<string | null>(null);
   const id = useId();
 
   useEffect(() => {
@@ -114,7 +111,7 @@ export function MeasuresReport({ eventId, slug }: MeasuresReportProps) {
   }
   const shown = rows.filter((r) => filter === 'all' || r.summary === filter);
 
-  function exportCsv() {
+  async function exportWorkbook() {
     const header = [
       'Delegate',
       'Organisation',
@@ -143,7 +140,7 @@ export function MeasuresReport({ eventId, slug }: MeasuresReportProps) {
       'Evidence supported by another source (count)',
       ...(withEvidence ? ['Evidence'] : []),
     ];
-    const lines: string[] = [];
+    const sheetRows: Array<Array<string | number | null>> = [];
     for (const r of shown) {
       const base = [
         r.delegate.name,
@@ -171,7 +168,7 @@ export function MeasuresReport({ eventId, slug }: MeasuresReportProps) {
       const measures = r.measures.length > 0 ? r.measures : [null];
       for (const m of measures) {
         const comparison = m ? compareMeasure(m) : null;
-        lines.push(
+        sheetRows.push(
           [
             ...base,
             m ? measureStatusLabels[m.status] : '',
@@ -195,21 +192,21 @@ export function MeasuresReport({ eventId, slug }: MeasuresReportProps) {
             m?.source,
             m?.influences,
             ...tail,
-          ]
-            .map(csvCell)
-            .join(','),
+            // A cell the spreadsheet should not read as a number or a date stays text.
+          ].map((cell) => (typeof cell === 'number' ? cell : (cell ?? null))),
         );
       }
     }
-    const blob = new Blob([[header.map(csvCell).join(','), ...lines].join('\n')], {
-      type: 'text/csv;charset=utf-8',
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${slug}-measures-and-evidence.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    setExportProblem(null);
+    try {
+      await downloadWorkbook({
+        filename: `${slug}-measures-and-evidence`,
+        title: 'Measures and evidence',
+        sheets: [{ name: 'Measures and evidence', header, rows: sheetRows }],
+      });
+    } catch (err) {
+      setExportProblem(workbookProblem(err));
+    }
   }
 
   return (
@@ -287,13 +284,18 @@ export function MeasuresReport({ eventId, slug }: MeasuresReportProps) {
           )}
           <button
             type="button"
-            onClick={exportCsv}
+            onClick={() => void exportWorkbook()}
             disabled={shown.length === 0}
             className={consoleButton({ variant: 'ghost' })}
           >
-            <DownloadIcon aria-hidden="true" /> Export CSV
+            <DownloadIcon aria-hidden="true" /> Export to Excel
           </button>
         </div>
+        {exportProblem ? (
+          <p role="alert" className="text-sm font-semibold text-brand-danger">
+            {exportProblem}
+          </p>
+        ) : null}
       </div>
       {shown.length === 0 ? (
         <p className="p-4 text-sm text-corp-muted">

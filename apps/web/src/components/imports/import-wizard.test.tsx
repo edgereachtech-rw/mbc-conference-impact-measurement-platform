@@ -189,7 +189,7 @@ describe('ImportWizard', () => {
     await user.click(screen.getByRole('button', { name: 'Confirm import' }));
     expect(await screen.findByText('Import committed')).toBeTruthy();
     expect(screen.getByRole('link', { name: /Download row report/ }).getAttribute('href')).toBe(
-      '/api/v1/imports/run1/report.csv',
+      '/api/v1/imports/run1/report.xlsx',
     );
     expect(calls.filter((c) => c.key === 'POST /imports/run1/confirm')).toHaveLength(1);
   });
@@ -509,8 +509,8 @@ describe('ImportWizard', () => {
     const list = await screen.findByRole('list', { name: 'Import runs' });
     expect(within(list).getByText('reg.csv')).toBeTruthy();
     expect(within(list).getByText('Committed')).toBeTruthy();
-    expect(within(list).getByRole('link', { name: 'Report (CSV)' }).getAttribute('href')).toBe(
-      '/api/v1/imports/run1/report.csv',
+    expect(within(list).getByRole('link', { name: 'Report (Excel)' }).getAttribute('href')).toBe(
+      '/api/v1/imports/run1/report.xlsx',
     );
     const conflicts = screen.getByRole('region', { name: 'Open conflicts' });
     expect(within(conflicts).getByText('bob@example.com')).toBeTruthy();

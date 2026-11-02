@@ -322,11 +322,11 @@ function SessionCard({
                 <BarChart3Icon aria-hidden="true" /> Dashboard ({session.submitted})
               </button>
               <a
-                href={apiUrl(`${base}/export.csv`)}
+                href={apiUrl(`${base}/export.xlsx`)}
                 download
                 className={consoleButton({ variant: 'ghost', size: 'sm' })}
               >
-                <DownloadIcon aria-hidden="true" /> Export CSV
+                <DownloadIcon aria-hidden="true" /> Export to Excel
               </a>
             </div>
             <div className="space-y-2">
@@ -670,11 +670,11 @@ function DashboardDialog({
       footer={
         <>
           <a
-            href={apiUrl(`${base}/export.csv${anonymised ? '?anonymised=true' : ''}`)}
+            href={apiUrl(`${base}/export.xlsx${anonymised ? '?anonymised=true' : ''}`)}
             download
             className={consoleButton({ variant: 'secondary' })}
           >
-            <DownloadIcon aria-hidden="true" /> Export {anonymised ? 'anonymised ' : ''}CSV
+            <DownloadIcon aria-hidden="true" /> Export {anonymised ? 'anonymised ' : ''}to Excel
           </a>
           <button type="button" onClick={onClose} className={consoleButton({ variant: 'ghost' })}>
             Close

@@ -12,9 +12,11 @@ import {
 import type { ClientContext } from '../auth/service.js';
 import type { PrismaClient } from '../db.js';
 import { Prisma } from '../generated/prisma/client.js';
+import { MEDIA_TYPES, toXlsx } from '../export/xlsx.js';
 import { importFeatureState } from '../identity/report.js';
 import { audit } from '../lib/audit.js';
 import { normaliseEmail } from '../lib/email.js';
+import { organiserName } from '../mail/branding.js';
 import { HttpError } from '../lib/errors.js';
 import type { Logger } from '../lib/logger.js';
 import { captureException } from '../lib/sentry.js';
@@ -621,11 +623,16 @@ export class ImportService {
   }
 
   /** Row-level report as CSV; the download is audited (D9). Formula-like cells are neutralised. */
-  async reportCsv(
+  /**
+   * The row-by-row outcome of an import run, as a spreadsheet (xlsx) or CSV. Both carry the same
+   * columns; the download is audited once, whichever format was asked for.
+   */
+  async report(
     runId: string,
+    format: 'csv' | 'xlsx',
     actor: Actor,
     client: ClientContext,
-  ): Promise<{ fileName: string; csv: string }> {
+  ): Promise<{ fileName: string; body: string | Buffer; contentType: string }> {
     const { run, rows } = await this.getRun(runId);
     await audit(this.prisma, {
       action: 'import.report_downloaded',
@@ -633,7 +640,7 @@ export class ImportService {
       entityId: runId,
       eventId: run.eventId,
       actorUserId: actor.userId,
-      newValue: { runId, rows: rows.length },
+      newValue: { runId, format, rows: rows.length },
       ...client,
     });
     const columns = [
@@ -655,34 +662,49 @@ export class ImportService {
       'delegate_id',
       'identity_id',
     ];
-    const lines = [columns.join(',')];
+    const cells: Array<Array<string | number>> = [];
     for (const r of rows) {
       const v = (r.values ?? {}) as Partial<RowValues>;
-      lines.push(
-        [
-          r.rowNumber,
-          r.outcome ?? '',
-          r.reasonCode ?? '',
-          r.reasonDetail ?? '',
-          r.possibleDuplicate ? 'yes' : '',
-          v.email ?? '',
-          v.name ?? '',
-          v.organisation ?? '',
-          v.jobTitle ?? '',
-          v.country ?? '',
-          v.attendanceFormat ?? '',
-          v.capacity ?? '',
-          v.nominatingOrganisation ?? '',
-          v.registrationStatus ?? '',
-          v.externalRegistrationId ?? '',
-          r.delegateId ?? '',
-          r.identityId ?? '',
-        ]
-          .map((cell) => csvCell(String(cell ?? '')))
-          .join(','),
-      );
+      cells.push([
+        r.rowNumber,
+        r.outcome ?? '',
+        r.reasonCode ?? '',
+        r.reasonDetail ?? '',
+        r.possibleDuplicate ? 'yes' : '',
+        v.email ?? '',
+        v.name ?? '',
+        v.organisation ?? '',
+        v.jobTitle ?? '',
+        v.country ?? '',
+        v.attendanceFormat ?? '',
+        v.capacity ?? '',
+        v.nominatingOrganisation ?? '',
+        v.registrationStatus ?? '',
+        v.externalRegistrationId ?? '',
+        r.delegateId ?? '',
+        r.identityId ?? '',
+      ]);
     }
-    return { fileName: `import-${runId}-report.csv`, csv: `${lines.join('\r\n')}\r\n` };
+    const fileName = `import-${runId}-report.${format}`;
+    if (format === 'xlsx') {
+      return {
+        fileName,
+        contentType: MEDIA_TYPES.xlsx,
+        body: await toXlsx([{ name: 'Rows', header: columns, rows: cells }], {
+          title: `Import ${runId} report`,
+          organiser: organiserName(),
+        }),
+      };
+    }
+    const lines = [
+      columns.join(','),
+      ...cells.map((row) => row.map((cell) => csvCell(String(cell ?? ''))).join(',')),
+    ];
+    return {
+      fileName,
+      contentType: 'text/csv; charset=utf-8',
+      body: `${lines.join('\r\n')}\r\n`,
+    };
   }
 
   // ---------------------------------------------------------------- internals

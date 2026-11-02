@@ -151,10 +151,10 @@ export function RunHistory({ eventId, refreshKey }: RunHistoryProps) {
               </Button>
               <a
                 className="inline-flex h-11 items-center rounded-md border border-brand-primary/40 px-4 text-sm font-medium text-brand-primary"
-                href={apiUrl(`/imports/${run.id}/report.csv`)}
+                href={apiUrl(`/imports/${run.id}/report.xlsx`)}
                 download
               >
-                Report (CSV)
+                Report (Excel)
               </a>
             </div>
           </li>

@@ -614,6 +614,40 @@ measures | evidence }`, the list replaced with ids kept; own actions only, 404 o
   their own account (refused by the API, and the screen never offers it), accounts are never
   deleted so the audit trail holds, and `staff.created` and `staff.updated` record every change.
   Delegate accounts are not shown: they come from the event's registrations.
+- Downloads are PDF, Word and Excel (task of 2026-11-02). Reports used to download as Markdown
+  and CSV, and every table as CSV; what an admin sends to a client now opens in the tools clients
+  use. One module does the writing, `apps/api/src/export/`:
+  - `blocks.ts` parses the small Markdown subset `reports/render.ts` emits (headings, bullets, a
+    blockquote, pipe tables, `**bold**`, `_italic_`) into blocks. The report is still written once,
+    as Markdown; PDF and Word are two layouts of the same blocks, so no format can drift from the
+    others and a sentence added to the report appears in all of them.
+  - `pdf.ts` lays the blocks out on A4 with pdfkit's base-14 fonts, measuring and wrapping table
+    cells and repeating a table's heading row after a page break. No font files and no browser ship
+    in the image. `docx.ts` writes real Word styles (Heading 1-3, a bordered table that repeats its
+    header, a footer), so a recipient can restyle it in their own template.
+  - `xlsx.ts` writes the workbooks with ExcelJS, which was already a dependency for reading
+    registration uploads. A count stays a number and a percentage gets a percentage format, which is
+    the reason to prefer Excel over CSV; the heading row is bold, frozen and filterable.
+  - New dependencies: `docx@9.15.1` and `pdfkit@0.20.2` (with `@types/pdfkit@0.17.7`), pinned
+    exactly like every other one.
+- Report downloads: `GET /events/:id/reports/:kind/export.:format` serves `pdf`, `docx`, `xlsx`,
+  `md` and `csv`; anything else is 404. The Reports screen offers **Report (PDF)**, **Report
+  (Word)** and **Figures (Excel)**; `md` and `csv` stay reachable for a data pipeline that already
+  uses them. The approval gate, the audience redaction and the `report.exported` audit entry (which
+  now records the format) apply to every format equally: an unapproved external report is refused as
+  a PDF exactly as it is as Markdown.
+- Every other CSV download has an Excel twin at the same path with a different extension, and the
+  screens link to the Excel one: `assessments/:stage/responses.xlsx`,
+  `feedback/sessions/:sid/export.xlsx` (the `anonymised` switch still applies) and
+  `imports/:runId/report.xlsx`. The CSV endpoints are unchanged and still work.
+- `POST /exports/workbook` formats a table the browser already has. Two admin tables are built
+  client-side from data the screen was already served — the transfer-plan list and the
+  measures-and-evidence report — and used to save a CSV Blob. Rather than duplicate their row and
+  label logic on the server, the browser posts the rows and gets the .xlsx back
+  (`apps/web/src/lib/workbook.ts`). The route reads and writes nothing, so it discloses nothing the
+  caller did not already hold; it is admin-only all the same, and `workbookRequestSchema` bounds it
+  to 5 sheets, 20,000 rows, 200 columns and 8,000 characters a cell, with the filename reduced to
+  one safe segment.
 - The speaker role was removed (decision of 2026-11-02). `staffRoles` is `['admin']`, so the API
   refuses `speaker` with 422, and `speaker` joins `analyst` and `support` in `RETIRED_ROLES`: an
   account still carrying it cannot request a link, cannot verify and holds no usable session, so

@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
+import ExcelJS from 'exceljs';
+
 import { pino } from 'pino';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -518,6 +520,33 @@ describe.skipIf(!hasDatabase)('registration imports (E2-1, E2-8..11; D3, D5, D9)
     expect(report.headers['content-type']).toMatch(/text\/csv/);
     expect(report.text).toContain('duplicate_in_file');
     expect(await auditCount('import.report_downloaded', first.runId)).toBe(1);
+
+    // The same rows as a spreadsheet, with the row number as a number so it sorts correctly.
+    const sheetRes = await request(server)
+      .get(`/api/v1/imports/${first.runId}/report.xlsx`)
+      .set('Cookie', cookies.admin ?? '')
+      .buffer(true)
+      .parse((r, callback) => {
+        const chunks: Buffer[] = [];
+        r.on('data', (c: Buffer) => chunks.push(c));
+        r.on('end', () => callback(null, Buffer.concat(chunks)));
+      });
+    expect(sheetRes.status).toBe(200);
+    expect(sheetRes.headers['content-type']).toContain('spreadsheetml.sheet');
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(sheetRes.body as unknown as ArrayBuffer);
+    const rowsSheet = workbook.getWorksheet('Rows')!;
+    expect(rowsSheet.getRow(1).getCell(1).value).toBe('row');
+    expect(typeof rowsSheet.getRow(2).getCell(1).value).toBe('number');
+    expect(JSON.stringify(rowsSheet.model)).toContain('duplicate_in_file');
+    expect(await auditCount('import.report_downloaded', first.runId)).toBe(2);
+    expect(
+      (
+        await request(server)
+          .get(`/api/v1/imports/${first.runId}/report.rtf`)
+          .set('Cookie', cookies.admin ?? '')
+      ).status,
+    ).toBe(404);
   });
 
   it('reuses an identity in another event and quarantines a name mismatch, keeping the identity name (criteria 6, 21)', async () => {

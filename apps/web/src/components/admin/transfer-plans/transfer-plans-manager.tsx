@@ -34,6 +34,7 @@ import { NativeSelect } from '@/components/imports/native-select';
 import { apiFetch } from '@/lib/api';
 import { formatDateShort, formatInstant } from '@/lib/events';
 import { describeError } from '@/lib/imports';
+import { downloadWorkbook, workbookProblem } from '@/lib/workbook';
 
 import { MeasuresReport } from './measures-report';
 
@@ -59,11 +60,6 @@ interface ReferencesResponse {
   questions: Array<{ questionKey: string; prompt: string; type: string }>;
 }
 
-const csvCell = (v: string | number | null) => {
-  const s = v === null ? '' : String(v);
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-};
-
 /**
  * Transfer plans for the organisers (backlog E9-9, E9-12, E12-12): counts, the Transfer
  * Planning sessions and which one opens submission, which pre-event answers come back as
@@ -80,6 +76,7 @@ export function TransferPlansManager({ event }: TransferPlansManagerProps) {
   const [search, setSearch] = useState('');
   const [progressFilter, setProgressFilter] = useState<'all' | ActionProgressStatus>('all');
   const [viewing, setViewing] = useState<string | null>(null);
+  const [exportProblem, setExportProblem] = useState<string | null>(null);
   const readOnly = event.status === 'archived';
   const refresh = useCallback(() => setVersion((n) => n + 1), []);
   const id = useId();
@@ -150,7 +147,7 @@ export function TransferPlansManager({ event }: TransferPlansManagerProps) {
       .includes(needle);
   });
 
-  function exportCsv() {
+  async function exportWorkbook() {
     const header = [
       'Delegate',
       'Email',
@@ -166,34 +163,32 @@ export function TransferPlansManager({ event }: TransferPlansManagerProps) {
       'Reminders',
       'Updated at',
     ];
-    const lines = rows.map((p) =>
-      [
-        p.delegate.name,
-        p.delegate.email,
-        p.delegate.organisation,
-        p.delegate.attendanceFormat,
-        p.status,
-        p.submittedAt,
-        p.actions,
-        p.priorityAction,
-        ...actionProgressStatuses.map((s) => p.progress[s] ?? 0),
-        ...measureSummaries.map((s) => p.measures?.[s] ?? 0),
-        ...evidenceSupports.map((s) => p.evidence?.[s] ?? 0),
-        reminderFrequencyLabels[p.reminderFrequency],
-        p.updatedAt,
-      ]
-        .map(csvCell)
-        .join(','),
-    );
-    const blob = new Blob([[header.map(csvCell).join(','), ...lines].join('\n')], {
-      type: 'text/csv;charset=utf-8',
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${event.slug}-transfer-plans.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    // Counts stay numbers so the spreadsheet can total and chart them without retyping.
+    const sheetRows = rows.map((p) => [
+      p.delegate.name,
+      p.delegate.email,
+      p.delegate.organisation,
+      p.delegate.attendanceFormat,
+      p.status,
+      p.submittedAt,
+      p.actions,
+      p.priorityAction,
+      ...actionProgressStatuses.map((s) => p.progress[s] ?? 0),
+      ...measureSummaries.map((s) => p.measures?.[s] ?? 0),
+      ...evidenceSupports.map((s) => p.evidence?.[s] ?? 0),
+      reminderFrequencyLabels[p.reminderFrequency],
+      p.updatedAt,
+    ]);
+    setExportProblem(null);
+    try {
+      await downloadWorkbook({
+        filename: `${event.slug}-transfer-plans`,
+        title: `${event.name}: transfer plans`,
+        sheets: [{ name: 'Transfer plans', header, rows: sheetRows }],
+      });
+    } catch (err) {
+      setExportProblem(workbookProblem(err));
+    }
   }
 
   return (
@@ -310,13 +305,18 @@ export function TransferPlansManager({ event }: TransferPlansManagerProps) {
           </div>
           <button
             type="button"
-            onClick={exportCsv}
+            onClick={() => void exportWorkbook()}
             disabled={rows.length === 0}
             className={consoleButton({ variant: 'ghost' })}
           >
-            <DownloadIcon aria-hidden="true" /> Export CSV
+            <DownloadIcon aria-hidden="true" /> Export to Excel
           </button>
         </div>
+        {exportProblem ? (
+          <p role="alert" className="px-4 pb-3 text-sm font-semibold text-brand-danger">
+            {exportProblem}
+          </p>
+        ) : null}
         {rows.length === 0 ? (
           <p className="p-4 text-sm text-corp-muted">
             {list.plans.length === 0

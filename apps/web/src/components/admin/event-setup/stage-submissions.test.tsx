@@ -200,8 +200,8 @@ describe('StageSubmissions', () => {
       /I follow up after training\.14/,
     );
     expect(
-      screen.getByRole('link', { name: 'Download responses (CSV)' }).getAttribute('href'),
-    ).toBe('/api/v1/events/e1/assessments/pre_conference/responses.csv');
+      screen.getByRole('link', { name: 'Download responses (Excel)' }).getAttribute('href'),
+    ).toBe('/api/v1/events/e1/assessments/pre_conference/responses.xlsx');
 
     // Responses by delegate, with section progress, and one delegate's answers in a popup.
     const table = screen.getByRole('table', { name: 'Responses by delegate' });

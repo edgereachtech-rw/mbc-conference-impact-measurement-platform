@@ -19,9 +19,14 @@ import type { PrismaClient } from '../db.js';
 import type { Prisma } from '../generated/prisma/client.js';
 import { audit } from '../lib/audit.js';
 import { HttpError } from '../lib/errors.js';
+import { parseBlocks } from '../export/blocks.js';
+import { toDocx } from '../export/docx.js';
+import { toPdf } from '../export/pdf.js';
+import { MEDIA_TYPES, toXlsx, type DownloadFormat } from '../export/xlsx.js';
+import { organiserName } from '../mail/branding.js';
 import { redactForAudience } from '../reports/audience.js';
 import { buildReport, organisationsOf } from '../reports/build.js';
-import { renderCsv, renderMarkdown } from '../reports/render.js';
+import { renderCsv, renderMarkdown, reportSheets } from '../reports/render.js';
 import type { EligibleStatuses } from './assessments.js';
 
 interface Deps {
@@ -263,9 +268,8 @@ export function reportRouter({ prisma, config, middleware, now }: Deps): Router 
     const principal = requireAdmin(res);
     const event = await loadEvent(String(req.params.eventId));
     const kind = kindOf(String(req.params.kind));
-    const format = String(req.params.format);
-    if (format !== 'md' && format !== 'csv')
-      throw new HttpError(404, 'not_found', 'No such format.');
+    const format = String(req.params.format) as DownloadFormat;
+    if (!(format in MEDIA_TYPES)) throw new HttpError(404, 'not_found', 'No such format.');
     const report = await reportOf(event.id, kind, queryOf(req.query));
     if (report.approval?.required && !report.approval.covers) {
       throw new HttpError(
@@ -289,11 +293,23 @@ export function reportRouter({ prisma, config, middleware, now }: Deps): Router 
       },
       ...clientOf(res),
     });
-    const body = format === 'md' ? renderMarkdown(report) : renderCsv(report);
-    res.setHeader(
-      'Content-Type',
-      format === 'md' ? 'text/markdown; charset=utf-8' : 'text/csv; charset=utf-8',
-    );
+    // PDF and Word are laid out from the same Markdown an admin reads, so no format can drift.
+    const documentMeta = {
+      title: `${report.event.name}: ${reportKindMeta[kind].label}`,
+      organiser: organiserName(),
+      subtitle: `${report.event.name} · ${report.generatedAt}`,
+    };
+    const body =
+      format === 'md'
+        ? renderMarkdown(report)
+        : format === 'csv'
+          ? renderCsv(report)
+          : format === 'xlsx'
+            ? await toXlsx(reportSheets(report), documentMeta)
+            : format === 'pdf'
+              ? await toPdf(parseBlocks(renderMarkdown(report)), documentMeta)
+              : await toDocx(parseBlocks(renderMarkdown(report)), documentMeta);
+    res.setHeader('Content-Type', MEDIA_TYPES[format]);
     res.setHeader(
       'Content-Disposition',
       `attachment; filename="${report.event.code}-${kind}-report.${format}"`,
