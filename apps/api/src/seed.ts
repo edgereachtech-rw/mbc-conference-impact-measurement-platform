@@ -6,11 +6,20 @@
  *   pnpm --filter @mbc/api db:seed            (development, via tsx)
  *   node dist/seed.js                          (inside the api image on staging)
  */
-import { assessmentStages } from '@mbc/shared';
+import {
+  assessmentStages,
+  defaultWaveOpensAt,
+  DEFAULT_FOLLOW_UP_WAVES,
+  followUpWaveOf,
+  FOLLOW_UP_OPEN_DAYS,
+  FOLLOW_UP_REMINDER_AFTER_DAYS,
+  FOLLOW_UP_REMINDER_LIMIT,
+} from '@mbc/shared';
 
 import { seedReferenceQuestions } from './assessments/ittec-references.js';
 import {
   ITTEC_END_OF_CONFERENCE,
+  ITTEC_FOLLOW_UPS,
   ITTEC_PRE_CONFERENCE,
   loadTemplateInto,
 } from './assessments/templates.js';
@@ -90,14 +99,14 @@ export async function seed(prisma: PrismaClient, options: SeedOptions = {}): Pro
   }
   for (const stage of assessmentStages) {
     await prisma.assessmentStageConfig.upsert({
-      where: { eventId_stage: { eventId: event.id, stage } },
+      where: { eventId_stage_wave: { eventId: event.id, stage, wave: 1 } },
       create: { eventId: event.id, stage },
       update: {},
     });
   }
   // ITTEC's pre-conference questions are pilot content, seeded once as the event's own data.
   const preStage = await prisma.assessmentStageConfig.findUniqueOrThrow({
-    where: { eventId_stage: { eventId: event.id, stage: 'pre_conference' } },
+    where: { eventId_stage_wave: { eventId: event.id, stage: 'pre_conference', wave: 1 } },
     include: { _count: { select: { questions: true } } },
   });
   if (preStage._count.questions === 0) {
@@ -109,7 +118,7 @@ export async function seed(prisma: PrismaClient, options: SeedOptions = {}): Pro
   // ITTEC's end-of-conference evaluation (section 10 wording), repeating the pre-conference
   // knowledge and confidence sections so results pair per delegate.
   const finalStage = await prisma.assessmentStageConfig.findUniqueOrThrow({
-    where: { eventId_stage: { eventId: event.id, stage: 'end_of_conference' } },
+    where: { eventId_stage_wave: { eventId: event.id, stage: 'end_of_conference', wave: 1 } },
     include: { _count: { select: { questions: true } } },
   });
   if (finalStage._count.questions === 0) {
@@ -118,6 +127,38 @@ export async function seed(prisma: PrismaClient, options: SeedOptions = {}): Pro
     );
     log(`end-of-conference evaluation: ${loaded.sections} sections, ${loaded.questions} questions`);
   }
+  // ITTEC's follow-up waves: 30, 60 and 90 days after the last day, each with its approved
+  // questions (Appendix A7). Drafts, with their dates defaulted, for M.Bryan to review and open;
+  // creating them emails nobody. The longer-term wave waits for its questions.
+  for (const wave of DEFAULT_FOLLOW_UP_WAVES) {
+    const definition = followUpWaveOf(wave)!;
+    const opensAt = defaultWaveOpensAt(
+      event.endsOn.toISOString().slice(0, 10),
+      definition.dueAfterDays,
+      event.timezone,
+    );
+    const row = await prisma.assessmentStageConfig.upsert({
+      where: { eventId_stage_wave: { eventId: event.id, stage: 'follow_up', wave } },
+      create: {
+        eventId: event.id,
+        stage: 'follow_up',
+        wave,
+        dueAfterDays: definition.dueAfterDays,
+        opensAt,
+        closesAt: new Date(opensAt.getTime() + FOLLOW_UP_OPEN_DAYS * 86_400_000),
+        reminderAfterDays: FOLLOW_UP_REMINDER_AFTER_DAYS,
+        reminderLimit: FOLLOW_UP_REMINDER_LIMIT,
+      },
+      update: {},
+      include: { _count: { select: { questions: true } } },
+    });
+    const template = ITTEC_FOLLOW_UPS[wave];
+    if (template && row._count.questions === 0) {
+      const loaded = await prisma.$transaction((tx) => loadTemplateInto(tx, row, template));
+      log(`${definition.label}: ${loaded.sections} section(s), ${loaded.questions} questions`);
+    }
+  }
+
   // Which pre-conference prompts come back as references in Transfer Planning (pilot content).
   const references = await prisma.$transaction((tx) => seedReferenceQuestions(tx, event.id));
   if (references) log(`reference questions: ${references} set`);

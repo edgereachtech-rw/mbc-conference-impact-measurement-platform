@@ -1,4 +1,5 @@
 import {
+  waveLabel,
   answerIssue,
   answerScore,
   assessmentStageNames,
@@ -475,6 +476,20 @@ export async function pairedResultsFor(
  * groundwork). Admin routes are M.Bryan-only and audited; delegate routes resolve the delegate's
  * own registration from the session and never accept a delegate id from the client.
  */
+/**
+ * Which wave of a stage a request is about. Only the follow-up stage has more than one, so the
+ * parameter is optional and defaults to the first: every URL that worked before still works.
+ */
+export function waveOf(req: { query: Record<string, unknown> }): number {
+  const raw = req.query.wave;
+  if (raw === undefined || raw === null || raw === '') return 1;
+  const wave = Number(raw);
+  if (!Number.isInteger(wave) || wave < 1 || wave > 4) {
+    throw new HttpError(404, 'not_found', 'Unknown assessment wave.');
+  }
+  return wave;
+}
+
 export function assessmentRouter({ prisma, config, middleware, now }: Deps): Router {
   const router = Router();
   const clock = now ?? (() => new Date());
@@ -495,9 +510,9 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
     return principal;
   }
 
-  async function loadStage(eventId: string, stage: AssessmentStage, forWrite: boolean) {
+  async function loadStage(eventId: string, stage: AssessmentStage, forWrite: boolean, wave = 1) {
     const config = await prisma().assessmentStageConfig.findUnique({
-      where: { eventId_stage: { eventId, stage } },
+      where: { eventId_stage_wave: { eventId, stage, wave } },
       include: { event: { select: { id: true, status: true, timezone: true } } },
     });
     if (!config) throw new HttpError(404, 'not_found', 'Event not found.');
@@ -508,7 +523,7 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
   }
 
   const stageFromReq = (req: Request, forWrite: boolean) =>
-    loadStage(String(req.params.eventId), stageOf(String(req.params.stage)), forWrite);
+    loadStage(String(req.params.eventId), stageOf(String(req.params.stage)), forWrite, waveOf(req));
 
   const activeQuestions = (stageConfigId: string) => activeQuestionsOf(prisma(), stageConfigId);
 
@@ -1348,12 +1363,49 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
 
   /** What the built-in blocks need: reference answers and the plan status, once per request. */
   async function contextFor(eventId: string, delegateId: string) {
-    const [references, planStatus] = await Promise.all([
+    const [references, planStatus, plan] = await Promise.all([
       referenceAnswersFor(prisma(), eventId, delegateId),
       planStatusFor(prisma(), eventId, delegateId),
+      // The plan itself, so a follow-up wave shows it beside its questions and the delegate
+      // never retypes it (E12-2). Loaded once per request, whichever stages are on screen.
+      prisma().transferPlan.findFirst({
+        where: { eventId, delegateId },
+        select: {
+          status: true,
+          actions: {
+            orderBy: { order: 'asc' },
+            select: {
+              id: true,
+              order: true,
+              action: true,
+              isPriority: true,
+              progressStatus: true,
+              targetOn: true,
+            },
+          },
+        },
+      }),
     ]);
     const hasPreAnswer = Boolean(references[0]?.answer);
-    return { references, planStatus, hidden: new Set(hiddenBuiltinsFor(hasPreAnswer)) };
+    const planSummary = plan
+      ? {
+          status: plan.status,
+          actions: plan.actions.map((a) => ({
+            id: a.id,
+            order: a.order,
+            action: a.action,
+            isPriority: a.isPriority,
+            progressStatus: a.progressStatus,
+            targetDate: a.targetOn ? a.targetOn.toISOString().slice(0, 10) : null,
+          })),
+        }
+      : null;
+    return {
+      references,
+      planStatus,
+      planSummary,
+      hidden: new Set(hiddenBuiltinsFor(hasPreAnswer)),
+    };
   }
 
   // Shared with the admin stage card, so both sides report the same state (a scheduled stage
@@ -1392,7 +1444,7 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
     return stages
       .map((s) => ({ s, state: windowState(s, at) }))
       .filter((x) => x.state !== 'hidden')
-      .sort((a, b) => stageOrder[a.s.stage] - stageOrder[b.s.stage])
+      .sort((a, b) => stageOrder[a.s.stage] - stageOrder[b.s.stage] || a.s.wave - b.s.wave)
       .map(({ s, state }) => {
         const response = s.responses[0] ?? null;
         // Sections for other formats and the other branch of the expectations block are left out.
@@ -1415,6 +1467,8 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
         }
         return {
           stage: s.stage,
+          wave: s.wave,
+          waveLabel: waveLabel(s.stage, s.wave, s.dueAfterDays),
           status: state as 'upcoming' | 'open' | 'closed',
           opensAt: s.opensAt ? s.opensAt.toISOString() : null,
           closesAt: s.closesAt ? s.closesAt.toISOString() : null,
@@ -1430,7 +1484,12 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
             : null,
           feedback,
           canAnswer: state === 'open' && !response?.submittedAt,
-          context: { references: context.references, planStatus: context.planStatus },
+          context: {
+            references: context.references,
+            planStatus: context.planStatus,
+            // Only a follow-up shows the plan back; the earlier stages have nothing to show yet.
+            plan: s.stage === 'follow_up' ? context.planSummary : null,
+          },
         };
       });
   }
@@ -1449,7 +1508,7 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
       const stage = stageOf(String(req.params.stage));
       const { answers, submit, submitSection } = req.body as z.infer<typeof responseSaveSchema>;
       const config = await prisma().assessmentStageConfig.findUnique({
-        where: { eventId_stage: { eventId: delegate.eventId, stage } },
+        where: { eventId_stage_wave: { eventId: delegate.eventId, stage, wave: waveOf(req) } },
         include: {
           questions: { where: { retiredAt: null }, include: QUESTION_INCLUDE },
           responses: {

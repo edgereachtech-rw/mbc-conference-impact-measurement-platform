@@ -6,6 +6,12 @@ import type { AssessmentTemplate } from './ittec-pre-conference.js';
 
 export { ITTEC_PRE_CONFERENCE, type AssessmentTemplate } from './ittec-pre-conference.js';
 export { ITTEC_END_OF_CONFERENCE } from './ittec-end-of-conference.js';
+export {
+  ITTEC_FOLLOW_UPS,
+  ITTEC_FOLLOW_UP_30,
+  ITTEC_FOLLOW_UP_60,
+  ITTEC_FOLLOW_UP_90,
+} from './ittec-follow-ups.js';
 
 /**
  * Appends a content set's sections and questions to a stage as that event's own, editable data

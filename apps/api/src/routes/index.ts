@@ -20,6 +20,7 @@ import { eventDelegateRouter } from './event-delegates.js';
 import { consentRouter } from './consent.js';
 import { eventSetupRouter } from './event-setup.js';
 import { exportsRouter } from './exports.js';
+import { followUpRouter } from './follow-ups.js';
 import { feedbackRouter } from './feedback.js';
 import { eventRouter } from './events.js';
 import { importRouter } from './imports.js';
@@ -89,6 +90,9 @@ export function apiRouter(deps: ApiDeps): Router {
   );
   router.use(reportRouter({ prisma: deps.prisma, config: deps.config, middleware, now: deps.now }));
   router.use(exportsRouter({ middleware }));
+  router.use(
+    followUpRouter({ prisma: deps.prisma, config: deps.config, middleware, now: deps.now }),
+  );
   router.use(
     consentRouter({ prisma: deps.prisma, config: deps.config, middleware, now: deps.now }),
   );

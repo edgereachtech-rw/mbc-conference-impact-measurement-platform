@@ -498,10 +498,12 @@ describe.skipIf(!hasDatabase)('end-of-conference evaluation', () => {
     const seedEventId = created.body.event.id as string;
     try {
       const preStage = await prisma.assessmentStageConfig.findUniqueOrThrow({
-        where: { eventId_stage: { eventId: seedEventId, stage: 'pre_conference' } },
+        where: { eventId_stage_wave: { eventId: seedEventId, stage: 'pre_conference', wave: 1 } },
       });
       const finalStage = await prisma.assessmentStageConfig.findUniqueOrThrow({
-        where: { eventId_stage: { eventId: seedEventId, stage: 'end_of_conference' } },
+        where: {
+          eventId_stage_wave: { eventId: seedEventId, stage: 'end_of_conference', wave: 1 },
+        },
       });
       await prisma.$transaction((tx) => loadTemplateInto(tx, preStage, ITTEC_PRE_CONFERENCE));
       const loaded = await prisma.$transaction((tx) =>

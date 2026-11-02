@@ -899,7 +899,7 @@ describe.skipIf(!hasDatabase)('event dashboards and reports', () => {
       select: { id: true },
     });
     const preStage = await prisma.assessmentStageConfig.findUniqueOrThrow({
-      where: { eventId_stage: { eventId, stage: 'pre_conference' } },
+      where: { eventId_stage_wave: { eventId, stage: 'pre_conference', wave: 1 } },
     });
     await prisma.assessmentResponse.createMany({
       data: bulk.map((d) => ({ stageConfigId: preStage.id, delegateId: d.id, submittedAt: now })),

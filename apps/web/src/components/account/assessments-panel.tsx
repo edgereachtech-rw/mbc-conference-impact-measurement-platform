@@ -1,6 +1,8 @@
 'use client';
 
 import {
+  actionProgressLabels,
+  type ActionProgressStatus,
   answerIssue,
   BUILTIN,
   describeAnswer,
@@ -15,6 +17,7 @@ import {
   type MyAssessment,
 } from '@mbc/shared';
 import { AlertCircleIcon, CheckCircle2Icon, Loader2Icon, XCircleIcon } from 'lucide-react';
+import Link from 'next/link';
 import { useEffect, useId, useState } from 'react';
 
 import { Dialog } from '@/components/console/dialog';
@@ -22,6 +25,12 @@ import { consoleButton, StatePanel, StatusPill } from '@/components/console/page
 import { ApiError, apiFetch } from '@/lib/api';
 import { formatInstant, stageLabels, stagePurpose, stageWhen } from '@/lib/events';
 import { describeError } from '@/lib/imports';
+
+/**
+ * What identifies one form on this screen. A stage name no longer does: the follow-up assessment
+ * runs in waves (E12-1), so three of the forms share the stage `follow_up`.
+ */
+const formKeyOf = (a: Pick<MyAssessment, 'stage' | 'wave'>) => `${a.stage}:${a.wave}`;
 
 interface AssessmentsPanelProps {
   eventId: string;
@@ -99,10 +108,11 @@ export function AssessmentsPanel({ eventId, timezone }: AssessmentsPanelProps) {
     );
   }
   const list = state.assessments;
-  const fallback =
-    list.find((a) => a.status === 'open' && !a.response?.submittedAt)?.stage ?? list[0]!.stage;
-  const stage = list.some((a) => a.stage === chosen) ? chosen! : fallback;
-  const shown = list.find((a) => a.stage === stage)!;
+  const fallback = formKeyOf(
+    list.find((a) => a.status === 'open' && !a.response?.submittedAt) ?? list[0]!,
+  );
+  const stage = list.some((a) => formKeyOf(a) === chosen) ? chosen! : fallback;
+  const shown = list.find((a) => formKeyOf(a) === stage)!;
   return (
     <div className="space-y-4">
       {list.length > 1 ? (
@@ -115,20 +125,20 @@ export function AssessmentsPanel({ eventId, timezone }: AssessmentsPanelProps) {
             const done = Boolean(a.response?.submittedAt);
             return (
               <button
-                key={a.stage}
+                key={formKeyOf(a)}
                 type="button"
                 role="tab"
-                id={`stage-tab-${a.stage}`}
-                aria-selected={a.stage === stage}
-                aria-controls={`stage-panel-${a.stage}`}
-                onClick={() => setChosen(a.stage)}
+                id={`stage-tab-${formKeyOf(a)}`}
+                aria-selected={formKeyOf(a) === stage}
+                aria-controls={`stage-panel-${formKeyOf(a)}`}
+                onClick={() => setChosen(formKeyOf(a))}
                 className={
-                  a.stage === stage
+                  formKeyOf(a) === stage
                     ? '-mb-px flex shrink-0 flex-col items-start border-b-2 border-corp-accent px-3 py-2 text-left text-sm font-semibold whitespace-nowrap text-corp-ink'
                     : 'flex shrink-0 flex-col items-start border-b-2 border-transparent px-3 py-2 text-left text-sm font-medium whitespace-nowrap text-corp-muted hover:text-corp-ink'
                 }
               >
-                <span>{stageLabels[a.stage]}</span>
+                <span>{a.waveLabel || stageLabels[a.stage]}</span>
                 <span className="text-xs font-normal text-corp-muted">
                   {done
                     ? 'Submitted'
@@ -145,7 +155,7 @@ export function AssessmentsPanel({ eventId, timezone }: AssessmentsPanelProps) {
       ) : null}
       <div role="tabpanel" id={`stage-panel-${stage}`} aria-labelledby={`stage-tab-${stage}`}>
         <AssessmentCard
-          key={shown.stage}
+          key={formKeyOf(shown)}
           eventId={eventId}
           timezone={timezone}
           assessment={shown}
@@ -278,7 +288,7 @@ function AssessmentCard({
     setBusy(mode);
     try {
       const result = await apiFetch<{ assessments: MyAssessment[] }>(
-        `/me/events/${eventId}/assessments/${assessment.stage}`,
+        `/me/events/${eventId}/assessments/${assessment.stage}?wave=${assessment.wave}`,
         { method: 'PUT', body: JSON.stringify({ answers: current, ...body }) },
       );
       onUpdated(result.assessments);
@@ -380,7 +390,7 @@ function AssessmentCard({
       </div>
       <div>
         <h3 className="font-corporate text-base font-semibold text-corp-ink md:text-lg">
-          {stageLabels[assessment.stage]}
+          {assessment.waveLabel || stageLabels[assessment.stage]}
         </h3>
         <p className="text-sm text-corp-text">{stagePurpose[assessment.stage]}</p>
         <p className="mt-1 text-xs text-corp-muted">
@@ -391,6 +401,14 @@ function AssessmentCard({
         </p>
       </div>
 
+      {assessment.stage === 'follow_up' && assessment.status !== 'upcoming' ? (
+        <FollowUpContext
+          plan={assessment.context.plan}
+          expectation={learnReference}
+          eventId={eventId}
+        />
+      ) : null}
+
       {assessment.status === 'upcoming' ? (
         <p className="text-sm text-corp-muted">
           The questions appear here when the assessment opens.
@@ -400,7 +418,7 @@ function AssessmentCard({
       ) : (
         <form
           noValidate
-          aria-label={`${stageLabels[assessment.stage]} questions`}
+          aria-label={`${assessment.waveLabel || stageLabels[assessment.stage]} questions`}
           onSubmit={(e) => {
             e.preventDefault();
             if (currentLocked) return;
@@ -1015,4 +1033,69 @@ function QuestionField({
     default:
       return null;
   }
+}
+
+/**
+ * What a follow-up shows back before it asks anything (backlog E12-2, E12-3): the delegate's own
+ * Transfer Plan and what they said they wanted to do differently. They answer about these; they
+ * never retype them. Read-only here — the plan is edited on its own tab.
+ */
+function FollowUpContext({
+  plan,
+  expectation,
+  eventId,
+}: {
+  plan: MyAssessment['context']['plan'];
+  expectation: { prompt: string; answer: string | null } | null;
+  eventId: string;
+}) {
+  if (!plan && !expectation?.answer) return null;
+  return (
+    <section
+      aria-label="Your plan and your expectation"
+      className="space-y-3 border border-corp-line bg-corp-surface p-4"
+    >
+      {expectation?.answer ? (
+        <div>
+          <p className="text-xs font-semibold tracking-[0.08em] text-corp-muted uppercase">
+            Before the conference you said
+          </p>
+          <p className="mt-1 text-sm text-corp-text italic">{expectation.answer}</p>
+        </div>
+      ) : null}
+      {plan ? (
+        <div>
+          <p className="text-xs font-semibold tracking-[0.08em] text-corp-muted uppercase">
+            Your transfer plan
+          </p>
+          {plan.actions.length === 0 ? (
+            <p className="mt-1 text-sm text-corp-muted">Your plan has no actions recorded yet.</p>
+          ) : (
+            <ol className="mt-1 space-y-1.5">
+              {plan.actions.map((action) => (
+                <li key={action.id} className="text-sm text-corp-text">
+                  {action.isPriority ? (
+                    <span className="font-semibold text-corp-ink">First priority: </span>
+                  ) : null}
+                  {action.action}
+                  <span className="text-corp-muted">
+                    {' · '}
+                    {actionProgressLabels[action.progressStatus as ActionProgressStatus] ??
+                      action.progressStatus}
+                    {action.targetDate ? ` · target ${action.targetDate}` : ''}
+                  </span>
+                </li>
+              ))}
+            </ol>
+          )}
+          <Link
+            href={`/account/events/${eventId}#transfer-plan`}
+            className="mt-2 inline-block text-sm font-semibold text-corp-green-text hover:underline"
+          >
+            Open my plan to update progress
+          </Link>
+        </div>
+      ) : null}
+    </section>
+  );
 }

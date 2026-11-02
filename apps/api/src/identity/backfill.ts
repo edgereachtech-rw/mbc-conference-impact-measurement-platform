@@ -159,18 +159,26 @@ function addressHash(email: string): string {
  * left out). Consents, invitations and audit rows are hashed over their complete row contents, so
  * any insert, update or delete in those tables during the run, not only a change in row count, is
  * detected. The hash is computed inside the transaction before and after the writes.
+ *
+ * Each row is hashed first and the hashes are then chained in id order (2026-11-03). That detects
+ * exactly what hashing the rows themselves detects — the result still depends on every row's
+ * complete contents and on their order — but it never builds the whole of audit_log into a single
+ * string. audit_log is append-only and grows for the life of the platform, and at 20,000 rows the
+ * old form took about 1.9s against 0.6s for this one, twice per gate run. Nothing stores a
+ * checksum: the baseline and the final value are compared inside one transaction, so the change
+ * of formula has nothing to invalidate.
  */
 export async function preservationChecksum(tx: Prisma.TransactionClient): Promise<string> {
   const rows = await tx.$queryRaw<Array<{ h: string }>>`
     SELECT md5(
-      coalesce((SELECT string_agg(
+      coalesce((SELECT string_agg(md5(
         id::text || '|' || event_id::text || '|' || email || '|' || coalesce(user_account_id::text, '') || '|'
-          || registration_status::text || '|' || coalesce(duplicate_of_id::text, ''),
+          || registration_status::text || '|' || coalesce(duplicate_of_id::text, '')),
         ',' ORDER BY id) FROM delegate), '')
-      || '#' || coalesce((SELECT string_agg(id::text || '|' || email || '|' || role::text || '|' || status::text, ',' ORDER BY id) FROM user_account), '')
-      || '#' || coalesce((SELECT string_agg(c::text, ',' ORDER BY id) FROM consent_record c), '')
-      || '#' || coalesce((SELECT string_agg(i::text, ',' ORDER BY id) FROM invitation i), '')
-      || '#' || coalesce((SELECT string_agg(a::text, ',' ORDER BY id) FROM audit_log a), '')
+      || '#' || coalesce((SELECT string_agg(md5(id::text || '|' || email || '|' || role::text || '|' || status::text), ',' ORDER BY id) FROM user_account), '')
+      || '#' || coalesce((SELECT string_agg(md5(c::text), ',' ORDER BY id) FROM consent_record c), '')
+      || '#' || coalesce((SELECT string_agg(md5(i::text), ',' ORDER BY id) FROM invitation i), '')
+      || '#' || coalesce((SELECT string_agg(md5(a::text), ',' ORDER BY id) FROM audit_log a), '')
     ) AS h`;
   return rows[0]?.h ?? '';
 }

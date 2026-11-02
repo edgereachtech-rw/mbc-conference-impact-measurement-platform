@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { transferPlanStatuses } from './transfer-plans.js';
+
 import { assessmentStages, isoDateSchema, type AssessmentStage } from './events.js';
 
 /**
@@ -596,8 +598,31 @@ export const knowledgeFeedbackSchema = z.object({
 });
 export type KnowledgeFeedback = z.infer<typeof knowledgeFeedbackSchema>;
 
+/**
+ * The delegate's own plan, shown back inside a follow-up wave (E12-2, E12-3): they never re-enter
+ * it. Read-only and compact — the actions and where each one stands, not the whole plan form.
+ */
+export const assessmentPlanSummarySchema = z.object({
+  status: z.enum(transferPlanStatuses),
+  actions: z.array(
+    z.object({
+      id: z.uuid(),
+      order: z.number().int(),
+      action: z.string(),
+      isPriority: z.boolean(),
+      progressStatus: z.string(),
+      targetDate: z.string().nullable(),
+    }),
+  ),
+});
+export type AssessmentPlanSummary = z.infer<typeof assessmentPlanSummarySchema>;
+
 export const myAssessmentSchema = z.object({
   stage: z.enum(assessmentStages),
+  /** Which round of the stage: always 1 except for the follow-up waves (E12-1). */
+  wave: z.number().int(),
+  /** What this wave is called where a stage has several ("30-day follow-up"); else empty. */
+  waveLabel: z.string(),
   status: z.enum(myAssessmentStatuses),
   opensAt: z.string().nullable(),
   closesAt: z.string().nullable(),
@@ -625,6 +650,8 @@ export const myAssessmentSchema = z.object({
       z.object({ questionKey: z.uuid(), prompt: z.string(), answer: z.string().nullable() }),
     ),
     planStatus: z.enum(planStatusValues).nullable(),
+    /** The plan itself, for a follow-up wave; null for the other stages (E12-2). */
+    plan: assessmentPlanSummarySchema.nullable(),
   }),
 });
 export type MyAssessment = z.infer<typeof myAssessmentSchema>;

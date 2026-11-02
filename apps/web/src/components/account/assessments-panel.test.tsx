@@ -23,9 +23,11 @@ const question = (id: string, extra: Record<string, unknown>) => ({
   builtin: null,
   ...extra,
 });
-const noContext: MyAssessment['context'] = { references: [], planStatus: null };
+const noContext: MyAssessment['context'] = { references: [], planStatus: null, plan: null };
 const open: MyAssessment = {
   stage: 'pre_conference',
+  wave: 1,
+  waveLabel: '',
   status: 'open',
   opensAt: '2026-11-01T08:00:00.000Z',
   closesAt: '2026-11-11T22:59:00.000Z',
@@ -53,6 +55,8 @@ const open: MyAssessment = {
 };
 const upcoming: MyAssessment = {
   stage: 'follow_up',
+  wave: 1,
+  waveLabel: '',
   status: 'upcoming',
   opensAt: '2026-12-13T08:00:00.000Z',
   closesAt: null,
@@ -67,6 +71,8 @@ const CORRECT = { correct: true, correctValue: 'b', correctLabel: 'Examine the g
 const scored: MyAssessment = {
   ...open,
   stage: 'follow_up',
+  wave: 1,
+  waveLabel: '',
   questions: [
     question('k', {
       type: 'single_choice',
@@ -92,6 +98,8 @@ const scored: MyAssessment = {
 const sectioned: MyAssessment = {
   ...open,
   stage: 'during_conference',
+  wave: 1,
+  waveLabel: '',
   sections: [
     {
       id: 's1',
@@ -139,7 +147,7 @@ function stub(assessments: MyAssessment[]) {
       calls.push({ url, init });
       if (init?.method === 'PUT') {
         const body = JSON.parse(String(init.body));
-        const stage = url.split('/').pop()!;
+        const stage = url.split('?')[0]!.split('/').pop()!;
         const keys = submittedBy.get(stage) ?? new Set<string>();
         if (body.submitSection) keys.add(body.submitSection);
         submittedBy.set(stage, keys);
@@ -213,7 +221,7 @@ describe('AssessmentsPanel', () => {
     expect(within(card).queryByRole('alert')).toBeNull();
     await user.click(within(card).getByRole('button', { name: 'Save draft' }));
     expect(calls.find((c) => c.init?.method === 'PUT')?.url).toBe(
-      '/api/v1/me/events/e1/assessments/pre_conference',
+      '/api/v1/me/events/e1/assessments/pre_conference?wave=1',
     );
     expect(puts(calls)[0]).toEqual({ answers: { r: 4, c: 'hr' } });
     expect((await within(card).findByRole('status')).textContent).toMatch(/Draft saved/);
@@ -357,6 +365,8 @@ describe('AssessmentsPanel', () => {
     const withBlock: MyAssessment = {
       ...open,
       stage: 'end_of_conference',
+      wave: 1,
+      waveLabel: '',
       sections: [block],
       questions: [
         question('p', {
@@ -390,6 +400,7 @@ describe('AssessmentsPanel', () => {
           },
         ],
         planStatus: 'started',
+        plan: null,
       },
     };
     stub([withBlock]);
@@ -407,6 +418,8 @@ describe('AssessmentsPanel', () => {
     const after: MyAssessment = {
       ...open,
       stage: 'end_of_conference',
+      wave: 1,
+      waveLabel: '',
       sections: [block],
       questions: [
         question('r', {
@@ -433,6 +446,7 @@ describe('AssessmentsPanel', () => {
           { questionKey: '55555555-5555-4555-8555-555555555555', prompt: 'x', answer: null },
         ],
         planStatus: 'no',
+        plan: null,
       },
     };
     const calls = stub([after]);

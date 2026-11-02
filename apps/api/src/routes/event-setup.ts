@@ -24,6 +24,7 @@ import type { PrismaClient } from '../db.js';
 import type { Prisma } from '../generated/prisma/client.js';
 import { audit } from '../lib/audit.js';
 import { HttpError } from '../lib/errors.js';
+import { waveOf } from './assessments.js';
 
 interface Deps {
   prisma: () => PrismaClient;
@@ -461,6 +462,7 @@ export function eventSetupRouter({ prisma, middleware, now }: Deps): Router {
         throw new HttpError(404, 'not_found', 'Unknown assessment stage.');
       }
       const event = await loadEditable(String(req.params.eventId));
+      const wave = waveOf(req);
       const input = req.body as z.infer<typeof assessmentStageConfigSchema>;
       const data = {
         enabled: input.enabled,
@@ -470,7 +472,7 @@ export function eventSetupRouter({ prisma, middleware, now }: Deps): Router {
         targetGroup: input.target === 'group' ? (input.targetGroup ?? null) : null,
         status: input.status,
       };
-      const previous = event.assessmentStages.find((s) => s.stage === stage);
+      const previous = event.assessmentStages.find((s) => s.stage === stage && s.wave === wave);
       if (
         (input.status === 'open' || input.status === 'scheduled') &&
         (previous?._count.questions ?? 0) === 0
@@ -483,8 +485,8 @@ export function eventSetupRouter({ prisma, middleware, now }: Deps): Router {
       }
       const updated = await prisma().$transaction(async (tx) => {
         await tx.assessmentStageConfig.upsert({
-          where: { eventId_stage: { eventId: event.id, stage } },
-          create: { eventId: event.id, stage, ...data },
+          where: { eventId_stage_wave: { eventId: event.id, stage, wave } },
+          create: { eventId: event.id, stage, wave, ...data },
           update: data,
         });
         await audit(tx, {

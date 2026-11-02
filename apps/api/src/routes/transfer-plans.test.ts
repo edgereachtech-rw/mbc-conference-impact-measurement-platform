@@ -104,7 +104,7 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
     deeId = a.delegate.id;
     // A pre-conference question Dee answered, to come back as a reference.
     const stage = await prisma.assessmentStageConfig.findUniqueOrThrow({
-      where: { eventId_stage: { eventId, stage: 'pre_conference' } },
+      where: { eventId_stage_wave: { eventId, stage: 'pre_conference', wave: 1 } },
     });
     const question = await prisma.assessmentQuestion.create({
       data: {

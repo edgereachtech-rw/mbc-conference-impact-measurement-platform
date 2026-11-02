@@ -14,6 +14,7 @@ const { createLogger } = await import('./lib/logger.js');
 const { getPrisma } = await import('./db.js');
 const { createMailer } = await import('./mail/index.js');
 const { registerTransferPlanReminders } = await import('./reminders/transfer-plans.js');
+const { registerFollowUpInvitations } = await import('./reminders/follow-ups.js');
 
 const logger = createLogger(undefined, undefined).child({ service: 'worker' });
 
@@ -53,6 +54,16 @@ async function main() {
     mailConfig: mailConfigFromEnv(),
     appUrl: authConfigFromEnv().appUrl,
     logger,
+  });
+  // Follow-up waves invite and chase on their own schedule (E12-14).
+  await registerFollowUpInvitations({
+    boss,
+    prisma: () => getPrisma(),
+    mailer: createMailer(mailConfigFromEnv()),
+    mailConfig: mailConfigFromEnv(),
+    appUrl: authConfigFromEnv().appUrl,
+    logger,
+    allowTestRegistrations: authConfigFromEnv().allowTestRegistrations,
   });
 
   const heartbeatUrl = process.env.HEALTHCHECKS_WORKER_URL;

@@ -621,6 +621,39 @@ measures | evidence }`, the list replaced with ids kept; own actions only, 404 o
   their own account (refused by the API, and the screen never offers it), accounts are never
   deleted so the audit trail holds, and `staff.created` and `staff.updated` record every change.
   Delegate accounts are not shown: they come from the event's registrations.
+- The follow-up programme (backlog E12; built 2026-11-03). The follow-up assessment now runs in
+  **waves**: 30, 60 and 90 days after the event's last day, with a longer-term one at about 180
+  days. A wave is a row of the same stage — `assessment_stage_config` gained `wave` and its key
+  widened to (event, stage, wave), migration `20261103200000_followup_waves` — so the question
+  engine, versioning, drafts, section-by-section submission, reports and the delegate journey all
+  serve a wave with no second form engine. Every URL that addressed a stage still works: the wave
+  is an optional `?wave=` and defaults to 1, which is what the three single-round stages are.
+  - **Schedule** (E12-1): `POST /events/:id/assessments/follow-ups` creates the waves asked for,
+    each dated `dueAfterDays` after the last day at 09:00 **in the event's zone**, open for 21
+    days, chasing non-responders weekly up to twice. Dates are a default, not a rule — an admin
+    moves any wave with the stage's own PUT. Waves are created **drafts and empty**: creating a
+    schedule emails nobody, and an enabled wave with no questions still cannot be opened. Repeating
+    the request adds nothing and changes nothing. `GET` returns each wave with its questions,
+    invitations sent and submissions — the response rate of E12-13.
+  - **Questions** (E12-4 to E12-6): ITTEC's approved Appendix A7 wording is seeded by `db:seed` as
+    that event's own editable data, 7 questions per wave. Another event enters its own, as for
+    every stage. **Not seeded:** the structured application question proposed for the reported
+    application rate ("Have you applied learning from ITTEC at least once in a real work
+    situation?"), because Appendix A7 marks it _proposed, confirm with M.Bryan_; and the 180-day
+    wave's questions, which the appendix says M.Bryan has still to supply. That wave is created
+    empty and cannot open until it has them (E12-7 is P2 by design).
+  - **Invitations** (E12-14): the worker job `follow-up-invitations` runs every 15 minutes. Once a
+    wave's opening time has passed it invites every eligible delegate once, then chases whoever has
+    not submitted every `reminder_after_days` up to `reminder_limit` times. Each send is a row in
+    `assessment_invitation`, written **before** the email: that row is the lock, so a crash
+    part-way through a batch cannot email anyone twice. A wave that is a draft, disabled, closed or
+    without questions sends nothing. 200 emails a pass, so a large event spreads over several runs;
+    logs carry counts only, never an address.
+  - **The plan, shown not asked** (E12-2, E12-3): a follow-up wave carries the delegate's Transfer
+    Plan and their pre-conference "do differently" answer above its questions, read-only, with a
+    link to the plan tab to update progress. They answer about them; they never retype them.
+  - Still to come in E12: nothing of the three waves. The longer-term wave waits on its questions,
+    and the application-rate question waits on confirmation.
 - Privacy notice and consent (backlog E3-7, brief section 6.4; built 2026-11-03). The approved
   wording is **data, not code**: migration `20261103100000_consent_notice` creates
   `consent_notice` and seeds version `v1`, so M.Bryan revises it without a deploy and an

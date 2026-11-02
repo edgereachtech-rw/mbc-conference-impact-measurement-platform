@@ -632,28 +632,28 @@ model SessionAttendance {
 /// A programme session (E1 brief, section 5): optional, always on one of the event's selected dates.
 /// Times are wall-clock in the event's time zone (HH:MM); the date row fixes the day.
 model EventSession {
-  id                    String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  eventId               String      @map("event_id") @db.Uuid
-  eventDateId           String      @map("event_date_id") @db.Uuid
-  title                 String
-  sessionType           SessionType @map("session_type")
-  startTime             String      @map("start_time")
-  endTime               String      @map("end_time")
-  description           String?
-  venue                 String?
-  speaker               String?
-  capacity              Int?
+  id               String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventId          String      @map("event_id") @db.Uuid
+  eventDateId      String      @map("event_date_id") @db.Uuid
+  title            String
+  sessionType      SessionType @map("session_type")
+  startTime        String      @map("start_time")
+  endTime          String      @map("end_time")
+  description      String?
+  venue            String?
+  speaker          String?
+  capacity         Int?
   /// The designated completion session for Transfer Planning (else the last such session).
   /// Session-specific feedback, configured separately and linked to this session (brief 6.2).
-  feedbackEnabled       Boolean     @default(false) @map("feedback_enabled")
+  feedbackEnabled  Boolean     @default(false) @map("feedback_enabled")
   /// Short code in the session's feedback link and QR code; set when feedback is enabled.
-  feedbackCode          String?     @unique @map("feedback_code")
+  feedbackCode     String?     @unique @map("feedback_code")
   /// When the organisers started the encouraged five-minute period; informational, not a gate.
-  feedbackOpenedAt      DateTime?   @map("feedback_opened_at") @db.Timestamptz(3)
+  feedbackOpenedAt DateTime?   @map("feedback_opened_at") @db.Timestamptz(3)
   /// The configured deadline; the form stays open until then (never closed after five minutes).
-  feedbackClosesAt      DateTime?   @map("feedback_closes_at") @db.Timestamptz(3)
-  createdAt             DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt             DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+  feedbackClosesAt DateTime?   @map("feedback_closes_at") @db.Timestamptz(3)
+  createdAt        DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   event             Event                     @relation(fields: [eventId], references: [id], onDelete: Cascade)
   eventDate         EventDate                 @relation(fields: [eventDateId], references: [id], onDelete: Restrict)
@@ -957,24 +957,36 @@ model EventReportApproval {
 }
 
 model AssessmentStageConfig {
-  id          String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  eventId     String                @map("event_id") @db.Uuid
-  stage       AssessmentStage
-  enabled     Boolean               @default(false)
-  opensAt     DateTime?             @map("opens_at") @db.Timestamptz(3)
-  closesAt    DateTime?             @map("closes_at") @db.Timestamptz(3)
-  target      AssessmentTarget      @default(all_delegates)
-  targetGroup String?               @map("target_group")
-  status      AssessmentStageStatus @default(draft)
-  createdAt   DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt   DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
+  id                String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventId           String                @map("event_id") @db.Uuid
+  stage             AssessmentStage
+  enabled           Boolean               @default(false)
+  opensAt           DateTime?             @map("opens_at") @db.Timestamptz(3)
+  closesAt          DateTime?             @map("closes_at") @db.Timestamptz(3)
+  target            AssessmentTarget      @default(all_delegates)
+  targetGroup       String?               @map("target_group")
+  status            AssessmentStageStatus @default(draft)
+  /// Which round of the stage. The three single-round stages are always 1; the follow-up stage
+  /// has one row per wave (E12-1: 30, 60 and 90 days, and a longer-term one later), each with
+  /// its own dates, questions and invitations.
+  wave              Int                   @default(1)
+  /// Days after the event's last date this wave is due. Names the wave ("30-day follow-up") and
+  /// gives the default opening date; null for the single-round stages.
+  dueAfterDays      Int?                  @map("due_after_days")
+  /// Chase a delegate who has not submitted this many days after their invitation, up to
+  /// reminderLimit times. Null means no chasing (E12-14: configurable intervals).
+  reminderAfterDays Int?                  @map("reminder_after_days")
+  reminderLimit     Int                   @default(0) @map("reminder_limit")
+  createdAt         DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  event     Event                @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  questions AssessmentQuestion[]
-  responses AssessmentResponse[]
-  sections  AssessmentSection[]
+  event       Event                  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  questions   AssessmentQuestion[]
+  responses   AssessmentResponse[]
+  sections    AssessmentSection[]
+  invitations AssessmentInvitation[]
 
-  @@unique([eventId, stage])
+  @@unique([eventId, stage, wave])
   @@map("assessment_stage_config")
 }
 
@@ -1045,6 +1057,31 @@ model AssessmentQuestion {
 }
 
 /// One delegate's response to one stage: a draft until submitted_at is set.
+/// One invitation or chaser sent to one delegate for one assessment wave (E12-1 tracking,
+/// E12-14 sending). The row is what makes a send idempotent: the worker writes it and will not
+/// send that kind and sequence again, so a crash mid-batch never emails anyone twice.
+model AssessmentInvitation {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  stageConfigId String    @map("stage_config_id") @db.Uuid
+  delegateId    String    @map("delegate_id") @db.Uuid
+  /// "invitation" once, then "reminder" 1, 2, ... for a delegate who has not submitted.
+  kind          String
+  sequence      Int       @default(0)
+  scheduledFor  DateTime  @map("scheduled_for") @db.Timestamptz(3)
+  sentAt        DateTime? @map("sent_at") @db.Timestamptz(3)
+  status        String
+  error         String?
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  stage    AssessmentStageConfig @relation(fields: [stageConfigId], references: [id], onDelete: Cascade)
+  delegate Delegate              @relation(fields: [delegateId], references: [id], onDelete: Cascade)
+
+  @@unique([stageConfigId, delegateId, kind, sequence])
+  @@index([stageConfigId])
+  @@index([delegateId])
+  @@map("assessment_invitation")
+}
+
 model AssessmentResponse {
   id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   stageConfigId String    @map("stage_config_id") @db.Uuid
@@ -1201,22 +1238,23 @@ model Delegate {
   createdAt              DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt              DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  event               Event                      @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  userAccount         UserAccount?               @relation(fields: [userAccountId], references: [id], onDelete: SetNull)
-  identity            DelegateIdentity?          @relation(fields: [identityId], references: [id], onDelete: Restrict)
-  duplicateOf         Delegate?                  @relation("DelegateDuplicates", fields: [duplicateOfId], references: [id], onDelete: SetNull)
-  duplicates          Delegate[]                 @relation("DelegateDuplicates")
-  invitations         Invitation[]
-  consents            ConsentRecord[]
-  importRows          ImportRow[]
-  messages            DelegateMessageRecipient[]
-  assessmentResponses AssessmentResponse[]
-  attendanceTokens    AttendanceToken[]
-  attendanceRecords   AttendanceRecord[]
-  sessionAttendance   SessionAttendance[]
-  reflectionResponses ReflectionResponse[]
-  sessionFeedback     SessionFeedbackResponse[]
-  transferPlans       TransferPlan[]
+  event                 Event                      @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  userAccount           UserAccount?               @relation(fields: [userAccountId], references: [id], onDelete: SetNull)
+  identity              DelegateIdentity?          @relation(fields: [identityId], references: [id], onDelete: Restrict)
+  duplicateOf           Delegate?                  @relation("DelegateDuplicates", fields: [duplicateOfId], references: [id], onDelete: SetNull)
+  duplicates            Delegate[]                 @relation("DelegateDuplicates")
+  invitations           Invitation[]
+  consents              ConsentRecord[]
+  importRows            ImportRow[]
+  messages              DelegateMessageRecipient[]
+  assessmentResponses   AssessmentResponse[]
+  assessmentInvitations AssessmentInvitation[]
+  attendanceTokens      AttendanceToken[]
+  attendanceRecords     AttendanceRecord[]
+  sessionAttendance     SessionAttendance[]
+  reflectionResponses   ReflectionResponse[]
+  sessionFeedback       SessionFeedbackResponse[]
+  transferPlans         TransferPlan[]
 
   @@index([eventId])
   @@index([email])

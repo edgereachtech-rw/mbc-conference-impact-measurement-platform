@@ -34,3 +34,4 @@ export * from './schemas/reports.js';
 export * from './schemas/exports.js';
 export * from './schemas/consent.js';
 export * from './schemas/next-steps.js';
+export * from './schemas/follow-ups.js';

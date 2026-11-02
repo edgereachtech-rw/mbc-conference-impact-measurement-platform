@@ -55,6 +55,25 @@
 
 Decisions 2026-10-29: the analyst role and the support role are not part of the approved requirements and are not replaced; M.Bryan acts as admin, as in the original requirements. The Increment 1 code contains both roles. They are retired in Increment 1b under the explicit plan in design note D8 item 7: existing accounts with those roles are reviewed and revoked or migrated under written authorisation, never silently promoted to admin.
 
+### Follow-up programme built, 2026-11-03
+
+E12 ran as one follow-up stage per event; the workplan wants waves. Built: the wave model, the
+schedule with default dates, ITTEC's three question sets, the invitation and chaser job, and the
+plan shown inside each wave. See the README for how each piece behaves. Two things are deliberately
+**not** built, both because the answer is M.Bryan's to give:
+
+| Open | Why it is not built |
+| --- | --- |
+| The structured application question for the reported application rate (S14.1) | Appendix A7 marks it "proposed: confirm with M.Bryan". Adding it would invent the numerator of a published indicator. An admin can add it to any wave, and it counts as soon as it exists |
+| The 180-day wave's questions (E12-7) | Appendix A7: "question set to be supplied by M.Bryan". The wave is created on request and stays empty; it cannot be opened without questions, which is the same gate every stage has |
+
+Also unchanged by this work, and still open: the dates themselves. E12-1 says "about 30/60/90 days
+after the conference and editable by M.Bryan", so that is what the defaults are — 30, 60 and 90 days
+after the last day at 09:00 in the event's zone, open 21 days, chased weekly twice. M.Bryan moves
+any of them before enabling the wave. E1-4's note that the follow-up dates are "still to be
+specified" is answered to that extent: the platform no longer waits on them, because nothing sends
+until an admin enables a wave.
+
 ### User-experience review of 2026-11-03
 
 The platform was reviewed screen by screen on the two questions the product owner asked: how easily
@@ -682,20 +701,20 @@ paired results can be computed, and the repeated questions are locked.
 
 | ID | Story | Acceptance criteria | Pri | Inc |
 |---|---|---|---|---|
-| E12-1 | As M.Bryan, I want to schedule 30/60/90-day follow-ups | Dates default to about 30/60/90 days after the conference and are **editable by M.Bryan**; invitations tracked per delegate | P0 | 5 |
-| E12-2 | As a delegate, I want each follow-up to show my Transfer Plan | Plan displayed or linked in every follow-up; I do not re-enter it (S11.1) | P0 | 5 |
-| E12-3 | As a delegate, I want my pre-conference "do differently" answer shown | Displayed alongside the plan in each follow-up (S11.1 developer instruction) | P0 | 5 |
-| E12-4 | As a delegate, I want a 30-day follow-up | Seven questions (Appendix A, Q-F30-1 to 7), including whether to change reminder preferences | P0 | 5 |
-| E12-5 | As a delegate, I want a 60-day follow-up | Seven questions (Q-F60-1 to 7) | P0 | 5 |
-| E12-6 | As a delegate, I want a 90-day follow-up | Seven questions (Q-F90-1 to 7), including expectations met | P0 | 5 |
-| E12-7 | As M.Bryan, I want a longer-term (about 180 days or later) follow-up to selected delegates or organisations | Form and selection model built now; scheduling and sending configured after go-live | P2 | Post |
+| E12-1 | As M.Bryan, I want to schedule 30/60/90-day follow-ups | **Done 2026-11-03.** `POST /events/:id/assessments/follow-ups` creates the waves; each opens `dueAfterDays` after the last day at 09:00 in the event zone, open 21 days, and is editable through the stage PUT with `?wave=`. Waves are created as drafts with no questions, so scheduling emails nobody. Invitations and chasers are tracked per delegate in `assessment_invitation` | P0 | 5 |
+| E12-2 | As a delegate, I want each follow-up to show my Transfer Plan | **Done 2026-11-03.** Every follow-up wave shows the plan's actions, each with its current progress status and target date, above the questions, with a link to the plan tab to update progress. Read-only in the form; never re-entered | P0 | 5 |
+| E12-3 | As a delegate, I want my pre-conference "do differently" answer shown | **Done 2026-11-03.** Shown above the plan in every wave, from the event's first reference question | P0 | 5 |
+| E12-4 | As a delegate, I want a 30-day follow-up | **Done 2026-11-03.** Wave 1, the seven Q-F30 questions as ITTEC pilot content, seeded by `db:seed` | P0 | 5 |
+| E12-5 | As a delegate, I want a 60-day follow-up | **Done 2026-11-03.** Wave 2, the seven Q-F60 questions | P0 | 5 |
+| E12-6 | As a delegate, I want a 90-day follow-up | **Done 2026-11-03.** Wave 3, the seven Q-F90 questions | P0 | 5 |
+| E12-7 | As M.Bryan, I want a longer-term (about 180 days or later) follow-up to selected delegates or organisations | **Model built 2026-11-03:** wave 4 is created on request, dated 180 days out, and targets all delegates or a named group through the stage's existing target setting. **Blocked on content:** Appendix A7 says the question set is still to be supplied, and a wave without questions cannot be opened | P2 | Post |
 | E12-8 | As a delegate, I want to set one current status per action | Statuses: Not yet started, Started, In progress, Applied, Applied consistently, Completed, Changed, No longer applicable (S11.6; definitions in Appendix B) | P0 | 5 |
 | E12-9 | As the platform, I ask for status-specific details | Changed / No longer applicable: brief explanation. Applied / Applied consistently: an example and when it occurred. Completed: what was completed and when | P0 | 5 |
 | E12-10 | As the platform, I retain status history | Every status change stored with explanation and time. A one-time action may be completed without being used consistently | P0 | 5 |
 | E12-11 | As M.Bryan, I want application kept separate from progress | "Started", "In progress" and "Completed" do not count as application; application reported or evidenced separately (S11.6) | P0 | 5 |
 | E12-12 | As M.Bryan, I want the number of actions in each current status | Each action counted once, in its latest status | P0 | 5 |
 | E12-13 | As M.Bryan, I want follow-up response rates | Per stage: submitted / invited (S14.1) | P0 | 5 |
-| E12-14 | As the platform, I send follow-up invitations | Worker sends invitation emails at the scheduled date; reminder emails for non-responders at configurable intervals; idempotent | P0 | 5 |
+| E12-14 | As the platform, I send follow-up invitations | **Done 2026-11-03.** Worker job `follow-up-invitations`, every 15 minutes: invites every eligible delegate once a wave's opening time has passed, then chases non-responders every `reminder_after_days` up to `reminder_limit` times (default: weekly, twice). Idempotent through a row in `assessment_invitation` written before each send, so a crash cannot double-send; a draft, disabled, closed or question-less wave sends nothing | P0 | 5 |
 | E12-15 | As a delegate, I want to record progress between follow-ups | Update action status and progress notes anytime from my account (S3.1, S9.3) | P1 | 5 |
 
 ---

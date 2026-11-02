@@ -168,10 +168,58 @@ export function renderTransferPlanReminder(
   });
 }
 
+export interface FollowUpInvitationInput {
+  recipientName?: string;
+  /** What the wave is called, e.g. "30-day follow-up". */
+  waveLabel: string;
+  /** Absolute link to the delegate's assessments for the event. */
+  formUrl: string;
+  /** The deadline in words, in the event's time zone; omitted when the wave has none. */
+  deadline?: string;
+  /** True for a chaser to someone who has not submitted yet. */
+  reminder?: boolean;
+}
+
+/**
+ * The invitation to a follow-up wave, and the chaser to a delegate who has not answered (E12-14).
+ * One template, two tones: the first tells them it is open, the second that it is still waiting.
+ * Neither carries any of their answers.
+ */
+export function renderFollowUpInvitation(
+  branding: EmailBranding,
+  input: FollowUpInvitationInput,
+): RenderedEmail {
+  const paragraphs = [
+    input.recipientName ? `Hello ${input.recipientName},` : 'Hello,',
+    input.reminder
+      ? `Your ${input.waveLabel} from ${branding.eventName} is still open. It asks what you have been able to apply, what has helped and what is in the way — your Transfer Plan is shown beside the questions, so there is nothing to look up.`
+      : `Your ${input.waveLabel} from ${branding.eventName} is now open. It asks what you have been able to apply, what has helped and what is in the way. Your Transfer Plan and what you said you wanted to do differently are shown beside the questions.`,
+  ];
+  if (input.deadline) {
+    paragraphs.push(`Please answer by ${input.deadline}. Your answers save as you go.`);
+  }
+  return renderLayout(branding, {
+    subject: input.reminder
+      ? `Still open: your ${input.waveLabel}`
+      : `Your ${input.waveLabel} is open`,
+    preheader: input.reminder
+      ? 'A reminder: your follow-up is still waiting.'
+      : 'Tell us what you have applied since the conference.',
+    eyebrow: 'Follow-up',
+    title: input.reminder ? 'Your follow-up is waiting' : input.waveLabel,
+    paragraphs,
+    button: { label: 'Open the follow-up', url: input.formUrl },
+    notes: [
+      'This is a follow-up scheduled by the organisers; it is separate from the reminders you choose yourself.',
+    ],
+  });
+}
+
 export const templates = {
   invitation: renderInvitation,
   'admin-message': renderAdminMessage,
   'magic-link': renderMagicLink,
   'test-delivery': renderTestDelivery,
   'transfer-plan-reminder': renderTransferPlanReminder,
+  'follow-up-invitation': renderFollowUpInvitation,
 } as const;
