@@ -83,9 +83,9 @@ describe('StaffManager', () => {
     await screen.findByRole('table');
 
     await user.type(screen.getByLabelText('Email address'), 'new@mbryan.com');
-    // Admin is the default role, so adding another admin takes only the address.
-    expect((screen.getByLabelText('Role') as HTMLSelectElement).value).toBe('admin');
-    await user.click(screen.getByRole('button', { name: /Add account/ }));
+    // Admin is the only staff role, so there is nothing to pick: the address is the whole form.
+    expect(screen.queryByLabelText('Role')).toBeNull();
+    await user.click(screen.getByRole('button', { name: /Add admin/ }));
 
     const post = calls.find((c) => c.method === 'POST')!;
     expect(post.url).toBe('/api/v1/staff');
@@ -108,12 +108,12 @@ describe('StaffManager', () => {
     manager();
     await screen.findByRole('table');
     await user.type(screen.getByLabelText('Email address'), 'me@mbryan.com');
-    await user.click(screen.getByRole('button', { name: /Add account/ }));
+    await user.click(screen.getByRole('button', { name: /Add admin/ }));
     expect((await screen.findByRole('alert')).textContent).toMatch(/already exists/);
     expect(screen.queryByRole('status')).toBeNull();
   });
 
-  it('never offers to deactivate or re-role the signed-in admin', async () => {
+  it('never offers to deactivate the signed-in admin', async () => {
     stub();
     manager();
     const table = await screen.findByRole('table');
@@ -126,7 +126,6 @@ describe('StaffManager', () => {
 
     const other = rows.find((r) => r.textContent?.includes('ada@mbryan.com'))!;
     expect(within(other).getByRole('button', { name: 'Deactivate' })).toBeTruthy();
-    expect(within(other).getByRole('combobox', { name: 'Role for ada@mbryan.com' })).toBeTruthy();
   });
 
   it('deactivates another account and says the sessions are closed', async () => {
@@ -147,20 +146,18 @@ describe('StaffManager', () => {
     );
   });
 
-  it('changes a role and warns that it signs the person out', async () => {
-    const calls = stub();
-    const user = userEvent.setup();
+  it('marks an account on a retired role and never offers to promote it', async () => {
+    stub();
     manager();
     const table = await screen.findByRole('table');
-    await user.selectOptions(
-      within(table).getByRole('combobox', { name: 'Role for ada@mbryan.com' }),
-      'speaker',
-    );
-    const patch = calls.find((c) => c.method === 'PATCH')!;
-    expect(patch.body).toEqual({ role: 'speaker' });
-    expect((await screen.findByRole('status')).textContent).toMatch(
-      /is now speaker; they will be asked to sign in again/,
-    );
+    // Speaker was removed as a staff role on 2026-11-02; the account stays for the audit trail.
+    const retired = within(table)
+      .getAllByRole('row')
+      .find((r) => r.textContent?.includes('speaker@example.com'))!;
+    expect(within(retired).getByText(/Retired role; this account cannot sign in/)).toBeTruthy();
+    // No role picker anywhere: a retired account is deactivated, never promoted (D8 item 7).
+    expect(screen.queryAllByRole('combobox')).toHaveLength(0);
+    expect(within(retired).getByRole('button', { name: 'Reactivate' })).toBeTruthy();
   });
 
   it('shows the error state with a retry when the list cannot be loaded', async () => {

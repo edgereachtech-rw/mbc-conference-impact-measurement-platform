@@ -248,7 +248,7 @@ describe.skipIf(!hasDatabase)('My Events (E3-10, D7, Increment 1c)', () => {
     const speaker = await sessionFor('speaker', `speaker-${tag}@example.com`);
     expect(
       (await request(server).get('/api/v1/me/events').set('Cookie', speaker.cookie)).status,
-    ).toBe(403);
+    ).toBe(401); // a retired-role session resolves to nothing (D8 item 7)
     // A delegate account whose identity link is missing: an empty list, not an error or someone else's data.
     const unlinked = await sessionFor('delegate', `unlinked-${tag}@example.com`);
     const empty = await request(server).get('/api/v1/me/events').set('Cookie', unlinked.cookie);

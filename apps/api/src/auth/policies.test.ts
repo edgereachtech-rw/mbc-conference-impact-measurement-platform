@@ -8,7 +8,6 @@ import {
   canWriteDelegate,
   hasRole,
   isRetiredRole,
-  mustAnonymiseFeedback,
   type Principal,
 } from './policies.js';
 
@@ -20,7 +19,7 @@ const p = (role: Principal['role'], ...delegateIds: string[]): Principal => ({
   delegateId: delegateIds[0] ?? null,
 });
 
-describe('authorization policies (backlog section 2, E3-6, E8-10)', () => {
+describe('authorization policies (backlog section 2, E3-6)', () => {
   it('delegates read every record of their own identity and nothing else; admins read any; speakers none', () => {
     expect(canReadDelegate(p('delegate', 'd1', 'd3'), 'd1')).toBe(true);
     expect(canReadDelegate(p('delegate', 'd1', 'd3'), 'd3')).toBe(true);
@@ -30,8 +29,8 @@ describe('authorization policies (backlog section 2, E3-6, E8-10)', () => {
     expect(canReadDelegate(p('speaker'), 'd2')).toBe(false);
   });
 
-  it('retired roles (analyst, support) are granted nothing (D8 item 7)', () => {
-    for (const role of ['analyst', 'support'] as const) {
+  it('retired roles (analyst, support, speaker) are granted nothing (D8 item 7)', () => {
+    for (const role of ['analyst', 'support', 'speaker'] as const) {
       expect(isRetiredRole(role)).toBe(true);
       expect(canReadDelegate(p(role), 'd2'), role).toBe(false);
       expect(canWriteDelegate(p(role)), role).toBe(false);
@@ -55,14 +54,9 @@ describe('authorization policies (backlog section 2, E3-6, E8-10)', () => {
     }
   });
 
-  it('speakers see feedback for their own sessions only, anonymised', () => {
-    const scope = { facilitatorUserIds: ['user-speaker'] };
-    const other = { facilitatorUserIds: ['someone-else'] };
-    expect(canViewSessionFeedback(p('speaker'), scope)).toBe(true);
-    expect(canViewSessionFeedback(p('speaker'), other)).toBe(false);
-    expect(mustAnonymiseFeedback(p('speaker'))).toBe(true);
-    expect(canViewSessionFeedback(p('admin'), other)).toBe(true);
-    expect(mustAnonymiseFeedback(p('admin'))).toBe(false);
-    expect(canViewSessionFeedback(p('delegate', 'd1'), scope)).toBe(false);
+  it('session feedback is admin-only: there is no speaker view since the role was removed', () => {
+    expect(canViewSessionFeedback(p('admin'))).toBe(true);
+    expect(canViewSessionFeedback(p('speaker'))).toBe(false);
+    expect(canViewSessionFeedback(p('delegate', 'd1'))).toBe(false);
   });
 });

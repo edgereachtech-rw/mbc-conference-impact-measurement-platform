@@ -12,7 +12,6 @@ import {
   StatusPill,
   TableScroll,
 } from '@/components/console/page';
-import { NativeSelect } from '@/components/imports/native-select';
 import { apiFetch } from '@/lib/api';
 import { formatInstant } from '@/lib/events';
 import { describeError } from '@/lib/imports';
@@ -39,28 +38,27 @@ type State =
 
 export const staffRoleLabels: Record<StaffRole, string> = {
   admin: 'Admin',
-  speaker: 'Speaker',
 };
 /** Safe under noUncheckedIndexedAccess, and readable if a role is ever added to the API first. */
 const labelOf = (role: StaffRole | undefined) => (role ? (staffRoleLabels[role] ?? role) : 'staff');
 
-const roleHints: Record<StaffRole, string> = {
-  admin: 'Full access: events, delegates, imports, reports and staff accounts.',
-  speaker: 'Session feedback for their own sessions only, with delegate names left out.',
-};
+/** The one assignable role (E3-9); every other role on an account is retired and cannot sign in. */
+const ONLY_ROLE: StaffRole = 'admin';
+const roleHint = 'Full access: events, delegates, imports, reports and staff accounts.';
 
 /**
- * Staff accounts (backlog E3-9): who can sign in to the console, and as what. An admin adds
- * another admin by email — there is no password to set and nothing is sent automatically; the
- * new admin signs in with the same one-time link every account uses. Roles and deactivation are
- * changed here too, and the API ends the affected person's sessions at once so a change takes
- * effect immediately. Every change is audited. An admin can never deactivate their own account.
+ * Staff accounts (backlog E3-9): who can sign in to the console. Admin is the only staff role, so
+ * there is nothing to choose: an admin adds another admin by email — no password to set and nothing
+ * sent automatically; the new admin signs in with the same one-time link every account uses.
+ * Accounts are deactivated and reactivated here, and the API ends that person's sessions at once so
+ * the change takes effect immediately. Every change is audited. An admin can never deactivate their
+ * own account. An account still carrying a retired role (analyst, support, speaker) is shown so it
+ * can be deactivated; it cannot sign in, and this screen never promotes it to admin (D8 item 7).
  */
 export function StaffManager({ currentUserId, timezone }: Props) {
   const [state, setState] = useState<State>({ kind: 'loading' });
   const [version, setVersion] = useState(0);
   const [email, setEmail] = useState('');
-  const [role, setRole] = useState<StaffRole>('admin');
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
@@ -93,10 +91,10 @@ export function StaffManager({ currentUserId, timezone }: Props) {
     try {
       const created = await apiFetch<{ account: StaffAccount }>('/staff', {
         method: 'POST',
-        body: JSON.stringify({ email, role }),
+        body: JSON.stringify({ email, role: ONLY_ROLE }),
       });
       setNotice(
-        `${created.account.email} can now sign in as ${labelOf(role).toLowerCase()}. Tell them to use the sign-in page with this address; no password is set and nothing was emailed automatically.`,
+        `${created.account.email} can now sign in as ${labelOf(ONLY_ROLE).toLowerCase()}. Tell them to use the sign-in page with this address; no password is set and nothing was emailed automatically.`,
       );
       setEmail('');
       refresh();
@@ -107,7 +105,7 @@ export function StaffManager({ currentUserId, timezone }: Props) {
     }
   }
 
-  async function patch(account: StaffAccount, body: { role?: StaffRole; status?: string }) {
+  async function patch(account: StaffAccount, body: { status: 'active' | 'inactive' }) {
     setBusy(true);
     setProblem(null);
     setNotice(null);
@@ -116,9 +114,7 @@ export function StaffManager({ currentUserId, timezone }: Props) {
       setNotice(
         body.status === 'inactive'
           ? `${account.email} can no longer sign in, and any session they had is closed.`
-          : body.status === 'active'
-            ? `${account.email} can sign in again.`
-            : `${account.email} is now ${labelOf(body.role).toLowerCase()}; they will be asked to sign in again.`,
+          : `${account.email} can sign in again.`,
       );
       refresh();
     } catch (err) {
@@ -154,7 +150,7 @@ export function StaffManager({ currentUserId, timezone }: Props) {
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
         <StatTile
           label="Staff accounts"
           value={state.staff.length}
@@ -171,11 +167,6 @@ export function StaffManager({ currentUserId, timezone }: Props) {
           }
         />
         <StatTile
-          label="Speakers"
-          value={state.staff.filter((s) => s.role === 'speaker').length}
-          hint="Session feedback only"
-        />
-        <StatTile
           label="Deactivated"
           value={state.staff.filter((s) => s.status === 'inactive').length}
           hint="Kept for the audit trail; cannot sign in"
@@ -183,12 +174,12 @@ export function StaffManager({ currentUserId, timezone }: Props) {
       </div>
 
       <Panel>
-        <h2 className="font-corporate text-sm font-semibold text-corp-ink">Add a staff account</h2>
+        <h2 className="font-corporate text-sm font-semibold text-corp-ink">Add an admin</h2>
         <p className="mt-1 text-sm text-corp-muted">
-          An account is the email address and the role, nothing else: there is no password to set.
-          The person signs in from the sign-in page with this address and receives a one-time link
-          and code, exactly as delegates do. The platform sends them nothing automatically, so tell
-          them the account exists.
+          An account is the email address, nothing else: admin is the only staff role, and there is
+          no password to set. The person signs in from the sign-in page with this address and
+          receives a one-time link and code, exactly as delegates do. The platform sends them
+          nothing automatically, so tell them the account exists.
         </p>
         {problem ? (
           <p role="alert" className="mt-3 text-sm font-semibold text-brand-danger">
@@ -197,7 +188,7 @@ export function StaffManager({ currentUserId, timezone }: Props) {
         ) : null}
         <form
           onSubmit={(e) => void add(e)}
-          className="mt-3 grid gap-3 md:grid-cols-[2fr_1fr_auto] md:items-end"
+          className="mt-3 grid gap-3 md:grid-cols-[1fr_auto] md:items-end"
         >
           <div className="space-y-1">
             <label htmlFor={`${id}-email`} className="text-sm font-semibold text-corp-ink">
@@ -214,24 +205,6 @@ export function StaffManager({ currentUserId, timezone }: Props) {
               className="h-11 w-full rounded-none border border-corp-line bg-white px-3 text-base md:text-sm"
             />
           </div>
-          <div className="space-y-1">
-            <label htmlFor={`${id}-role`} className="text-sm font-semibold text-corp-ink">
-              Role
-            </label>
-            <NativeSelect
-              id={`${id}-role`}
-              value={role}
-              disabled={busy}
-              onChange={(e) => setRole(e.target.value as StaffRole)}
-              className="rounded-none border-corp-line"
-            >
-              {staffRoles.map((r) => (
-                <option key={r} value={r}>
-                  {staffRoleLabels[r]}
-                </option>
-              ))}
-            </NativeSelect>
-          </div>
           <button
             type="submit"
             disabled={busy || email.trim() === ''}
@@ -242,10 +215,10 @@ export function StaffManager({ currentUserId, timezone }: Props) {
             ) : (
               <UserPlusIcon aria-hidden="true" />
             )}
-            Add account
+            Add admin
           </button>
         </form>
-        <p className="mt-2 text-xs text-corp-muted">{roleHints[role]}</p>
+        <p className="mt-2 text-xs text-corp-muted">{roleHint}</p>
         {notice ? (
           <p role="status" className="mt-3 text-sm font-semibold text-corp-green-text">
             {notice}
@@ -284,26 +257,11 @@ export function StaffManager({ currentUserId, timezone }: Props) {
                         {self ? <p className="text-xs text-corp-muted">This is you</p> : null}
                       </td>
                       <td className="px-4 py-2">
-                        {assignable && !self ? (
-                          <NativeSelect
-                            aria-label={`Role for ${account.email}`}
-                            value={account.role}
-                            disabled={busy}
-                            onChange={(e) =>
-                              void patch(account, { role: e.target.value as StaffRole })
-                            }
-                            className="rounded-none border-corp-line"
-                          >
-                            {staffRoles.map((r) => (
-                              <option key={r} value={r}>
-                                {staffRoleLabels[r]}
-                              </option>
-                            ))}
-                          </NativeSelect>
-                        ) : (
-                          <span className="text-corp-text">
-                            {labelOf(account.role as StaffRole)}
-                          </span>
+                        <span className="text-corp-text">{labelOf(account.role as StaffRole)}</span>
+                        {assignable ? null : (
+                          <p className="text-xs text-corp-muted">
+                            Retired role; this account cannot sign in
+                          </p>
                         )}
                       </td>
                       <td className="px-4 py-2">
@@ -345,9 +303,9 @@ export function StaffManager({ currentUserId, timezone }: Props) {
         )}
         <p className="border-t border-corp-line p-4 text-xs text-corp-muted">
           Deactivating closes the person’s sessions at once and keeps the account for the audit
-          trail; it is never deleted. Changing a role also signs that person out, so the new role
-          takes effect on their next sign-in. Delegate accounts are not shown here: they come from
-          the event’s registrations.
+          trail; it is never deleted. Admin is the only staff role, so there is no role to change
+          here: an account carrying a retired role is deactivated rather than promoted. Delegate
+          accounts are not shown here: they come from the event’s registrations.
         </p>
       </Panel>
     </div>

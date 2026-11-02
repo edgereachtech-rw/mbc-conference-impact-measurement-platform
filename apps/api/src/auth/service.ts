@@ -145,7 +145,7 @@ export class AuthService {
 
     // Eligibility (D8 item 1): the address must be an identity's current address and that identity
     // must hold a valid registration in a non-archived event. Historical and provisional addresses
-    // never qualify. Staff accounts (admin, speaker) need no registration.
+    // never qualify. Staff accounts (admins) need no registration.
     const identity =
       !account || account.role === 'delegate'
         ? await this.eligibleIdentity(this.prisma, email)

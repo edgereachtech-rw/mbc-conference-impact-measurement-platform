@@ -138,7 +138,7 @@ describe.skipIf(!hasDatabase)('passwordless sign-in (E3-2..5)', () => {
     await registeredDelegate(cancelled, { registrationStatus: 'cancelled' });
     const inactive = `inactive-${unique()}@example.com`;
     const account = await prisma.userAccount.create({
-      data: { email: inactive, role: 'speaker', status: 'inactive' },
+      data: { email: inactive, role: 'admin', status: 'inactive' },
     });
     expect((await requestLink(request(app()), cancelled)).status).toBe(202);
     expect((await requestLink(request(app()), inactive)).status).toBe(202);

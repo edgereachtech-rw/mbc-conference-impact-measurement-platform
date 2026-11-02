@@ -102,8 +102,9 @@ describe.skipIf(!hasDatabase)('GET /events/:eventId/delegates (admin listing)', 
   it('is admin-only and scoped to the event', async () => {
     expect((await list('', '')).status).toBe(401);
     expect((await list('', cookies.delegate)).status).toBe(403);
-    expect((await list('', cookies.speaker)).status).toBe(403);
-    expect((await list('', cookies.support)).status).toBe(401); // retired role: no session
+    // Retired roles (speaker, support) hold no session at all (D8 item 7).
+    expect((await list('', cookies.speaker)).status).toBe(401);
+    expect((await list('', cookies.support)).status).toBe(401);
     expect((await list('', cookies.admin, randomUUID())).status).toBe(404);
     const res = await list('');
     expect(res.status).toBe(200);

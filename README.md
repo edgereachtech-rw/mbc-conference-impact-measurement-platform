@@ -211,9 +211,9 @@ Passwordless sign-in lives in `apps/api/src/auth` and `apps/api/src/routes`:
 - Authorization is server-side: `requireAuth`, `requireRole(...)` and `requireDelegate` in
   `apps/api/src/auth/middleware.ts`, with the pure rules in `auth/policies.ts` (delegates read
   only the records of their own identity; admins read any and correct records with an audit
-  entry; only admins manage staff and create `admin` or `speaker` accounts; speakers see only
-  their own sessions, anonymised). The `analyst` and `support` roles are retired (backlog D8
-  item 7): an account still carrying one cannot request a link, cannot verify, holds no usable
+  entry; only admins manage staff, and `admin` is the only account an admin can create). The
+  `analyst`, `support` and `speaker` roles are retired (backlog D8 item 7; speaker removed
+  2026-11-02 on request, so there is no speaker account and no speaker-facing screen): an account still carrying one cannot request a link, cannot verify, holds no usable
   session (`/auth/me` answers 401) and cannot be assigned; the enum values remain until no
   account carries them, and the identity backfill report lists such accounts. State-changing
   requests must carry an `Origin` matching `APP_URL` or `AUTH_ALLOWED_ORIGINS`.
@@ -410,13 +410,14 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   period); questions POST/PATCH/DELETE and `questions/order`; `sessions/:sid/dashboard`
   (submission count = latest per delegate, rating distribution per question with percentages
   over that question's valid answers, written answers; `?anonymised=true` leaves delegate names
-  out for the speaker; viewing audited); `sessions/:sid/export.csv` (same figures, same
+  out, which is how results are shared with a speaker now that the speaker role is gone; viewing
+  audited); `sessions/:sid/export.csv` (same figures, same
   `anonymised` switch, audited). Delegate routes: `GET /me/feedback/:code` (the session,
   speaker, questions, own response, attendance eligibility), `PUT /me/feedback/:code` (create
   or update; 403 `not_attended`, 409 `feedback_closed`, 422 `answers_invalid`; never touches
   attendance), `GET /me/events/:id/feedback` (the delegate's sessions with feedback). Screens:
   the event page's "Session feedback" tab (enable, deadline, link and QR code, start the
-  period, questions, dashboard with the speaker view, export) and the page `/feedback/:code`
+  period, questions, dashboard with the anonymised view, export) and the page `/feedback/:code`
   (sign-in first, then the form; the delegate's event page lists their sessions too).
 - End-of-conference evaluation (task of 2026-10-31; backlog E11): a fourth assessment stage,
   `end_of_conference`, between the during-conference stage and the follow-ups (migrations
@@ -604,14 +605,23 @@ measures | evidence }`, the list replaced with ids kept; own actions only, 404 o
   and `SignInPanel`. The root layout renders the header and footer only for a signed-in session,
   so the console and delegate areas are unchanged and a visitor sees the sign-in page alone.
 - Staff accounts at `/admin/staff` (backlog E3-9, screen built 2026-11-02 on the existing API):
-  an admin adds another admin or a speaker **by email address alone** — there is no password to
-  set, and the new account signs in with the same one-time link everyone else uses. The platform
-  emails nothing automatically, which the screen says, so whoever adds the account tells the
-  person. Roles can be changed and accounts deactivated and reactivated; the API ends that
-  person's sessions on either change, so it takes effect at once. An admin can never deactivate
+  an admin adds another admin **by email address alone** — there is no password to set, and the
+  new admin signs in with the same one-time link everyone else uses. The platform emails nothing
+  automatically, which the screen says, so whoever adds the account tells the person. **Admin is
+  the only staff role** (the speaker role was removed on 2026-11-02, see below), so the screen
+  offers no role to choose or change; accounts are deactivated and reactivated, and the API ends
+  that person's sessions on the change, so it takes effect at once. An admin can never deactivate
   their own account (refused by the API, and the screen never offers it), accounts are never
   deleted so the audit trail holds, and `staff.created` and `staff.updated` record every change.
   Delegate accounts are not shown: they come from the event's registrations.
+- The speaker role was removed (decision of 2026-11-02). `staffRoles` is `['admin']`, so the API
+  refuses `speaker` with 422, and `speaker` joins `analyst` and `support` in `RETIRED_ROLES`: an
+  account still carrying it cannot request a link, cannot verify and holds no usable session, so
+  every route answers 401 rather than 403. The `user_role` enum keeps the value until no account
+  carries one, exactly as for the other two retired roles, and `/admin/staff` shows such an
+  account as a retired role so it can be deactivated — never promoted (D8 item 7). Nothing was
+  lost: the speaker-facing feedback view (E8-10) was never built, every feedback route was already
+  admin-only, and an admin shares a session's results by exporting the anonymised dashboard.
 - Daily reflections (task of 2026-10-31): one optional questionnaire per
   event date, never created automatically. Tables `reflection_activity` (one per event date:
   title, status draft/published/closed, opens/closes, published/closed times),

@@ -104,8 +104,12 @@ export const delegatePatchSchema = z
   .refine((v) => Object.keys(v).length > 0, { error: 'Nothing to update' });
 export type DelegatePatch = z.infer<typeof delegatePatchSchema>;
 
-/** Staff roles an admin may create or assign (E3-9: no analyst or support role). */
-export const staffRoles = ['admin', 'speaker'] as const;
+/**
+ * Staff roles an admin may create or assign (E3-9). Admin is the only one: the analyst and
+ * support roles were removed on 2026-10-29 and the speaker role on 2026-11-02, all three retired
+ * under the plan in D8 item 7. The enum values stay in userRoles until no account carries them.
+ */
+export const staffRoles = ['admin'] as const;
 export type StaffRole = (typeof staffRoles)[number];
 
 export const staffCreateSchema = z.object({

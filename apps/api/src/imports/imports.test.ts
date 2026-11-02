@@ -185,7 +185,7 @@ describe.skipIf(!hasDatabase)('registration imports (E2-1, E2-8..11; D3, D5, D9)
           .set('Origin', ORIGIN)
           .set('Cookie', cookies[role] ?? '');
         expect(res.status, `${method} ${path} ${role}`).toBe(
-          role === 'analyst' || role === 'support' ? 401 : 403, // retired roles hold no session (D8 item 7)
+          role === 'delegate' ? 403 : 401, // retired roles hold no session (D8 item 7)
         );
       }
     }

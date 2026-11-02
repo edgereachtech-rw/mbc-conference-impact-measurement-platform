@@ -168,7 +168,7 @@ describe.skipIf(!hasDatabase)('conflict resolution (D5 valid actions, D5.1, D9)'
       expect(
         (await resolve(server, row!.id, { action: 'reject' }, cookies[role])).status,
         role,
-      ).toBe(role === 'analyst' || role === 'support' ? 401 : 403);
+      ).toBe(role === 'delegate' ? 403 : 401);
     }
     expect((await resolve(server, row!.id, { action: 'merge' })).status).toBe(422);
     expect((await resolve(server, row!.id, { action: 'link_existing' })).status).toBe(422);

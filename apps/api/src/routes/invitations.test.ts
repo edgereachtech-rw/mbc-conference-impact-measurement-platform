@@ -119,7 +119,7 @@ describe.skipIf(!hasDatabase)('invitations (E3-1)', () => {
   it('is admin-only and refuses to send without the validity setting', async () => {
     const server = app();
     expect((await send(server, {}, '')).status).toBe(401);
-    expect((await send(server, {}, cookies.speaker)).status).toBe(403);
+    expect((await send(server, {}, cookies.speaker)).status).toBe(401); // retired role (D8 item 7)
     delete process.env.INVITATION_TTL_DAYS;
     const unconfigured = await send(server);
     expect(unconfigured.status).toBe(409);

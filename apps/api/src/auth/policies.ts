@@ -17,17 +17,17 @@ export interface Principal {
 }
 
 /**
- * Roles that are not part of the approved requirements (decisions of 2026-10-29, D8 item 7). An
- * account still carrying one cannot authenticate and is granted nothing; the enum values remain
- * until no account carries them.
+ * Roles that are not part of the approved requirements (analyst and support, decisions of
+ * 2026-10-29; speaker, decision of 2026-11-02; D8 item 7). An account still carrying one cannot
+ * authenticate and is granted nothing; the enum values remain until no account carries them.
  */
-export const RETIRED_ROLES: readonly UserRole[] = ['analyst', 'support'];
+export const RETIRED_ROLES: readonly UserRole[] = ['analyst', 'support', 'speaker'];
 
 export function isRetiredRole(role: UserRole): boolean {
   return RETIRED_ROLES.includes(role);
 }
 
-/** Roles that may read any delegate record of the event (admins only since the role retirement). */
+/** Roles that may read any delegate record of the event (admins only since the role retirements). */
 export const DELEGATE_READ_ROLES: readonly UserRole[] = ['admin'];
 /** Roles that may correct delegate records (E2-4). */
 export const DELEGATE_WRITE_ROLES: readonly UserRole[] = ['admin'];
@@ -35,7 +35,7 @@ export const DELEGATE_WRITE_ROLES: readonly UserRole[] = ['admin'];
 export const STAFF_ADMIN_ROLES: readonly UserRole[] = ['admin'];
 /** Roles that may run registration imports, read import history and resolve conflicts (D9). */
 export const IMPORT_ROLES: readonly UserRole[] = ['admin'];
-/** Roles that may read reports and exports (E16); speakers may not. */
+/** Roles that may read reports and exports (E16). */
 export const REPORT_ROLES: readonly UserRole[] = ['admin'];
 
 /** Who may email selected delegates of an event (E2-14): M.Bryan admins only. */
@@ -77,25 +77,11 @@ export function canRunImports(principal: Principal): boolean {
   return hasRole(principal, IMPORT_ROLES);
 }
 
-export interface SessionFeedbackScope {
-  /** User ids of the speakers/facilitators of the session. */
-  facilitatorUserIds: readonly string[];
-}
-
 /**
- * Session feedback (E8-8, E8-10): admin and analyst see every session; a speaker sees only
- * sessions they facilitate. Delegates and support do not see aggregated feedback.
+ * Session feedback (E8-8) is an admin screen. There is no speaker-facing view and no speaker
+ * account: the role was removed on 2026-11-02, and an admin shares results by exporting the
+ * anonymised dashboard (identities withheld) instead.
  */
-export function canViewSessionFeedback(principal: Principal, scope: SessionFeedbackScope): boolean {
-  if (hasRole(principal, REPORT_ROLES)) return true;
-  if (principal.role === 'speaker') return scope.facilitatorUserIds.includes(principal.userId);
-  return false;
-}
-
-/**
- * Speakers never see who wrote a comment unless the delegate recorded permission (E8-10);
- * admins and analysts see identities subject to the reporting rules.
- */
-export function mustAnonymiseFeedback(principal: Principal): boolean {
-  return principal.role === 'speaker';
+export function canViewSessionFeedback(principal: Principal): boolean {
+  return hasRole(principal, REPORT_ROLES);
 }

@@ -65,7 +65,7 @@ describe.skipIf(!hasDatabase)('GET /events (admin import screen)', () => {
       const res = await request(server)
         .get('/api/v1/events')
         .set('Cookie', cookies[role] ?? '');
-      expect(res.status, role).toBe(role === 'analyst' || role === 'support' ? 401 : 403);
+      expect(res.status, role).toBe(role === 'delegate' ? 403 : 401);
     }
     const res = await request(server)
       .get('/api/v1/events')

@@ -135,14 +135,14 @@ describe.skipIf(!hasDatabase)('messages to delegates (E2-14)', () => {
     const server = app();
     const ids = { recipients: { delegateIds: [active.delegate.id] } };
     expect((await send(server, { ...base, ...ids }, '')).status).toBe(401);
-    expect((await send(server, { ...base, ...ids }, cookies.speaker)).status).toBe(403);
+    expect((await send(server, { ...base, ...ids }, cookies.speaker)).status).toBe(401);
     expect(
       (
         await request(server)
           .get(`/api/v1/events/${eventId}/messages`)
           .set('Cookie', cookies.speaker ?? '')
       ).status,
-    ).toBe(403);
+    ).toBe(401); // retired role: no session (D8 item 7)
     expect((await send(server, { ...base, ...ids }, cookies.admin, randomUUID())).status).toBe(404);
     expect((await send(server, { subject: '', body: 'x', ...ids })).status).toBe(422);
     expect((await send(server, { subject: 's', body: 'x', recipients: {} })).status).toBe(422);

@@ -28,6 +28,8 @@ describe.skipIf(!hasDatabase)('role-based authorization (E3-6, E3-9)', () => {
   const identityIds: string[] = [];
   let delegateA: { id: string };
   let delegateB: { id: string };
+  /** The signed-in admin, so the self-deactivation test never picks another admin account. */
+  let adminId: string;
 
   const app = () =>
     createApp({
@@ -60,6 +62,7 @@ describe.skipIf(!hasDatabase)('role-based authorization (E3-6, E3-9)', () => {
     eventId = (await createTestEvent(prisma)).id;
     const a = await signedIn('delegate');
     const b = await signedIn('admin');
+    adminId = b.id;
     // Delegate A: an identity linked to the signed-in account (as the first verification does).
     const registeredA = await createRegisteredIdentity(prisma, eventId, a.email, {
       name: 'Delegate A',
@@ -116,13 +119,13 @@ describe.skipIf(!hasDatabase)('role-based authorization (E3-6, E3-9)', () => {
     expect(patch.status).toBe(403);
   });
 
-  it('admins read any delegate; speakers cannot; retired-role sessions are rejected outright', async () => {
+  it('admins read any delegate; retired-role sessions are rejected outright', async () => {
     const server = app();
     const admin = await request(server)
       .get(`/api/v1/delegates/${delegateB.id}`)
       .set('Cookie', cookies.admin ?? '');
     expect(admin.status).toBe(200);
-    for (const role of ['analyst', 'support'] as const) {
+    for (const role of ['analyst', 'support', 'speaker'] as const) {
       const res = await request(server)
         .get(`/api/v1/delegates/${delegateB.id}`)
         .set('Cookie', cookies[role] ?? '');
@@ -132,17 +135,13 @@ describe.skipIf(!hasDatabase)('role-based authorization (E3-6, E3-9)', () => {
         .set('Cookie', cookies[role] ?? '');
       expect(me.status, role).toBe(401);
     }
-    const speaker = await request(server)
-      .get(`/api/v1/delegates/${delegateB.id}`)
-      .set('Cookie', cookies.speaker ?? '');
-    expect(speaker.status).toBe(403);
     const unknown = await request(server)
       .get(`/api/v1/delegates/${randomUUID()}`)
       .set('Cookie', cookies.admin ?? '');
     expect(unknown.status).toBe(404);
   });
 
-  it('retired roles and speakers cannot write; admin corrections are audited with old and new values', async () => {
+  it('retired roles cannot write; admin corrections are audited with old and new values', async () => {
     const server = app();
     for (const role of ['analyst', 'support', 'speaker'] as const) {
       const denied = await request(server)
@@ -150,7 +149,7 @@ describe.skipIf(!hasDatabase)('role-based authorization (E3-6, E3-9)', () => {
         .set('Origin', ORIGIN)
         .set('Cookie', cookies[role] ?? '')
         .send({ organisation: `Changed by ${role}` });
-      expect(denied.status, role).toBe(role === 'speaker' ? 403 : 401);
+      expect(denied.status, role).toBe(401);
     }
 
     const ok = await request(server)
@@ -179,17 +178,17 @@ describe.skipIf(!hasDatabase)('role-based authorization (E3-6, E3-9)', () => {
 
   it('only admins manage staff; deactivation revokes the sessions of that user', async () => {
     const server = app();
-    const email = `new-speaker-${randomUUID().slice(0, 8)}@example.com`;
+    const email = `new-admin-${randomUUID().slice(0, 8)}@example.com`;
     for (const role of ['analyst', 'support', 'speaker', 'delegate'] as const) {
       const res = await request(server)
         .post('/api/v1/staff')
         .set('Origin', ORIGIN)
         .set('Cookie', cookies[role] ?? '')
-        .send({ email, role: 'speaker' });
-      expect(res.status, role).toBe(role === 'analyst' || role === 'support' ? 401 : 403);
+        .send({ email, role: 'admin' });
+      expect(res.status, role).toBe(role === 'delegate' ? 403 : 401);
     }
-    // Retired roles cannot be assigned any more (E3-9).
-    for (const retired of ['analyst', 'support']) {
+    // Retired roles cannot be assigned any more (E3-9: admin is the only staff role).
+    for (const retired of ['analyst', 'support', 'speaker', 'delegate']) {
       const res = await request(server)
         .post('/api/v1/staff')
         .set('Origin', ORIGIN)
@@ -201,46 +200,45 @@ describe.skipIf(!hasDatabase)('role-based authorization (E3-6, E3-9)', () => {
       .post('/api/v1/staff')
       .set('Origin', ORIGIN)
       .set('Cookie', cookies.admin ?? '')
-      .send({ email: email.toUpperCase(), role: 'speaker' });
+      .send({ email: email.toUpperCase(), role: 'admin' });
     expect(created.status).toBe(201);
     expect(created.body.account.email).toBe(email);
-    ids.push(created.body.account.id);
+    const second = created.body.account as { id: string };
+    ids.push(second.id);
     expect(
       (
         await request(server)
           .post('/api/v1/staff')
           .set('Origin', ORIGIN)
           .set('Cookie', cookies.admin ?? '')
-          .send({ email, role: 'speaker' })
+          .send({ email, role: 'admin' })
       ).status,
     ).toBe(409);
 
-    // Deactivate the speaker: their live session must stop working immediately.
-    const speaker = await prisma.userAccount.findFirstOrThrow({
-      where: { id: { in: ids }, role: 'speaker' },
+    // Deactivating the second admin must stop their live session immediately.
+    const secondToken = generateToken();
+    await prisma.authSession.create({
+      data: {
+        userAccountId: second.id,
+        tokenHash: hashToken(secondToken),
+        expiresAt: new Date(Date.now() + 86_400_000),
+      },
     });
-    expect(
-      (
-        await request(server)
-          .get('/api/v1/auth/me')
-          .set('Cookie', cookies.speaker ?? '')
-      ).status,
-    ).toBe(200);
+    const secondCookie = `mbc_session=${secondToken}`;
+    expect((await request(server).get('/api/v1/auth/me').set('Cookie', secondCookie)).status).toBe(
+      200,
+    );
     const deactivated = await request(server)
-      .patch(`/api/v1/staff/${speaker.id}`)
+      .patch(`/api/v1/staff/${second.id}`)
       .set('Origin', ORIGIN)
       .set('Cookie', cookies.admin ?? '')
       .send({ status: 'inactive' });
     expect(deactivated.status).toBe(200);
-    expect(
-      (
-        await request(server)
-          .get('/api/v1/auth/me')
-          .set('Cookie', cookies.speaker ?? '')
-      ).status,
-    ).toBe(401);
+    expect((await request(server).get('/api/v1/auth/me').set('Cookie', secondCookie)).status).toBe(
+      401,
+    );
     const audit = await prisma.auditLog.findFirst({
-      where: { action: 'staff.updated', entityId: speaker.id },
+      where: { action: 'staff.updated', entityId: second.id },
     });
     expect(audit?.newValue).toMatchObject({ status: 'inactive' });
 
@@ -259,11 +257,8 @@ describe.skipIf(!hasDatabase)('role-based authorization (E3-6, E3-9)', () => {
   });
 
   it('an admin cannot deactivate their own account', async () => {
-    const admin = await prisma.userAccount.findFirstOrThrow({
-      where: { id: { in: ids }, role: 'admin' },
-    });
     const res = await request(app())
-      .patch(`/api/v1/staff/${admin.id}`)
+      .patch(`/api/v1/staff/${adminId}`)
       .set('Origin', ORIGIN)
       .set('Cookie', cookies.admin ?? '')
       .send({ status: 'inactive' });

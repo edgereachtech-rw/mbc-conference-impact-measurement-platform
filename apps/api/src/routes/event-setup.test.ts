@@ -80,7 +80,7 @@ describe.skipIf(!hasDatabase)('event setup (E1 brief)', () => {
   it('is admin-only and validates the profile and dates', async () => {
     const body = { ...profile, dates: ['2026-11-10', '2026-11-12'] };
     expect((await call('post', '/events', body, '')).status).toBe(401);
-    expect((await call('post', '/events', body, cookies.speaker)).status).toBe(403);
+    expect((await call('post', '/events', body, cookies.speaker)).status).toBe(401);
     expect((await call('post', '/events', { ...body, dates: [] })).status).toBe(422);
     expect(
       (await call('post', '/events', { ...body, dates: ['2026-11-10', '2026-11-10'] })).status,
@@ -117,7 +117,7 @@ describe.skipIf(!hasDatabase)('event setup (E1 brief)', () => {
     });
     expect(
       (await call('get', '/events/code-preview?name=x', undefined, cookies.speaker)).status,
-    ).toBe(403);
+    ).toBe(401); // a retired-role session resolves to nothing (D8 item 7)
     // A client-supplied code is ignored.
     const supplied = await call('post', '/events', { ...body, code: 'my-own-code' });
     expect(supplied.body.event.code).toBe(`transfer-summit-${tag}-3`);

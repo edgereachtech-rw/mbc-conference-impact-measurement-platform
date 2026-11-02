@@ -96,7 +96,7 @@ describe.skipIf(!hasDatabase)('delegate account status (E2-13)', () => {
     expect(
       (await patch(server, delegate.id, { status: 'inactive', reason: 'left' }, cookies.speaker))
         .status,
-    ).toBe(403);
+    ).toBe(401); // retired role: no session (D8 item 7)
     expect(
       (await patch(server, delegate.id, { status: 'inactive', reason: 'left' }, cookies.delegate))
         .status,

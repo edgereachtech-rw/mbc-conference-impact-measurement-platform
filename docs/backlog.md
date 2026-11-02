@@ -51,9 +51,11 @@
 | **Delegate** | Participant whose record an M.Bryan admin imported from the event registration file; one platform identity links every event they appear in. There is no public sign-up | Only their own information, across their own events (S3.1, S13.2, S16) |
 | **M.Bryan admin** | Manages conference, reviews data, generates reports | All conference data for ITTEC |
 | **Development team** | Builds, tests, operates, supports | Technical access; response content only where needed for support |
-| **Speaker/Facilitator** | Receives feedback on their own session | Only their own session's feedback, anonymised unless permission given (S8.4) |
+| ~~**Speaker/Facilitator**~~ | Role removed 2026-11-02; a speaker has no account | An admin exports the anonymised session dashboard and shares it with the speaker |
 
 Decisions 2026-10-29: the analyst role and the support role are not part of the approved requirements and are not replaced; M.Bryan acts as admin, as in the original requirements. The Increment 1 code contains both roles. They are retired in Increment 1b under the explicit plan in design note D8 item 7: existing accounts with those roles are reviewed and revoked or migrated under written authorisation, never silently promoted to admin.
+
+**Decision 2026-11-02 (product owner): the speaker role is removed too.** Admin is the only staff role an admin can create or assign, so `staffRoles` is `['admin']` and the API refuses any other role with 422. `speaker` is retired exactly as `analyst` and `support` are (D8 item 7): an account still carrying it cannot request a link, cannot verify and holds no usable session, every route answers 401, the `user_role` enum keeps the value until no account carries one, and such an account is deactivated rather than promoted. What this costs: **E8-10 (the speaker-facing feedback view) is removed, not deferred** — it was never built, and without an account there is nobody to show it to. What replaces it: feedback results reach a speaker as an export. The dashboard and CSV already take `?anonymised=true`, which leaves delegate identities out (S8.4), and an admin sends that to the speaker. Nothing else changes: every feedback route was already admin-only, so no working access was withdrawn.
 
 ---
 
@@ -182,10 +184,10 @@ Revised 2026-10-29: there is no sign-up. "First sign-in" replaces "sign-up" wher
 | E3-3 | As a delegate, I want simple passwordless sign-in | Email magic link or one-time code; code expires quickly; rate-limited; session via `httpOnly`, `Secure`, `SameSite` cookie; works after the conference | P0 | 1 |
 | E3-4 | As a delegate, I want to recover access | Same flow as sign-in; support contact (`conference@mbryanconsultinggroup.com`) shown; to change my email I contact the M.Bryan admin, who uses the identity email-change workflow (E2-12) | P0 | 1 |
 | E3-5 | As a delegate, I want to stay signed in on my phone during the conference | Session lasts the conference week; deep links (e.g. session QR) sign me in then return me to the target page | P0 | 1 |
-| E3-6 | As the platform, I enforce role-based access on the server | Delegates access only their own records; admin and speaker permissions as in section 2 (analyst and support roles removed 2026-10-29; retirement plan in D8 item 7). Every API route has an authorisation check and test | P0 | 1 |
+| E3-6 | As the platform, I enforce role-based access on the server | Delegates access only their own records; admin permissions as in section 2 (analyst and support roles removed 2026-10-29, speaker 2026-11-02; retirement plan in D8 item 7). Every API route has an authorisation check and test | P0 | 1 |
 | E3-7 | As a delegate, I want to see privacy information at first sign-in | Section 6.4 text displayed and acceptance recorded with timestamp and version | P0 | 1b |
 | E3-8 | As a delegate, I want to be told about both reminders and evaluation follow-ups | First-sign-in and reminder screens explain the difference (S4 note: reminders are chosen by me; evaluation follow-ups are scheduled by M.Bryan) | P0 | 4 |
-| E3-9 | As an M.Bryan admin, I want to manage user accounts for staff | Create admin and speaker users; no analyst or support role; deactivate; audit | P0 | 1 |
+| E3-9 | As an M.Bryan admin, I want to manage user accounts for staff | Create admin users by email address alone; admin is the only staff role (no analyst, support or speaker); deactivate and reactivate; an admin cannot deactivate their own account; an account on a retired role is deactivated, never promoted; audit | P0 | 1 |
 | E3-10 | As a delegate, I want one My Events view of every event I am part of | After sign-in, one list of all events linked to my identity with, per event, name and dates, registration status, attendance only when an attendance record exists (otherwise "not recorded"), assessments and outcomes, transfer plan, follow-ups and other impact records as they become available; served by `GET /me/events` and `GET /me/events/:eventId` with server-side authorisation on every record (D7) | P0 | 1c |
 | E3-11 | As the platform, I never grant delegate access to an unknown email | No sign-up route exists; an address with no eligible imported identity cannot obtain a session or any event history; staff safeguards unchanged (D1, D8) | P0 | 1, 1b |
 
@@ -255,8 +257,9 @@ are not settled by this note.
    shows "attendance not recorded".
 5. **Staff accounts are unchanged.** Admin and speaker accounts are created by an admin (E3-9) and
    keep every existing control (E3-3, E3-6, E17). The analyst and support roles are not part of the
-   approved requirements (decisions 2026-10-29); both exist in the Increment 1 code and are retired
-   in Increment 1b under the explicit plan in D8 item 7.
+   approved requirements (decisions 2026-10-29) and the speaker role was removed on 2026-11-02; all
+   three exist in the Increment 1 code and are retired under the explicit plan in D8 item 7, so
+   admin is the only staff account an admin can create.
 6. **Test data never opens production.** Development and staging use test registrations and test
    accounts for rehearsals and automated tests. In production a delegate signs in only with a
    genuine, eligible imported registration; a registration with status test, or an account linked
@@ -547,7 +550,7 @@ Required changes when Increment 1b is implemented (impact only, not done here):
 | E8-7 | As the platform, I prevent duplicate session feedback | One response per delegate per session (database constraint). Delegate may update; **dashboard counts only the latest response** | P0 | 3 |
 | E8-8 | As M.Bryan, I want per-session results | Title and speaker; number who submitted; for Q1-Q3 number and percentage per rating, using responses to that question as the denominator and displayed as "15 of 20 responses (75%)"; written responses to Q4-Q5 | P0 | 3 |
 | E8-9 | As M.Bryan, I want to view and export session feedback | Filter by session and day; CSV export | P0 | 3 |
-| E8-10 | As a speaker/facilitator, I want feedback on my own session only | Role-limited view; delegates not identified unless permission is recorded; written comments anonymised | P1 | 5 |
+| ~~E8-10~~ | ~~As a speaker/facilitator, I want feedback on my own session only~~ | **Removed 2026-11-02 with the speaker role** (decision above). Never built; there is no speaker account to serve it. Replaced by the export an admin already has: the session dashboard and CSV with `?anonymised=true`, which identifies no delegate unless permission is recorded | — | — |
 | E8-11 | As both physical and virtual delegates, I want equal access | Same link and QR/link on a virtual platform chat; tested on both | P0 | 3 |
 
 ---
@@ -780,7 +783,7 @@ and support requests (E13), both reported as "not collected by the platform" rat
 | ID | Story | Acceptance criteria | Pri | Inc |
 |---|---|---|---|---|
 | E17-1 | Secure individual accounts | Passwordless sign-in, rate limiting, secure cookies, CSRF protection, account lockout on abuse | P0 | 1 |
-| E17-2 | Restricted access | Role-based access with server-side checks; delegate isolation test; speaker restricted view | P0 | 1, 5 |
+| E17-2 | Restricted access | Role-based access with server-side checks; delegate isolation test; retired-role sessions (analyst, support, speaker) resolve to nothing and are tested | P0 | 1, 5 |
 | E17-3 | Secure transport and storage | TLS everywhere; database and backups encrypted; storage private with short-lived signed URLs; secrets only in server environment | P0 | 1 |
 | E17-4 | Audit log | Record administrative changes, record corrections, attendance corrections, status overrides, question changes, report approvals, data exports, sign-in anomalies (who, what, when, old/new value) | P0 | 1, 5 |
 | E17-5 | Controls over report content | See E16-8 | P1 | 5 |
@@ -848,7 +851,7 @@ The team shares a brief test summary and demonstrates the working platform to M.
 | **5** (Nov 6) | E0-8, E0-9, E4-10, E5-10, E6-6, E8-10, E10-7 to 12, E11-5, E11-7, E11-15, E12-1 to 6, E12-8 to 15, E13-2 to 6, E14-4, E15-1 to 18, E16-1, E16-2, E16-3, E16-6, E16-8, E16-9, E17-2, E17-4, E17-5, T2 to T16 | Dashboard matches the known-results dataset exactly; reminder sent once after worker restart; load test passes; restore test passes; access-control and duplicate tests pass; follow-up forms show the plan. **Code freeze** |
 | **6** (Nov 7) | E0-7, E0-11, E17-7, E17-9, E19-1, E19-2, E19-5, E19-8 | Production smoke test of full sign-in-to-submission path; every alert triggered once and received; invitations ready to send; named support contacts confirmed; test-data gate passed under production configuration: no test registrations, test-only accounts or test-only identities, no session obtainable for a test-only identity, and the staging-only allowance refused (D8 item 8) |
 
-**If the Nov 4 check fails, cut in this order:** E14-3 file upload (keep text evidence), E16-3 follow-up report, E15-13 to 16 panel polish, E8-10 speaker view, E13-5 barrier tagging. Core P0 items are not cut.
+**If the Nov 4 check fails, cut in this order:** E14-3 file upload (keep text evidence), E16-3 follow-up report, E15-13 to 16 panel polish, E13-5 barrier tagging (E8-10, the speaker view, is already removed with the speaker role). Core P0 items are not cut.
 
 ---
 
