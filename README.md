@@ -592,7 +592,26 @@ measures | evidence }`, the list replaced with ids kept; own actions only, 404 o
   date, each stage's state, reflections and feedback given, and their plan in numbers). Not
   built: support requests (backlog E13) and nominating organisation expectations are not collected
   by the platform, so both report as `not_collected` rather than as zero; PDF and DOCX rendering
-  (E16-7) and the full data export (E16-9) are untouched.
+  (E16-7) and the full data export (E16-9) are untouched. **Every report is also reachable in
+  one place** at `/admin/reports` (task of 2026-11-02): choose any event, then any of the five
+  reports for it, with the same workspace, approval controls and downloads as the event's own
+  Reports tab. The page opens on the event that is running, and says so when no event exists yet.
+- Signing in is the front door (task of 2026-11-02). `/` renders the sign-in page itself: the
+  marketing landing page was removed, and so were the bar above it and the footer below it, so
+  the page carries its own contact and copyright line. `/signin` serves the same panel rather
+  than redirecting, because invitation emails carry `/signin?invite=` and every protected page
+  redirects with `?next=`; both routes share `resolveSignIn` (session check, invitation lookup)
+  and `SignInPanel`. The root layout renders the header and footer only for a signed-in session,
+  so the console and delegate areas are unchanged and a visitor sees the sign-in page alone.
+- Staff accounts at `/admin/staff` (backlog E3-9, screen built 2026-11-02 on the existing API):
+  an admin adds another admin or a speaker **by email address alone** — there is no password to
+  set, and the new account signs in with the same one-time link everyone else uses. The platform
+  emails nothing automatically, which the screen says, so whoever adds the account tells the
+  person. Roles can be changed and accounts deactivated and reactivated; the API ends that
+  person's sessions on either change, so it takes effect at once. An admin can never deactivate
+  their own account (refused by the API, and the screen never offers it), accounts are never
+  deleted so the audit trail holds, and `staff.created` and `staff.updated` record every change.
+  Delegate accounts are not shown: they come from the event's registrations.
 - Daily reflections (task of 2026-10-31): one optional questionnaire per
   event date, never created automatically. Tables `reflection_activity` (one per event date:
   title, status draft/published/closed, opens/closes, published/closed times),

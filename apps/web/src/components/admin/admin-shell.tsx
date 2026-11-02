@@ -20,18 +20,8 @@ const NAV: ConsoleNavItem[] = [
   },
   { href: '/admin/events', label: 'Events', icon: <CalendarDaysIcon aria-hidden="true" /> },
   { href: '/admin/imports', label: 'Imports', icon: <UploadIcon aria-hidden="true" /> },
-  {
-    href: '/admin/staff',
-    label: 'Staff',
-    icon: <ShieldCheckIcon aria-hidden="true" />,
-    soon: true,
-  },
-  {
-    href: '/admin/reports',
-    label: 'Reports',
-    icon: <BarChart3Icon aria-hidden="true" />,
-    soon: true,
-  },
+  { href: '/admin/staff', label: 'Staff', icon: <ShieldCheckIcon aria-hidden="true" /> },
+  { href: '/admin/reports', label: 'Reports', icon: <BarChart3Icon aria-hidden="true" /> },
 ];
 
 interface AdminShellProps {

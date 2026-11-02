@@ -39,10 +39,11 @@ describe('SiteHeader', () => {
     expect(screen.getAllByRole('button', { name: /sign out/i }).length).toBeGreaterThan(0);
   });
 
-  it('keeps the ITTEC event bar for visitors', () => {
-    render(<SiteHeader session={null} />);
-    expect(screen.getByAltText(/ITTEC/i)).toBeTruthy();
-    expect(screen.queryByRole('link', { name: /home$/ })?.getAttribute('href')).toBe('/');
-    expect(screen.getByRole('link', { name: 'Sign in' })).toBeTruthy();
+  it('carries no event branding at all: one logo, the organiser’s', () => {
+    render(<SiteHeader session={session('admin')} />);
+    expect(screen.queryByAltText(/ITTEC/i)).toBeNull();
+    expect(screen.getAllByRole('img')).toHaveLength(1);
+    // The visitor bar went with the landing page: the root layout gives a visitor no chrome.
+    expect(screen.queryByRole('link', { name: 'Sign in' })).toBeNull();
   });
 });

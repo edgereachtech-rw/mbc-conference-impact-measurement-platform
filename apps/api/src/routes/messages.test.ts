@@ -198,7 +198,7 @@ describe.skipIf(!hasDatabase)('messages to delegates (E2-14)', () => {
     expect(toAda?.html).toContain('Dear Ada Active</h1>');
     expect(toAda?.html).toContain('<strong>you</strong>');
     expect(toAda?.html).toContain('href="https://example.com/agenda"');
-    expect(toAda?.html).toContain('logo-white.png'); // event layout around the body
+    expect(toAda?.html).toContain('mbryan-consulting-email.png'); // branded layout around the body
     expect(toAda?.text).toContain('Dear Ada Active');
     expect(toAda?.text).toContain('- bring your badge');
     expect(toAda?.text).toContain('agenda (https://example.com/agenda)');

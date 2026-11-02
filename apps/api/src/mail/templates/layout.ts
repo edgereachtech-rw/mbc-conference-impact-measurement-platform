@@ -17,7 +17,7 @@ export interface EmailBranding {
   organiser: string;
   /** Address shown in the footer and used as Reply-To. */
   contactEmail: string;
-  /** Absolute origin of the web app; the logo is loaded from `${appUrl}/brand/logo-white.png`. */
+  /** Absolute origin of the web app; the logo is loaded from `${appUrl}/brand/mbryan-consulting-email.png`. */
   appUrl: string;
   /** Optional venue + dates line for the footer. */
   footerLine?: string;
@@ -93,7 +93,9 @@ export function renderLayout(branding: EmailBranding, content: EmailContent): Re
   assertAbsoluteUrl(branding.appUrl, 'branding.appUrl');
   if (content.button) assertAbsoluteUrl(content.button.url, 'button.url');
 
-  const logoUrl = `${branding.appUrl.replace(/\/+$/, '')}/brand/logo-white.png`;
+  // The organiser logo on a white panel: the header is navy and the mark is dark ink. PNG,
+  // because several email clients (Outlook among them) do not render WEBP.
+  const logoUrl = `${branding.appUrl.replace(/\/+$/, '')}/brand/mbryan-consulting-email.png`;
   const title = escapeHtml(content.title);
   const paragraphsHtml =
     content.body?.html ??
@@ -155,7 +157,7 @@ export function renderLayout(branding: EmailBranding, content: EmailContent): Re
         <table role="presentation" width="600" cellspacing="0" cellpadding="0" border="0" class="container" style="width:600px;max-width:100%;">
           <tr>
             <td bgcolor="${colours.navy}" style="background-color:${colours.navy};padding:20px 24px;border-radius:16px 16px 0 0;" align="left">
-              <img src="${escapeHtml(logoUrl)}" width="150" height="76" alt="${escapeHtml(branding.eventName)}" style="display:block;width:150px;height:auto;border:0;">
+              <img src="${escapeHtml(logoUrl)}" width="150" height="108" alt="${escapeHtml(branding.organiser)}" style="display:block;width:150px;height:auto;border:0;">
             </td>
           </tr>
           <tr>

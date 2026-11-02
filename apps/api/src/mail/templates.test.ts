@@ -45,7 +45,9 @@ describe('email templates', () => {
       for (const href of links) {
         expect(href).toMatch(/^(https?:\/\/|mailto:)/);
       }
-      expect(email.html).toContain('src="https://impact.example.com/brand/logo-white.png"');
+      expect(email.html).toContain(
+        'src="https://impact.example.com/brand/mbryan-consulting-email.png"',
+      );
     }
   });
 

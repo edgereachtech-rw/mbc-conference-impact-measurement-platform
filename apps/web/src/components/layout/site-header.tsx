@@ -1,14 +1,12 @@
 import Link from 'next/link';
 
 import { SignOutButton } from '@/components/auth/sign-out-button';
-import { IttecLogo, MbryanLogo } from '@/components/brand/logo';
-import { buttonVariants } from '@/components/ui/button';
-import { event } from '@/config/event';
+import { MbryanLogo } from '@/components/brand/logo';
 import type { ShellSession } from '@/lib/session';
-import { cn } from '@/lib/utils';
 
 interface SiteHeaderProps {
-  session: ShellSession | null;
+  /** Only signed-in areas carry chrome; the root layout renders nothing for a visitor. */
+  session: ShellSession;
 }
 
 /**
@@ -16,8 +14,7 @@ interface SiteHeaderProps {
  * event bar. Sign-out revokes the server session through the API (E3-3).
  */
 export function SiteHeader({ session }: SiteHeaderProps) {
-  if (session) return <ConsoleHeader session={session} />;
-  return <EventHeader />;
+  return <ConsoleHeader session={session} />;
 }
 
 /** Two-letter monogram for the avatar: initials of the first and last word of the name. */
@@ -76,31 +73,6 @@ function ConsoleHeader({ session }: { session: ShellSession }) {
             variant="text"
             className="hidden border-white/40 bg-transparent text-white hover:bg-white/10 hover:text-white md:inline-flex"
           />
-        </div>
-      </div>
-    </header>
-  );
-}
-
-/** Public top bar in the ITTEC event identity, for visitors who are not signed in. */
-function EventHeader() {
-  return (
-    <header className="sticky top-0 z-40 border-b border-brand-line bg-surface-raised shadow-card">
-      <div className="mx-auto flex h-14 max-w-6xl items-center gap-2 px-gutter md:h-16 md:gap-4 md:px-6">
-        <Link
-          href="/"
-          aria-label={`${event.shortName} home`}
-          className="flex min-h-tap shrink-0 items-center rounded-sm"
-        >
-          <IttecLogo priority />
-        </Link>
-        <div className="ml-auto flex min-w-0 items-center gap-2 md:gap-3">
-          <Link
-            href="/signin"
-            className={cn(buttonVariants({ variant: 'cta', size: 'sm' }), 'text-sm')}
-          >
-            Sign in
-          </Link>
         </div>
       </div>
     </header>

@@ -68,9 +68,14 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
     <html lang="en" className={cn(poppins.variable, oswald.variable, inter.variable)}>
       <body className="flex min-h-dvh flex-col">
         {apiBase ? <meta name="mbc-api-base" content={apiBase} /> : null}
-        <SiteHeader session={session} />
+        {/*
+          Chrome belongs to the signed-in areas. Signing in is the front door (2026-11-02) and
+          stands on its own: no bar above it and no footer below it, so nothing competes with the
+          one thing there is to do.
+        */}
+        {session ? <SiteHeader session={session} /> : null}
         <div className="flex flex-1 flex-col">{children}</div>
-        <SiteFooter session={session} />
+        {session ? <SiteFooter /> : null}
         <Toaster position="top-center" />
       </body>
     </html>

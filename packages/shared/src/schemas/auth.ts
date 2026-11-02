@@ -106,6 +106,7 @@ export type DelegatePatch = z.infer<typeof delegatePatchSchema>;
 
 /** Staff roles an admin may create or assign (E3-9: no analyst or support role). */
 export const staffRoles = ['admin', 'speaker'] as const;
+export type StaffRole = (typeof staffRoles)[number];
 
 export const staffCreateSchema = z.object({
   email: emailSchema,

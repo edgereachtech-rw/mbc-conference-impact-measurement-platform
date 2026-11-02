@@ -204,10 +204,15 @@ scrolls with the page:
 
 | File                                           | Source                                                                | Notes                                                                                     |
 | ---------------------------------------------- | --------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `apps/web/public/brand/ittec2026.png`          | `https://itteconference.mbryanconsultinggroup.com/assets/img/ittec2026.png` | 160x81 px, unmodified. Small: soft above 160px wide and in the 512px PWA icon           |
-| `apps/web/public/brand/logo-white.png`         | `https://itteconference.mbryanconsultinggroup.com/assets/img/logo-white.png` | 334x169 px, white event logo for dark surfaces (footer)                                 |
 | `apps/web/public/brand/mbryan-consulting.webp` | `https://mbryanconsultinggroup.com/assets/img/MBC.webp` (header logo and favicon of the corporate site, alt "M.Bryan Consulting Limited") | 436x300 px, unmodified. Replaces the 203x103 copy previously taken from the conference site's sponsors folder |
-| `apps/web/public/icons/*.png`                  | Generated from `ittec2026.png` with sharp                             | 192, 512, 512 maskable (20% safe zone), 180 Apple touch, 32 favicon                       |
+| `apps/web/public/brand/mbryan-consulting-email.png` | Generated from `mbryan-consulting.webp` with sharp | 300x216 px, the mark on a white panel, rendered at 150px wide in email. The email header is navy and the mark is dark ink, and PNG because several clients (Outlook among them) do not render WEBP |
+| `apps/web/public/icons/*.png`                  | Generated from `mbryan-consulting.webp` with sharp                    | 192, 512, 512 maskable (mark inside the 64% safe zone), 180 Apple touch, 32 favicon; the mark fitted on white                       |
+
+**The ITTEC 2026 event logo was removed on 2026-11-02** (`brand/ittec2026.png`, `brand/logo-white.png`
+and the icons generated from them). The platform is built for reuse by future M.Bryan events, so it
+carries the organiser's mark only: in the top bar, on the sign-in page, in the footer, in the app
+icons and in every email. The ITTEC event's own name still appears as event data, which is what it
+is; nothing in the interface is tied to one event's branding any more.
 
 ## Unverified or open
 

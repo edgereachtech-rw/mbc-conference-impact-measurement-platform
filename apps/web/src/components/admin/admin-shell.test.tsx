@@ -11,7 +11,7 @@ afterEach(() => {
 });
 
 describe('AdminShell', () => {
-  it('marks the current section, links only the screens that exist, and shows who is signed in', () => {
+  it('marks the current section, links every screen, and shows who is signed in', () => {
     pathname = '/admin/imports';
     render(
       <AdminShell displayName="Olu Admin" role="admin">
@@ -27,10 +27,14 @@ describe('AdminShell', () => {
     expect(
       within(sidebar).getByRole('link', { name: 'Overview' }).getAttribute('aria-current'),
     ).toBeNull();
-    expect(within(sidebar).queryByRole('link', { name: 'Staff' })).toBeNull(); // coming soon: not a link
-    expect(
-      within(sidebar).getByText('Staff').closest('[aria-disabled]')?.getAttribute('aria-disabled'),
-    ).toBe('true');
+    // Staff and Reports are built now, so both are real links rather than "coming soon" labels.
+    expect(within(sidebar).getByRole('link', { name: 'Staff' }).getAttribute('href')).toBe(
+      '/admin/staff',
+    );
+    expect(within(sidebar).getByRole('link', { name: 'Reports' }).getAttribute('href')).toBe(
+      '/admin/reports',
+    );
+    expect(within(sidebar).queryByText('Staff')?.closest('[aria-disabled]')).toBeNull();
     expect(screen.getByText('Olu Admin')).toBeTruthy();
     expect(screen.getByText('content')).toBeTruthy();
   });
