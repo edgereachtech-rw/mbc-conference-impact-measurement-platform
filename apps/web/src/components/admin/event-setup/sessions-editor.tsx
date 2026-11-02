@@ -12,7 +12,7 @@ import { useId, useState } from 'react';
 import { consoleButton, StatusPill } from '@/components/console/page';
 import { NativeSelect } from '@/components/imports/native-select';
 import { apiFetch } from '@/lib/api';
-import { formatDateLong, scheduleOf, sessionTypeLabels } from '@/lib/events';
+import { formatDateLong, scheduleOf, sessionTypeLabels, submissionSessionId } from '@/lib/events';
 import { describeError } from '@/lib/imports';
 
 interface SessionsEditorProps {
@@ -31,7 +31,6 @@ interface SessionDraft {
   speaker: string;
   capacity: string;
   feedbackEnabled: boolean;
-  transferPlanningFinal: boolean;
 }
 
 function draftOf(session: EventSessionView | null, defaultDate: string): SessionDraft {
@@ -46,7 +45,6 @@ function draftOf(session: EventSessionView | null, defaultDate: string): Session
     speaker: session?.speaker ?? '',
     capacity: session?.capacity ? String(session.capacity) : '',
     feedbackEnabled: session?.feedbackEnabled ?? false,
-    transferPlanningFinal: session?.transferPlanningFinal ?? false,
   };
 }
 
@@ -63,6 +61,7 @@ export function SessionsEditor({ event, onSaved }: SessionsEditorProps) {
   const [failure, setFailure] = useState<{ message: string; requestId?: string } | null>(null);
   const id = useId();
   const schedule = scheduleOf(event);
+  const submissionId = submissionSessionId(event);
   const readOnly = event.status === 'archived';
 
   function startAdd(date?: string) {
@@ -312,16 +311,12 @@ export function SessionsEditor({ event, onSaved }: SessionsEditorProps) {
               Collect session-specific feedback
             </label>
             {editing.draft.sessionType === 'transfer_planning' ? (
-              <label className="flex min-h-tap items-center gap-2 text-sm text-corp-ink md:col-span-2">
-                <input
-                  type="checkbox"
-                  checked={editing.draft.transferPlanningFinal}
-                  onChange={(e) => set('transferPlanningFinal', e.target.checked)}
-                  className="size-5 accent-corp-green"
-                />
-                Final Transfer Planning session: delegates submit their plan from the start of this
-                session (otherwise the last planning session counts)
-              </label>
+              <p className="text-sm text-corp-muted md:col-span-2">
+                Delegates submit their transfer plan from the start of the{' '}
+                <strong className="font-semibold text-corp-ink">last</strong> Transfer Planning
+                session of the event, and save drafts freely before then. Nothing to set: add the
+                sessions and the latest one is where plans are submitted.
+              </p>
             ) : null}
             <div className="space-y-1 md:col-span-2">
               <label htmlFor={`${id}-description`} className="text-sm font-semibold text-corp-ink">
@@ -398,8 +393,8 @@ export function SessionsEditor({ event, onSaved }: SessionsEditorProps) {
                         {s.feedbackEnabled ? (
                           <StatusPill tone="positive">Feedback</StatusPill>
                         ) : null}
-                        {s.transferPlanningFinal ? (
-                          <StatusPill tone="positive">Final planning session</StatusPill>
+                        {s.id === submissionId ? (
+                          <StatusPill tone="positive">Plans submitted here</StatusPill>
                         ) : null}
                       </div>
                       <p className="text-xs text-corp-muted">

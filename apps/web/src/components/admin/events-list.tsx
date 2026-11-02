@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react';
 import { apiFetch } from '@/lib/api';
 import { describeError, type EventSummary } from '@/lib/imports';
 
-import { pageSlice, StatusPill, TablePagination } from '@/components/console/page';
+import { consoleButton, pageSlice, StatusPill, TablePagination } from '@/components/console/page';
 
 type State =
   | { kind: 'loading' }
@@ -74,9 +74,15 @@ export function EventsList() {
   }
   if (state.events.length === 0) {
     return (
-      <p className="rounded-none border border-dashed border-corp-line bg-white p-5 text-sm text-corp-text">
-        No events exist yet. Conference setup arrives with Increment 2; the seed creates ITTEC 2026.
-      </p>
+      <div className="rounded-none border border-dashed border-corp-line bg-white p-5 text-sm text-corp-text">
+        <p>No event has been set up yet. Create one to open registrations and assessments.</p>
+        <Link
+          href="/admin/events/new"
+          className={`${consoleButton({ variant: 'accent', size: 'sm' })} mt-3`}
+        >
+          Create an event
+        </Link>
+      </div>
     );
   }
 

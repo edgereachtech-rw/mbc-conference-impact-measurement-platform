@@ -236,7 +236,12 @@ export function transferPlanRouter({ prisma, config, middleware, now }: Deps): R
     return { principal, delegate };
   }
 
-  /** The event's Transfer Planning sessions in schedule order; the final one is flagged or last. */
+  /**
+   * The event's Transfer Planning sessions in schedule order. The last one is where plans are
+   * submitted: there is nothing to configure, because a session later in the schedule than the
+   * closing one would be the wrong answer anyway (decision of 2026-11-02, which removed the
+   * per-session flag that could say otherwise and could be set on two sessions at once).
+   */
   async function planningSessions(eventId: string) {
     const rows = await prisma().eventSession.findMany({
       where: { eventId, sessionType: 'transfer_planning' },
@@ -245,15 +250,12 @@ export function transferPlanRouter({ prisma, config, middleware, now }: Deps): R
         title: true,
         startTime: true,
         endTime: true,
-        transferPlanningFinal: true,
         eventDate: { select: { date: true } },
       },
     });
     const sorted = rows
       .map((s) => ({ ...s, date: isoDate(s.eventDate.date)! }))
       .sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime));
-    const flagged = sorted.findIndex((s) => s.transferPlanningFinal);
-    const finalIndex = flagged >= 0 ? flagged : sorted.length - 1;
     return sorted.map((s, i) => ({
       id: s.id,
       date: s.date,
@@ -261,11 +263,11 @@ export function transferPlanRouter({ prisma, config, middleware, now }: Deps): R
       startTime: s.startTime,
       endTime: s.endTime,
       order: i + 1,
-      isFinal: i === finalIndex,
+      isFinal: i === sorted.length - 1,
     }));
   }
 
-  /** Submission opens with the start of the designated final session (any time when none is scheduled). */
+  /** Submission opens with the start of the last planning session (any time when none is scheduled). */
   async function canSubmitAt(eventId: string, timezone: string, at: Date) {
     const sessions = await planningSessions(eventId);
     const final = sessions.find((s) => s.isFinal);

@@ -57,7 +57,11 @@ describe('EventsList', () => {
   it('shows the empty and error states', async () => {
     stub(200, { events: [] });
     const { unmount } = render(<EventsList />);
-    expect(await screen.findByText(/No events exist yet/)).toBeTruthy();
+    expect(await screen.findByText(/No event has been set up yet/)).toBeTruthy();
+    // The empty state offers the way out of it.
+    expect(screen.getByRole('link', { name: 'Create an event' }).getAttribute('href')).toBe(
+      '/admin/events/new',
+    );
     unmount();
     vi.unstubAllGlobals();
     stub(403, { error: { code: 'forbidden', message: 'no', requestId: 'r1' } });

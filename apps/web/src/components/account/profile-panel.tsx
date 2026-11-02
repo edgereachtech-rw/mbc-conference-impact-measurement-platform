@@ -4,6 +4,7 @@ import type { MyEvent } from '@mbc/shared';
 import Link from 'next/link';
 
 import { StatusPill } from '@/components/admin/page-header';
+import { consoleButton } from '@/components/console/page';
 import { attendanceFormatLabel, capacityLabel, formatDay, formatEventDates } from '@/lib/my-events';
 
 import { MyEventsStatus, useMyEvents } from './my-events';
@@ -119,6 +120,17 @@ export function ProfilePanel({ displayName, email, initialEvents, contactEmail }
           Spotted a mistake in a registration? The organisers correct it for you; every change is
           recorded.
         </p>
+      </section>
+
+      <section aria-label="Your information" className="space-y-2">
+        <h2 className="font-corporate text-h3 text-corp-ink">How your information is used</h2>
+        <p className="text-sm text-corp-muted">
+          The privacy notice you accepted when you first signed in: what M.Bryan records, what it is
+          used for and who it may be shared with.
+        </p>
+        <Link href="/privacy" className={consoleButton({ variant: 'secondary', size: 'sm' })}>
+          Read the privacy notice
+        </Link>
       </section>
     </div>
   );

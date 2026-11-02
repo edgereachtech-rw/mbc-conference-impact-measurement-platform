@@ -1,4 +1,5 @@
 import { safeReturnPath } from '@mbc/shared';
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { MbryanLogo } from '@/components/brand/logo';
@@ -99,6 +100,11 @@ export function SignInPanel({ safeNext, initialEmail, invite }: SignInState & { 
           <p>
             For registered delegates and the conference team. Nothing is created for an email that
             is not registered.
+          </p>
+          <p>
+            <Link href="/privacy" className="font-semibold text-corp-green-text hover:underline">
+              How we use your information
+            </Link>
           </p>
           <p className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
             <a

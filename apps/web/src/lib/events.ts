@@ -142,6 +142,18 @@ export function formatDateShort(iso: string): string {
 }
 
 /** The schedule: every selected date in order, each with its sessions in time order (brief 5). */
+/**
+ * Where delegates submit their transfer plan: the last Transfer Planning session in the
+ * schedule. Not a setting (decision of 2026-11-02); the API resolves it the same way, and this is
+ * only so the schedule can show which session it is.
+ */
+export function submissionSessionId(event: Pick<EventDetail, 'sessions'>): string | null {
+  const planning = event.sessions
+    .filter((s) => s.sessionType === 'transfer_planning')
+    .sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime));
+  return planning.at(-1)?.id ?? null;
+}
+
 export function scheduleOf(
   event: Pick<EventDetail, 'dates' | 'sessions'>,
 ): Array<{ date: string; eventDateId: string; sessions: EventSessionView[] }> {

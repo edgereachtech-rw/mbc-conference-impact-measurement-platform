@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 
 import { SessionFeedbackForm } from '@/components/account/session-feedback-form';
 import { AdminContent, AdminPageHeader } from '@/components/admin/page-header';
+import { consentGate } from '@/lib/consent-server';
 import { getSession } from '@/lib/session';
 
 export const metadata: Metadata = { title: 'Session feedback' };
@@ -21,6 +22,8 @@ export default async function SessionFeedbackPage({
   const safe = /^[A-Za-z0-9_-]{8,40}$/.test(code) ? code : '';
   const session = await getSession();
   if (!session) redirect(`/signin?next=${encodeURIComponent(`/feedback/${safe}`)}`);
+  const gate = await consentGate(`/feedback/${safe}`);
+  if (gate) redirect(gate);
 
   return (
     <>

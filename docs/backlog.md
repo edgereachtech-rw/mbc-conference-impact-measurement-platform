@@ -55,6 +55,27 @@
 
 Decisions 2026-10-29: the analyst role and the support role are not part of the approved requirements and are not replaced; M.Bryan acts as admin, as in the original requirements. The Increment 1 code contains both roles. They are retired in Increment 1b under the explicit plan in design note D8 item 7: existing accounts with those roles are reviewed and revoked or migrated under written authorisation, never silently promoted to admin.
 
+### User-experience review of 2026-11-03
+
+The platform was reviewed screen by screen on the two questions the product owner asked: how easily
+someone gets in and gets going, and how visible the information is to them. Individual screens held
+up — real loading, error and retry states, one console frame, 44px targets, correct ARIA on tabs and
+forms, plain English. The faults were at the edges, and all of them were fixed the same day:
+
+| What was wrong | Why it mattered |
+| --- | --- |
+| No privacy notice anywhere, and nothing wrote `consent_record` outside tests | E3-7 is P0 and a delegate was handing over job title, organisation, reflections and plans with nothing shown about how it is used. Fixed; see E3-7 |
+| "Attendance: not recorded" written into the event card, and "–" into the dashboard tile | A delegate who attended read "not recorded" on the dashboard and "Attended" one tap deeper: two screens of one platform contradicting each other on the thing most checked at the event |
+| 11 admin tabs in local state | A refresh lost your place, a tab could not be bookmarked or shared, and Back left the event entirely |
+| Tab rows that scroll with no affordance | At 360px two and a half of eleven tabs are visible; the rest were invisible rather than off-screen |
+| No `loading.tsx` with every route server-rendered | Between tap and paint the old page stayed on screen, which reads as a dead button on conference wifi, so people tap again |
+| No `error.tsx` | A failed server render dropped someone onto Next's own page: no branding, no way back, no support address |
+| No skip link | Up to five sidebar items plus the bar were tabbed through before the content, on every page |
+| `TableScroll` a bare overflow div | No scroll hint, no accessible name, and not focusable, so a keyboard could not scroll a wide table at all |
+| Identity hidden below 420px | On the 360px phone the platform is built for, nobody could see who they were signed in as |
+| "Increment 2", "the seed", "arrives with Increment 3" in admin copy | Developer language in front of the client, and no longer true |
+| Dashboard showed counts, never the next action | Everything a delegate owed was two taps away behind the right tab |
+
 **Decision 2026-11-02 (product owner): downloads are PDF, Word and Excel.** Reports downloaded as
 Markdown and tables as CSV; both were asked to be changed to the formats a client opens. Reports now
 download as PDF or Word (.docx) and their figures as Excel (.xlsx), and every other CSV download has
@@ -196,7 +217,7 @@ Revised 2026-10-29: there is no sign-up. "First sign-in" replaces "sign-up" wher
 | E3-4 | As a delegate, I want to recover access | Same flow as sign-in; support contact (`conference@mbryanconsultinggroup.com`) shown; to change my email I contact the M.Bryan admin, who uses the identity email-change workflow (E2-12) | P0 | 1 |
 | E3-5 | As a delegate, I want to stay signed in on my phone during the conference | Session lasts the conference week; deep links (e.g. session QR) sign me in then return me to the target page | P0 | 1 |
 | E3-6 | As the platform, I enforce role-based access on the server | Delegates access only their own records; admin permissions as in section 2 (analyst and support roles removed 2026-10-29, speaker 2026-11-02; retirement plan in D8 item 7). Every API route has an authorisation check and test | P0 | 1 |
-| E3-7 | As a delegate, I want to see privacy information at first sign-in | Section 6.4 text displayed and acceptance recorded with timestamp and version | P0 | 1b |
+| E3-7 | As a delegate, I want to see privacy information at first sign-in | **Done 2026-11-03.** The approved section 6.4 wording is held in `consent_notice`, versioned, and seeded as `v1`; `/privacy` shows it and is public, so it is readable before signing in and linked from the sign-in page, the profile and the footer. A delegate cannot reach any of their records until they accept the version in force (the delegate area and the feedback QR page are both gated); acceptance is recorded per eligible registration with its timestamp and version, is idempotent, and is audited as `consent.accepted` with the version and record count only. A newer version in force asks again; an acceptance of an older version is refused with 409 `notice_changed`. Staff are never asked, and a notice that cannot be loaded never locks anyone out | P0 | 1b |
 | E3-8 | As a delegate, I want to be told about both reminders and evaluation follow-ups | First-sign-in and reminder screens explain the difference (S4 note: reminders are chosen by me; evaluation follow-ups are scheduled by M.Bryan) | P0 | 4 |
 | E3-9 | As an M.Bryan admin, I want to manage user accounts for staff | Create admin users by email address alone; admin is the only staff role (no analyst, support or speaker); deactivate and reactivate; an admin cannot deactivate their own account; an account on a retired role is deactivated, never promoted; audit | P0 | 1 |
 | E3-10 | As a delegate, I want one My Events view of every event I am part of | After sign-in, one list of all events linked to my identity with, per event, name and dates, registration status, attendance only when an attendance record exists (otherwise "not recorded"), assessments and outcomes, transfer plan, follow-ups and other impact records as they become available; served by `GET /me/events` and `GET /me/events/:eventId` with server-side authorisation on every record (D7) | P0 | 1c |
@@ -585,8 +606,14 @@ Required changes when Increment 1b is implemented (impact only, not done here):
 
 Implementation note (2026-10-31): E9-1 to E9-12 are built (see README, "Individual Transfer
 Plans"). Decisions taken: submission opens with the **start** of the final Transfer Planning
-session (the session flagged as final in the schedule, else the last one; any time when the
-event has none), so a plan is never locked by a session end time. Submission requires at least one
+session, so a plan is never locked by a session end time. **Which session is final is not a
+setting (decision of 2026-11-02):** it is the last Transfer Planning session in the schedule, by
+date then start time, and submission is open at any time when the event has none. The per-session
+"final" flag that could name an earlier session was removed, with its column: an admin had nothing
+to configure and no way to open submission early by mistake, which the flag allowed (it was not
+exclusive, so two ticked sessions meant the earlier one won). Where a planning session is scheduled
+after the closing one — a drop-in clinic, say — it is given a different session type, or the
+schedule is ordered so the closing session is last. Submission requires at least one
 action with an action text; the "required at submission" list proposed under A5 is **not**
 enforced until confirmed (OQ: confirm which of Q-TP-1, 2, 4, 5, 6, 13, 14 are mandatory). Every
 save after submission keeps the plan's status; version 1 as submitted is kept as a snapshot and

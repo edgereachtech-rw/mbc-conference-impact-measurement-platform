@@ -644,7 +644,6 @@ model EventSession {
   speaker               String?
   capacity              Int?
   /// The designated completion session for Transfer Planning (else the last such session).
-  transferPlanningFinal Boolean     @default(false) @map("transfer_planning_final")
   /// Session-specific feedback, configured separately and linked to this session (brief 6.2).
   feedbackEnabled       Boolean     @default(false) @map("feedback_enabled")
   /// Short code in the session's feedback link and QR code; set when feedback is enabled.
@@ -1371,6 +1370,27 @@ model Invitation {
 
   @@index([delegateId])
   @@map("invitation")
+}
+
+/// The privacy notice itself (E3-7, brief section 6.4), versioned and held as data rather than
+/// in code: the wording names the organiser and the event, and M.Bryan revises it without a
+/// deploy. The current notice is the latest row whose effectiveFrom has passed; a delegate's
+/// acceptance records the version they were shown, so an older acceptance is never mistaken for
+/// agreement to a newer wording.
+model ConsentNotice {
+  id            String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  document      ConsentDocument @default(privacy)
+  version       String
+  title         String
+  headline      String
+  /// Paragraphs separated by a blank line; rendered as text, never as HTML.
+  body          String
+  effectiveFrom DateTime        @map("effective_from") @db.Timestamptz(3)
+  createdAt     DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@unique([document, version])
+  @@index([document, effectiveFrom])
+  @@map("consent_notice")
 }
 
 model ConsentRecord {

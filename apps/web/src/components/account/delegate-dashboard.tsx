@@ -7,6 +7,7 @@ import { StatTile } from '@/components/admin/page-header';
 import { formatEventDates, shortEventName } from '@/lib/my-events';
 
 import { EventCardGrid } from './event-cards';
+import { NextStepsPanel } from './next-steps-panel';
 import { MyEventsStatus, useMyEvents } from './my-events';
 
 interface Props {
@@ -27,6 +28,10 @@ export function DelegateDashboard({ contactEmail, initialEvents }: Props) {
   const past = events.filter((e) => e.period === 'past');
   const nextEvent = upcoming[0] ?? null;
   const ordered = [...upcoming, ...past];
+  // Attendance is only ever shown from an attendance record (E6); pending means none exists yet.
+  const recorded = events.filter((e) => e.attendance.status !== 'pending');
+  // The event the delegate is most likely acting on: the next one, else the most recent.
+  const focus = nextEvent ?? past[0] ?? null;
 
   return (
     <div className="space-y-8">
@@ -42,9 +47,20 @@ export function DelegateDashboard({ contactEmail, initialEvents }: Props) {
           />
           <StatTile label="Upcoming" value={upcoming.length} hint="events you are registered for" />
           <StatTile label="Past" value={past.length} hint="events you took part in" />
-          <StatTile label="Attendance" value="–" hint="recorded at the conference" />
+          <StatTile
+            label="Attendance"
+            value={recorded.length}
+            hint={
+              recorded.length > 0
+                ? 'events with your attendance recorded'
+                : 'recorded by the organisers at the event'
+            }
+            tone={recorded.length > 0 ? 'positive' : 'neutral'}
+          />
         </section>
       ) : null}
+
+      {focus ? <NextStepsPanel event={focus} /> : null}
 
       <section aria-labelledby="dashboard-events-title" className="space-y-3">
         <div className="flex items-baseline justify-between">

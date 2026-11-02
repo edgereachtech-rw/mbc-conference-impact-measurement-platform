@@ -63,7 +63,6 @@ export function eventDetailOf(event: EventRow): EventDetail {
       speaker: s.speaker,
       capacity: s.capacity,
       feedbackEnabled: s.feedbackEnabled,
-      transferPlanningFinal: s.transferPlanningFinal,
     }))
     .sort(
       (a, b) =>

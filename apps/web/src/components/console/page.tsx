@@ -148,8 +148,27 @@ export function Panel({ children, className, flush = false }: PanelProps) {
 }
 
 /** Tables scroll sideways inside their panel on phones instead of breaking the page width. */
-export function TableScroll({ children }: { children: ReactNode }) {
-  return <div className="overflow-x-auto">{children}</div>;
+export function TableScroll({ children, label }: { children: ReactNode; label?: string }) {
+  // A scrollable region is focusable and named, so a keyboard can scroll it and a screen reader
+  // announces it; the inset shadow is the only hint a phone gets that there is more to the right.
+  return (
+    <div
+      role="region"
+      aria-label={label ?? 'Table, scrolls sideways'}
+      tabIndex={0}
+      className="overflow-x-auto [scrollbar-width:thin] [&:not(:hover)]:[scrollbar-color:theme(colors.corp-line)_transparent] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-corp-accent"
+      style={{
+        backgroundImage:
+          'linear-gradient(to right, transparent, transparent), linear-gradient(to left, rgba(17,24,39,0.08), transparent)',
+        backgroundPosition: 'left center, right center',
+        backgroundRepeat: 'no-repeat',
+        backgroundSize: '1px 100%, 14px 100%',
+        backgroundAttachment: 'local, scroll',
+      }}
+    >
+      {children}
+    </div>
+  );
 }
 
 interface StatTileProps {

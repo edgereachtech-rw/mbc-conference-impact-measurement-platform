@@ -10,7 +10,7 @@ export default function NotFound() {
     <PageContainer size="narrow" className="flex flex-1 flex-col justify-center gap-6">
       <div className="space-y-3">
         <p className="font-display text-eyebrow tracking-[0.14em] text-brand-secondary uppercase">
-          {event.shortName}
+          Conference Impact Measurement Platform
         </p>
         <h1 className="text-h1">We could not find that page</h1>
         <p className="max-w-prose text-base text-brand-muted">
@@ -22,8 +22,8 @@ export default function NotFound() {
         <Link href="/account" className={buttonVariants({ variant: 'cta' })}>
           Go to my dashboard
         </Link>
-        <Link href="/" className={buttonVariants({ variant: 'outline' })}>
-          Back to home
+        <Link href="/signin" className={buttonVariants({ variant: 'outline' })}>
+          Sign in
         </Link>
       </div>
       <p className="text-sm text-brand-muted">

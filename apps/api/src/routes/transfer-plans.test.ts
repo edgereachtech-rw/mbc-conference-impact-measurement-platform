@@ -251,14 +251,13 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
     expect(foreign.status).toBe(422);
   });
 
-  it('opens submission with the designated final planning session, snapshots it and stays editable', async () => {
+  it('opens submission with the last planning session, snapshots it and stays editable', async () => {
     const s1 = await call('post', `/events/${eventId}/sessions`, {
       title: 'Transfer Planning 1',
       date: '2026-11-12',
       startTime: '16:00',
       endTime: '17:00',
       sessionType: 'transfer_planning',
-      transferPlanningFinal: true, // a mistake, corrected below
     });
     expect(s1.status, s1.text).toBe(201);
     const s2 = await call('post', `/events/${eventId}/sessions`, {
@@ -275,8 +274,8 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
     const secondId = s2.body.event.sessions.find(
       (s: { title: string }) => s.title === 'Transfer Planning 2',
     ).id;
-    await call('patch', `/events/${eventId}/sessions/${firstId}`, { transferPlanningFinal: false });
-    await call('patch', `/events/${eventId}/sessions/${secondId}`, { transferPlanningFinal: true });
+    // No setting chooses the closing session: the later one in the schedule is it.
+    expect(firstId).not.toBe(secondId);
 
     await tick('2026-11-10T10:00:00.000Z');
     const early = await call('get', `/me/events/${eventId}/transfer-plan`, undefined, cookies.dee);

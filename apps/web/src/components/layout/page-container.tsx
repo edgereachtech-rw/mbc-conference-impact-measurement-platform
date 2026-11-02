@@ -15,11 +15,14 @@ const sizes = {
   wide: 'max-w-6xl',
 } as const;
 
-/** Horizontal page frame: 16px gutters on phones, centred column on larger screens. */
+/**
+ * Horizontal page frame: 16px gutters on phones, centred column on larger screens. A div, not a
+ * main: the root layout owns the single main landmark that the skip link targets.
+ */
 export function PageContainer({ children, size = 'default', className }: PageContainerProps) {
   return (
-    <main className={cn('mx-auto w-full px-gutter py-6 md:px-6 md:py-10', sizes[size], className)}>
+    <div className={cn('mx-auto w-full px-gutter py-6 md:px-6 md:py-10', sizes[size], className)}>
       {children}
-    </main>
+    </div>
   );
 }

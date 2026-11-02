@@ -13,6 +13,7 @@ import { ReportWorkspace } from '@/components/admin/reports/report-workspace';
 import { TransferPlansManager } from '@/components/admin/transfer-plans/transfer-plans-manager';
 import { consoleButton } from '@/components/console/page';
 import { apiFetch } from '@/lib/api';
+import { TabStrip, useTabState } from '@/components/console/tabs';
 import { describeError } from '@/lib/imports';
 
 import { AssessmentConfig } from './assessment-config';
@@ -34,7 +35,7 @@ type Tab =
   | 'transfer-plans'
   | 'reports';
 
-const TABS: Array<{ id: Tab; label: string }> = [
+const TABS: ReadonlyArray<{ id: Tab; label: string }> = [
   { id: 'profile', label: 'Event profile' },
   { id: 'dates', label: 'Event dates' },
   { id: 'sessions', label: 'Sessions and schedule' },
@@ -47,6 +48,8 @@ const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'transfer-plans', label: 'Transfer plans' },
   { id: 'reports', label: 'Reports' },
 ];
+
+const TAB_IDS = TABS.map((t) => t.id);
 
 interface EventSettingsProps {
   initialEvent: EventDetail;
@@ -61,7 +64,8 @@ interface EventSettingsProps {
 export function EventSettings({ initialEvent }: EventSettingsProps) {
   const router = useRouter();
   const [event, setEvent] = useState(initialEvent);
-  const [tab, setTab] = useState<Tab>('profile');
+  // In the address bar, so a refresh or a shared link lands on the same section (2026-11-03).
+  const [tab, setTab] = useTabState<Tab>(TAB_IDS, 'profile');
   const [dates, setDates] = useState(() => event.dates.map((d) => d.date));
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<{ message: string; requestId?: string } | null>(null);
@@ -112,30 +116,7 @@ export function EventSettings({ initialEvent }: EventSettingsProps) {
 
   return (
     <section aria-label="Event configuration" className="space-y-4">
-      <div
-        role="tablist"
-        aria-label="Event sections"
-        className="flex gap-1 overflow-x-auto border-b border-corp-line"
-      >
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            role="tab"
-            id={`tab-${t.id}`}
-            aria-selected={tab === t.id}
-            aria-controls={`panel-${t.id}`}
-            onClick={() => setTab(t.id)}
-            className={
-              tab === t.id
-                ? '-mb-px shrink-0 border-b-2 border-corp-accent px-3 py-3 text-sm font-semibold whitespace-nowrap text-corp-ink'
-                : 'shrink-0 border-b-2 border-transparent px-3 py-3 text-sm font-medium whitespace-nowrap text-corp-muted hover:text-corp-ink'
-            }
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+      <TabStrip label="Event sections" tabs={TABS} current={tab} onChoose={setTab} />
       {readOnly ? (
         <p
           role="note"

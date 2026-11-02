@@ -12,8 +12,8 @@ export default async function HomePage({ searchParams }: HomePageProps) {
   const { next, invite } = await searchParams;
   const state = await resolveSignIn({ next, invite });
   return (
-    <main className="flex flex-1 flex-col">
+    <div className="flex flex-1 flex-col">
       <SignInPanel {...state} invite={invite} />
-    </main>
+    </div>
   );
 }

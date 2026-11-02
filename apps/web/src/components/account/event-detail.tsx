@@ -1,9 +1,9 @@
 'use client';
 
 import { overallAttendanceLabels, type MyEvent } from '@mbc/shared';
-import { useState, useSyncExternalStore } from 'react';
 
 import { StatusPill } from '@/components/admin/page-header';
+import { TabStrip, useTabState } from '@/components/console/tabs';
 import {
   attendanceFormatLabel,
   capacityLabel,
@@ -40,12 +40,7 @@ const TABS: Array<{ id: Tab; label: string; hint: string }> = [
   { id: 'transfer-plan', label: 'Transfer plan', hint: 'What you will do differently' },
 ];
 
-const tabIds = new Set<string>(TABS.map((t) => t.id));
-const subscribeHash = (onChange: () => void) => {
-  window.addEventListener('hashchange', onChange);
-  return () => window.removeEventListener('hashchange', onChange);
-};
-const readHash = () => window.location.hash.replace(/^#/, '');
+const TAB_IDS = TABS.map((t) => t.id);
 
 /**
  * One event as the API serves it to the delegate, arranged in tabs: the overview (event facts,
@@ -54,44 +49,18 @@ const readHash = () => window.location.hash.replace(/^#/, '');
  * so a reload keeps it. The attendance line only ever comes from an attendance record.
  */
 export function EventDetail({ event, contactEmail }: { event: MyEvent; contactEmail: string }) {
-  const hash = useSyncExternalStore(subscribeHash, readHash, () => '');
-  const [chosen, setChosen] = useState<Tab | null>(null);
-  const tab: Tab = chosen ?? (tabIds.has(hash) ? (hash as Tab) : 'overview');
-
-  function choose(next: Tab) {
-    setChosen(next);
-    if (typeof window !== 'undefined') {
-      window.history.replaceState(null, '', next === 'overview' ? '#' : `#${next}`);
-    }
-  }
+  const [tab, choose] = useTabState<Tab>(TAB_IDS, 'overview');
 
   const current = TABS.find((t) => t.id === tab)!;
   return (
     <div className="space-y-5">
-      <div
-        role="tablist"
-        aria-label="Your records for this event"
-        className="-mx-gutter flex gap-1 overflow-x-auto border-b border-corp-line px-gutter md:mx-0 md:px-0"
-      >
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            role="tab"
-            id={`tab-${t.id}`}
-            aria-selected={tab === t.id}
-            aria-controls={`panel-${t.id}`}
-            onClick={() => choose(t.id)}
-            className={
-              tab === t.id
-                ? '-mb-px shrink-0 border-b-2 border-corp-accent px-3 py-3 text-sm font-semibold whitespace-nowrap text-corp-ink'
-                : 'shrink-0 border-b-2 border-transparent px-3 py-3 text-sm font-medium whitespace-nowrap text-corp-muted hover:text-corp-ink'
-            }
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+      <TabStrip
+        label="Your records for this event"
+        tabs={TABS}
+        current={tab}
+        onChoose={choose}
+        bleed
+      />
       <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`} className="space-y-6">
         {tab !== 'overview' ? (
           <div>

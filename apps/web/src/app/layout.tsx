@@ -73,8 +73,20 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
           stands on its own: no bar above it and no footer below it, so nothing competes with the
           one thing there is to do.
         */}
+        {/*
+          First stop for a keyboard or screen reader: without it the sidebar and the top bar are
+          tabbed through on every page before the content (task of 2026-11-03).
+        */}
+        <a
+          href="#main"
+          className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:bg-white focus:px-4 focus:py-2 focus:font-semibold focus:text-corp-ink focus:shadow-elevated focus:outline-2 focus:outline-offset-2 focus:outline-corp-accent"
+        >
+          Skip to content
+        </a>
         {session ? <SiteHeader session={session} /> : null}
-        <div className="flex flex-1 flex-col">{children}</div>
+        <main id="main" className="flex flex-1 flex-col">
+          {children}
+        </main>
         {session ? <SiteFooter /> : null}
         <Toaster position="top-center" />
       </body>

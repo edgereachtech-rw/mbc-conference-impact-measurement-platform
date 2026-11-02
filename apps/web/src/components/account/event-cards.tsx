@@ -1,4 +1,4 @@
-import type { MyEvent } from '@mbc/shared';
+import { overallAttendanceLabels, type MyEvent } from '@mbc/shared';
 import { ArrowRightIcon, CalendarDaysIcon, MapPinIcon } from 'lucide-react';
 import Link from 'next/link';
 
@@ -54,7 +54,12 @@ export function EventCard({ event }: { event: MyEvent }) {
       </dl>
       <div className="mt-auto flex items-center justify-between gap-3 border-t border-corp-line pt-3 text-xs text-corp-muted">
         <span>
-          Attendance: <span className="font-semibold text-corp-ink">not recorded</span>
+          Attendance:{' '}
+          <span className="font-semibold text-corp-ink">
+            {event.attendance.status === 'pending'
+              ? 'not recorded'
+              : overallAttendanceLabels[event.attendance.status]}
+          </span>
         </span>
         <Link
           href={`/account/events/${event.id}`}

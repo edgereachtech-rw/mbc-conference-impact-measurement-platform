@@ -1,4 +1,5 @@
 import { MailIcon } from 'lucide-react';
+import Link from 'next/link';
 
 import { event } from '@/config/event';
 
@@ -20,6 +21,9 @@ export function SiteFooter() {
             <MailIcon className="size-3.5" aria-hidden="true" />
             {event.contactEmail}
           </a>
+          <Link href="/privacy" className="font-semibold text-corp-green-text hover:underline">
+            Privacy
+          </Link>
           <span>{event.copyright}</span>
         </p>
       </div>

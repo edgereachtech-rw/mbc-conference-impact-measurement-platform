@@ -32,3 +32,5 @@ export * from './schemas/feedback.js';
 export * from './schemas/transfer-plans.js';
 export * from './schemas/reports.js';
 export * from './schemas/exports.js';
+export * from './schemas/consent.js';
+export * from './schemas/next-steps.js';

@@ -455,9 +455,16 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   and value) is seeded once as the ITTEC event's own data by `db:seed`.
 - Individual Transfer Plans (task of 2026-10-31; backlog E9, E10, E12-8 to 12-12): one
   continuous plan per delegate per event, created on first access, saved as a draft in any
-  session of type Transfer Planning, submitted once the designated final planning session has
-  started (the session flagged "final" in Sessions and schedule, else the last one; at any time
-  when none is scheduled), then kept open after the event for changes and progress. Tables:
+  session of type Transfer Planning, submitted once the **last** planning session in the schedule
+  has started (at any time when the event has none), then kept open after the event for changes and
+  progress. Which session that is has no setting (task of 2026-11-02): it is the latest
+  Transfer Planning session by date and start time, worked out from the schedule. A per-session
+  "final" flag used to override it; it was removed because a session later than the closing one
+  would be the wrong answer anyway, and because nothing stopped an admin ticking it on two
+  sessions, where the earlier one won and submission opened a day early. The schedule marks the
+  resolved session "Plans submitted here" so an admin can see it, and `submissionSessionId` in
+  `apps/web/src/lib/events.ts` resolves it the same way the API does. Migration
+  `20261102100000_drop_transfer_planning_final` drops the column. Tables:
   `transfer_plan` (status draft/submitted, `version` bumped on every save so a save carrying an
   older version is refused with 409 `stale_plan`, `submitted_snapshot` = the plan exactly as
   submitted, reminder frequency none/weekly/fortnightly/monthly, start date, next reminder
@@ -614,6 +621,49 @@ measures | evidence }`, the list replaced with ids kept; own actions only, 404 o
   their own account (refused by the API, and the screen never offers it), accounts are never
   deleted so the audit trail holds, and `staff.created` and `staff.updated` record every change.
   Delegate accounts are not shown: they come from the event's registrations.
+- Privacy notice and consent (backlog E3-7, brief section 6.4; built 2026-11-03). The approved
+  wording is **data, not code**: migration `20261103100000_consent_notice` creates
+  `consent_notice` and seeds version `v1`, so M.Bryan revises it without a deploy and an
+  acceptance always names the version that was on screen. `GET /consent/privacy` is public, which
+  is the point — a delegate reads it before handing anything over, from a link on the sign-in page.
+  `GET /me/consent` reports whether the current version is outstanding; `POST /me/consent` records
+  it for **every** eligible registration of that identity (so each event's record carries the
+  consent covering it), is idempotent, and audits `consent.accepted` with the version and the
+  number of records — never the wording and never personal data. Whether someone has consented is
+  asked of the current version directly, not inferred from their most recent acceptance. The
+  delegate area and the feedback QR page are gated by `consentGate`, so nothing of theirs opens
+  until they accept; staff are never asked. `/privacy` stays readable afterwards and is linked from
+  the sign-in page, the profile and the footer. A notice that cannot be loaded never locks anyone
+  out.
+- The delegate dashboard says what to do next (task of 2026-11-03). `nextSteps` in the shared
+  package reads a journey as a to-do list — an open or half-finished assessment, a date still open
+  for check-in, missing reflections, feedback owed, a plan not started or not submitted — in
+  journey order, and only what the delegate can act on now. The dashboard calls the journey of the
+  event in focus (the next one, else the most recent) and links each item straight to the tab that
+  holds it. Before this, everything a delegate owed was two taps away behind the right tab.
+- Attendance is reported from the record, everywhere (fixed 2026-11-03). The event card and the
+  dashboard tile had "not recorded" and "–" written into them, so a delegate who attended read
+  "not recorded" on the dashboard and "Attended" one tap deeper. Both now read
+  `attendance.status`; `pending` still reads "not recorded", which is what it means.
+- Route-level loading and error boundaries (task of 2026-11-03). Every route is server-rendered on
+  demand, so without a `loading` boundary a tap on a slow connection left the old page on screen
+  and read as a dead button. `loading.tsx` and `error.tsx` at the root and in both areas render
+  `RouteLoading` and `RouteError` from `components/layout/route-states.tsx`: a skeleton of the page
+  frame, and a branded failure with a retry, a way back and the support address instead of Next's
+  own error page.
+- One tab strip for the screens with many sections (`components/console/tabs.tsx`, 2026-11-03).
+  It fades at whichever edge has more to show (eleven tabs on the admin event page, two and a half
+  of them visible on a phone), moves with Left, Right, Home and End as `role="tablist"` promises,
+  keeps only the selected tab in the tab order, and `useTabState` holds the choice in the address
+  bar — so a refresh, a bookmark and a shared link all land on the same section. The admin event
+  page kept its tab in local state and lost your place on every refresh.
+- Smaller accessibility and clarity fixes of 2026-11-03: a skip-to-content link and a single
+  `main` landmark in the root layout (the sidebar and bar were tabbed through on every page);
+  `TableScroll` is a focusable, named region with an edge shadow, so a keyboard can scroll a wide
+  table and a phone can see that it scrolls; the signed-in name shows from 360px, not 420px; empty
+  states speak to admins rather than naming increments and the seed, and offer "Create an event";
+  the 404 carries the platform name rather than the pilot event's; the unreachable speaker panel on
+  `/admin` and the unused `coming-soon` component are gone.
 - Downloads are PDF, Word and Excel (task of 2026-11-02). Reports used to download as Markdown
   and CSV, and every table as CSV; what an admin sends to a client now opens in the tools clients
   use. One module does the writing, `apps/api/src/export/`:

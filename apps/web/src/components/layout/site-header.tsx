@@ -56,11 +56,11 @@ function ConsoleHeader({ session }: { session: ShellSession }) {
             >
               {initialsOf(session.displayName)}
             </span>
-            <div className="hidden min-w-0 flex-col leading-tight min-[420px]:flex">
-              <p className="max-w-[12rem] truncate text-sm font-semibold text-white md:max-w-xs">
+            <div className="flex min-w-0 flex-col leading-tight">
+              <p className="max-w-[7.5rem] truncate text-sm font-semibold text-white min-[420px]:max-w-[12rem] md:max-w-xs">
                 {session.displayName}
               </p>
-              <span className="text-[0.65rem] font-semibold tracking-[0.14em] text-corp-accent uppercase">
+              <span className="hidden text-[0.65rem] font-semibold tracking-[0.14em] text-corp-accent uppercase min-[420px]:inline">
                 {session.role}
               </span>
             </div>

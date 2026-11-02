@@ -14,6 +14,8 @@ import {
   type ImportRunSummary,
 } from '@/lib/imports';
 
+import { consoleButton } from '@/components/console/page';
+
 import { StatTile, StatusPill } from './page-header';
 
 type State =
@@ -156,10 +158,15 @@ export function AdminOverview() {
             <span className="text-xs text-corp-muted">{events.length} total</span>
           </div>
           {events.length === 0 ? (
-            <p className="rounded-none border border-dashed border-corp-line bg-white p-5 text-sm text-corp-text">
-              No events exist yet. Conference setup arrives with Increment 2; the seed creates ITTEC
-              2026.
-            </p>
+            <div className="rounded-none border border-dashed border-corp-line bg-white p-5 text-sm text-corp-text">
+              <p>No event has been set up yet. Create one to open registrations and assessments.</p>
+              <Link
+                href="/admin/events/new"
+                className={`${consoleButton({ variant: 'accent', size: 'sm' })} mt-3`}
+              >
+                Create an event
+              </Link>
+            </div>
           ) : (
             <div className="overflow-hidden rounded-none border border-corp-line bg-white">
               <table className="w-full text-sm" aria-label="Events">
