@@ -44,6 +44,36 @@ describe('nextSteps', () => {
     expect(steps[0]!.tab).toBe('assessments');
   });
 
+  it('names each follow-up wave, and keeps them apart', () => {
+    const steps = nextSteps(
+      journey({
+        assessments: [
+          {
+            stage: 'follow_up',
+            wave: 1,
+            waveLabel: '30-day follow-up',
+            state: 'draft',
+            submittedAt: null,
+          },
+          {
+            stage: 'follow_up',
+            wave: 2,
+            waveLabel: '60-day follow-up',
+            state: 'open',
+            submittedAt: null,
+          },
+        ],
+      }),
+    );
+    expect(steps.map((x) => x.label)).toEqual([
+      'Finish your 30-day follow-up',
+      'Complete your 60-day follow-up',
+      'Start your transfer plan',
+    ]);
+    // Distinct keys: two open waves are two things to do, not one row drawn twice.
+    expect(new Set(steps.map((x) => x.key)).size).toBe(steps.length);
+  });
+
   it('leaves out a stage that is not the delegate to act on', () => {
     const steps = nextSteps(
       journey({

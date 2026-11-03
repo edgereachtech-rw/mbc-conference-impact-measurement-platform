@@ -32,9 +32,11 @@ export function nextSteps(journey: Journey): NextStep[] {
 
   for (const a of journey.assessments) {
     if (a.state !== 'open' && a.state !== 'draft') continue;
-    const name = `${assessmentStageNames[a.stage]} assessment`;
+    // A wave has its own name, and its own place in the list: three open follow-ups must not
+    // read as three copies of "your follow-up assessment".
+    const name = a.waveLabel || `${assessmentStageNames[a.stage]} assessment`;
     steps.push({
-      key: `assessment:${a.stage}`,
+      key: `assessment:${a.stage}:${a.wave}`,
       label: a.state === 'draft' ? `Finish your ${name}` : `Complete your ${name}`,
       hint:
         a.state === 'draft'
