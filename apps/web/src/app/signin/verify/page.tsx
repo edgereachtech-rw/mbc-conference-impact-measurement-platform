@@ -19,7 +19,7 @@ export default async function VerifyPage({ searchParams }: VerifyPageProps) {
           <MbryanLogo priority className="mx-auto h-16 w-auto md:h-20" />
           <div className="space-y-2">
             <p className="font-display text-eyebrow tracking-[0.14em] text-brand-secondary uppercase">
-              Conference Impact Measurement Platform
+              {platform.shortName}
             </p>
             <h1 className="text-h1">Signing you in</h1>
           </div>

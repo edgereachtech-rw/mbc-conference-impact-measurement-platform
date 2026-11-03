@@ -56,7 +56,11 @@ describe('ReportsPage', () => {
     // The draft event is listed first, but the page opens on the one that is running.
     expect((await screen.findByLabelText('Event')) as HTMLSelectElement).toBeTruthy();
     expect((screen.getByLabelText('Event') as HTMLSelectElement).value).toBe('active-1');
-    expect(calls.some((u) => u === '/api/v1/events/active-1/reports/dashboard')).toBe(true);
+    // The report is fetched by an effect that runs after the event list arrives, so this waits
+    // for the request rather than assuming it has already gone out when the select appears.
+    await vi.waitFor(() =>
+      expect(calls.some((u) => u === '/api/v1/events/active-1/reports/dashboard')).toBe(true),
+    );
 
     const tabs = await screen.findByRole('tablist', { name: 'Report' });
     expect(tabs.textContent).toMatch(/Event dashboard/);

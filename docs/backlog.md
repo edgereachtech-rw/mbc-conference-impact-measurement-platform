@@ -1,4 +1,4 @@
-# M.Bryan Conference Impact Measurement Platform: Product Backlog
+# MBC Impact Intelligence Platform: Product Backlog
 
 **First pilot:** ITTEC 2026 (November 12-13, 2026, physical and virtual)
 **Production go-live:** Saturday, November 7, 2026

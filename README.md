@@ -1,4 +1,4 @@
-# M.Bryan Conference Impact Measurement Platform
+# MBC Impact Intelligence Platform
 
 A platform that follows each conference delegate from a pre-conference baseline, through the
 conference days (check-ins, session feedback, Transfer Planning), to 30/60/90/180-day follow-ups,
@@ -44,7 +44,7 @@ pnpm dev              # runs shared (tsc --watch), api (tsx watch) and web (next
 To run the worker (needs PostgreSQL reachable at `DATABASE_URL`):
 
 ```bash
-pnpm --filter @mbc/api dev:worker   # logs "Conference Impact Measurement Platform worker ready"
+pnpm --filter @mbc/api dev:worker   # logs "MBC Impact Intelligence Platform worker ready"
 ```
 
 ### Quality checks

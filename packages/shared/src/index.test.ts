@@ -4,7 +4,7 @@ import { APP_NAME, healthResponseSchema } from './index.js';
 
 describe('@mbc/shared', () => {
   it('exports the application name', () => {
-    expect(APP_NAME).toBe('Conference Impact Measurement Platform');
+    expect(APP_NAME).toBe('MBC Impact Intelligence Platform');
   });
 
   it('accepts a valid health response', () => {

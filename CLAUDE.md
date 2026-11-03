@@ -1,4 +1,4 @@
-# ITTEC Conference Impact Measurement Platform
+# MBC Impact Intelligence Platform
 
 Platform that follows each ITTEC 2026 delegate from pre-conference baseline through the conference,
 Transfer Planning and 30/60/90/180-day follow-ups. First pilot: ITTEC 2026, November 12-13, 2026,

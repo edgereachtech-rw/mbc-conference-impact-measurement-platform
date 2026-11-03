@@ -158,7 +158,7 @@ export function SignInForm({ next, supportEmail, initialEmail }: SignInFormProps
           aria-describedby={error ? `${ids.email}-error` : `${ids.email}-hint`}
         />
         <p id={`${ids.email}-hint`} className="text-sm text-brand-muted">
-          No password needed. We email you a secure link and a one-time code.
+          Use the address your registration was made with.
         </p>
       </div>
       {error ? (

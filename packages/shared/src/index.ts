@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 /** Human-readable platform name. Event-specific names live in the database, not in code. */
-export const APP_NAME = 'Conference Impact Measurement Platform';
+export const APP_NAME = 'MBC Impact Intelligence Platform';
 
 /**
  * Placeholder schema proving the shared package wiring.

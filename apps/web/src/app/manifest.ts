@@ -6,7 +6,7 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     name: platform.company.name,
     short_name: platform.company.name,
-    description: `${platform.company.name}: delegate impact measurement`,
+    description: `${platform.shortName} by ${platform.company.name}`,
     start_url: '/',
     scope: '/',
     display: 'standalone',

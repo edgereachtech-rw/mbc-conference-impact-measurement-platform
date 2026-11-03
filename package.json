@@ -2,7 +2,7 @@
   "name": "mbc-impact-platform",
   "version": "0.1.0",
   "private": true,
-  "description": "M.Bryan Conference Impact Measurement Platform monorepo",
+  "description": "MBC Impact Intelligence Platform monorepo",
   "packageManager": "pnpm@10.18.3",
   "engines": {
     "node": ">=24.0.0",

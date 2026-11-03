@@ -9,9 +9,7 @@ describe('SiteFooter', () => {
   it('shows the organiser, the support address and the copyright', () => {
     render(<SiteFooter />);
 
-    expect(
-      screen.getByText(`${platform.company.name} · Conference Impact Measurement Platform`),
-    ).toBeTruthy();
+    expect(screen.getByText(`${platform.company.name} · ${platform.shortName}`)).toBeTruthy();
     expect(screen.getByRole('link', { name: platform.contactEmail }).getAttribute('href')).toBe(
       `mailto:${platform.contactEmail}`,
     );

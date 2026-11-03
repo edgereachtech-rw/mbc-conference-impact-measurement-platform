@@ -12,7 +12,9 @@ export function SiteFooter() {
   return (
     <footer className="console-area mt-auto border-t border-corp-line bg-white font-corporate text-corp-muted">
       <div className="mx-auto flex max-w-6xl flex-col gap-2 px-gutter py-4 text-xs sm:flex-row sm:items-center sm:justify-between md:px-6">
-        <p>{platform.company.name} · Conference Impact Measurement Platform</p>
+        <p>
+          {platform.company.name} · {platform.shortName}
+        </p>
         <p className="flex flex-wrap items-center gap-x-4 gap-y-1">
           <a
             href={`mailto:${platform.contactEmail}`}
