@@ -1,5 +1,5 @@
 import { Badge } from '@/components/ui/badge';
-import { participationModeLabel, type ParticipationMode } from '@/config/event';
+import { participationModeLabel, type ParticipationMode } from '@/config/platform';
 import { cn } from '@/lib/utils';
 
 interface ParticipationBadgeProps {

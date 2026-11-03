@@ -2,7 +2,7 @@ import { cookies } from 'next/headers';
 
 import type { SessionUser } from '@mbc/shared';
 
-import type { ParticipationMode } from '@/config/event';
+import type { ParticipationMode } from '@/config/platform';
 
 import { apiInternalUrl } from './api';
 

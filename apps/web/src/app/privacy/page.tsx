@@ -4,7 +4,7 @@ import Link from 'next/link';
 
 import { PrivacyNotice } from '@/components/account/privacy-notice';
 import { consoleButton, PageContent, PageHeader, StatePanel } from '@/components/console/page';
-import { event } from '@/config/event';
+import { platform } from '@/config/platform';
 import { loadConsentState, loadPrivacyNotice } from '@/lib/consent-server';
 import { getSession } from '@/lib/session';
 
@@ -41,13 +41,13 @@ export default async function PrivacyPage({
             notice={notice}
             state={session ? state : null}
             next={target}
-            timezone={event.timezone}
+            timezone={platform.timezone}
           />
         ) : (
           <StatePanel
             kind="error"
             title="The privacy notice could not be loaded"
-            description={`Please try again. If it keeps failing, write to ${event.contactEmail} and we will send it to you.`}
+            description={`Please try again. If it keeps failing, write to ${platform.contactEmail} and we will send it to you.`}
             action={
               <Link href="/privacy" className={consoleButton({ variant: 'secondary' })}>
                 Try again
@@ -61,7 +61,7 @@ export default async function PrivacyPage({
               {session ? 'Continue' : 'Go to sign-in'}
             </Link>
             <a
-              href={`mailto:${event.contactEmail}`}
+              href={`mailto:${platform.contactEmail}`}
               className={consoleButton({ variant: 'secondary' })}
             >
               Ask about your information

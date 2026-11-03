@@ -5,7 +5,7 @@ import type { ReactNode } from 'react';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { SiteHeader } from '@/components/layout/site-header';
 import { Toaster } from '@/components/ui/sonner';
-import { event } from '@/config/event';
+import { platform } from '@/config/platform';
 import { apiPublicUrl } from '@/lib/api';
 import { getSession } from '@/lib/session';
 import { cn } from '@/lib/utils';
@@ -36,11 +36,11 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   title: {
-    default: event.shortName,
-    template: `%s | ${event.shortName}`,
+    default: platform.shortName,
+    template: `%s | ${platform.shortName}`,
   },
-  description: `${event.fullName}. ${event.tagline}.`,
-  applicationName: event.shortName,
+  description: `${platform.fullName}.`,
+  applicationName: platform.shortName,
   manifest: '/manifest.webmanifest',
   icons: {
     icon: [{ url: '/icons/favicon-32.png', sizes: '32x32', type: 'image/png' }],
@@ -48,7 +48,7 @@ export const metadata: Metadata = {
   },
   appleWebApp: {
     capable: true,
-    title: event.shortName,
+    title: platform.shortName,
     statusBarStyle: 'default',
   },
 };

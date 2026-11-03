@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 
 import { AdminContent, AdminPageHeader } from '@/components/admin/page-header';
 import { StaffManager } from '@/components/admin/staff/staff-manager';
-import { event } from '@/config/event';
+import { platform } from '@/config/platform';
 import { importsAccess } from '@/lib/imports-access';
 import { getSession } from '@/lib/session';
 
@@ -26,7 +26,7 @@ export default async function StaffPage() {
       />
       <AdminContent>
         {access === 'allowed' && session ? (
-          <StaffManager currentUserId={session.user.id} timezone={event.timezone} />
+          <StaffManager currentUserId={session.user.id} timezone={platform.timezone} />
         ) : (
           <div role="alert" className="rounded-none border border-corp-line bg-white p-5">
             <p className="font-semibold text-corp-ink">Admins only</p>

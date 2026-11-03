@@ -1,6 +1,6 @@
 import { siFacebook, siInstagram, siX, siYoutube } from 'simple-icons';
 
-import type { SocialNetwork } from '@/config/event';
+import type { SocialNetwork } from '@/config/platform';
 
 /**
  * Brand glyphs for the footer. Four come from simple-icons; LinkedIn is not distributed by

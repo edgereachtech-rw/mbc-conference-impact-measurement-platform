@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation';
 
 import { ProfilePanel } from '@/components/account/profile-panel';
 import { AdminContent, AdminPageHeader } from '@/components/admin/page-header';
-import { event } from '@/config/event';
+import { platform } from '@/config/platform';
 import { loadMyEvents } from '@/lib/my-events-server';
 import { getSession } from '@/lib/session';
 
@@ -29,7 +29,7 @@ export default async function ProfilePage() {
           displayName={session.displayName}
           email={session.user.email}
           initialEvents={initialEvents}
-          contactEmail={event.contactEmail}
+          contactEmail={platform.contactEmail}
         />
       </AdminContent>
     </>

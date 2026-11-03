@@ -48,7 +48,7 @@ export function brandingForEvent(
 /** Used when no database is configured (local preview, CI): generic, clearly non-event branding. */
 export function genericBranding(config: MailConfig): EmailBranding {
   return {
-    eventName: process.env.MAIL_EVENT_NAME ?? 'Conference Impact Platform',
+    eventName: process.env.MAIL_EVENT_NAME ?? 'MBC Impact Intelligence Platform',
     organiser: organiser(),
     contactEmail: config.contactEmail,
     appUrl: config.appUrl,

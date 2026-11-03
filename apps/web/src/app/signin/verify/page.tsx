@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 
 import { MbryanLogo } from '@/components/brand/logo';
 import { VerifyLink } from '@/components/auth/verify-link';
-import { event } from '@/config/event';
+import { platform } from '@/config/platform';
 
 export const metadata: Metadata = { title: 'Signing in', robots: { index: false } };
 
@@ -25,7 +25,7 @@ export default async function VerifyPage({ searchParams }: VerifyPageProps) {
           </div>
         </div>
         <div className="rounded-lg border border-brand-line bg-card p-5 shadow-card md:p-6">
-          <VerifyLink token={token ?? null} supportEmail={event.contactEmail} />
+          <VerifyLink token={token ?? null} supportEmail={platform.contactEmail} />
         </div>
       </div>
     </div>

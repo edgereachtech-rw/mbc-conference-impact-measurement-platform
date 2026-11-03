@@ -686,7 +686,7 @@ export function QuestionBuilder({
                 htmlFor={`${id}-section-marking`}
                 className="text-sm font-semibold text-corp-ink"
               >
-                Marking
+                Questions Type
               </label>
               <NativeSelect
                 id={`${id}-section-marking`}

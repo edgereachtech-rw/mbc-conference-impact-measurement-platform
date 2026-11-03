@@ -2,7 +2,7 @@ import Link from 'next/link';
 
 import { PageContainer } from '@/components/layout/page-container';
 import { buttonVariants } from '@/components/ui/button';
-import { event } from '@/config/event';
+import { platform } from '@/config/platform';
 
 /** Branded 404 for any route or record that does not exist or is not the visitor's to see. */
 export default function NotFound() {
@@ -29,10 +29,10 @@ export default function NotFound() {
       <p className="text-sm text-brand-muted">
         Need help? Write to{' '}
         <a
-          href={`mailto:${event.contactEmail}`}
+          href={`mailto:${platform.contactEmail}`}
           className="font-medium text-brand-primary underline"
         >
-          {event.contactEmail}
+          {platform.contactEmail}
         </a>
         .
       </p>

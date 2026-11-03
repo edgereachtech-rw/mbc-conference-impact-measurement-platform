@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation';
 
 import { EventDetail } from '@/components/account/event-detail';
 import { AdminContent, AdminPageHeader } from '@/components/admin/page-header';
-import { event as eventConfig } from '@/config/event';
+import { platform as plarformConfig } from '@/config/platform';
 import { countdownLine } from '@/lib/my-events';
 import { loadMyEvent } from '@/lib/my-events-server';
 
@@ -30,7 +30,7 @@ export default async function MyEventPage({ params }: { params: Promise<{ eventI
         description={event.theme ? `${event.theme}. ${countdownLine(event)}` : countdownLine(event)}
       />
       <AdminContent>
-        <EventDetail event={event} contactEmail={eventConfig.contactEmail} />
+        <EventDetail event={event} contactEmail={plarformConfig.contactEmail} />
       </AdminContent>
     </>
   );

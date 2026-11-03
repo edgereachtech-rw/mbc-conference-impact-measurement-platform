@@ -4,7 +4,7 @@ import { AlertTriangleIcon, Loader2Icon, RotateCcwIcon } from 'lucide-react';
 import Link from 'next/link';
 
 import { consoleButton } from '@/components/console/page';
-import { event } from '@/config/event';
+import { platform } from '@/config/platform';
 
 /**
  * What a page shows while it is being rendered, and what it shows when that fails (task of
@@ -80,10 +80,10 @@ export function RouteError({
           </div>
           <p className="mt-4 border-t border-corp-line pt-3 text-xs text-corp-muted">
             <a
-              href={`mailto:${event.contactEmail}`}
+              href={`mailto:${platform.contactEmail}`}
               className="font-semibold text-corp-green-text hover:underline"
             >
-              {event.contactEmail}
+              {platform.contactEmail}
             </a>
           </p>
         </div>

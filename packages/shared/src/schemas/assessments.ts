@@ -110,7 +110,7 @@ export const sectionMarkings = ['none', 'scored', 'knowledge'] as const;
 export type SectionMarking = (typeof sectionMarkings)[number];
 
 export const sectionMarkingLabels: Record<SectionMarking, string> = {
-  none: 'Not marked',
+  none: 'Text',
   scored: 'Rating scale (averaged in reports)',
   knowledge: 'Knowledge questions (one correct answer, 1 point each)',
 };

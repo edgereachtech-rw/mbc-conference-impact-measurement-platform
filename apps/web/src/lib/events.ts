@@ -80,7 +80,8 @@ export const stagePurpose: Record<AssessmentStage, string> = {
 
 export const stageAreas: Record<AssessmentStage, string[]> = {
   pre_conference: [
-    'Existing knowledge and understanding',
+    'Existing knowledge',
+    'Existing understanding',
     'Current confidence level',
     'Expectations and learning objectives',
     'Relevant professional experience',
@@ -133,7 +134,7 @@ export function formatDateLong(iso: string): string {
 
 /** "10 Nov 2026" for a YYYY-MM-DD date. */
 export function formatDateShort(iso: string): string {
-  return new Date(`${iso}T00:00:00.000Z`).toLocaleDateString('en-GB', {
+  return new Date(`${iso}`).toLocaleDateString('en-GB', {
     day: 'numeric',
     month: 'short',
     year: 'numeric',

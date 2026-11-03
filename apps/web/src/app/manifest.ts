@@ -1,12 +1,12 @@
 import type { MetadataRoute } from 'next';
 
-import { event } from '@/config/event';
+import { platform } from '@/config/platform';
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: event.shortName,
-    short_name: event.shortName,
-    description: `${event.fullName}: delegate impact measurement`,
+    name: platform.company.name,
+    short_name: platform.company.name,
+    description: `${platform.company.name}: delegate impact measurement`,
     start_url: '/',
     scope: '/',
     display: 'standalone',

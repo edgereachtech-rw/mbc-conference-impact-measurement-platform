@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 
 import { MyEventsScreen } from '@/components/account/my-events';
 import { AdminContent, AdminPageHeader } from '@/components/admin/page-header';
-import { event } from '@/config/event';
+import { platform } from '@/config/platform';
 import { loadMyEvents } from '@/lib/my-events-server';
 
 export const metadata: Metadata = { title: 'My events' };
@@ -18,7 +18,7 @@ export default async function MyEventsPage() {
         description="Every event you are registered for. Registration and attendance are shown separately; attendance is recorded at the conference."
       />
       <AdminContent>
-        <MyEventsScreen initialEvents={initialEvents} contactEmail={event.contactEmail} />
+        <MyEventsScreen initialEvents={initialEvents} contactEmail={platform.contactEmail} />
       </AdminContent>
     </>
   );

@@ -1,5 +1,5 @@
 /**
- * Event configuration for the current pilot.
+ * platform profile configuration.
  *
  * Interim: this file holds the ITTEC 2026 facts the shell needs (names, dates, venue, links).
  * In increment E1 (conference setup) these move to the `events` table and this file goes away.
@@ -14,26 +14,15 @@ export interface SocialLink {
   href: string;
 }
 
-export interface EventConfig {
+export interface PlatformConfig {
+  timezone: string;
+
   /** Short name used in the header, PWA manifest and badges. */
   shortName: string;
   /** Full conference name. */
   fullName: string;
   /** Conference theme as published on the website. */
-  theme: string;
-  /** Hero tagline. */
-  tagline: string;
-  /** Supporting strapline under the title. */
-  strapline: string;
-  /** Delivery format label and explanatory note. */
-  format: { label: string; note: string };
-  dates: {
-    /** ISO dates in the event timezone (inclusive). */
-    start: string;
-    end: string;
-    /** Display string used verbatim in the UI. */
-    display: string;
-  };
+
   venue: {
     name: string;
     area: string;
@@ -43,40 +32,27 @@ export interface EventConfig {
     display: string;
     mapUrl: string;
   };
-  timezone: string;
-  organiser: { name: string; url: string };
-  website: string;
+
+  company: { name: string; url: string };
   contactEmail: string;
   social: SocialLink[];
   copyright: string;
 }
 
-export const event: EventConfig = {
-  shortName: 'ITTEC 2026',
-  fullName: 'International Training Transfer Effectiveness Conference',
-  theme: 'Technology, Practice, and Impact',
-  tagline: 'Turning Training Into Measurable Impact',
-  strapline: "The World's First Training Transfer Effectiveness Conference",
-  format: {
-    label: 'Hybrid Conference',
-    note: 'Join us in Lagos or online from anywhere in the world',
-  },
-  dates: {
-    start: '2026-11-12',
-    end: '2026-11-13',
-    display: '12-13 November 2026',
-  },
+export const platform: PlatformConfig = {
+  shortName: 'MBC Impact Intelligence Platform',
+  timezone: 'Africa/Lagos',
+  fullName: 'MBC Impact Intelligence Platform',
+
   venue: {
-    name: 'Lagos Oriental Hotel',
-    area: 'Victoria Island',
+    name: 'Lekki Atlantic Layout',
+    area: 'Lekki-Epe Expressway',
     city: 'Lagos',
     country: 'Nigeria',
-    display: 'Lagos Oriental Hotel, Victoria Island, Lagos',
+    display: 'Lekki Atlantic Layout, Lekki-Epe Expressway, Lagos, Nigeria',
     mapUrl: 'https://maps.app.goo.gl/HUMV2msKMtDsB6dk9',
   },
-  timezone: 'Africa/Lagos',
-  organiser: { name: 'M.Bryan Consulting', url: 'https://mbryanconsultinggroup.com/' },
-  website: 'https://itteconference.mbryanconsultinggroup.com/',
+  company: { name: 'M.Bryan Consulting LTD', url: 'https://mbryanconsultinggroup.com/' },
   contactEmail: 'conference@mbryanconsultinggroup.com',
   social: [
     {

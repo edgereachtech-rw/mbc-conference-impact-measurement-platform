@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 
 import { AdminContent, AdminPageHeader } from '@/components/admin/page-header';
 import { ReportsPage } from '@/components/admin/reports/reports-page';
-import { event } from '@/config/event';
+import { platform } from '@/config/platform';
 import { importsAccess } from '@/lib/imports-access';
 import { getSession } from '@/lib/session';
 
@@ -27,7 +27,7 @@ export default async function AdminReportsPage() {
       />
       <AdminContent>
         {access === 'allowed' ? (
-          <ReportsPage timezone={event.timezone} />
+          <ReportsPage timezone={platform.timezone} />
         ) : (
           <div role="alert" className="rounded-none border border-corp-line bg-white p-5">
             <p className="font-semibold text-corp-ink">Admins only</p>

@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
-import { event } from '@/config/event';
+import { platform } from '@/config/platform';
 
 import { SiteFooter } from './site-footer';
 
@@ -10,12 +10,12 @@ describe('SiteFooter', () => {
     render(<SiteFooter />);
 
     expect(
-      screen.getByText(`${event.organiser.name} · Conference Impact Measurement Platform`),
+      screen.getByText(`${platform.company.name} · Conference Impact Measurement Platform`),
     ).toBeTruthy();
-    expect(screen.getByRole('link', { name: event.contactEmail }).getAttribute('href')).toBe(
-      `mailto:${event.contactEmail}`,
+    expect(screen.getByRole('link', { name: platform.contactEmail }).getAttribute('href')).toBe(
+      `mailto:${platform.contactEmail}`,
     );
-    expect(screen.getByText(event.copyright)).toBeTruthy();
+    expect(screen.getByText(platform.copyright)).toBeTruthy();
   });
 
   it('has no event footer: the venue block and social links went with the landing page', () => {

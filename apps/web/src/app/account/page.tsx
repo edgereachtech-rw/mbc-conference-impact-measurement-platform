@@ -5,7 +5,7 @@ import { redirect } from 'next/navigation';
 import { DelegateDashboard } from '@/components/account/delegate-dashboard';
 import { AdminContent, AdminPageHeader } from '@/components/admin/page-header';
 import { consoleButton } from '@/components/console/page';
-import { event } from '@/config/event';
+import { platform } from '@/config/platform';
 import { countdownLine } from '@/lib/my-events';
 import { loadMyEvents } from '@/lib/my-events-server';
 import { getSession } from '@/lib/session';
@@ -44,7 +44,7 @@ export default async function AccountPage() {
         }
       />
       <AdminContent>
-        <DelegateDashboard contactEmail={event.contactEmail} initialEvents={initialEvents} />
+        <DelegateDashboard contactEmail={platform.contactEmail} initialEvents={initialEvents} />
       </AdminContent>
     </>
   );

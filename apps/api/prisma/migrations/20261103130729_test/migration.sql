@@ -1,0 +1,2 @@
+-- RenameIndex
+ALTER INDEX "assessment_invitation_stage_delegate_kind_sequence_key" RENAME TO "assessment_invitation_stage_config_id_delegate_id_kind_sequ_key";

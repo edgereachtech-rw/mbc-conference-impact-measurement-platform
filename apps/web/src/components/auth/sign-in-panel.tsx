@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { MbryanLogo } from '@/components/brand/logo';
-import { event } from '@/config/event';
+import { platform } from '@/config/platform';
 import { apiInternalUrl } from '@/lib/api';
 import { getSession } from '@/lib/session';
 
@@ -61,17 +61,17 @@ export function SignInPanel({ safeNext, initialEmail, invite }: SignInState & { 
       <div className="w-full max-w-md space-y-6">
         <div className="space-y-5 text-center">
           <a
-            href={event.organiser.url}
+            href={platform.company.url}
             target="_blank"
             rel="noopener noreferrer"
-            aria-label={`${event.organiser.name} website (opens in a new tab)`}
+            aria-label={`${platform.company.name} website (opens in a new tab)`}
             className="inline-flex min-h-tap items-center justify-center rounded-md"
           >
             <MbryanLogo priority className="h-16 w-auto md:h-20" />
           </a>
           <div className="space-y-2">
             <p className="font-display text-eyebrow tracking-[0.14em] text-brand-secondary uppercase">
-              Conference Impact Measurement Platform
+              {platform.shortName}
             </p>
             <h1 className="text-h1">{initialEmail ? 'Activate your account' : 'Sign in'}</h1>
             <p className="text-base text-brand-muted">
@@ -91,7 +91,7 @@ export function SignInPanel({ safeNext, initialEmail, invite }: SignInState & { 
           ) : null}
           <SignInForm
             next={safeNext}
-            supportEmail={event.contactEmail}
+            supportEmail={platform.contactEmail}
             initialEmail={initialEmail ?? undefined}
           />
         </div>
@@ -108,13 +108,13 @@ export function SignInPanel({ safeNext, initialEmail, invite }: SignInState & { 
           </p>
           <p className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
             <a
-              href={`mailto:${event.contactEmail}`}
+              href={`mailto:${platform.contactEmail}`}
               className="font-semibold text-corp-green-text hover:underline"
             >
-              {event.contactEmail}
+              {platform.contactEmail}
             </a>
             <span aria-hidden="true">·</span>
-            <span>{event.copyright}</span>
+            <span>{platform.copyright}</span>
           </p>
         </div>
       </div>
