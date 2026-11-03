@@ -30,6 +30,8 @@ import {
 } from '@/lib/events';
 import { describeError } from '@/lib/imports';
 
+import { FollowUpSchedule } from './follow-up-schedule';
+
 interface AssessmentConfigProps {
   event: EventDetail;
   onSaved: (event: EventDetail) => void;
@@ -48,6 +50,7 @@ export function AssessmentConfig({ event, onSaved }: AssessmentConfigProps) {
         <span className="font-semibold text-corp-ink">{event.timezone}</span>. Attendance is
         recorded separately and never inferred from a submitted assessment.
       </p>
+      <FollowUpSchedule event={event} onSaved={onSaved} />
       <div className="grid gap-4 xl:grid-cols-3">
         {event.assessmentStages.map((stage) => (
           <StageCard

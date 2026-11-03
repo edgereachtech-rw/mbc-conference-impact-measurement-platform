@@ -27,8 +27,10 @@ describe('follow-up waves', () => {
     expect(waveLabel('follow_up', 3, 90)).toBe('90-day follow-up');
     // An interval M.Bryan chose themselves still reads as what it is.
     expect(waveLabel('follow_up', 5, 45)).toBe('45-day follow-up');
-    // Without an interval it falls back to the wave's own definition.
-    expect(waveLabel('follow_up', 2, null)).toBe('60-day follow-up');
+    // Without an interval there is no wave name: the stage keeps its plain one. An event that
+    // predates the schedule has one follow-up round, and it is not the 30-day wave.
+    expect(waveLabel('follow_up', 1, null)).toBe('');
+    expect(waveLabel('follow_up', 2, null)).toBe('');
     expect(waveLabel('pre_conference', 1, null)).toBe('');
   });
 

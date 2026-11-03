@@ -34,17 +34,18 @@ export const followUpWaveOf = (wave: number): FollowUpWave | undefined =>
   followUpWaves.find((w) => w.wave === wave);
 
 /**
- * What a wave of any stage is called. Only the follow-up stage has more than one, so the other
- * stages keep their plain name and never read "wave 1 of ...".
+ * What a wave is called, or an empty string when the stage has no wave name and should keep its
+ * plain one ("Follow-up assessment").
+ *
+ * Only an interval names a wave. A follow-up stage with no `dueAfterDays` is the single round an
+ * event has always had, not the 30-day wave of a schedule: inferring a name from the wave number
+ * alone labelled every such stage "30-day follow-up", which is what an event created before the
+ * schedule existed would wrongly have shown (fixed 2026-11-03).
  */
 export function waveLabel(stage: string, wave: number, dueAfterDays: number | null): string {
-  if (stage !== 'follow_up') return '';
-  if (dueAfterDays !== null) {
-    const known = followUpWaves.find((w) => w.dueAfterDays === dueAfterDays);
-    if (known) return known.label;
-    return `${dueAfterDays}-day follow-up`;
-  }
-  return followUpWaveOf(wave)?.label ?? `Follow-up ${wave}`;
+  if (stage !== 'follow_up' || dueAfterDays === null) return '';
+  const known = followUpWaves.find((w) => w.dueAfterDays === dueAfterDays);
+  return known ? known.label : `${dueAfterDays}-day follow-up`;
 }
 
 /**
