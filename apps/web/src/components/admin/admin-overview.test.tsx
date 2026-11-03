@@ -88,7 +88,7 @@ const RUNS = [
 afterEach(() => vi.unstubAllGlobals());
 
 describe('AdminOverview', () => {
-  it('shows KPIs, the events table, recent imports and the release gates from the API', async () => {
+  it('shows KPIs, the events table, recent imports and the platform checks from the API', async () => {
     stub({
       '/events': { status: 200, body: { events: EVENTS } },
       '/imports/status': {
@@ -107,7 +107,7 @@ describe('AdminOverview', () => {
     expect(figures.textContent).toMatch(/Events2/);
     expect(figures.textContent).toMatch(/Imports committed1/);
     expect(figures.textContent).toMatch(/Conflicts quarantined2/);
-    expect(figures.textContent).toMatch(/UploadsOn/);
+    expect(figures.textContent).toMatch(/Registration uploadsOpen/);
 
     const events = screen.getByRole('table', { name: 'Events' });
     expect(within(events).getByText('ITTEC 2026')).toBeTruthy();
@@ -123,9 +123,16 @@ describe('AdminOverview', () => {
     expect(within(recent).getByText('Committed')).toBeTruthy();
     expect(within(recent).getByText('Previewed, not confirmed')).toBeTruthy();
 
-    const gates = screen.getByRole('list', { name: 'Release gates' });
-    expect(within(gates).getByText(/no durable migration.identity_backfill report/)).toBeTruthy();
-    expect(within(gates).getByText(/Disabled until the retention policy/)).toBeTruthy();
+    // The checks report what is true. The three "release gates" were waived on 2026-10-31, so
+    // the panel no longer names an environment variable, calls the identity report a gate, or
+    // claims production imports are disabled — they are not.
+    const checks = screen.getByRole('list', { name: 'Platform checks' });
+    expect(
+      within(checks).getByText(/The last check of the delegate records has not passed/),
+    ).toBeTruthy();
+    expect(within(checks).getByText(/Imports are still open/)).toBeTruthy();
+    expect(checks.textContent).not.toMatch(/IMPORT_UPLOADS_ENABLED|OQ-22|durable/);
+    expect(screen.queryByRole('list', { name: 'Release gates' })).toBeNull();
   });
 
   it('shows a safe error for a non-admin session', async () => {

@@ -330,7 +330,7 @@ export function EventProfileForm({
             'imageUrl',
             'Logo or image (URL)',
             input('imageUrl', { type: 'url', placeholder: 'https://' }),
-            'A link to the hosted image; uploads arrive with a later increment.',
+            'Paste a link to an image that is already hosted. This field takes a web address, not a file.',
           )}
         </div>
         {field('additionalInfo', 'Additional information', textarea('additionalInfo', 3))}

@@ -12,8 +12,6 @@ export interface ConsoleNavItem {
   icon: ReactNode;
   /** Match the path exactly (the area's home) instead of by prefix. */
   exact?: boolean;
-  /** Items without a screen yet are listed, disabled, so the information architecture is visible. */
-  soon?: boolean;
 }
 
 interface ConsoleShellProps {
@@ -86,14 +84,6 @@ function NavLink({
   if (compact) {
     const base =
       'flex min-h-tap flex-col items-center justify-center gap-0.5 px-1 py-2 text-[0.7rem] font-medium [&_svg]:size-5';
-    if (item.soon) {
-      return (
-        <span className={cn(base, 'cursor-not-allowed text-corp-muted/70')} aria-disabled="true">
-          {item.icon}
-          <span>{item.label}</span>
-        </span>
-      );
-    }
     return (
       <Link
         href={item.href}
@@ -112,18 +102,6 @@ function NavLink({
   }
   const base =
     'flex min-h-tap items-center gap-3 rounded-none border-l-4 px-3 text-sm font-medium [&_svg]:size-5';
-  if (item.soon) {
-    return (
-      <span
-        className={cn(base, 'cursor-not-allowed border-transparent text-white/40')}
-        aria-disabled="true"
-        title="Coming soon"
-      >
-        {item.icon}
-        <span>{item.label}</span>
-      </span>
-    );
-  }
   return (
     <Link
       href={item.href}

@@ -37,7 +37,7 @@ const statusLabel: Record<EventSummary['status'], string> = {
 
 /**
  * Overview panels: KPIs, events, the most recent imports of the current active event, and the
- * import release gates. Everything comes from admin-only routes; the console shows what the API
+ * platform checks. Everything comes from admin-only routes; the console shows what the API
  * answers and decides nothing itself.
  */
 export function AdminOverview() {
@@ -104,25 +104,13 @@ export function AdminOverview() {
     (sum, r) => sum + (r.status === 'committed' ? (r.counts?.conflict ?? 0) : 0),
     0,
   );
-  const gates: Array<{ label: string; ok: boolean; detail: string }> = [
+  const checks: Array<{ label: string; ok: boolean; detail: string }> = [
     {
-      label: 'Uploads enabled in this environment',
-      ok: imports.uploadsEnabled,
-      detail: imports.uploadsEnabled
-        ? 'IMPORT_UPLOADS_ENABLED is set'
-        : 'IMPORT_UPLOADS_ENABLED is not set',
-    },
-    {
-      label: 'Identity migration gate',
+      label: 'Delegate records share one identity per person',
       ok: imports.migrationGatePassed,
       detail: imports.migrationGatePassed
-        ? 'Latest durable report is a pass'
-        : (imports.blockers[0] ?? 'No passing report yet'),
-    },
-    {
-      label: 'Production imports',
-      ok: false,
-      detail: 'Disabled until the retention policy (OQ-22) and release gates are approved',
+        ? 'The last check of the delegate records passed. Imports are open.'
+        : 'The last check of the delegate records has not passed. Imports are still open; tell the dev team so they can look.',
     },
   ];
 
@@ -142,10 +130,14 @@ export function AdminOverview() {
           hint="in those runs"
         />
         <StatTile
-          label="Uploads"
-          value={imports.uploadsEnabled ? 'On' : 'Off'}
+          label="Registration uploads"
+          value={imports.uploadsEnabled ? 'Open' : 'Closed'}
           tone={imports.uploadsEnabled ? 'positive' : 'neutral'}
-          hint={imports.migrationGatePassed ? 'gate passed' : 'gate not passed'}
+          hint={
+            imports.migrationGatePassed
+              ? 'delegate records checked'
+              : 'delegate records need a check'
+          }
         />
       </section>
 
@@ -219,15 +211,15 @@ export function AdminOverview() {
           )}
         </section>
 
-        <section aria-labelledby="admin-gates-title" className="space-y-3">
-          <h2 id="admin-gates-title" className="font-corporate text-h3 text-corp-ink">
-            Release gates
+        <section aria-labelledby="admin-checks-title" className="space-y-3">
+          <h2 id="admin-checks-title" className="font-corporate text-h3 text-corp-ink">
+            Platform checks
           </h2>
           <ul
             className="divide-y divide-corp-line rounded-none border border-corp-line bg-white"
-            aria-label="Release gates"
+            aria-label="Platform checks"
           >
-            {gates.map((gate) => (
+            {checks.map((gate) => (
               <li key={gate.label} className="flex items-start gap-3 p-4">
                 <span
                   aria-hidden="true"

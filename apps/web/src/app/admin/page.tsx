@@ -9,7 +9,7 @@ import { getSession } from '@/lib/session';
 export const metadata: Metadata = { title: 'Admin console' };
 
 /**
- * Console overview: KPIs, events, recent imports and release gates, all from admin-only routes.
+ * Console overview: KPIs, events, recent imports and platform checks, all from admin-only routes.
  * Admin is the only staff role (2026-11-02), and `/admin/*` admits no delegate, so everyone who
  * reaches this page is an admin; the API authorises each request regardless.
  */
