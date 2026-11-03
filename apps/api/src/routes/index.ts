@@ -17,6 +17,8 @@ import { dashboardRouter } from './dashboard.js';
 import { delegateAccountRouter, type AccountStatusHooks } from './delegate-accounts.js';
 import { delegateRouter } from './delegates.js';
 import { eventDelegateRouter } from './event-delegates.js';
+import { badgeRouter } from './badge.js';
+import { onboardingRouter } from './onboarding.js';
 import { consentRouter } from './consent.js';
 import { eventSetupRouter } from './event-setup.js';
 import { exportsRouter } from './exports.js';
@@ -90,6 +92,20 @@ export function apiRouter(deps: ApiDeps): Router {
   );
   router.use(reportRouter({ prisma: deps.prisma, config: deps.config, middleware, now: deps.now }));
   router.use(exportsRouter({ middleware }));
+  router.use(
+    onboardingRouter({
+      prisma: deps.prisma,
+      config: deps.config,
+      mailConfig: deps.mailConfig,
+      mailer: deps.mailer,
+      middleware,
+      logger: deps.logger,
+      now: deps.now,
+    }),
+  );
+  router.use(
+    badgeRouter({ prisma: deps.prisma, config: deps.config, middleware, logger: deps.logger }),
+  );
   router.use(
     followUpRouter({ prisma: deps.prisma, config: deps.config, middleware, now: deps.now }),
   );

@@ -8,6 +8,19 @@ export interface MailMessage {
   replyTo?: string;
   /** Extra headers, e.g. List-Unsubscribe for reminders. Never put personal data in header names. */
   headers?: Record<string, string>;
+  /**
+   * Files sent with the message. A `cid` makes the file an inline image the HTML can show with
+   * `src="cid:..."`, which is how an attendance code reaches a delegate who cannot open a link.
+   */
+  attachments?: MailAttachment[];
+}
+
+export interface MailAttachment {
+  filename: string;
+  content: Buffer;
+  contentType: string;
+  /** Content-ID for an inline image; omit for an ordinary attachment. */
+  cid?: string;
 }
 
 /** What the transport reported back. Logged without the recipient address. */

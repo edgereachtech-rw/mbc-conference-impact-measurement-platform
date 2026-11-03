@@ -1060,6 +1060,24 @@ model AssessmentQuestion {
 /// One invitation or chaser sent to one delegate for one assessment wave (E12-1 tracking,
 /// E12-14 sending). The row is what makes a send idempotent: the worker writes it and will not
 /// send that kind and sequence again, so a crash mid-batch never emails anyone twice.
+/// One onboarding pack sent to one delegate (task of 2026-11-03): the welcome, their attendance
+/// codes and their card. An admin sends it, so a row is kept per attempt rather than per delegate
+/// — a resend is a second row, and "who has not had one" is a query for a delegate with no sent
+/// row of their own.
+model OnboardingSend {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  delegateId String    @map("delegate_id") @db.Uuid
+  status     String
+  sentAt     DateTime? @map("sent_at") @db.Timestamptz(3)
+  error      String?
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  delegate Delegate @relation(fields: [delegateId], references: [id], onDelete: Cascade)
+
+  @@index([delegateId])
+  @@map("onboarding_send")
+}
+
 model AssessmentInvitation {
   id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   stageConfigId String    @map("stage_config_id") @db.Uuid
@@ -1249,6 +1267,7 @@ model Delegate {
   messages              DelegateMessageRecipient[]
   assessmentResponses   AssessmentResponse[]
   assessmentInvitations AssessmentInvitation[]
+  onboardingSends       OnboardingSend[]
   attendanceTokens      AttendanceToken[]
   attendanceRecords     AttendanceRecord[]
   sessionAttendance     SessionAttendance[]

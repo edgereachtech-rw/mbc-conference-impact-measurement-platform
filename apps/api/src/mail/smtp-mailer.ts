@@ -35,6 +35,12 @@ export class SmtpMailer implements Mailer {
       text: message.text,
       html: message.html,
       headers: message.headers,
+      attachments: message.attachments?.map((a) => ({
+        filename: a.filename,
+        content: a.content,
+        contentType: a.contentType,
+        ...(a.cid ? { cid: a.cid, contentDisposition: 'inline' as const } : {}),
+      })),
     });
     return {
       messageId: info.messageId ?? '',

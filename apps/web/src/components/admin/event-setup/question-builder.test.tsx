@@ -134,7 +134,7 @@ describe('QuestionBuilder', () => {
     await user.click(within(sectionForm).getByRole('button', { name: 'Add section' }));
     expect(within(sectionForm).getByRole('alert').textContent).toMatch(/title/i);
     await user.type(within(sectionForm).getByLabelText('Section title'), 'About the day');
-    await user.selectOptions(within(sectionForm).getByLabelText('Marking'), 'scored');
+    await user.selectOptions(within(sectionForm).getByLabelText('Questions Type'), 'scored');
     await user.click(within(sectionForm).getByRole('button', { name: 'Add section' }));
     const post = calls.find((c) => c.init?.method === 'POST' && c.url.endsWith('/sections'));
     expect(post?.url).toBe('/api/v1/events/e1/assessments/pre_conference/sections');

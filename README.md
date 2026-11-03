@@ -621,6 +621,35 @@ measures | evidence }`, the list replaced with ids kept; own actions only, 404 o
   their own account (refused by the API, and the screen never offers it), accounts are never
   deleted so the audit trail holds, and `staff.created` and `staff.updated` record every change.
   Delegate accounts are not shown: they come from the event's registrations.
+- Delegate onboarding (task of 2026-11-03): the pack an admin sends, and the card a delegate
+  shares.
+  - **The pack** is one email per delegate: what the platform is for, what happens before, during
+    and after, their check-in codes for each event day as inline images, and a pointer to their
+    card. `POST /events/:id/onboarding/send` with `scope` `not_yet_sent` (the default), `all` or
+    `selected`; `GET /events/:id/onboarding` reports eligible, sent, waiting and failed. An admin
+    presses the button on the event's **Delegates** tab — **nothing sends on an import**, because a
+    wrong file would otherwise reach real inboxes. Each attempt is a row in `onboarding_send`
+    (migration `20261103300000_onboarding_send`), so a resend is history rather than an overwrite
+    and "who is waiting" is a delegate with no sent row. 250 a pass; the audit entry carries the
+    scope and counts, never an address.
+  - **The check-in codes in the email are the same ones the platform shows on screen.** The
+    attendance token is a keyed hash of the delegate and the date (`attendanceToken`), so it is
+    derived rather than stored: sending the pack mints nothing, invalidates nothing, and a resend
+    carries identical codes. They travel as inline PNGs (new `attachments` on `MailMessage`, with
+    a `cid`), so a delegate can show one at the door with no signal and no sign-in. The pack says
+    plainly that an organiser checks them in and that holding a code is not attendance.
+  - **The card** ("I WILL BE ATTENDING") is drawn as SVG at `GET /me/events/:id/badge.svg`, from
+    the delegate's own registration: the event logo, the dates and venue, their name, and
+    `nominatingOrganisation` as the sponsor line — omitted when there is none. A delegate can only
+    fetch their own, for an event they are registered for. The delegate's event page shows it with
+    a **Download the card** button; the browser rasterises it to a PNG at 2x, because a social
+    network will not take an SVG and converting here keeps an image library out of the API image.
+  - **The event logo is fetched and inlined as a data URI**, not linked: a linked image taints the
+    canvas (so the PNG export fails), does not render in mail, and tells the logo's host whenever
+    anyone opens the card. That URL is admin-supplied, so the fetch is treated as hostile input —
+    https only, public addresses only (private, loopback, link-local, CGNAT and IPv4-mapped IPv6
+    ranges all refused), image content types only, 2 MB cap, 4 s timeout, and every redirect hop
+    re-checked. A logo that fails any of it is simply left out and the card falls back to type.
 - The follow-up programme (backlog E12; built 2026-11-03). The follow-up assessment now runs in
   **waves**: 30, 60 and 90 days after the event's last day, with a longer-term one at about 180
   days. A wave is a row of the same stage — `assessment_stage_config` gained `wave` and its key

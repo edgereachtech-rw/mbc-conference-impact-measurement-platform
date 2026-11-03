@@ -15,6 +15,7 @@ import {
 import { AssessmentsPanel } from './assessments-panel';
 import { JourneyPanel } from './journey-panel';
 import { AttendanceCodes } from './attendance-codes';
+import { AttendingBadge } from './attending-badge';
 import { JourneyStrip } from './journey-strip';
 import { ReflectionsPanel } from './reflections-panel';
 import { SessionFeedbackList } from './session-feedback-list';
@@ -173,7 +174,12 @@ function Overview({ event, contactEmail }: { event: MyEvent; contactEmail: strin
         </p>
       </section>
 
-      {event.period === 'upcoming' ? <JourneyStrip event={event} /> : null}
+      {event.period === 'upcoming' ? (
+        <>
+          <JourneyStrip event={event} />
+          <AttendingBadge eventId={event.id} eventName={event.name} />
+        </>
+      ) : null}
     </>
   );
 }

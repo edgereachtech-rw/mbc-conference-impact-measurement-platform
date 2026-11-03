@@ -55,6 +55,25 @@
 
 Decisions 2026-10-29: the analyst role and the support role are not part of the approved requirements and are not replaced; M.Bryan acts as admin, as in the original requirements. The Increment 1 code contains both roles. They are retired in Increment 1b under the explicit plan in design note D8 item 7: existing accounts with those roles are reviewed and revoked or migrated under written authorisation, never silently promoted to admin.
 
+### Delegate onboarding built, 2026-11-03
+
+The product owner asked for onboarding that sends delegates a designed email, their attendance QR
+codes, and an "I will be attending" card. Three decisions were taken with them before building:
+
+| Decision | Choice |
+| --- | --- |
+| The portrait on the card | The **event logo** from the event profile's image URL. No delegate photos: the platform stores none, object storage is not wired, and uploads would have been the largest part of the work |
+| When the pack sends | **When an admin presses send**, not on import and not on first sign-in. An import must never email real people as a side effect |
+| The sponsor line | The delegate's **nominating organisation**, already on the registration. Omitted when the field is empty |
+
+What was already built and only needed reaching: the attendance QR codes (one per event date, on
+the delegate's Attendance tab) and the invitation email (E3-1, an activation link). What was new:
+the pack, the card, and mail attachments. See the README for how each behaves.
+
+Not built, and worth saying: there is no delegate photo and no upload anywhere in the platform. If
+the card should carry a portrait later, that means wiring Garage/S3, an upload on the profile, size
+and type limits, deletion, and a privacy line in the notice — a piece of work in its own right.
+
 ### Follow-up programme built, 2026-11-03
 
 E12 ran as one follow-up stage per event; the workplan wants waves. Built: the wave model, the

@@ -7,6 +7,7 @@ import { useState } from 'react';
 
 import { AttendanceManager } from '@/components/admin/attendance/attendance-manager';
 import { EventWorkspace } from '@/components/admin/event-workspace';
+import { OnboardingSender } from '@/components/admin/onboarding-sender';
 import { FeedbackManager } from '@/components/admin/feedback/feedback-manager';
 import { ReflectionsManager } from '@/components/admin/reflections/reflections-manager';
 import { ReportWorkspace } from '@/components/admin/reports/report-workspace';
@@ -186,6 +187,7 @@ export function EventSettings({ initialEvent }: EventSettingsProps) {
         {tab === 'publish' ? <PublishPanel event={event} onSaved={saved} /> : null}
         {tab === 'delegates' ? (
           <div className="space-y-8">
+            <OnboardingSender eventId={event.id} timezone={event.timezone} />
             <EventWorkspace eventId={event.id} eventName={event.name} />
           </div>
         ) : null}
