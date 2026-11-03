@@ -36,3 +36,4 @@ export * from './schemas/consent.js';
 export * from './schemas/next-steps.js';
 export * from './schemas/follow-ups.js';
 export * from './schemas/onboarding.js';
+export * from './schemas/feedback-invitations.js';

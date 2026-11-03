@@ -18,6 +18,7 @@ import { delegateAccountRouter, type AccountStatusHooks } from './delegate-accou
 import { delegateRouter } from './delegates.js';
 import { eventDelegateRouter } from './event-delegates.js';
 import { badgeRouter } from './badge.js';
+import { feedbackInvitationRouter } from './feedback-invitations.js';
 import { onboardingRouter } from './onboarding.js';
 import { consentRouter } from './consent.js';
 import { eventSetupRouter } from './event-setup.js';
@@ -92,6 +93,17 @@ export function apiRouter(deps: ApiDeps): Router {
   );
   router.use(reportRouter({ prisma: deps.prisma, config: deps.config, middleware, now: deps.now }));
   router.use(exportsRouter({ middleware }));
+  router.use(
+    feedbackInvitationRouter({
+      prisma: deps.prisma,
+      config: deps.config,
+      mailConfig: deps.mailConfig,
+      mailer: deps.mailer,
+      middleware,
+      logger: deps.logger,
+      now: deps.now,
+    }),
+  );
   router.use(
     onboardingRouter({
       prisma: deps.prisma,

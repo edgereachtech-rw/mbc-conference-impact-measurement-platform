@@ -34,7 +34,7 @@ CREATE TABLE "assessment_invitation" (
     CONSTRAINT "assessment_invitation_pkey" PRIMARY KEY ("id")
 );
 
-CREATE UNIQUE INDEX "assessment_invitation_stage_delegate_kind_sequence_key"
+CREATE UNIQUE INDEX "assessment_invitation_stage_config_id_delegate_id_kind_sequ_key"
     ON "assessment_invitation"("stage_config_id", "delegate_id", "kind", "sequence");
 CREATE INDEX "assessment_invitation_stage_config_id_idx" ON "assessment_invitation"("stage_config_id");
 CREATE INDEX "assessment_invitation_delegate_id_idx" ON "assessment_invitation"("delegate_id");

@@ -56,17 +56,25 @@ export function ConsoleShell({ areaLabel, navLabel, nav, user, children }: Conso
       </aside>
 
       <div className="flex min-h-full min-w-0 flex-1 flex-col self-stretch">
-        <div className="flex-1 pb-[calc(var(--spacing-tap)+1.5rem)] lg:pb-0">{children}</div>
+        <div className="flex-1 pb-[calc(var(--spacing-tap)+1.5rem+env(safe-area-inset-bottom))] lg:pb-0">
+          {children}
+        </div>
       </div>
 
       <nav
-        className="fixed inset-x-0 bottom-0 z-30 grid border-t border-corp-line bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden"
-        style={{ gridTemplateColumns: `repeat(${nav.length}, minmax(0, 1fr))` }}
+        className="fixed inset-x-0 bottom-0 z-30 border-t border-corp-line bg-white/95 pb-[env(safe-area-inset-bottom)] shadow-[0_-1px_3px_rgb(15_23_42/0.08)] backdrop-blur lg:hidden"
         aria-label={navLabel}
       >
-        {nav.map((item) => (
-          <NavLink key={item.href} item={item} active={isActive(item)} compact />
-        ))}
+        {/* The row is capped and centred: across a tablet's full width five tabs read as five
+            stray icons rather than one control. */}
+        <div
+          className="mx-auto grid max-w-xl"
+          style={{ gridTemplateColumns: `repeat(${nav.length}, minmax(0, 1fr))` }}
+        >
+          {nav.map((item) => (
+            <NavLink key={item.href} item={item} active={isActive(item)} compact />
+          ))}
+        </div>
       </nav>
     </div>
   );
@@ -83,20 +91,21 @@ function NavLink({
 }) {
   if (compact) {
     const base =
-      'flex min-h-tap flex-col items-center justify-center gap-0.5 px-1 py-2 text-[0.7rem] font-medium [&_svg]:size-5';
+      'flex min-h-tap flex-col items-center justify-center gap-0.5 border-t-2 px-1 py-2 text-[0.7rem] font-medium [&_svg]:size-5';
     return (
       <Link
         href={item.href}
+        title={item.label}
         aria-current={active ? 'page' : undefined}
         className={cn(
           base,
           active
-            ? 'border-t-2 border-corp-accent text-corp-ink'
-            : 'text-corp-muted hover:text-corp-ink',
+            ? 'border-corp-accent text-corp-ink'
+            : 'border-transparent text-corp-muted hover:text-corp-ink',
         )}
       >
         {item.icon}
-        <span>{item.label}</span>
+        <span className="w-full truncate text-center">{item.label}</span>
       </Link>
     );
   }

@@ -32,6 +32,8 @@ import { apiFetch, apiUrl } from '@/lib/api';
 import { formatDateShort, formatInstant, isoToZonedLocal, zonedLocalToIso } from '@/lib/events';
 import { describeError } from '@/lib/imports';
 
+import { FeedbackInvite } from './feedback-invite';
+
 interface FeedbackManagerProps {
   event: EventDetail;
 }
@@ -329,6 +331,11 @@ function SessionCard({
                 <DownloadIcon aria-hidden="true" /> Export to Excel
               </a>
             </div>
+            <FeedbackInvite
+              eventId={event.id}
+              sessionId={session.id}
+              sessionTitle={session.title}
+            />
             <div className="space-y-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h4 className="text-sm font-semibold text-corp-ink">

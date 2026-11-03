@@ -88,7 +88,7 @@ export async function buildOnboardingPack(
   const rendered = renderOnboardingPack(brandingForEvent(deps.mailConfig, event), {
     recipientName: delegate.name,
     eventDates: rangeLabel(event.startsOn, event.endsOn, event.timezone),
-    venue: event.location ?? undefined,
+    venue: event.location ?? '',
     dashboardUrl: `${base}/account/events/${event.id}`,
     badgeUrl: `${base}/account/events/${event.id}`,
     dates,

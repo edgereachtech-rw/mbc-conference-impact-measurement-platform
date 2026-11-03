@@ -655,11 +655,12 @@ model EventSession {
   createdAt        DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt        DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  event             Event                     @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  eventDate         EventDate                 @relation(fields: [eventDateId], references: [id], onDelete: Restrict)
-  attendance        SessionAttendance[]
-  feedbackQuestions SessionFeedbackQuestion[]
-  feedbackResponses SessionFeedbackResponse[]
+  event               Event                       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  eventDate           EventDate                   @relation(fields: [eventDateId], references: [id], onDelete: Restrict)
+  attendance          SessionAttendance[]
+  feedbackQuestions   SessionFeedbackQuestion[]
+  feedbackResponses   SessionFeedbackResponse[]
+  feedbackInvitations SessionFeedbackInvitation[]
 
   @@index([eventId])
   @@index([eventDateId])
@@ -1064,6 +1065,26 @@ model AssessmentQuestion {
 /// codes and their card. An admin sends it, so a row is kept per attempt rather than per delegate
 /// — a resend is a second row, and "who has not had one" is a query for a delegate with no sent
 /// row of their own.
+/// One session-feedback invitation sent to one delegate (task of 2026-11-03). An admin emails the
+/// form so a delegate does not have to find it: a row per attempt, so a chaser is history rather
+/// than an overwrite, and "who has not been asked" is an attendee with no sent row.
+model SessionFeedbackInvitation {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sessionId  String    @map("session_id") @db.Uuid
+  delegateId String    @map("delegate_id") @db.Uuid
+  status     String
+  sentAt     DateTime? @map("sent_at") @db.Timestamptz(3)
+  error      String?
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  session  EventSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  delegate Delegate     @relation(fields: [delegateId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@index([delegateId])
+  @@map("session_feedback_invitation")
+}
+
 model OnboardingSend {
   id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   delegateId String    @map("delegate_id") @db.Uuid
@@ -1256,11 +1277,11 @@ model Delegate {
   createdAt              DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt              DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  event                 Event                      @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  userAccount           UserAccount?               @relation(fields: [userAccountId], references: [id], onDelete: SetNull)
-  identity              DelegateIdentity?          @relation(fields: [identityId], references: [id], onDelete: Restrict)
-  duplicateOf           Delegate?                  @relation("DelegateDuplicates", fields: [duplicateOfId], references: [id], onDelete: SetNull)
-  duplicates            Delegate[]                 @relation("DelegateDuplicates")
+  event                 Event                       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  userAccount           UserAccount?                @relation(fields: [userAccountId], references: [id], onDelete: SetNull)
+  identity              DelegateIdentity?           @relation(fields: [identityId], references: [id], onDelete: Restrict)
+  duplicateOf           Delegate?                   @relation("DelegateDuplicates", fields: [duplicateOfId], references: [id], onDelete: SetNull)
+  duplicates            Delegate[]                  @relation("DelegateDuplicates")
   invitations           Invitation[]
   consents              ConsentRecord[]
   importRows            ImportRow[]
@@ -1268,6 +1289,7 @@ model Delegate {
   assessmentResponses   AssessmentResponse[]
   assessmentInvitations AssessmentInvitation[]
   onboardingSends       OnboardingSend[]
+  feedbackInvitations   SessionFeedbackInvitation[]
   attendanceTokens      AttendanceToken[]
   attendanceRecords     AttendanceRecord[]
   sessionAttendance     SessionAttendance[]

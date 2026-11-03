@@ -215,6 +215,48 @@ export function renderFollowUpInvitation(
   });
 }
 
+export interface SessionFeedbackInput {
+  recipientName?: string;
+  /** The session as the delegate knows it. */
+  sessionTitle: string;
+  /** "Thursday 12 November, 14:00-15:30", already in the event's zone. */
+  whenLine: string;
+  /** Who ran it, when the session records one. */
+  speaker?: string;
+  /** Absolute link to /feedback/:code. */
+  formUrl: string;
+  /** The deadline in words, when the form has one. */
+  deadline?: string;
+}
+
+/**
+ * The session feedback form, sent to someone who was in the room (task of 2026-11-03). Short on
+ * purpose: they are being asked for five minutes, and the one thing that matters is the button.
+ */
+export function renderSessionFeedback(
+  branding: EmailBranding,
+  input: SessionFeedbackInput,
+): RenderedEmail {
+  const paragraphs = [
+    input.recipientName ? `Hello ${input.recipientName},` : 'Hello,',
+    `You were at ${input.sessionTitle}${input.speaker ? ` with ${input.speaker}` : ''} (${input.whenLine}). Tell us how it went — three quick ratings and two optional comments, about five minutes.`,
+    'It shapes what runs next year, and the speaker sees it without your name attached.',
+  ];
+  if (input.deadline) paragraphs.push(`The form closes ${input.deadline}.`);
+  return renderLayout(branding, {
+    subject: `How was ${input.sessionTitle}?`,
+    preheader: 'Five minutes on the session you attended.',
+    eyebrow: 'Session feedback',
+    title: input.sessionTitle,
+    paragraphs,
+    button: { label: 'Give feedback on this session', url: input.formUrl },
+    notes: [
+      'You are asked because your attendance at this session was recorded.',
+      'The form is also on your event page under Session feedback.',
+    ],
+  });
+}
+
 export const templates = {
   invitation: renderInvitation,
   'admin-message': renderAdminMessage,
@@ -222,4 +264,5 @@ export const templates = {
   'test-delivery': renderTestDelivery,
   'transfer-plan-reminder': renderTransferPlanReminder,
   'follow-up-invitation': renderFollowUpInvitation,
+  'session-feedback': renderSessionFeedback,
 } as const;
