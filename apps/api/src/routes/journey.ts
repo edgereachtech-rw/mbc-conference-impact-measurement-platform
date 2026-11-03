@@ -1,4 +1,10 @@
-import { appliedStatuses, assessmentStages, stageWindowState, type Journey } from '@mbc/shared';
+import {
+  appliedStatuses,
+  assessmentStages,
+  stageWindowState,
+  waveLabel,
+  type Journey,
+} from '@mbc/shared';
 import { Router } from 'express';
 
 import type { AuthConfig } from '../auth/config.js';
@@ -60,6 +66,8 @@ export function journeyRouter({ prisma, config, middleware, now }: Deps): Router
               select: {
                 id: true,
                 stage: true,
+                wave: true,
+                dueAfterDays: true,
                 enabled: true,
                 status: true,
                 opensAt: true,
@@ -130,23 +138,44 @@ export function journeyRouter({ prisma, config, middleware, now }: Deps): Router
         timezone: delegate.event.timezone,
       },
       attendance: { status, dates },
-      assessments: assessmentStages.map((stage) => {
-        const s = delegate.event.assessmentStages.find((x) => x.stage === stage);
-        if (!s || !s.enabled || s._count.questions === 0) {
-          return { stage, state: 'not_configured' as const, submittedAt: null };
+      // One row per configured wave, in stage then wave order, plus a row for a stage the event
+      // does not run at all. Mapping the four stage names would report the first follow-up wave
+      // and silently drop the rest (the 60- and 90-day ones), which is what it did before waves.
+      assessments: assessmentStages.flatMap<Journey['assessments'][number]>((stage) => {
+        const configured = delegate.event.assessmentStages
+          .filter((x) => x.stage === stage && x.enabled && x._count.questions > 0)
+          .sort((a, b) => a.wave - b.wave);
+        if (configured.length === 0) {
+          return [
+            {
+              stage,
+              wave: 1,
+              waveLabel: '',
+              state: 'not_configured',
+              submittedAt: null,
+            },
+          ];
         }
-        const mine = responses.find((r) => r.stageConfigId === s.id);
-        const window = stageWindowState(s, at);
-        const state: Journey['assessments'][number]['state'] = mine?.submittedAt
-          ? 'submitted'
-          : mine
-            ? 'draft'
-            : window === 'open'
-              ? 'open'
-              : window === 'closed'
-                ? 'closed'
-                : 'not_yet_open';
-        return { stage, state, submittedAt: mine?.submittedAt?.toISOString() ?? null };
+        return configured.map((s) => {
+          const mine = responses.find((r) => r.stageConfigId === s.id);
+          const window = stageWindowState(s, at);
+          const state: Journey['assessments'][number]['state'] = mine?.submittedAt
+            ? 'submitted'
+            : mine
+              ? 'draft'
+              : window === 'open'
+                ? 'open'
+                : window === 'closed'
+                  ? 'closed'
+                  : 'not_yet_open';
+          return {
+            stage,
+            wave: s.wave,
+            waveLabel: waveLabel(s.stage, s.wave, s.dueAfterDays),
+            state,
+            submittedAt: mine?.submittedAt?.toISOString() ?? null,
+          };
+        });
       }),
       reflections: {
         available: reflections.length,

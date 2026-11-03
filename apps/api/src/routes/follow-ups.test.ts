@@ -334,6 +334,62 @@ describe.skipIf(!hasDatabase)('follow-up waves and invitations (E12)', () => {
     expect(await runWorker()).toMatchObject({ invited: 0, reminded: 0 });
   });
 
+  it('reports every wave on the journey, not just the first', async () => {
+    // This test sets the state it needs rather than inheriting what an earlier one left.
+    await prisma.assessmentStageConfig.updateMany({
+      where: { eventId, stage: 'follow_up', wave: 1 },
+      data: { enabled: true, status: 'scheduled' },
+    });
+    // Waves 2 and 3 need a question each to count as configured, as every stage does.
+    for (const wave of [2, 3]) {
+      const row = await prisma.assessmentStageConfig.findFirstOrThrow({
+        where: { eventId, stage: 'follow_up', wave },
+      });
+      await prisma.assessmentQuestion.create({
+        data: {
+          eventId,
+          stageConfigId: row.id,
+          order: 1,
+          prompt: `Wave ${wave} question`,
+          type: 'long_text',
+          required: true,
+        },
+      });
+      await prisma.assessmentStageConfig.update({
+        where: { id: row.id },
+        data: { enabled: true, status: 'scheduled' },
+      });
+    }
+
+    const journey = await call(
+      'get',
+      `/me/events/${eventId}/journey`,
+      undefined,
+      await cookieFor(boAccountId),
+    );
+    expect(journey.status, journey.text).toBe(200);
+    const rows = journey.body.journey.assessments as Array<{
+      stage: string;
+      wave: number;
+      waveLabel: string;
+      state: string;
+    }>;
+    const followUps = rows.filter((r) => r.stage === 'follow_up');
+    // Three rows, named: mapping the four stage names reported only the 30-day one and dropped
+    // the 60- and 90-day waves entirely.
+    expect(followUps.map((r) => r.waveLabel)).toEqual([
+      '30-day follow-up',
+      '60-day follow-up',
+      '90-day follow-up',
+    ]);
+    expect(followUps.map((r) => r.wave)).toEqual([1, 2, 3]);
+    // Wave 1 is open and Bo has not answered it; the later waves have not opened.
+    expect(followUps[0]!.state).toBe('open');
+    expect(followUps.slice(1).every((r) => r.state === 'not_yet_open')).toBe(true);
+    // A stage the event does not run still gets exactly one row.
+    expect(rows.filter((r) => r.stage === 'during_conference')).toHaveLength(1);
+  });
+
   it('shows the delegate the wave with its own name, plan and expectation', async () => {
     await prisma.assessmentStageConfig.updateMany({
       where: { eventId, stage: 'follow_up', wave: 1 },

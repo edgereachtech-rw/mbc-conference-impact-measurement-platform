@@ -167,7 +167,7 @@ export function JourneyPanel({ eventId, timezone }: Props) {
         <dl className="divide-y divide-corp-line border border-corp-line bg-white text-sm">
           {j.assessments.map((a) => (
             <div key={a.stage} className="flex flex-wrap items-center justify-between gap-2 p-3">
-              <dt className="text-corp-text">{stageLabels[a.stage]}</dt>
+              <dt className="text-corp-text">{a.waveLabel || stageLabels[a.stage]}</dt>
               <dd className="text-right">
                 <StatusPill tone={a.state === 'submitted' ? 'positive' : 'neutral'}>
                   {stageStateLabels[a.state]}

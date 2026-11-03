@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { PrismaClient } from '../db.js';
 import { createTestEvent, hasDatabase, isUniqueViolation, testPrisma } from '../db/test-helpers.js';
@@ -28,6 +28,14 @@ describe('email normalisation', () => {
 });
 
 describe.skipIf(!hasDatabase)('identity schema and migration gate (backlog D5.1, D6.1)', () => {
+  // These tests run the whole gate, several times each: the invariant test runs it five times, and
+  // every run hashes the whole of delegate, user_account, consent_record, invitation and audit_log
+  // twice. audit_log is append-only by design, so its cost rises for the life of the database and
+  // no cleanup can lower it — at 22,000 rows one checksum is about 1.2 seconds, so that test alone
+  // spends 12 seconds hashing before it asserts anything. The suite default of 20s is right for an
+  // ordinary test and wrong for this file.
+  vi.setConfig({ testTimeout: 120_000 });
+
   let prisma: PrismaClient;
   let eventId: string;
   const unique = () => randomUUID().slice(0, 8);

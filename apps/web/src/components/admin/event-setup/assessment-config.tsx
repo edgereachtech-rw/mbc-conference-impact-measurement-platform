@@ -50,7 +50,12 @@ export function AssessmentConfig({ event, onSaved }: AssessmentConfigProps) {
       </p>
       <div className="grid gap-4 xl:grid-cols-3">
         {event.assessmentStages.map((stage) => (
-          <StageCard key={stage.stage} event={event} stage={stage} onSaved={onSaved} />
+          <StageCard
+            key={`${stage.stage}:${stage.wave}`}
+            event={event}
+            stage={stage}
+            onSaved={onSaved}
+          />
         ))}
       </div>
     </div>
@@ -111,7 +116,7 @@ function StageCard({
     let cancelled = false;
     if (!countsApply) return undefined;
     apiFetch<{ summary?: StageSummary }>(
-      `/events/${event.id}/assessments/${stage.stage}/summary`,
+      `/events/${event.id}/assessments/${stage.stage}/summary?wave=${stage.wave}`,
     ).then(
       (result) => {
         if (cancelled) return;
@@ -165,7 +170,7 @@ function StageCard({
     setBusy(true);
     try {
       const result = await apiFetch<{ event: EventDetail }>(
-        `/events/${event.id}/assessments/${stage.stage}`,
+        `/events/${event.id}/assessments/${stage.stage}?wave=${stage.wave}`,
         { method: 'PUT', body: JSON.stringify(parsed.success ? parsed.data : payload) },
       );
       onSaved(result.event);
@@ -191,7 +196,7 @@ function StageCard({
     <>
       <form
         noValidate
-        aria-label={stageLabels[stage.stage]}
+        aria-label={stage.waveLabel || stageLabels[stage.stage]}
         onSubmit={(e) => {
           e.preventDefault();
           void save();
@@ -208,7 +213,7 @@ function StageCard({
             </StatusPill>
           </div>
           <h3 className="font-corporate text-base font-semibold text-corp-ink">
-            {stageLabels[stage.stage]}
+            {stage.waveLabel || stageLabels[stage.stage]}
           </h3>
           <p className="text-sm text-corp-text">{stagePurpose[stage.stage]}</p>
           {stage.enabled && seenText ? (
@@ -225,7 +230,7 @@ function StageCard({
               {stage.questionCount} question{stage.questionCount === 1 ? '' : 's'}
             </StatusPill>
             <Link
-              href={`/admin/events/${event.id}/assessments/${stage.stage}`}
+              href={`/admin/events/${event.id}/assessments/${stage.stage}?wave=${stage.wave}`}
               className={consoleButton({ variant: 'secondary', size: 'sm' })}
             >
               <ListChecksIcon aria-hidden="true" /> Questions and submissions

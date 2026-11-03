@@ -5,8 +5,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { AssessmentConfig } from './assessment-config';
 
-const stage = (s: EventDetail['assessmentStages'][number]['stage']) => ({
+const stage = (s: EventDetail['assessmentStages'][number]['stage'], wave = 1, waveLabel = '') => ({
   stage: s,
+  wave,
+  waveLabel,
+  dueAfterDays: null,
+  reminderAfterDays: null,
+  reminderLimit: 0,
   enabled: false,
   opensAt: null,
   closesAt: null,
@@ -72,7 +77,7 @@ describe('AssessmentConfig', () => {
     await user.type(within(pre).getByLabelText('Deadline'), '2026-11-11T23:30');
     await user.selectOptions(within(pre).getByLabelText('Status'), 'scheduled');
     await user.click(within(pre).getByRole('button', { name: 'Save stage' }));
-    expect(calls[0]?.url).toBe('/api/v1/events/e1/assessments/pre_conference');
+    expect(calls[0]?.url).toBe('/api/v1/events/e1/assessments/pre_conference?wave=1');
     expect(calls[0]?.init?.method).toBe('PUT');
     expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({
       enabled: true,
@@ -117,7 +122,7 @@ describe('AssessmentConfig', () => {
             status: 200,
             headers: { 'content-type': 'application/json' },
           });
-        if (url.endsWith('/summary')) {
+        if (url.split('?')[0]!.endsWith('/summary')) {
           return json({
             summary: {
               stage: 'pre_conference',
@@ -140,6 +145,51 @@ describe('AssessmentConfig', () => {
     expect(responses.textContent).toMatch(/Invited3Started2Submitted1 \(33\.3%\)/);
     expect(
       within(pre).getByRole('link', { name: 'Questions and submissions' }).getAttribute('href'),
-    ).toBe('/admin/events/e1/assessments/pre_conference');
+    ).toBe('/admin/events/e1/assessments/pre_conference?wave=1');
+  });
+
+  it('shows each follow-up wave by its own name and acts on that wave alone', async () => {
+    // Three waves of one stage, as the schedule creates them (E12-1).
+    const waved: EventDetail = {
+      ...event,
+      assessmentStages: [
+        stage('pre_conference'),
+        { ...stage('follow_up', 1, '30-day follow-up'), dueAfterDays: 30 },
+        { ...stage('follow_up', 2, '60-day follow-up'), dueAfterDays: 60 },
+        { ...stage('follow_up', 3, '90-day follow-up'), dueAfterDays: 90 },
+      ],
+    };
+    const calls: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        calls.push(url);
+        return new Response(JSON.stringify({ event: waved }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }),
+    );
+    render(<AssessmentConfig event={waved} onSaved={vi.fn()} />);
+
+    // Three cards, three names: not "Follow-up assessment" three times over.
+    for (const label of ['30-day follow-up', '60-day follow-up', '90-day follow-up']) {
+      expect(screen.getByRole('form', { name: label })).toBeTruthy();
+    }
+    // Each card's question editor opens its own wave.
+    const sixty = screen.getByRole('form', { name: '60-day follow-up' });
+    expect(
+      within(sixty).getByRole('link', { name: 'Questions and submissions' }).getAttribute('href'),
+    ).toBe('/admin/events/e1/assessments/follow_up?wave=2');
+    const ninety = screen.getByRole('form', { name: '90-day follow-up' });
+    expect(
+      within(ninety).getByRole('link', { name: 'Questions and submissions' }).getAttribute('href'),
+    ).toBe('/admin/events/e1/assessments/follow_up?wave=3');
+
+    // Saving the 60-day card addresses wave 2, so enabling one wave never enables another.
+    const user = userEvent.setup();
+    await user.click(within(sixty).getByRole('button', { name: 'Save stage' }));
+    expect(calls.some((u) => u.endsWith('/assessments/follow_up?wave=2'))).toBe(true);
+    expect(calls.some((u) => u.endsWith('/assessments/follow_up?wave=1'))).toBe(false);
   });
 });

@@ -586,6 +586,10 @@ export const journeySchema = z.object({
   assessments: z.array(
     z.object({
       stage: z.enum(assessmentStages),
+      /** Which round of the stage: always 1 except the follow-up waves (E12-1). */
+      wave: z.number().int(),
+      /** What this wave is called where a stage has several ("30-day follow-up"); else empty. */
+      waveLabel: z.string(),
       state: z.enum(['not_configured', 'not_yet_open', 'open', 'draft', 'submitted', 'closed']),
       submittedAt: z.string().nullable(),
     }),

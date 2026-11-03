@@ -269,6 +269,15 @@ export type EventSessionView = z.infer<typeof eventSessionViewSchema>;
 
 export const assessmentStageViewSchema = z.object({
   stage: z.enum(assessmentStages),
+  /** Which round of the stage: always 1 except the follow-up waves (E12-1). */
+  wave: z.number().int(),
+  /** What this wave is called where a stage has several ("30-day follow-up"); else empty. */
+  waveLabel: z.string(),
+  /** Days after the event's last day this wave is due; null for the single-round stages. */
+  dueAfterDays: z.number().int().nullable(),
+  /** Chase a non-responder after this many days, this many times (E12-14). */
+  reminderAfterDays: z.number().int().nullable(),
+  reminderLimit: z.number().int(),
   enabled: z.boolean(),
   opensAt: z.string().nullable(),
   closesAt: z.string().nullable(),

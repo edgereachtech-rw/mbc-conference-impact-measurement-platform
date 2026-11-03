@@ -12,6 +12,7 @@ import {
   sessionPatchSchema,
   sessionTimeIssue,
   sortIsoDates,
+  waveLabel,
   type AssessmentStage,
   type EventDetail,
 } from '@mbc/shared';
@@ -42,6 +43,7 @@ const DETAIL_INCLUDE = {
   },
   assessmentStages: {
     include: { _count: { select: { questions: { where: { retiredAt: null } } } } },
+    orderBy: [{ stage: 'asc' }, { wave: 'asc' }],
   },
 } satisfies Prisma.EventInclude;
 
@@ -92,9 +94,17 @@ export function eventDetailOf(event: EventRow): EventDetail {
     dates: event.dates.map((d) => ({ id: d.id, date: isoDate(d.date) })),
     sessions,
     assessmentStages: [...event.assessmentStages]
-      .sort((a, b) => (stageOrder.get(a.stage) ?? 0) - (stageOrder.get(b.stage) ?? 0))
+      .sort(
+        (a, b) =>
+          (stageOrder.get(a.stage) ?? 0) - (stageOrder.get(b.stage) ?? 0) || a.wave - b.wave,
+      )
       .map((s) => ({
         stage: s.stage,
+        wave: s.wave,
+        waveLabel: waveLabel(s.stage, s.wave, s.dueAfterDays),
+        dueAfterDays: s.dueAfterDays,
+        reminderAfterDays: s.reminderAfterDays,
+        reminderLimit: s.reminderLimit,
         enabled: s.enabled,
         opensAt: s.opensAt ? s.opensAt.toISOString() : null,
         closesAt: s.closesAt ? s.closesAt.toISOString() : null,

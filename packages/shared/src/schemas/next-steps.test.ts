@@ -20,7 +20,7 @@ const journey = (over: Partial<Journey> = {}): Journey => ({
   reflections: { available: 0, submitted: 0 },
   feedback: { sessions: 0, submitted: 0 },
   plan: null,
-  supportRequests: { state: 'none_recorded' },
+  supportRequests: { state: 'not_collected' },
   ...over,
 });
 
@@ -29,8 +29,8 @@ describe('nextSteps', () => {
     const steps = nextSteps(
       journey({
         assessments: [
-          { stage: 'pre_conference', state: 'open', submittedAt: null },
-          { stage: 'during_conference', state: 'draft', submittedAt: null },
+          { stage: 'pre_conference', wave: 1, waveLabel: '', state: 'open', submittedAt: null },
+          { stage: 'during_conference', wave: 1, waveLabel: '', state: 'draft', submittedAt: null },
         ],
       }),
     );
@@ -48,10 +48,28 @@ describe('nextSteps', () => {
     const steps = nextSteps(
       journey({
         assessments: [
-          { stage: 'pre_conference', state: 'submitted', submittedAt: '2026-11-01T09:00:00.000Z' },
-          { stage: 'during_conference', state: 'not_yet_open', submittedAt: null },
-          { stage: 'end_of_conference', state: 'not_configured', submittedAt: null },
-          { stage: 'follow_up', state: 'closed', submittedAt: null },
+          {
+            stage: 'pre_conference',
+            wave: 1,
+            waveLabel: '',
+            state: 'submitted',
+            submittedAt: '2026-11-01T09:00:00.000Z',
+          },
+          {
+            stage: 'during_conference',
+            wave: 1,
+            waveLabel: '',
+            state: 'not_yet_open',
+            submittedAt: null,
+          },
+          {
+            stage: 'end_of_conference',
+            wave: 1,
+            waveLabel: '',
+            state: 'not_configured',
+            submittedAt: null,
+          },
+          { stage: 'follow_up', wave: 1, waveLabel: '', state: 'closed', submittedAt: null },
         ],
         plan: {
           status: 'submitted',
@@ -139,7 +157,9 @@ describe('nextSteps', () => {
   it('runs in journey order: assessments, attendance, reflections, feedback, plan', () => {
     const steps = nextSteps(
       journey({
-        assessments: [{ stage: 'pre_conference', state: 'open', submittedAt: null }],
+        assessments: [
+          { stage: 'pre_conference', wave: 1, waveLabel: '', state: 'open', submittedAt: null },
+        ],
         attendance: {
           status: 'pending',
           dates: [{ date: '2026-11-12', status: 'not_checked_in', closed: false }],
