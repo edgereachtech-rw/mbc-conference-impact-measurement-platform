@@ -251,6 +251,26 @@ describe.skipIf(!hasDatabase)('assessment questions and answers', () => {
     expect(s1.status, s1.text).toBe(201);
     expect(s1.body.section.marking).toBe('scored');
     expect((await call('post', sec, { title: 'x', marking: 'weighted' })).status).toBe(422);
+    // A section's description can be marked as an introduction, and unmarked again.
+    expect(s1.body.section.highlightDescription).toBe(false);
+    const intro = await call('patch', `${sec}/${s1.body.section.id}`, {
+      description: 'How confident are you in your ability to:',
+      highlightDescription: true,
+    });
+    expect(intro.status, intro.text).toBe(200);
+    expect(
+      (intro.body.sections as Array<{ id: string; highlightDescription: boolean }>).find(
+        (x) => x.id === s1.body.section.id,
+      )?.highlightDescription,
+    ).toBe(true);
+    const plain = await call('patch', `${sec}/${s1.body.section.id}`, {
+      highlightDescription: false,
+    });
+    expect(
+      (plain.body.sections as Array<{ id: string; highlightDescription: boolean }>).find(
+        (x) => x.id === s1.body.section.id,
+      )?.highlightDescription,
+    ).toBe(false);
     const s2 = await call('post', sec, { title: 'About you' });
     expect(
       s2.body.sections.map((x: { title: string; order: number }) => [x.title, x.order]),
@@ -328,11 +348,12 @@ describe.skipIf(!hasDatabase)('assessment questions and answers', () => {
       'In section one',
     ]);
     await call('put', stageUrl, { enabled: false, status: 'draft' });
+    // Two creates, the two introduction edits above, and the moves and delete that follow.
     expect(
       await prisma.auditLog.count({
         where: { eventId, action: { startsWith: 'assessment.section' } },
       }),
-    ).toBe(5);
+    ).toBe(7);
   });
 
   it('serves open stages to the delegate, validates answers, keeps drafts, submits once, and versions a question that was answered', async () => {

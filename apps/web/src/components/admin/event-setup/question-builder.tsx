@@ -291,6 +291,7 @@ export function QuestionBuilder({
     id: string | null;
     title: string;
     description: string;
+    highlightDescription: boolean;
     marking: SectionMarking;
     audience: SectionAudience;
   }>(null);
@@ -478,6 +479,7 @@ export function QuestionBuilder({
     const parsed = sectionFieldsSchema.safeParse({
       title: sectionEditing.title,
       description: sectionEditing.description,
+      highlightDescription: sectionEditing.highlightDescription,
       marking: sectionEditing.marking,
       audience: sectionEditing.audience,
     });
@@ -637,6 +639,7 @@ export function QuestionBuilder({
                   id: null,
                   title: '',
                   description: '',
+                  highlightDescription: false,
                   marking: 'none',
                   audience: 'all',
                 });
@@ -748,6 +751,25 @@ export function QuestionBuilder({
                 }
                 className="w-full rounded-none border border-corp-line bg-white px-3 py-2 text-base md:text-sm"
               />
+              {/*
+                Some sections open with something the delegate has to read before the questions
+                make sense — a stem such as "How confident are you in your ability to:". As plain
+                text under the title it is easy to skip past.
+              */}
+              <label className="flex min-h-tap items-center gap-2 text-sm text-corp-ink">
+                <input
+                  type="checkbox"
+                  checked={sectionEditing.highlightDescription}
+                  disabled={!sectionEditing.description.trim()}
+                  onChange={(e) =>
+                    setSectionEditing((s) =>
+                      s ? { ...s, highlightDescription: e.target.checked } : s,
+                    )
+                  }
+                  className="size-5 accent-corp-green"
+                />
+                Highlight it: delegates see it as an introduction, not a subtitle
+              </label>
             </div>
             <div className="space-y-1">
               <label
@@ -1459,6 +1481,7 @@ export function QuestionBuilder({
                             id: group.section!.id,
                             title: group.section!.title,
                             description: group.section!.description ?? '',
+                            highlightDescription: group.section!.highlightDescription,
                             marking: group.section!.marking,
                             audience: group.section!.audience,
                           });

@@ -1008,6 +1008,9 @@ model AssessmentSection {
   eventId         String          @map("event_id") @db.Uuid
   title           String
   description     String?
+  /// Show the description as a highlighted introduction rather than a plain subtitle: for a
+  /// section that opens with a stem or a note the delegate has to read before the questions.
+  highlightDescription Boolean    @default(false) @map("highlight_description")
   order           Int
   marking         SectionMarking  @default(none)
   audience        SectionAudience @default(all)

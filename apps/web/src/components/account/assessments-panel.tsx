@@ -501,7 +501,19 @@ function AssessmentCard({
                         </h4>
                       ) : null}
                       {group.section?.description ? (
-                        <p className="text-sm text-corp-text">{group.section.description}</p>
+                        group.section.highlightDescription ? (
+                          // An introduction the delegate has to read before the questions make
+                          // sense, marked as such by the admin on the section.
+                          <p
+                            role="note"
+                            aria-label="Introduction"
+                            className="border-l-4 border-corp-accent bg-corp-accent-soft/40 p-3 text-sm font-medium text-corp-ink"
+                          >
+                            {group.section.description}
+                          </p>
+                        ) : (
+                          <p className="text-sm text-corp-text">{group.section.description}</p>
+                        )
                       ) : null}
                     </div>
                     {canAnswer && locked ? (

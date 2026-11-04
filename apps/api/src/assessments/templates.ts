@@ -74,6 +74,7 @@ export async function loadTemplateInto(
         eventId: stage.eventId,
         title: section.title,
         description: section.description,
+        highlightDescription: section.highlightDescription ?? false,
         marking: section.marking ?? 'none',
         audience: section.audience ?? 'all',
         order: (lastSection._max.order ?? 0) + 1,

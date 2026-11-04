@@ -173,6 +173,11 @@ export const sectionAudienceLabels: Record<SectionAudience, string> = {
 export const sectionFieldsSchema = z.object({
   title: z.string().trim().min(1, 'Give the section a title').max(200),
   description: optionalText(1_000),
+  /**
+   * Show the description as a highlighted introduction rather than a plain subtitle, for a
+   * section that opens with something the delegate has to read before the questions make sense.
+   */
+  highlightDescription: z.boolean().default(false),
   marking: z.enum(sectionMarkings).default('none'),
   audience: z.enum(sectionAudiences).default('all'),
 });
@@ -184,6 +189,7 @@ export const assessmentSectionViewSchema = z.object({
   id: z.uuid(),
   title: z.string(),
   description: z.string().nullable(),
+  highlightDescription: z.boolean(),
   order: z.number().int(),
   marking: z.enum(sectionMarkings),
   audience: z.enum(sectionAudiences),

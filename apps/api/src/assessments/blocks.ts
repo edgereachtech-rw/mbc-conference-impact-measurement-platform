@@ -52,6 +52,7 @@ export async function mirrorSectionInto(
       eventId: stage.eventId,
       title: overrides.title ?? source.title,
       description: source.description,
+      highlightDescription: source.highlightDescription,
       marking: source.marking,
       audience: source.audience,
       sourceSectionId: source.id,

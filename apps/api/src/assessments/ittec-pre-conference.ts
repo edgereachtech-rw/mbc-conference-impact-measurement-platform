@@ -29,6 +29,8 @@ export interface TemplateSection {
   marking?: SectionMarking;
   /** Who sees the section; everyone when omitted. */
   audience?: SectionAudience;
+  /** Show the description as a highlighted introduction rather than a subtitle. */
+  highlightDescription?: boolean;
   /** Repeat the named section of another stage of the same event (questions come from it). */
   mirrorOf?: { stage: AssessmentStage; title: string };
   /** Add a built-in block instead of the listed questions. */

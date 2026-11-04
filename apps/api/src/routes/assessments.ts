@@ -147,6 +147,7 @@ function sectionViewOf(s: SectionRow): AssessmentSectionView {
     id: s.id,
     title: s.title,
     description: s.description,
+    highlightDescription: s.highlightDescription,
     order: s.order,
     marking: s.marking,
     audience: s.audience,
@@ -887,6 +888,7 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
             eventId: stage.eventId,
             title: input.title,
             description: input.description ?? null,
+            highlightDescription: input.highlightDescription,
             marking: input.marking,
             audience: input.audience,
             order: (last._max.order ?? 0) + 1,
@@ -1014,6 +1016,9 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
           data: {
             ...(patch.title !== undefined ? { title: patch.title } : {}),
             ...(patch.description !== undefined ? { description: patch.description ?? null } : {}),
+            ...(patch.highlightDescription !== undefined
+              ? { highlightDescription: patch.highlightDescription }
+              : {}),
             ...(patch.marking !== undefined ? { marking: patch.marking } : {}),
             ...(patch.audience !== undefined ? { audience: patch.audience } : {}),
           },

@@ -114,6 +114,7 @@ const sectioned: MyAssessment = {
       id: 's1',
       title: 'About the sessions',
       description: 'Think about today.',
+      highlightDescription: false,
       order: 1,
       marking: 'none',
       audience: 'all',
@@ -124,6 +125,7 @@ const sectioned: MyAssessment = {
       id: 's2',
       title: 'About you',
       description: null,
+      highlightDescription: false,
       order: 2,
       marking: 'none',
       audience: 'all',
@@ -363,6 +365,7 @@ describe('AssessmentsPanel', () => {
     id: 'x',
     title: 'Your expectations',
     description: null,
+    highlightDescription: false,
     order: 1,
     marking: 'none' as const,
     audience: 'all' as const,
@@ -479,6 +482,30 @@ describe('AssessmentsPanel', () => {
       answers: { r: 'Prefer not to answer' },
       submitSection: 'x',
     });
+  });
+
+  it('shows a section introduction plainly, or highlighted when the admin marked it so', async () => {
+    // As it is: a subtitle under the title, no note role.
+    stub([sectioned]);
+    const { unmount } = render(<AssessmentsPanel eventId="e1" timezone="Africa/Lagos" />);
+    let card = await screen.findByRole('article', { name: 'During-conference assessment' });
+    expect(within(card).getByText('Think about today.')).toBeTruthy();
+    expect(within(card).queryByRole('note', { name: 'Introduction' })).toBeNull();
+    unmount();
+
+    // Marked as an introduction: same words, announced and shown as a note.
+    const highlighted: MyAssessment = {
+      ...sectioned,
+      sections: sectioned.sections.map((s) =>
+        s.id === 's1' ? { ...s, highlightDescription: true } : s,
+      ),
+    };
+    vi.unstubAllGlobals();
+    stub([highlighted]);
+    render(<AssessmentsPanel eventId="e1" timezone="Africa/Lagos" />);
+    card = await screen.findByRole('article', { name: 'During-conference assessment' });
+    const intro = within(card).getByRole('note', { name: 'Introduction' });
+    expect(intro.textContent).toBe('Think about today.');
   });
 
   it('shows the empty state when nothing is open', async () => {
