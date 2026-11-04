@@ -197,7 +197,13 @@ export function StageSubmissions({
                     {[
                       d.sectionTitle,
                       `${d.responses} answer${d.responses === 1 ? '' : 's'}`,
-                      d.builtin === 'expectation_met_post' ? 'Recorded after the conference' : null,
+                      // A question only its own cohort was asked: its share is of that cohort,
+                      // not of everyone who submitted (requirement 10.5).
+                      d.visibleWhen === 'reference_unanswered'
+                        ? 'Asked only of delegates with no earlier answer'
+                        : d.visibleWhen === 'reference_answered'
+                          ? 'Asked only of delegates with an earlier answer'
+                          : null,
                     ]
                       .filter(Boolean)
                       .join(' · ')}

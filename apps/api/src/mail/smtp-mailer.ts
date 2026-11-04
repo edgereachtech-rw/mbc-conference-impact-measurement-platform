@@ -30,7 +30,7 @@ export class SmtpMailer implements Mailer {
     const info = await this.transporter.sendMail({
       from: this.config.from,
       to: message.to,
-      replyTo: message.replyTo ?? this.config.contactEmail,
+      replyTo: message.replyTo ?? 'no-reply@mbryancondultinggroup.com',
       subject: message.subject,
       text: message.text,
       html: message.html,

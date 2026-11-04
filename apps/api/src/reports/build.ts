@@ -320,6 +320,32 @@ export async function buildReport(input: BuildInput): Promise<BuiltReport> {
     };
   }
 
+  /**
+   * A question asked of only one branch of the delegates (requirement 10.5): it refers to an
+   * earlier question and is shown according to whether that was answered. The expectations
+   * section finds its four questions this way rather than by fixed wording, so an event that
+   * words them its own way is still reported — the earliest of each kind wins.
+   */
+  function branchQuestion(
+    sa: StageAnswers,
+    when: 'reference_answered' | 'reference_unanswered',
+    kind: 'choice' | 'text',
+  ): AssessmentQuestionView | undefined {
+    return sa.questions
+      .filter(
+        (q) =>
+          q.referenceQuestionKey &&
+          q.visibleWhen === when &&
+          (kind === 'choice'
+            ? q.type === 'single_choice'
+            : q.type === 'long_text' || q.type === 'short_text'),
+      )
+      .sort((a, b) => a.order - b.order)[0];
+  }
+
+  /** Branch questions are reported in their own section, never in the stage-wide lists. */
+  const inStageWideLists = (q: AssessmentQuestionView) => !q.builtin && q.visibleWhen === 'always';
+
   function distributionOf(sa: StageAnswers, q: AssessmentQuestionView): ChoiceDistribution {
     const multiple = q.type === 'multiple_choice';
     const chosen: string[][] = [];
@@ -335,6 +361,7 @@ export async function buildReport(input: BuildInput): Promise<BuiltReport> {
       prompt: q.prompt,
       sectionTitle: sectionTitleOf(sa, q),
       builtin: q.builtin,
+      visibleWhen: q.visibleWhen,
       multiple,
       responses: chosen.length,
       state: chosen.length ? 'ok' : 'no_response',
@@ -617,10 +644,12 @@ export async function buildReport(input: BuildInput): Promise<BuiltReport> {
       stage: await stageParticipation('end_of_conference'),
       ratings,
       ratingDistributions: end
-        ? end.questions.filter((q) => isScored(q) && !q.builtin).map((q) => distributionOf(end, q))
+        ? end.questions
+            .filter((q) => isScored(q) && inStageWideLists(q))
+            .map((q) => distributionOf(end, q))
         : [],
       written: end
-        ? end.questions.filter((q) => isText(q) && !q.builtin).map((q) => textsOf(end, q))
+        ? end.questions.filter((q) => isText(q) && inStageWideLists(q)).map((q) => textsOf(end, q))
         : [],
       reflections: activities.map((a) => ({
         id: a.id,
@@ -713,7 +742,9 @@ export async function buildReport(input: BuildInput): Promise<BuiltReport> {
       confidence: {
         before: pre ? pre.questions.filter(isScored).map((q) => statementOf(pre, q)) : [],
         after: end
-          ? end.questions.filter((q) => isScored(q) && !q.builtin).map((q) => statementOf(end, q))
+          ? end.questions
+              .filter((q) => isScored(q) && inStageWideLists(q))
+              .map((q) => statementOf(end, q))
           : [],
       },
       paired: endStage ? await pairedResultsFor(db, endStage, eligible, scope) : null,
@@ -728,12 +759,10 @@ export async function buildReport(input: BuildInput): Promise<BuiltReport> {
   let expectationsEnd: ExpectationsEndSection | null = null;
   if (sections.has('expectations_end')) {
     const end = await stageAnswers('end_of_conference');
-    const find = (sa: StageAnswers, builtin: string) =>
-      sa.questions.find((q) => q.builtin === builtin);
-    const metQ = end ? find(end, BUILTIN.expectationMetPre) : undefined;
-    const afterQ = end ? find(end, BUILTIN.expectationRecordedAfter) : undefined;
-    const metPostQ = end ? find(end, BUILTIN.expectationMetPost) : undefined;
-    const explainQ = end ? find(end, BUILTIN.expectationExplain) : undefined;
+    const metQ = end ? branchQuestion(end, 'reference_answered', 'choice') : undefined;
+    const afterQ = end ? branchQuestion(end, 'reference_unanswered', 'text') : undefined;
+    const metPostQ = end ? branchQuestion(end, 'reference_unanswered', 'choice') : undefined;
+    const explainQ = end ? branchQuestion(end, 'reference_answered', 'text') : undefined;
     let completed = 0;
     let recordedAfter = 0;
     let preferNot = 0;
@@ -763,7 +792,7 @@ export async function buildReport(input: BuildInput): Promise<BuiltReport> {
       completed: figure(
         completed,
         submitted,
-        'Delegates who answered the expectations block, of submitted end-of-conference evaluations.',
+        'Delegates who answered the expectations questions, of submitted end-of-conference evaluations.',
         blockState,
       ),
       met: end && metQ ? distributionOf(end, metQ) : null,
@@ -783,7 +812,7 @@ export async function buildReport(input: BuildInput): Promise<BuiltReport> {
     };
     if (blockState === 'not_configured')
       limitations.push(
-        'The end-of-conference evaluation has no expectations block, so expectations assessed at the end are not available.',
+        'The end-of-conference evaluation has no expectations questions, so expectations assessed at the end are not available.',
       );
   }
 
@@ -796,6 +825,9 @@ export async function buildReport(input: BuildInput): Promise<BuiltReport> {
   const plans = needPlans
     ? await db.transferPlan.findMany({
         where: { eventId, ...inScope },
+        // Without a total order Postgres is free to return plans in any order, which made the
+        // priority-action list differ between two reports of the same data.
+        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
         include: {
           actions: {
             orderBy: { order: 'asc' },
@@ -1057,8 +1089,8 @@ export async function buildReport(input: BuildInput): Promise<BuiltReport> {
   let results: ResultsSection | null = null;
   if (sections.has('results')) {
     const fu = await stageAnswers('follow_up');
-    const metQ = fu?.questions.find((q) => q.builtin === BUILTIN.expectationMetPre);
-    const metPostQ = fu?.questions.find((q) => q.builtin === BUILTIN.expectationMetPost);
+    const metQ = fu ? branchQuestion(fu, 'reference_answered', 'choice') : undefined;
+    const metPostQ = fu ? branchQuestion(fu, 'reference_unanswered', 'choice') : undefined;
     const outcomes = { improved: 0, declined: 0, unchanged: 0, not_comparable: 0 };
     const resultSupport = Object.fromEntries(evidenceSupports.map((s) => [s, 0])) as Record<
       EvidenceSupport,

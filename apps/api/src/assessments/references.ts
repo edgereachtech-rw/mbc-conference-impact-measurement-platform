@@ -21,7 +21,8 @@ type Db = Pick<
 /**
  * The delegate's own answers to the event's reference questions (the pre-event questions the
  * admin chose to show back), in the admin's order, as text, whichever version of the question
- * they answered. The first one is the expectation the built-in expectations block asks about.
+ * they answered. These are shown beside the Transfer Plan; a question that shows an earlier
+ * answer back on a form uses its own referenceQuestionKey instead (requirement 10.5).
  */
 export async function referenceAnswersFor(
   db: Db,

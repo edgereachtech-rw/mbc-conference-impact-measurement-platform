@@ -27,11 +27,16 @@ const silent = pino({ level: 'silent' });
 
 interface Q {
   id: string;
+  questionKey: string;
   prompt: string;
   sectionId: string | null;
   builtin: string | null;
   sourceQuestionKey: string | null;
   required: boolean;
+  referenceQuestionKey: string | null;
+  showReferenceAnswer: boolean;
+  visibleWhen: string;
+  allowDecline: boolean;
 }
 interface S {
   id: string;
@@ -99,11 +104,21 @@ describe.skipIf(!hasDatabase)('end-of-conference evaluation', () => {
     return r.body.assessments.find((a: { stage: string }) => a.stage === stage) as {
       sections: S[];
       questions: Q[];
-      context: { references: Array<{ key: string; answer: string | null }>; planStatus: string };
+      context: {
+        references: Array<{ key: string; answer: string | null }>;
+        referenceAnswers: Record<string, { prompt: string; answer: string | null }>;
+        planStatus: string;
+      };
       response: { submittedAt: string | null } | null;
     };
   };
   const byBuiltin = (qs: Q[], builtin: string) => qs.find((q) => q.builtin === builtin);
+  /** The expectations questions are ordinary questions now, so they are found by wording. */
+  const byPrompt = (qs: Q[], prompt: string) => qs.find((q) => q.prompt === prompt);
+  const MET_PRE = 'To what extent did the conference provide what you hoped to gain?';
+  const EXPLAIN = 'Please explain your response.';
+  const RECORDED_AFTER = 'You did not record this before. What did you hope to gain?';
+  const MET_POST = 'To what extent was this expectation met?';
   const bySource = (qs: Q[], sourceId: string) =>
     qs.find((q) => q.sourceQuestionKey === ids[`key:${sourceId}`]);
 
@@ -284,21 +299,59 @@ describe.skipIf(!hasDatabase)('end-of-conference evaluation', () => {
     expect(relax.status, relax.text).toBe(200);
     await call('patch', `${eoc()}/questions/${repeated[0]!.id}`, { required: true });
 
-    const block = await call('post', `${eoc()}/sections/builtin`, { kind: 'expectations' });
-    expect(block.status, block.text).toBe(201);
-    expect(
-      (block.body.questions as Q[])
-        .filter((q) => q.sectionId === block.body.section.id)
-        .map((q) => q.builtin),
-    ).toEqual([
-      'expectation_met_pre',
-      'expectation_explain',
-      'expectation_recorded_after',
-      'expectation_met_post',
-    ]);
-    expect((await call('post', `${eoc()}/sections/builtin`, { kind: 'expectations' })).status).toBe(
-      409,
-    );
+    // Requirement 10.5, built as ordinary questions that refer to the pre-conference answer.
+    const expectations = await call('post', `${eoc()}/sections`, { title: 'Your expectations' });
+    expect(expectations.status, expectations.text).toBe(201);
+    ids.expectationsSection = expectations.body.section.id;
+    const branch = async (
+      prompt: string,
+      extra: Record<string, unknown>,
+    ): Promise<Record<string, unknown>> => {
+      const r = await call('post', `${eoc()}/questions`, {
+        prompt,
+        sectionId: ids.expectationsSection,
+        referenceQuestionKey: learnKey,
+        ...extra,
+      });
+      expect(r.status, r.text).toBe(201);
+      return r.body.question;
+    };
+    const choice = (...values: string[]) => ({
+      type: 'single_choice',
+      options: values.map((v) => ({ value: v, label: v })),
+    });
+    await branch(MET_PRE, {
+      ...choice('fully', 'partly', 'not_at_all'),
+      visibleWhen: 'reference_answered',
+      showReferenceAnswer: true,
+    });
+    await branch(EXPLAIN, {
+      type: 'long_text',
+      required: false,
+      visibleWhen: 'reference_answered',
+    });
+    await branch(RECORDED_AFTER, {
+      type: 'long_text',
+      required: false,
+      visibleWhen: 'reference_unanswered',
+      allowDecline: true,
+    });
+    await branch(MET_POST, {
+      ...choice('met', 'not_met'),
+      visibleWhen: 'reference_unanswered',
+    });
+
+    // A question may only refer to a stage that comes before its own.
+    const backwards = await call('post', `${eoc()}/questions`, {
+      prompt: 'Refers to itself',
+      ...choice('a', 'b'),
+      sectionId: ids.expectationsSection,
+      referenceQuestionKey: (await call('get', `${eoc()}/questions`)).body.questions[0].questionKey,
+      visibleWhen: 'reference_answered',
+    });
+    expect(backwards.status, backwards.text).toBe(400);
+    expect(backwards.body.error.code).toBe('reference_not_earlier');
+
     const readiness = await call('post', `${eoc()}/sections/builtin`, { kind: 'readiness' });
     expect(readiness.status, readiness.text).toBe(201);
 
@@ -345,9 +398,16 @@ describe.skipIf(!hasDatabase)('end-of-conference evaluation', () => {
       'Readiness to apply',
       'In person',
     ]);
+    // Dee recorded an expectation, so she gets that branch and never sees the other.
+    expect(dee.questions.filter((q) => q.visibleWhen !== 'always').map((q) => q.prompt)).toEqual([
+      MET_PRE,
+      EXPLAIN,
+    ]);
+    expect(byPrompt(dee.questions, MET_PRE)?.showReferenceAnswer).toBe(true);
+    expect(dee.context.referenceAnswers[learnKey]).toMatchObject({
+      answer: 'How to measure transfer',
+    });
     expect(dee.questions.map((q) => q.builtin).filter(Boolean)).toEqual([
-      'expectation_met_pre',
-      'expectation_explain',
       'readiness',
       'plan_status',
       'readiness_support',
@@ -369,9 +429,13 @@ describe.skipIf(!hasDatabase)('end-of-conference evaluation', () => {
     const ada = await myStage(cookies.ada, 'end_of_conference');
     expect(ada.sections.map((s) => s.title)).toContain('Online');
     expect(ada.sections.map((s) => s.title)).not.toContain('In person');
+    // Ada recorded none, so she gets the other branch — and no panel, since there is nothing to show.
+    expect(ada.questions.filter((q) => q.visibleWhen !== 'always').map((q) => q.prompt)).toEqual([
+      RECORDED_AFTER,
+      MET_POST,
+    ]);
+    expect(ada.context.referenceAnswers[learnKey]).toBeUndefined();
     expect(ada.questions.map((q) => q.builtin).filter(Boolean)).toEqual([
-      'expectation_recorded_after',
-      'expectation_met_post',
       'readiness',
       'plan_status',
       'readiness_support',
@@ -386,7 +450,7 @@ describe.skipIf(!hasDatabase)('end-of-conference evaluation', () => {
       [bySource(dee.questions, ids.k2!)!.id]: 'a',
       [bySource(dee.questions, ids.c1!)!.id]: '2',
       [bySource(dee.questions, ids.c2!)!.id]: '3',
-      [byBuiltin(dee.questions, 'expectation_met_pre')!.id]: 'partly',
+      [byPrompt(dee.questions, MET_PRE)!.id]: 'partly',
       [byBuiltin(dee.questions, 'readiness')!.id]: 'ready_now',
       [byBuiltin(dee.questions, 'plan_status')!.id]: 'started',
       [ids.pq!]: 'excellent',
@@ -410,8 +474,8 @@ describe.skipIf(!hasDatabase)('end-of-conference evaluation', () => {
     expect((await myStage(cookies.dee, 'end_of_conference')).response?.submittedAt).toBeTruthy();
 
     const ada = await myStage(cookies.ada, 'end_of_conference');
-    const recordedAfter = byBuiltin(ada.questions, 'expectation_recorded_after')!;
-    const metPost = byBuiltin(ada.questions, 'expectation_met_post')!;
+    const recordedAfter = byPrompt(ada.questions, RECORDED_AFTER)!;
+    const metPost = byPrompt(ada.questions, MET_POST)!;
     const adaBase = {
       [bySource(ada.questions, ids.k1!)!.id]: 'b',
       [bySource(ada.questions, ids.k2!)!.id]: 'a',
@@ -470,7 +534,7 @@ describe.skipIf(!hasDatabase)('end-of-conference evaluation', () => {
     const summary = await call('get', `${eoc()}/summary`);
     expect(summary.status, summary.text).toBe(200);
     const metPre = summary.body.summary.distributions.find(
-      (d: { builtin: string | null }) => d.builtin === 'expectation_met_pre',
+      (d: { prompt: string }) => d.prompt === MET_PRE,
     );
     expect(metPre).toMatchObject({ responses: 1, sectionTitle: 'Your expectations' });
     expect(metPre.options.find((o: { value: string }) => o.value === 'partly')).toMatchObject({
@@ -524,8 +588,16 @@ describe.skipIf(!hasDatabase)('end-of-conference evaluation', () => {
         'physical',
       );
       const questions = lists.body.questions as Q[];
-      expect(questions.filter((q) => q.builtin)).toHaveLength(7);
+      // Readiness is the only built-in block left; the expectations questions are the event's own.
+      expect(questions.filter((q) => q.builtin)).toHaveLength(3);
       expect(questions.filter((q) => q.sourceQuestionKey)).toHaveLength(12);
+      // All four refer to the pre-conference expectation, two per branch, one showing it back.
+      const referring = questions.filter((q) => q.referenceQuestionKey);
+      expect(referring).toHaveLength(4);
+      expect(referring.filter((q) => q.visibleWhen === 'reference_answered')).toHaveLength(2);
+      expect(referring.filter((q) => q.visibleWhen === 'reference_unanswered')).toHaveLength(2);
+      expect(referring.filter((q) => q.showReferenceAnswer)).toHaveLength(1);
+      expect(referring.filter((q) => q.allowDecline)).toHaveLength(1);
       expect(loaded.questions).toBe(questions.length);
     } finally {
       await prisma.event.delete({ where: { id: seedEventId } }).catch(() => undefined);

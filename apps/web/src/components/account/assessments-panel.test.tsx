@@ -21,9 +21,18 @@ const question = (id: string, extra: Record<string, unknown>) => ({
   responseCount: 0,
   sourceQuestionKey: null,
   builtin: null,
+  referenceQuestionKey: null,
+  showReferenceAnswer: false,
+  visibleWhen: 'always',
+  allowDecline: false,
   ...extra,
 });
-const noContext: MyAssessment['context'] = { references: [], planStatus: null, plan: null };
+const noContext: MyAssessment['context'] = {
+  references: [],
+  referenceAnswers: {},
+  planStatus: null,
+  plan: null,
+};
 const open: MyAssessment = {
   stage: 'pre_conference',
   wave: 1,
@@ -373,7 +382,9 @@ describe('AssessmentsPanel', () => {
           type: 'single_choice',
           prompt: 'To what extent did the conference provide what you hoped to gain?',
           sectionId: 'x',
-          builtin: 'expectation_met_pre',
+          referenceQuestionKey: '55555555-5555-4555-8555-555555555555',
+          showReferenceAnswer: true,
+          visibleWhen: 'reference_answered',
           options: [
             { value: 'fully', label: 'Fully' },
             { value: 'partly', label: 'Partly' },
@@ -392,13 +403,13 @@ describe('AssessmentsPanel', () => {
         }),
       ] as MyAssessment['questions'],
       context: {
-        references: [
-          {
-            questionKey: '55555555-5555-4555-8555-555555555555',
+        references: [],
+        referenceAnswers: {
+          '55555555-5555-4555-8555-555555555555': {
             prompt: 'What would you like to learn or gain from the conference?',
             answer: 'How to measure transfer',
           },
-        ],
+        },
         planStatus: 'started',
         plan: null,
       },
@@ -427,14 +438,19 @@ describe('AssessmentsPanel', () => {
           prompt:
             'You did not record this before the conference. Looking back, what did you hope to gain from attending?',
           sectionId: 'x',
-          builtin: 'expectation_recorded_after',
+          order: 1,
+          referenceQuestionKey: '55555555-5555-4555-8555-555555555555',
+          visibleWhen: 'reference_unanswered',
+          allowDecline: true,
           required: false,
         }),
         question('m', {
           type: 'single_choice',
           prompt: 'To what extent was this expectation met?',
           sectionId: 'x',
-          builtin: 'expectation_met_post',
+          order: 2,
+          referenceQuestionKey: '55555555-5555-4555-8555-555555555555',
+          visibleWhen: 'reference_unanswered',
           options: [
             { value: 'met', label: 'Met' },
             { value: 'not_met', label: 'Not met' },
@@ -442,9 +458,8 @@ describe('AssessmentsPanel', () => {
         }),
       ] as MyAssessment['questions'],
       context: {
-        references: [
-          { questionKey: '55555555-5555-4555-8555-555555555555', prompt: 'x', answer: null },
-        ],
+        references: [],
+        referenceAnswers: {},
         planStatus: 'no',
         plan: null,
       },

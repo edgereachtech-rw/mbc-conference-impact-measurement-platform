@@ -4,11 +4,10 @@ import {
   answerScore,
   assessmentStageNames,
   assessmentStages,
-  BUILTIN,
   builtinBlockSchema,
   describeAnswer,
   GENERAL_SECTION,
-  hiddenBuiltinsFor,
+  questionIsVisible,
   isLockedQuestion,
   PREFER_NOT_TO_ANSWER,
   sectionMirrorSchema,
@@ -98,6 +97,10 @@ export function questionViewOf(q: QuestionRow): AssessmentQuestionView {
     responseCount: q._count.answers,
     sourceQuestionKey: q.sourceQuestionKey,
     builtin: q.builtin,
+    referenceQuestionKey: q.referenceQuestionKey,
+    showReferenceAnswer: q.showReferenceAnswer,
+    visibleWhen: q.visibleWhen,
+    allowDecline: q.allowDecline,
   };
 }
 
@@ -341,6 +344,7 @@ export async function stageSummaryFor(
         prompt: q.prompt,
         sectionTitle: q.sectionId ? (sectionTitles.get(q.sectionId) ?? null) : null,
         builtin: q.builtin,
+        visibleWhen: q.visibleWhen,
         responses: chosen.length,
         options: (q.options ?? []).map((o) => {
           const count = chosen.filter((v) => v === o.value).length;
@@ -583,6 +587,7 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
       const input = req.body as z.infer<typeof questionCreateSchema>;
       const sectionId = await sectionFor(stage.id, input.sectionId);
       const order = await nextOrder(stage.id);
+      await assertReferenceAllowed(stage, input.referenceQuestionKey ?? null);
       const created = await prisma().$transaction(async (tx) => {
         const row = await tx.assessmentQuestion.create({
           data: {
@@ -600,6 +605,10 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
               input.type === 'rating'
                 ? ((input.scale ?? { min: 1, max: 5 }) as Prisma.InputJsonValue)
                 : undefined,
+            referenceQuestionKey: input.referenceQuestionKey ?? null,
+            showReferenceAnswer: input.showReferenceAnswer,
+            visibleWhen: input.visibleWhen,
+            allowDecline: input.allowDecline,
           },
           include: QUESTION_INCLUDE,
         });
@@ -626,6 +635,32 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
       res.status(201).json({ question: questionViewOf(created), ...(await lists(stage.id)) });
     },
   );
+
+  /**
+   * A question may only refer to an answer that already exists when it is asked: a question of
+   * the same event, in an earlier stage. Anything else would leave the delegate's branch
+   * undecidable at the moment the form is built (requirement 10.5).
+   */
+  async function assertReferenceAllowed(
+    stage: { eventId: string; stage: AssessmentStage },
+    questionKey: string | null,
+  ) {
+    if (!questionKey) return;
+    const target = await prisma().assessmentQuestion.findFirst({
+      where: { questionKey, eventId: stage.eventId },
+      select: { stage: { select: { stage: true } } },
+    });
+    if (!target) {
+      throw new HttpError(400, 'unknown_reference', 'That question is not part of this event.');
+    }
+    if (stageOrder[target.stage.stage] >= stageOrder[stage.stage]) {
+      throw new HttpError(
+        400,
+        'reference_not_earlier',
+        'A question can only refer to a stage that comes before this one.',
+      );
+    }
+  }
 
   router.patch(
     '/events/:eventId/assessments/:stage/questions/:questionId',
@@ -673,6 +708,13 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
           patch.scale === undefined
             ? ((current.scale as RatingScale | null) ?? undefined)
             : (patch.scale ?? undefined),
+        referenceQuestionKey:
+          patch.referenceQuestionKey === undefined
+            ? current.referenceQuestionKey
+            : patch.referenceQuestionKey,
+        showReferenceAnswer: patch.showReferenceAnswer ?? current.showReferenceAnswer,
+        visibleWhen: patch.visibleWhen ?? current.visibleWhen,
+        allowDecline: patch.allowDecline ?? current.allowDecline,
       });
       if (!merged.success) {
         const issue = merged.error.issues[0];
@@ -682,12 +724,17 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
           `${issue?.path.join('.')}: ${issue?.message}`,
         );
       }
+      await assertReferenceAllowed(stage, merged.data.referenceQuestionKey ?? null);
       const data = {
         prompt: merged.data.prompt,
         helpText: merged.data.helpText ?? null,
         type: merged.data.type,
         required: merged.data.required,
         area: merged.data.area ?? null,
+        referenceQuestionKey: merged.data.referenceQuestionKey ?? null,
+        showReferenceAnswer: merged.data.showReferenceAnswer,
+        visibleWhen: merged.data.visibleWhen,
+        allowDecline: merged.data.allowDecline,
         options: merged.data.options
           ? (merged.data.options as Prisma.InputJsonValue)
           : Prisma.JsonNull,
@@ -1400,11 +1447,52 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
           })),
         }
       : null;
+    // Every question key this delegate's stages may refer to, answered once per request: which
+    // questions they are asked, and which earlier answers are shown back, both depend on it.
+    const referenced = await prisma().assessmentQuestion.findMany({
+      where: { eventId, retiredAt: null, referenceQuestionKey: { not: null } },
+      select: { referenceQuestionKey: true },
+      distinct: ['referenceQuestionKey'],
+    });
+    const referenceAnswers = new Map<string, { prompt: string; answer: string | null }>();
+    for (const { referenceQuestionKey: key } of referenced) {
+      if (!key) continue;
+      referenceAnswers.set(key, await answerToQuestionKey(eventId, delegateId, key));
+    }
     return {
       references,
       planStatus,
       planSummary,
-      hidden: new Set(hiddenBuiltinsFor(hasPreAnswer)),
+      referenceAnswers,
+      hasPreAnswer,
+    };
+  }
+
+  /** One delegate's answer to a question identified by key, whichever version they answered. */
+  async function answerToQuestionKey(
+    eventId: string,
+    delegateId: string,
+    questionKey: string,
+  ): Promise<{ prompt: string; answer: string | null }> {
+    const question = await prisma().assessmentQuestion.findFirst({
+      where: { questionKey, eventId },
+      orderBy: { version: 'desc' },
+      select: { prompt: true },
+    });
+    const answer = await prisma().assessmentAnswer.findFirst({
+      where: {
+        question: { questionKey },
+        response: { delegateId, stage: { eventId }, submittedAt: { not: null } },
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { value: true },
+    });
+    const text = typeof answer?.value === 'string' ? answer.value.trim() : null;
+    return {
+      prompt: question?.prompt ?? '',
+      // A declined answer is not an expectation: it must not flip the delegate into the
+      // "you recorded one" branch.
+      answer: text && text !== PREFER_NOT_TO_ANSWER ? text : null,
     };
   }
 
@@ -1447,13 +1535,19 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
       .sort((a, b) => stageOrder[a.s.stage] - stageOrder[b.s.stage] || a.s.wave - b.s.wave)
       .map(({ s, state }) => {
         const response = s.responses[0] ?? null;
-        // Sections for other formats and the other branch of the expectations block are left out.
+        // Sections for other formats, and questions for the other branch, are left out.
         const sections = s.sections.filter((x) => audienceAllows(x, delegate.attendanceFormat));
         const views = sortQuestions(s.questions)
           .filter(
             (q) =>
               audienceAllows(q.section, delegate.attendanceFormat) &&
-              !(q.builtin && context.hidden.has(q.builtin)),
+              questionIsVisible(
+                q,
+                Boolean(
+                  q.referenceQuestionKey &&
+                  context.referenceAnswers.get(q.referenceQuestionKey)?.answer,
+                ),
+              ),
           )
           .map(questionViewOf);
         const byId = new Map(views.map((q) => [q.id, q]));
@@ -1489,6 +1583,18 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
             planStatus: context.planStatus,
             // Only a follow-up shows the plan back; the earlier stages have nothing to show yet.
             plan: s.stage === 'follow_up' ? context.planSummary : null,
+            // The earlier answers this stage's questions show back, by question key.
+            referenceAnswers: Object.fromEntries(
+              views
+                .filter((q) => q.showReferenceAnswer && q.referenceQuestionKey)
+                .map((q) => [
+                  q.referenceQuestionKey!,
+                  context.referenceAnswers.get(q.referenceQuestionKey!) ?? {
+                    prompt: '',
+                    answer: null,
+                  },
+                ]),
+            ),
           },
         };
       });
@@ -1539,7 +1645,13 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
           .filter(
             (q) =>
               audienceAllows(q.section, delegate.attendanceFormat) &&
-              !(q.builtin && context.hidden.has(q.builtin)),
+              questionIsVisible(
+                q,
+                Boolean(
+                  q.referenceQuestionKey &&
+                  context.referenceAnswers.get(q.referenceQuestionKey)?.answer,
+                ),
+              ),
           )
           .map((q) => [q.id, questionViewOf(q)]),
       );
@@ -1608,14 +1720,24 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
         : submitSection !== undefined
           ? [submitSection]
           : [];
-      // A delegate who prefers not to record an expectation is not asked whether it was met.
-      const declined = [...byId.values()].some(
+      // A delegate who declines a question is not then pressed on what follows from it: the
+      // questions after it in the same section, on the same reference and the same branch, stop
+      // being required (requirement 10.5, "may also select I prefer not to answer and continue").
+      const declined = [...byId.values()].filter(
         (q) =>
-          q.builtin === BUILTIN.expectationRecordedAfter &&
-          kept.find((k) => k.questionId === q.id)?.value === PREFER_NOT_TO_ANSWER,
+          q.allowDecline && kept.find((k) => k.questionId === q.id)?.value === PREFER_NOT_TO_ANSWER,
       );
+      const followsADecline = (q: typeof byId extends Map<string, infer V> ? V : never) =>
+        declined.some(
+          (d) =>
+            d.id !== q.id &&
+            d.sectionId === q.sectionId &&
+            d.referenceQuestionKey === q.referenceQuestionKey &&
+            d.visibleWhen === q.visibleWhen &&
+            d.order < q.order,
+        );
       for (const question of byId.values()) {
-        if (declined && question.builtin === BUILTIN.expectationMetPost) continue;
+        if (followsADecline(question)) continue;
         if (
           question.required &&
           submitting.includes(sectionKeyOf(question.sectionId)) &&

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { pairedResultsSchema } from './assessments.js';
+import { pairedResultsSchema, questionVisibilities } from './assessments.js';
 import { participationModes } from './auth.js';
 import { reflectionStatuses } from './reflections.js';
 import {
@@ -172,6 +172,8 @@ export const choiceDistributionSchema = z.object({
   prompt: z.string(),
   sectionTitle: z.string().nullable(),
   builtin: z.string().nullable(),
+  /** Which delegates were asked: a branch question's share is of its cohort, not the stage. */
+  visibleWhen: z.enum(questionVisibilities).default('always'),
   multiple: z.boolean(),
   responses: z.number().int(),
   state: z.enum(dataStates),

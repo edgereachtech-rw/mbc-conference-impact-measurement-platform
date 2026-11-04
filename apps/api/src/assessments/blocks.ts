@@ -75,6 +75,12 @@ export async function mirrorSectionInto(
         options: q.options === null ? undefined : (q.options as Prisma.InputJsonValue),
         scale: q.scale === null ? undefined : (q.scale as Prisma.InputJsonValue),
         sourceQuestionKey: q.questionKey,
+        // A repeat is the same question asked again, so it keeps how it refers to an earlier
+        // answer and who it is asked of; the source stage is earlier still, so it stays valid.
+        referenceQuestionKey: q.referenceQuestionKey,
+        showReferenceAnswer: q.showReferenceAnswer,
+        visibleWhen: q.visibleWhen,
+        allowDecline: q.allowDecline,
       },
     });
   }

@@ -744,6 +744,37 @@ rate, as for every stage. Note that repeating a section is a limited, section-le
 "repeat from another stage" idea removed on 2026-10-30 for single questions: it exists only so
 paired results can be computed, and the repeated questions are locked.
 
+Change of 2026-11-04 (decided by M.Bryan): **the expectations built-in block was removed** and
+requirement 10.5 is now ordinary question configuration. The block fixed the wording of four
+questions for every event, which is the one thing an event cannot change. Three new fields on a
+question replace it, and any event can now express 10.5 in its own words:
+
+| Field | What it does |
+| --- | --- |
+| `referenceQuestionKey` | An earlier question of the same event, by key. Only an **earlier stage** is accepted (`reference_not_earlier`), so the answer exists by the time the question is asked |
+| `showReferenceAnswer` | Shows the delegate their own answer to it, above this question ("Before the conference, you said") |
+| `visibleWhen` | `always`, `reference_answered` or `reference_unanswered` — which delegates are asked at all |
+| `allowDecline` | Offers "I prefer not to answer"; declining drops the required check on the questions after it in the same section, on the same reference and branch |
+
+What this changes elsewhere:
+
+- **E11-12 and E11-13 are unchanged as requirements**, and ITTEC's seeded content reproduces them
+  exactly: four questions in "Your expectations", all referring to the pre-conference *"What would
+  you like to learn or gain from the conference?"*, two per branch, with the two scales of OQ-4.
+- **The report no longer matches on wording or markers.** `expectations_end` and the follow-up
+  `results` section find their questions structurally — the earliest single-choice and text
+  question of each branch — so an event that words them differently is still reported. E15-11's
+  "reported separately" still holds, because the two branches are different questions.
+- **Branch questions are excluded from the stage-wide distributions**, as the built-in ones were:
+  their denominator is one cohort, not the stage.
+- **Readiness remains a built-in block.** Its plan-status prefill reads the Transfer Plan, which no
+  question-level field expresses, so E11-11 still needs the platform to recognise that question.
+- A **repeated section** carries these fields across with the rest of the question.
+
+Not done, and worth saying: there is still no way to show an earlier answer against a question
+without also branching on it being present — the two are configured together on one reference.
+That is enough for 10.5 and was not widened further.
+
 ---
 
 ## E12. Post-conference follow-ups and action status (S11)

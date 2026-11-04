@@ -84,6 +84,27 @@ export async function loadTemplateInto(
     for (const q of section.questions) {
       questionOrder += 1;
       questions += 1;
+      // A referenced question is named by its wording; the key only exists once it is created,
+      // so the stage it belongs to must already be loaded (the seed loads pre-conference first).
+      let referenceQuestionKey = q.referenceQuestionKey ?? null;
+      if (q.referenceOf) {
+        const target = await tx.assessmentQuestion.findFirst({
+          where: {
+            eventId: stage.eventId,
+            prompt: q.referenceOf.prompt,
+            retiredAt: null,
+            stage: { stage: q.referenceOf.stage },
+          },
+          orderBy: { version: 'desc' },
+          select: { questionKey: true },
+        });
+        if (!target) {
+          throw new Error(
+            `Template ${template.id}: no ${q.referenceOf.stage} question matches "${q.referenceOf.prompt}".`,
+          );
+        }
+        referenceQuestionKey = target.questionKey;
+      }
       await tx.assessmentQuestion.create({
         data: {
           stageConfigId: stage.id,
@@ -91,15 +112,20 @@ export async function loadTemplateInto(
           sectionId: created.id,
           order: questionOrder,
           prompt: q.prompt,
-          helpText: q.helpText ?? null,
+          // helpText and area are preprocessed by Zod, so an author writes them as unknown.
+          helpText: typeof q.helpText === 'string' ? q.helpText : null,
           type: q.type,
-          required: q.required,
-          area: q.area ?? null,
+          required: q.required ?? true,
+          area: typeof q.area === 'string' ? q.area : null,
           options: q.options ? (q.options as Prisma.InputJsonValue) : undefined,
           scale:
             q.type === 'rating'
               ? ((q.scale ?? { min: 1, max: 5 }) as Prisma.InputJsonValue)
               : undefined,
+          referenceQuestionKey,
+          showReferenceAnswer: q.showReferenceAnswer ?? false,
+          visibleWhen: q.visibleWhen ?? 'always',
+          allowDecline: q.allowDecline ?? false,
         },
       });
     }

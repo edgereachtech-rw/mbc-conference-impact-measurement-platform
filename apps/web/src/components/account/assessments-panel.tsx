@@ -212,11 +212,27 @@ function AssessmentCard({
         ? 'Closed'
         : 'Opens later';
   const canAnswer = assessment.canAnswer && !submitted;
-  const recordedAfter = assessment.questions.find(
-    (q) => q.builtin === BUILTIN.expectationRecordedAfter,
+  /**
+   * A delegate who declines a question is not pressed on what follows from it: the questions
+   * after it in the same section, on the same reference and the same branch, drop away. Mirrors
+   * the server rule so the form and the submission agree (requirement 10.5).
+   */
+  const declinedQuestions = assessment.questions.filter(
+    (q) => q.allowDecline && answers[q.id] === PREFER_NOT_TO_ANSWER,
   );
-  /** A delegate who prefers not to record an expectation is not asked whether it was met. */
-  const declined = recordedAfter ? answers[recordedAfter.id] === PREFER_NOT_TO_ANSWER : false;
+  const followsADecline = (q: (typeof assessment.questions)[number]) =>
+    declinedQuestions.some(
+      (d) =>
+        d.id !== q.id &&
+        d.sectionId === q.sectionId &&
+        d.referenceQuestionKey === q.referenceQuestionKey &&
+        d.visibleWhen === q.visibleWhen &&
+        d.order < q.order,
+    );
+  const referenceFor = (q: (typeof assessment.questions)[number]) =>
+    q.showReferenceAnswer && q.referenceQuestionKey
+      ? (assessment.context.referenceAnswers?.[q.referenceQuestionKey] ?? null)
+      : null;
   const learnReference = assessment.context.references[0] ?? null;
   const groups = groupQuestions(assessment.sections, assessment.questions).filter(
     (g) => g.questions.length > 0,
@@ -251,7 +267,7 @@ function AssessmentCard({
   ): Record<string, string> {
     const next: Record<string, string> = {};
     for (const q of assessment.questions) {
-      if (q.builtin === BUILTIN.expectationMetPost && declined) continue;
+      if (followsADecline(q)) continue;
       const value = current[q.id];
       if (isBlankAnswer(value)) {
         if (q.required && requiredIn?.some((x) => x.id === q.id)) {
@@ -495,8 +511,9 @@ function AssessmentCard({
                 ) : null}
                 <ol className="space-y-5">
                   {group.questions.map((q) => {
-                    if (q.builtin === BUILTIN.expectationMetPost && declined) return null;
-                    const isRecordedAfter = q.builtin === BUILTIN.expectationRecordedAfter;
+                    if (followsADecline(q)) return null;
+                    const isRecordedAfter = q.allowDecline;
+                    const shownReference = referenceFor(q);
                     return (
                       <li
                         key={q.id}
@@ -506,7 +523,7 @@ function AssessmentCard({
                             : 'space-y-2'
                         }
                       >
-                        {q.builtin === BUILTIN.expectationMetPre && learnReference?.answer ? (
+                        {shownReference?.answer ? (
                           <div
                             role="note"
                             aria-label="Before the conference, you said"
@@ -515,10 +532,10 @@ function AssessmentCard({
                             <p className="text-xs font-semibold tracking-[0.08em] text-corp-muted uppercase">
                               Before the conference, you said
                             </p>
-                            {learnReference.prompt ? (
-                              <p className="text-xs text-corp-muted">{learnReference.prompt}</p>
+                            {shownReference.prompt ? (
+                              <p className="text-xs text-corp-muted">{shownReference.prompt}</p>
                             ) : null}
-                            <p className="text-corp-text">{learnReference.answer}</p>
+                            <p className="text-corp-text">{shownReference.answer}</p>
                           </div>
                         ) : null}
                         <QuestionField
@@ -526,7 +543,10 @@ function AssessmentCard({
                           question={q}
                           value={answers[q.id]}
                           disabled={
-                            !canAnswer || locked || busy !== null || (isRecordedAfter && declined)
+                            !canAnswer ||
+                            locked ||
+                            busy !== null ||
+                            (isRecordedAfter && answers[q.id] === PREFER_NOT_TO_ANSWER)
                           }
                           problem={problems[q.id]}
                           feedback={feedback[q.id]}
@@ -538,7 +558,7 @@ function AssessmentCard({
                           <label className="flex min-h-tap items-center gap-2 text-sm text-corp-ink">
                             <input
                               type="checkbox"
-                              checked={declined}
+                              checked={answers[q.id] === PREFER_NOT_TO_ANSWER}
                               disabled={busy !== null}
                               onChange={(e) =>
                                 setAnswer(q.id, e.target.checked ? PREFER_NOT_TO_ANSWER : '')

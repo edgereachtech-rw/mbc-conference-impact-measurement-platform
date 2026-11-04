@@ -242,6 +242,16 @@ enum SectionAudience {
   @@map("section_audience")
 }
 
+/// When a question is asked, judged on the delegate's answer to its reference question
+/// (requirement 10.5); see questionVisibilities in @mbc/shared.
+enum QuestionVisibility {
+  always
+  reference_answered
+  reference_unanswered
+
+  @@map("question_visibility")
+}
+
 /// How a section's single-choice questions are marked; see sectionMarkings in @mbc/shared.
 enum SectionMarking {
   none
@@ -1040,8 +1050,18 @@ model AssessmentQuestion {
   /// The question_key this question repeats from another stage (mirrored sections); answers to
   /// the two are paired per delegate in reports. Wording and options stay locked.
   sourceQuestionKey String?      @map("source_question_key") @db.Uuid
-  /// A built-in block question (expectations, readiness); see builtinBlocks in @mbc/shared.
+  /// A built-in block question (readiness); see builtinBlocks in @mbc/shared.
   builtin           String?
+  /// An earlier question of this event (its question_key) that this one relates to: the delegate's
+  /// own answer to it can be shown here, and can decide whether this question is asked at all
+  /// (requirement 10.5). A key, not an id, so it survives the versioning of the earlier question.
+  referenceQuestionKey String?            @map("reference_question_key") @db.Uuid
+  /// Show the delegate's answer to referenceQuestionKey above this question.
+  showReferenceAnswer  Boolean            @default(false) @map("show_reference_answer")
+  /// Whether this question is asked at all, judged on the reference answer.
+  visibleWhen          QuestionVisibility @default(always) @map("visible_when")
+  /// Offer "I prefer not to answer" beside the question.
+  allowDecline         Boolean            @default(false) @map("allow_decline")
   retiredAt         DateTime?    @map("retired_at") @db.Timestamptz(3)
   createdAt         DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt         DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)

@@ -348,9 +348,50 @@ describe.skipIf(!hasDatabase)('event dashboards and reports', () => {
       title: 'Knowledge check',
     });
     expect(mirrored.status, mirrored.text).toBe(201);
-    expect((await call('post', `${eoc()}/sections/builtin`, { kind: 'expectations' })).status).toBe(
-      201,
-    );
+    // Requirement 10.5 as ordinary questions: two branches on the pre-conference expectation.
+    const expectationsSection = await call('post', `${eoc()}/sections`, {
+      title: 'Your expectations',
+    });
+    expect(expectationsSection.status, expectationsSection.text).toBe(201);
+    const learnKey = ids[`key:${ids.learn}`]!;
+    const branchQ = async (prompt: string, extra: Record<string, unknown>) => {
+      const r = await call('post', `${eoc()}/questions`, {
+        prompt,
+        sectionId: expectationsSection.body.section.id,
+        referenceQuestionKey: learnKey,
+        ...extra,
+      });
+      expect(r.status, r.text).toBe(201);
+      return r.body.question.id as string;
+    };
+    ids.metPre = await branchQ('To what extent did it provide what you hoped to gain?', {
+      type: 'single_choice',
+      visibleWhen: 'reference_answered',
+      showReferenceAnswer: true,
+      options: [
+        { value: 'fully', label: 'Fully' },
+        { value: 'partly', label: 'Partly' },
+      ],
+    });
+    ids.explain = await branchQ('Please explain your response.', {
+      type: 'long_text',
+      required: false,
+      visibleWhen: 'reference_answered',
+    });
+    ids.recordedAfter = await branchQ('Looking back, what did you hope to gain?', {
+      type: 'long_text',
+      required: false,
+      visibleWhen: 'reference_unanswered',
+      allowDecline: true,
+    });
+    ids.metPost = await branchQ('To what extent was this expectation met?', {
+      type: 'single_choice',
+      visibleWhen: 'reference_unanswered',
+      options: [
+        { value: 'met', label: 'Met' },
+        { value: 'not_met', label: 'Not met' },
+      ],
+    });
     const phys = await call('post', `${eoc()}/sections`, {
       title: 'In person',
       marking: 'scored',
@@ -373,7 +414,6 @@ describe.skipIf(!hasDatabase)('event dashboards and reports', () => {
     expect((await call('put', eoc(), { enabled: true, status: 'open' })).status).toBe(200);
     await tick('2026-11-13T15:00:00.000Z');
     const deeQ = await myQuestions(cookies.dee, 'end_of_conference');
-    const by = (qs: Q[], builtin: string) => qs.find((x) => x.builtin === builtin)!.id;
     const src = (qs: Q[], sourceId: string) =>
       qs.find((x) => x.sourceQuestionKey === ids[`key:${sourceId}`])!.id;
     const deeEnd = await call(
@@ -383,8 +423,8 @@ describe.skipIf(!hasDatabase)('event dashboards and reports', () => {
         answers: {
           [src(deeQ, ids.k1!)]: 'a',
           [src(deeQ, ids.k2!)]: 'b',
-          [by(deeQ, 'expectation_met_pre')]: 'fully',
-          [by(deeQ, 'expectation_explain')]: 'Got the measures',
+          [ids.metPre!]: 'fully',
+          [ids.explain!]: 'Got the measures',
           [ids.pq!]: '4',
           [ids.gained!]: 'A way to baseline',
         },
@@ -401,8 +441,8 @@ describe.skipIf(!hasDatabase)('event dashboards and reports', () => {
         answers: {
           [src(adaQ, ids.k1!)]: 'a',
           [src(adaQ, ids.k2!)]: 'b',
-          [by(adaQ, 'expectation_recorded_after')]: 'Practical tools',
-          [by(adaQ, 'expectation_met_post')]: 'met',
+          [ids.recordedAfter!]: 'Practical tools',
+          [ids.metPost!]: 'met',
         },
         submit: true,
       },

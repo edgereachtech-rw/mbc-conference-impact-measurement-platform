@@ -1,4 +1,4 @@
-import type { QuestionFields } from '@mbc/shared';
+import type { QuestionFieldsInput } from '@mbc/shared';
 
 import type { AssessmentTemplate } from './ittec-pre-conference.js';
 
@@ -17,7 +17,7 @@ import type { AssessmentTemplate } from './ittec-pre-conference.js';
  * supplied, so that wave is created empty and cannot be opened until it has questions.
  */
 
-const long = (prompt: string, area: string, required = true): QuestionFields => ({
+const long = (prompt: string, area: string, required = true): QuestionFieldsInput => ({
   prompt,
   helpText: null,
   type: 'long_text',
@@ -25,7 +25,7 @@ const long = (prompt: string, area: string, required = true): QuestionFields => 
   area,
 });
 
-const yesNo = (prompt: string, area: string): QuestionFields => ({
+const yesNo = (prompt: string, area: string): QuestionFieldsInput => ({
   prompt,
   helpText: null,
   type: 'yes_no',

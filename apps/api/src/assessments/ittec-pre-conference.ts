@@ -1,7 +1,7 @@
 import type {
   AssessmentStage,
   BuiltinBlockKind,
-  QuestionFields,
+  QuestionFieldsInput,
   SectionAudience,
   SectionMarking,
 } from '@mbc/shared';
@@ -12,6 +12,15 @@ import type {
  * ITTEC event's empty pre-conference stage. The platform's format (sections, question types,
  * scoring) is what every event shares; other events enter their own questions.
  */
+
+/**
+ * A question as content authors it. `referenceOf` names the earlier question this one refers to
+ * by its wording, because the key it needs does not exist until that question is created; the
+ * loader resolves it to a question key (requirement 10.5).
+ */
+export type TemplateQuestion = QuestionFieldsInput & {
+  referenceOf?: { stage: AssessmentStage; prompt: string };
+};
 
 export interface TemplateSection {
   title: string;
@@ -24,7 +33,7 @@ export interface TemplateSection {
   mirrorOf?: { stage: AssessmentStage; title: string };
   /** Add a built-in block instead of the listed questions. */
   builtin?: BuiltinBlockKind;
-  questions: QuestionFields[];
+  questions: TemplateQuestion[];
 }
 
 export interface AssessmentTemplate {
@@ -54,7 +63,11 @@ const CONFIDENCE = [
 
 const NOT_SURE = { value: 'e', label: 'I am not sure' };
 
-const statement = (prompt: string, options: typeof FREQUENCY, area: string): QuestionFields => ({
+const statement = (
+  prompt: string,
+  options: typeof FREQUENCY,
+  area: string,
+): QuestionFieldsInput => ({
   prompt,
   helpText: null,
   type: 'single_choice',
@@ -67,7 +80,7 @@ const knowledge = (
   prompt: string,
   answers: Array<[string, string]>,
   correct: string,
-): QuestionFields => ({
+): QuestionFieldsInput => ({
   prompt,
   helpText: null,
   type: 'single_choice',
@@ -83,7 +96,7 @@ const open = (
   prompt: string,
   required = true,
   area = 'Expectations and learning objectives',
-): QuestionFields => ({
+): QuestionFieldsInput => ({
   prompt,
   helpText: null,
   type: 'long_text',

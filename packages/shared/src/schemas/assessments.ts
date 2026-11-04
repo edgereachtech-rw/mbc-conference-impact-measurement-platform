@@ -59,6 +59,23 @@ export type RatingScale = z.infer<typeof ratingScaleSchema>;
 
 export const choiceTypes: readonly QuestionType[] = ['single_choice', 'multiple_choice'];
 
+/**
+ * When a question is asked, judged on the delegate's own answer to its reference question
+ * (requirement 10.5). This is what lets one stage ask the delegates who recorded an expectation
+ * how far it was met, and ask everyone else to record one now, in each event's own words.
+ */
+export const questionVisibilities = [
+  'always',
+  'reference_answered',
+  'reference_unanswered',
+] as const;
+export type QuestionVisibility = (typeof questionVisibilities)[number];
+export const questionVisibilityLabels: Record<QuestionVisibility, string> = {
+  always: 'Every delegate',
+  reference_answered: 'Only delegates who answered the reference question',
+  reference_unanswered: 'Only delegates who did not answer it',
+};
+
 export const questionFieldsSchema = z
   .object({
     prompt: z.string().trim().min(1, 'Write the question').max(500),
@@ -69,10 +86,21 @@ export const questionFieldsSchema = z
     area: optionalText(100),
     options: z.array(questionOptionSchema).max(20).optional(),
     scale: ratingScaleSchema.optional(),
+    /** An earlier question of this event, by question key; see questionVisibilities. */
+    referenceQuestionKey: z.uuid().nullable().optional(),
+    /** Show the delegate their own answer to that question above this one. */
+    showReferenceAnswer: z.boolean().default(false),
+    visibleWhen: z.enum(questionVisibilities).default('always'),
+    /** Offer "I prefer not to answer" beside the question. */
+    allowDecline: z.boolean().default(false),
   })
   .superRefine((q, ctx) => {
     const issue = (message: string, path: string[] = ['options']) =>
       ctx.addIssue({ code: 'custom', path, message });
+    // Showing an answer, or asking only some delegates, both need to know which answer.
+    if (!q.referenceQuestionKey && (q.showReferenceAnswer || q.visibleWhen !== 'always')) {
+      issue('Choose the earlier question this one refers to', ['referenceQuestionKey']);
+    }
     if (choiceTypes.includes(q.type)) {
       const options = q.options ?? [];
       if (options.length < 2) issue('Give at least two options');
@@ -98,6 +126,11 @@ export const questionFieldsSchema = z
     if (q.type !== 'rating' && q.scale) issue('Only rating questions take a scale', ['scale']);
   });
 export type QuestionFields = z.infer<typeof questionFieldsSchema>;
+/**
+ * The same fields as an author writes them, before Zod fills the defaults. Seeded event content
+ * is typed against this so a question that refers to nothing can simply leave those fields out.
+ */
+export type QuestionFieldsInput = z.input<typeof questionFieldsSchema>;
 
 /**
  * How the single-choice questions of a section are marked (decided 2026-10-30: marking belongs
@@ -180,6 +213,10 @@ export const questionPatchSchema = z.object({
   area: optionalText(100),
   options: z.array(questionOptionSchema).max(20).nullable().optional(),
   scale: ratingScaleSchema.nullable().optional(),
+  referenceQuestionKey: z.uuid().nullable().optional(),
+  showReferenceAnswer: z.boolean().optional(),
+  visibleWhen: z.enum(questionVisibilities).optional(),
+  allowDecline: z.boolean().optional(),
 });
 export type QuestionPatch = z.infer<typeof questionPatchSchema>;
 
@@ -188,30 +225,29 @@ export const questionOrderSchema = z.object({ questionIds: z.array(z.uuid()).min
 // ------------------------------------------------------------------ built-in blocks
 
 /**
- * Blocks whose behaviour the platform knows (backlog E11-10 to E11-13): the expectations block
- * shows the delegate's own pre-event answer and asks how far it was met, or lets a delegate
- * without one record it after the event; the readiness block prefills the plan status from
- * the Transfer Plan. An admin adds a block to any stage; its questions are ordinary, versioned
- * questions with a `builtin` marker, locked in wording so reports stay comparable.
+ * The one block whose behaviour the platform still knows: readiness, which prefills the plan
+ * status from the Transfer Plan (backlog E11-11, requirement 10.4E). An admin adds it to any
+ * stage; its questions are ordinary, versioned questions with a `builtin` marker, locked in
+ * wording because the prefill matches on that marker.
+ *
+ * The expectations block was removed on 2026-11-04. Its behaviour — show the delegate their own
+ * pre-event answer, and ask a different question of delegates who have none — is now ordinary
+ * question configuration (`referenceQuestionKey`, `showReferenceAnswer`, `visibleWhen`,
+ * `allowDecline`), so every event writes requirement 10.5 in its own words.
  */
-export const builtinBlockKinds = ['expectations', 'readiness'] as const;
+export const builtinBlockKinds = ['readiness'] as const;
 export type BuiltinBlockKind = (typeof builtinBlockKinds)[number];
 export const builtinBlockLabels: Record<BuiltinBlockKind, string> = {
-  expectations: 'Expectations: how far the conference met what delegates hoped to gain',
   readiness: 'Readiness to apply, with the plan status filled in from the Transfer Plan',
 };
 
 export const BUILTIN = {
-  expectationMetPre: 'expectation_met_pre',
-  expectationExplain: 'expectation_explain',
-  expectationRecordedAfter: 'expectation_recorded_after',
-  expectationMetPost: 'expectation_met_post',
   readiness: 'readiness',
   planStatus: 'plan_status',
   readinessSupport: 'readiness_support',
 } as const;
 
-/** What a delegate without a pre-event expectation may answer instead of writing one. */
+/** What a delegate may answer instead of writing one, where `allowDecline` is set. */
 export const PREFER_NOT_TO_ANSWER = 'Prefer not to answer';
 
 export const planStatusValues = ['yes', 'started', 'no'] as const;
@@ -220,6 +256,13 @@ export type PlanStatusValue = (typeof planStatusValues)[number];
 export interface BuiltinQuestion extends QuestionFields {
   builtin: string;
 }
+/** A built-in question refers to nothing and is asked of everyone. */
+const plainDisplay = {
+  referenceQuestionKey: null,
+  showReferenceAnswer: false,
+  visibleWhen: 'always',
+  allowDecline: false,
+} satisfies Partial<QuestionFields>;
 const choice = (
   builtin: string,
   prompt: string,
@@ -233,51 +276,27 @@ const choice = (
   required: true,
   area: null,
   options: options.map(([value, label]) => ({ value, label })),
+  ...plainDisplay,
 });
 const textQuestion = (
   builtin: string,
   prompt: string,
   helpText: string | null = null,
   required = false,
-): BuiltinQuestion => ({ builtin, prompt, helpText, type: 'long_text', required, area: null });
+): BuiltinQuestion => ({
+  builtin,
+  prompt,
+  helpText,
+  type: 'long_text',
+  required,
+  area: null,
+  ...plainDisplay,
+});
 
 export const builtinBlocks: Record<
   BuiltinBlockKind,
   { title: string; description: string; questions: BuiltinQuestion[] }
 > = {
-  expectations: {
-    title: 'Your expectations',
-    description: 'How far the conference provided what you hoped to gain.',
-    questions: [
-      choice(
-        BUILTIN.expectationMetPre,
-        'To what extent did the conference provide what you hoped to gain?',
-        [
-          ['fully', 'Fully'],
-          ['partly', 'Partly'],
-          ['not_yet_sure', 'Not yet sure'],
-          ['not_at_all', 'Not at all'],
-          ['no_longer_applicable', 'No longer applicable'],
-        ],
-      ),
-      textQuestion(
-        BUILTIN.expectationExplain,
-        'Please explain your response. What did you gain, and what is still missing?',
-      ),
-      textQuestion(
-        BUILTIN.expectationRecordedAfter,
-        'You did not record this before the conference. Looking back, what did you hope to gain from attending?',
-        'Recorded after the conference.',
-      ),
-      choice(BUILTIN.expectationMetPost, 'To what extent was this expectation met?', [
-        ['met', 'Met'],
-        ['partly_met', 'Partly met'],
-        ['not_yet_met', 'Not yet met'],
-        ['not_met', 'Not met'],
-        ['no_longer_applicable', 'No longer applicable'],
-      ]),
-    ],
-  },
   readiness: {
     title: 'Readiness to apply',
     description: 'How ready you are to begin applying your priority learning.',
@@ -305,14 +324,17 @@ export const builtinBlocks: Record<
 export const builtinBlockSchema = z.object({ kind: z.enum(builtinBlockKinds) });
 
 /**
- * Which built-in expectation questions a delegate does not see: with a pre-event answer the
- * "record it now" pair is hidden; without one, the "was it provided" pair is hidden. Hidden
- * questions are never required and never answered.
+ * Whether a delegate is asked this question, given whether they answered its reference question
+ * (requirement 10.5). A question nobody can see is never required and never answered, so the two
+ * branches of an expectations pair can both be required without either blocking a submission.
  */
-export function hiddenBuiltinsFor(hasPreAnswer: boolean): readonly string[] {
-  return hasPreAnswer
-    ? [BUILTIN.expectationRecordedAfter, BUILTIN.expectationMetPost]
-    : [BUILTIN.expectationMetPre, BUILTIN.expectationExplain];
+export function questionIsVisible(
+  question: { referenceQuestionKey?: string | null; visibleWhen?: QuestionVisibility },
+  referenceAnswered: boolean,
+): boolean {
+  const when = question.visibleWhen ?? 'always';
+  if (when === 'always' || !question.referenceQuestionKey) return true;
+  return when === 'reference_answered' ? referenceAnswered : !referenceAnswered;
 }
 
 export const assessmentQuestionViewSchema = z.object({
@@ -337,6 +359,13 @@ export const assessmentQuestionViewSchema = z.object({
   sourceQuestionKey: z.uuid().nullable(),
   /** A built-in block question; wording and options are locked. See builtinBlocks. */
   builtin: z.string().nullable(),
+  /** An earlier question of this event whose answer this one shows or depends on (10.5). */
+  referenceQuestionKey: z.uuid().nullable(),
+  showReferenceAnswer: z.boolean(),
+  visibleWhen: z.enum(questionVisibilities),
+  allowDecline: z.boolean(),
+  /** The earlier question's wording, for the builder; null when nothing is referenced. */
+  referencePrompt: z.string().nullable().optional(),
 });
 export type AssessmentQuestionView = z.infer<typeof assessmentQuestionViewSchema>;
 
@@ -645,9 +674,17 @@ export const myAssessmentSchema = z.object({
   canAnswer: z.boolean(),
   /** What the built-in blocks show back: the pre-event reference answers and the plan status. */
   context: z.object({
-    /** The event's reference answers in order; the first is the expectation the block asks about. */
+    /** The event's reference answers in order, shown beside the Transfer Plan. */
     references: z.array(
       z.object({ questionKey: z.uuid(), prompt: z.string(), answer: z.string().nullable() }),
+    ),
+    /**
+     * The delegate's own earlier answers that this stage's questions show back, keyed by the
+     * question key each one refers to (requirement 10.5).
+     */
+    referenceAnswers: z.record(
+      z.string(),
+      z.object({ prompt: z.string(), answer: z.string().nullable() }),
     ),
     planStatus: z.enum(planStatusValues).nullable(),
     /** The plan itself, for a follow-up wave; null for the other stages (E12-2). */
@@ -693,6 +730,8 @@ export const stageSummarySchema = z.object({
       prompt: z.string(),
       sectionTitle: z.string().nullable(),
       builtin: z.string().nullable(),
+      /** Which delegates were asked: a branch question's share is of its cohort (10.5). */
+      visibleWhen: z.enum(questionVisibilities).default('always'),
       responses: z.number().int(),
       options: z.array(
         z.object({

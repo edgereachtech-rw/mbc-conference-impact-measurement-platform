@@ -1,4 +1,4 @@
-import type { QuestionFields } from '@mbc/shared';
+import type { QuestionFieldsInput } from '@mbc/shared';
 
 import type { AssessmentTemplate } from './ittec-pre-conference.js';
 
@@ -6,9 +6,15 @@ import type { AssessmentTemplate } from './ittec-pre-conference.js';
  * ITTEC 2026 end-of-conference evaluation content (docs/backlog.md, Appendix A6; requirement
  * section 10). Pilot data, loaded once by `db:seed` into the ITTEC event's empty
  * end-of-conference stage. The knowledge and confidence sections repeat the pre-conference
- * sections (mirrored, so answers pair per delegate); the expectations and readiness blocks are
- * the platform's built-in blocks. Other events write their own content in the same format.
+ * sections (mirrored, so answers pair per delegate); readiness is the platform's one remaining
+ * built-in block. Other events write their own content in the same format.
  */
+
+/**
+ * The pre-conference question the expectations section refers to. The wording must match the
+ * pre-conference content exactly: the loader resolves it to that question's key.
+ */
+const EXPECTATION_PROMPT = 'What would you like to learn or gain from the conference?';
 
 const EXPERIENCE = [
   { value: 'excellent', label: 'Excellent', score: 4 },
@@ -18,7 +24,7 @@ const EXPERIENCE = [
   { value: 'na', label: 'Not applicable', score: null },
 ];
 
-const rating = (prompt: string, area: string): QuestionFields => ({
+const rating = (prompt: string, area: string): QuestionFieldsInput => ({
   prompt,
   helpText: null,
   type: 'single_choice',
@@ -27,7 +33,7 @@ const rating = (prompt: string, area: string): QuestionFields => ({
   options: EXPERIENCE,
 });
 
-const open = (prompt: string, area: string, required = true): QuestionFields => ({
+const open = (prompt: string, area: string, required = true): QuestionFieldsInput => ({
   prompt,
   helpText: null,
   type: 'long_text',
@@ -126,7 +132,69 @@ export const ITTEC_END_OF_CONFERENCE: AssessmentTemplate = {
       ],
     },
     { title: 'Readiness to apply', description: null, builtin: 'readiness', questions: [] },
-    { title: 'Your expectations', description: null, builtin: 'expectations', questions: [] },
+    // Requirement 10.5, as ordinary editable questions (the built-in block was removed
+    // 2026-11-04). All four refer to the pre-conference expectation; `visibleWhen` splits the
+    // delegates who recorded one from those who did not, so each is asked once, and the report
+    // keeps the two apart because they are different questions.
+    {
+      title: 'Your expectations',
+      description: 'How far the conference provided what you hoped to gain.',
+      questions: [
+        {
+          prompt: 'To what extent did ITTEC provide what you hoped to gain?',
+          helpText: null,
+          type: 'single_choice',
+          required: true,
+          area: 'Expectation status',
+          options: [
+            { value: 'fully', label: 'Fully' },
+            { value: 'partly', label: 'Partly' },
+            { value: 'not_yet_sure', label: 'Not yet sure' },
+            { value: 'not_at_all', label: 'Not at all' },
+            { value: 'no_longer_applicable', label: 'No longer applicable' },
+          ],
+          referenceOf: { stage: 'pre_conference', prompt: EXPECTATION_PROMPT },
+          showReferenceAnswer: true,
+          visibleWhen: 'reference_answered',
+        },
+        {
+          prompt: 'Please explain your response. What did you gain, and what is still missing?',
+          helpText: null,
+          type: 'long_text',
+          required: false,
+          area: 'Expectation status',
+          referenceOf: { stage: 'pre_conference', prompt: EXPECTATION_PROMPT },
+          visibleWhen: 'reference_answered',
+        },
+        {
+          prompt:
+            'You did not record your expectations before ITTEC. Looking back, what did you hope to gain from attending the conference?',
+          helpText: 'Recorded after the conference.',
+          type: 'long_text',
+          required: false,
+          area: 'Recorded after the conference',
+          referenceOf: { stage: 'pre_conference', prompt: EXPECTATION_PROMPT },
+          visibleWhen: 'reference_unanswered',
+          allowDecline: true,
+        },
+        {
+          prompt: 'To what extent was this expectation met?',
+          helpText: null,
+          type: 'single_choice',
+          required: true,
+          area: 'Recorded after the conference',
+          options: [
+            { value: 'met', label: 'Met' },
+            { value: 'partly_met', label: 'Partly met' },
+            { value: 'not_yet_met', label: 'Not yet met' },
+            { value: 'not_met', label: 'Not met' },
+            { value: 'no_longer_applicable', label: 'No longer applicable' },
+          ],
+          referenceOf: { stage: 'pre_conference', prompt: EXPECTATION_PROMPT },
+          visibleWhen: 'reference_unanswered',
+        },
+      ],
+    },
     {
       title: 'Expectations and value',
       description: 'Looking back at what you hoped to gain.',

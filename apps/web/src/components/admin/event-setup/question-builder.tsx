@@ -11,6 +11,7 @@ import {
   sectionFieldsSchema,
   assessmentStages,
   builtinBlockKinds,
+  builtinBlocks,
   builtinBlockLabels,
   isLockedQuestion,
   sectionAudienceLabels,
@@ -18,6 +19,10 @@ import {
   type SectionAudience,
   sectionMarkingLabels,
   sectionMarkings,
+  questionVisibilities,
+  questionVisibilityLabels,
+  stageOrder,
+  type QuestionVisibility,
   type AssessmentQuestionView,
   type AssessmentSectionView,
   type AssessmentStage,
@@ -76,6 +81,11 @@ interface Draft {
   scaleMax: string;
   minLabel: string;
   maxLabel: string;
+  /** Requirement 10.5: the earlier question this one shows back or depends on. */
+  referenceQuestionKey: string;
+  showReferenceAnswer: boolean;
+  visibleWhen: QuestionVisibility;
+  allowDecline: boolean;
 }
 
 interface Lists {
@@ -108,6 +118,10 @@ const EMPTY: Draft = {
   scaleMax: '5',
   minLabel: '',
   maxLabel: '',
+  referenceQuestionKey: '',
+  showReferenceAnswer: false,
+  visibleWhen: 'always',
+  allowDecline: false,
 };
 
 /** Starting points per stage, one per measurement area of the brief; the admin edits freely. */
@@ -137,6 +151,10 @@ function draftOf(q: AssessmentQuestionView | null, sectionId = ''): Draft {
     scaleMax: String(q.scale?.max ?? 5),
     minLabel: q.scale?.minLabel ?? '',
     maxLabel: q.scale?.maxLabel ?? '',
+    referenceQuestionKey: q.referenceQuestionKey ?? '',
+    showReferenceAnswer: q.showReferenceAnswer,
+    visibleWhen: q.visibleWhen,
+    allowDecline: q.allowDecline,
   };
 }
 
@@ -217,6 +235,10 @@ export function payloadOf(draft: Draft, marking: SectionMarking = 'none') {
     type: draft.type,
     required: draft.required,
     area: draft.area,
+    referenceQuestionKey: draft.referenceQuestionKey || null,
+    showReferenceAnswer: Boolean(draft.referenceQuestionKey) && draft.showReferenceAnswer,
+    visibleWhen: draft.referenceQuestionKey ? draft.visibleWhen : 'always',
+    allowDecline: draft.allowDecline,
     ...(isChoice ? { options: optionsPayload(draft.type, draft.options, marking) } : {}),
     ...(draft.type === 'rating'
       ? {
@@ -252,6 +274,16 @@ export function QuestionBuilder({
 }: QuestionBuilderProps) {
   const base = `/events/${eventId}/assessments/${stage}`;
   const [lists, setLists] = useState<Lists | null>(null);
+  /**
+   * Questions of the stages before this one: what a question here may refer to (10.5). Kept
+   * with the stage they were loaded for, so switching stage shows nothing rather than the
+   * previous stage's list while the next load is in flight.
+   */
+  const [loadedEarlier, setLoadedEarlier] = useState<{
+    stage: AssessmentStage;
+    questions: Array<{ questionKey: string; prompt: string; stage: AssessmentStage }>;
+  } | null>(null);
+  const earlierQuestions = loadedEarlier?.stage === stage ? loadedEarlier.questions : [];
   const [loadError, setLoadError] = useState<{ message: string; requestId?: string } | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [editing, setEditing] = useState<null | { id: string | null; draft: Draft }>(null);
@@ -290,6 +322,38 @@ export function QuestionBuilder({
       cancelled = true;
     };
   }, [base, stage, attempt]);
+
+  // A question may only refer to a stage that comes before this one, so the answer it needs
+  // already exists by the time this stage opens. A stage that fails to load is simply absent.
+  useEffect(() => {
+    const earlier = assessmentStages.filter((s) => stageOrder[s] < stageOrder[stage]);
+    if (!earlier.length) return;
+    let cancelled = false;
+    void Promise.all(
+      earlier.map((s) =>
+        apiFetch<Lists>(`/events/${eventId}/assessments/${s}/questions`)
+          .then((r) => ({ stage: s, questions: r.questions }))
+          .catch(() => null),
+      ),
+    ).then((results) => {
+      if (cancelled) return;
+      setLoadedEarlier({
+        stage,
+        questions: results.flatMap((r) =>
+          r
+            ? r.questions.map((q) => ({
+                questionKey: q.questionKey,
+                prompt: q.prompt,
+                stage: r.stage,
+              }))
+            : [],
+        ),
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [eventId, stage, attempt]);
 
   function apply(result: Partial<Lists>) {
     setLists((current) => ({
@@ -364,7 +428,11 @@ export function QuestionBuilder({
           area: parsed.data.area,
           sectionId: editing.draft.sectionId || null,
         }
-      : { ...parsed.data, sectionId: editing.draft.sectionId || null };
+      : {
+          ...parsed.data,
+          referenceQuestionKey: parsed.data.referenceQuestionKey ?? null,
+          sectionId: editing.draft.sectionId || null,
+        };
     const ok = await run(
       () =>
         apiFetch<Lists>(editing.id ? `${base}/questions/${editing.id}` : `${base}/questions`, {
@@ -816,11 +884,10 @@ export function QuestionBuilder({
         >
           <ul className="divide-y divide-corp-line" aria-label="Built-in blocks">
             {builtinBlockKinds.map((kind) => {
-              const present = lists?.questions.some(
-                (q) =>
-                  q.builtin &&
-                  q.builtin.startsWith(kind === 'expectations' ? 'expectation' : 'readiness'),
-              );
+              // Matched on the block's own markers, not a name prefix: a prefix match would
+              // quietly break the moment a marker is renamed.
+              const markers = new Set(builtinBlocks[kind].questions.map((q) => q.builtin));
+              const present = lists?.questions.some((q) => q.builtin && markers.has(q.builtin));
               return (
                 <li
                   key={kind}
@@ -966,6 +1033,80 @@ export function QuestionBuilder({
                 />
               </div>
             </div>
+            {/*
+              Requirement 10.5: a question can show the delegate their own earlier answer, and
+              can be asked only of those who did or did not give one. Earlier stages only, so a
+              question can never depend on an answer that does not exist yet.
+            */}
+            {!lockedEditing && earlierQuestions.length ? (
+              <fieldset className="space-y-2 border border-corp-line p-3">
+                <legend className="px-1 text-sm font-semibold text-corp-ink">
+                  Refer to an earlier answer (optional)
+                </legend>
+                <div className="space-y-1">
+                  <label htmlFor={`${id}-ref`} className="text-xs text-corp-muted">
+                    Earlier question
+                  </label>
+                  <NativeSelect
+                    id={`${id}-ref`}
+                    value={editing.draft.referenceQuestionKey}
+                    onChange={(e) => set('referenceQuestionKey', e.target.value)}
+                    className="rounded-none"
+                  >
+                    <option value="">None</option>
+                    {earlierQuestions.map((q) => (
+                      <option key={q.questionKey} value={q.questionKey}>
+                        {stageLabels[q.stage]}: {q.prompt.slice(0, 80)}
+                      </option>
+                    ))}
+                  </NativeSelect>
+                  {errors.referenceQuestionKey ? (
+                    <p className="text-xs font-semibold text-brand-danger">
+                      {errors.referenceQuestionKey}
+                    </p>
+                  ) : null}
+                </div>
+                {editing.draft.referenceQuestionKey ? (
+                  <>
+                    <label className="flex min-h-tap items-center gap-2 text-sm text-corp-ink">
+                      <input
+                        type="checkbox"
+                        checked={editing.draft.showReferenceAnswer}
+                        onChange={(e) => set('showReferenceAnswer', e.target.checked)}
+                        className="size-5 accent-corp-green"
+                      />
+                      Show the delegate their answer above this question
+                    </label>
+                    <div className="space-y-1">
+                      <label htmlFor={`${id}-when`} className="text-xs text-corp-muted">
+                        Ask this question of
+                      </label>
+                      <NativeSelect
+                        id={`${id}-when`}
+                        value={editing.draft.visibleWhen}
+                        onChange={(e) => set('visibleWhen', e.target.value as QuestionVisibility)}
+                        className="rounded-none"
+                      >
+                        {questionVisibilities.map((v) => (
+                          <option key={v} value={v}>
+                            {questionVisibilityLabels[v]}
+                          </option>
+                        ))}
+                      </NativeSelect>
+                    </div>
+                  </>
+                ) : null}
+                <label className="flex min-h-tap items-center gap-2 text-sm text-corp-ink">
+                  <input
+                    type="checkbox"
+                    checked={editing.draft.allowDecline}
+                    onChange={(e) => set('allowDecline', e.target.checked)}
+                    className="size-5 accent-corp-green"
+                  />
+                  Offer “Prefer not to answer”
+                </label>
+              </fieldset>
+            ) : null}
             {isChoice ? (
               <fieldset className="space-y-2" disabled={lockedEditing}>
                 <legend className="text-sm font-semibold text-corp-ink">Options</legend>
