@@ -8,10 +8,6 @@
 #   web      WEB_PUBLISH           the pages delegates load
 #   api      API_PUBLISH           the browser calls it directly on its own origin, so the API
 #                                  answers CORS for the web origin
-#   garage   GARAGE_S3_PUBLISH     S3 API, authenticated with the S3 access keys
-#            GARAGE_ADMIN_PUBLISH  admin API: full control of the object store behind one bearer
-#                                  token, over plain HTTP. Keep it on 127.0.0.1 unless something
-#                                  off-host manages Garage.
 #   mailpit  MAILPIT_UI_PUBLISH    web inbox of every email the platform sends, sign-in links
 #                                  included, so MAILPIT_UI_AUTH is not optional out there
 #            MAILPIT_SMTP_PUBLISH  SMTP
@@ -32,15 +28,13 @@
 # Images are pinned to exact tags; never use :latest.
 #
 # !!! NEVER run `docker compose down -v` in production: it deletes the named volumes
-# !!! (pgdata, garagemeta, garagedata, mailpitdata) and with them the database, the uploaded
-# !!! files and the captured email.
+# !!! (pgdata, mailpitdata) and with them the database and the captured email.
 # !!! Use `docker compose down` (no -v) or `docker compose stop`.
 #
-# Object storage: MinIO's Docker images are no longer published (minio/minio was removed from
-# Docker Hub and quay.io returns nothing as of 2026-10-28). This stack uses Garage
-# (https://garagehq.deuxfleurs.fr, AGPL-3.0, image dxflrs/garage) which speaks the same S3 API.
-# The application only sees S3_* variables, so switching to an external bucket (Hetzner Object
-# Storage, Backblaze B2, AWS S3) is a .env change plus removing the `garage` service.
+# Object storage: none. The Garage service was removed on 2026-11-04 because no application code
+# ever used it (see docs/backlog.md, decision of 2026-11-04). Registration import files are parsed
+# in memory and never stored; nothing else in the platform writes a file. Anything that needs a
+# bucket later brings back an S3 service and the S3_* variables with it.
 
 name: mbc-impact
 
@@ -55,11 +49,6 @@ x-app-env: &app-env
   APP_DOMAIN: ${APP_DOMAIN}
   EVENT_TIMEZONE: ${EVENT_TIMEZONE:-Africa/Lagos}
   DATABASE_URL: ${DATABASE_URL}
-  S3_ENDPOINT: ${S3_ENDPOINT}
-  S3_REGION: ${S3_REGION:-garage}
-  S3_ACCESS_KEY: ${S3_ACCESS_KEY}
-  S3_SECRET_KEY: ${S3_SECRET_KEY}
-  S3_BUCKET: ${S3_BUCKET}
   SMTP_HOST: ${SMTP_HOST}
   SMTP_PORT: ${SMTP_PORT:-587}
   SMTP_USER: ${SMTP_USER}
@@ -139,8 +128,6 @@ services:
     depends_on:
       db:
         condition: service_healthy
-      garage:
-        condition: service_healthy
     healthcheck:
       test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:44444/health > /dev/null || exit 1']
       interval: 30s
@@ -207,42 +194,10 @@ services:
           memory: 1G
     logging: *default-logging
 
-  # ---------------------------------------------------------------- S3-compatible object storage (Garage)
-  garage:
-    image: dxflrs/garage:v2.5.0
-    restart: unless-stopped
-    # Single node, one replica: this stack runs on one VPS. Off-site copies are the backup job's duty.
-    command: ['/garage', 'server']
-    ports:
-      # S3 API. The api and worker containers still reach it as garage:3900 over the internal
-      # network (S3_ENDPOINT); this publishes it for browsers and external S3 tooling.
-      - '${GARAGE_S3_PUBLISH:-3900}:3900'
-      # Admin API: metrics, health, bucket and key management. GARAGE_ADMIN_TOKEN is the only
-      # thing standing in front of it, and it is served over plain HTTP.
-      - '${GARAGE_ADMIN_PUBLISH:-3903}:3903'
-    environment:
-      GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET}
-      GARAGE_ADMIN_TOKEN: ${GARAGE_ADMIN_TOKEN}
-    volumes:
-      - ./garage.toml:/etc/garage.toml:ro
-      - garagemeta:/var/lib/garage/meta
-      - garagedata:/var/lib/garage/data
-    healthcheck:
-      # The Garage image has no shell or curl; the CLI talks to the local node over RPC.
-      test: ['CMD', '/garage', 'status']
-      interval: 30s
-      timeout: 10s
-      start_period: 20s
-      retries: 3
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-    logging: *default-logging
-
   # ---------------------------------------------------------------- encrypted off-site backups (E0-7)
   backup:
-    # pg_dump -> age -> rclone to an off-site S3 bucket, plus an encrypted copy of the object bucket.
+    # pg_dump -> age -> rclone to an off-site S3 bucket. The database is the only thing to back up:
+    # the platform stores no files (Garage was removed on 2026-11-04).
     # Scheduler: 02:00 Africa/Lagos nightly, or hourly with BACKUP_MODE=hourly (12-13 November).
     # Manual run:  docker compose -f docker-compose.yml run --rm backup /backup/backup.sh
     # Restore test: see docs/backup-and-recovery.md
@@ -264,21 +219,13 @@ services:
       BACKUP_S3_BUCKET: ${BACKUP_S3_BUCKET:-}
       BACKUP_S3_ACCESS_KEY: ${BACKUP_S3_ACCESS_KEY:-}
       BACKUP_S3_SECRET_KEY: ${BACKUP_S3_SECRET_KEY:-}
-      BACKUP_RCLONE_CRYPT_PASSWORD: ${BACKUP_RCLONE_CRYPT_PASSWORD:-}
       BACKUP_KEEP_HOURLY: ${BACKUP_KEEP_HOURLY:-48}
       BACKUP_KEEP_DAILY: ${BACKUP_KEEP_DAILY:-14}
       BACKUP_KEEP_WEEKLY: ${BACKUP_KEEP_WEEKLY:-8}
       BACKUP_KEEP_MONTHLY: ${BACKUP_KEEP_MONTHLY:-12}
-      S3_ENDPOINT: ${S3_ENDPOINT}
-      S3_REGION: ${S3_REGION:-garage}
-      S3_BUCKET: ${S3_BUCKET}
-      S3_ACCESS_KEY: ${S3_ACCESS_KEY}
-      S3_SECRET_KEY: ${S3_SECRET_KEY}
       HEALTHCHECKS_BACKUP_URL: ${HEALTHCHECKS_BACKUP_URL:-}
     depends_on:
       db:
-        condition: service_healthy
-      garage:
         condition: service_healthy
     healthcheck:
       test: ['CMD-SHELL', 'pgrep crond > /dev/null || exit 1']
@@ -329,6 +276,4 @@ services:
 
 volumes:
   pgdata:
-  garagemeta:
-  garagedata:
   mailpitdata:

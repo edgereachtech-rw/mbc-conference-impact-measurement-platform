@@ -6,18 +6,18 @@
 #      before it is written anywhere. The private key is never on the server.
 #   2. Upload with rclone to the off-site S3-compatible bucket (Backblaze B2, Cloudflare R2, AWS S3,
 #      ...): db/<tier>/<database>-<UTC timestamp>.dump.age
-#   3. Sync the application object bucket (S3_*) to <offsite>/objects/, encrypted at rest with an
-#      rclone crypt remote when BACKUP_RCLONE_CRYPT_PASSWORD is set.
-#   4. Retention per tier: hourly 48 (hourly mode only), daily 14, weekly 8, monthly 12.
-#   5. Healthchecks.io: /start at the beginning, the plain URL on success, /fail on any error.
+#   3. Retention per tier: hourly 48 (hourly mode only), daily 14, weekly 8, monthly 12.
+#   4. Healthchecks.io: /start at the beginning, the plain URL on success, /fail on any error.
 #      The exit code is non-zero on any error.
+#
+# The database is the whole backup. The platform stores no files: registration imports are parsed
+# in memory and discarded, and the object store was removed on 2026-11-04. If a bucket comes back,
+# so does a sync step here.
 #
 # Required: PGHOST PGUSER PGPASSWORD PGDATABASE BACKUP_AGE_PUBLIC_KEY
 #           BACKUP_S3_ENDPOINT BACKUP_S3_BUCKET BACKUP_S3_ACCESS_KEY BACKUP_S3_SECRET_KEY
 # Optional: BACKUP_MODE (nightly|hourly) BACKUP_S3_PROVIDER (Other|AWS|Cloudflare) BACKUP_S3_REGION
-#           BACKUP_KEEP_HOURLY/DAILY/WEEKLY/MONTHLY BACKUP_OBJECTS (true|false)
-#           S3_ENDPOINT S3_BUCKET S3_ACCESS_KEY S3_SECRET_KEY (source objects)
-#           BACKUP_RCLONE_CRYPT_PASSWORD HEALTHCHECKS_BACKUP_URL
+#           BACKUP_KEEP_HOURLY/DAILY/WEEKLY/MONTHLY HEALTHCHECKS_BACKUP_URL
 # Logs contain file names, sizes and counts only: never database content or personal data.
 set -eu
 umask 077
@@ -123,19 +123,4 @@ prune daily "$KEEP_DAILY"
 prune weekly "$KEEP_WEEKLY"
 prune monthly "$KEEP_MONTHLY"
 [ "$MODE" = "hourly" ] && prune hourly "$KEEP_HOURLY"
-
-# ---------------------------------------------------------------- 4. object storage sync
-if [ "${BACKUP_OBJECTS:-true}" = "true" ] && [ -n "${S3_ENDPOINT:-}" ] && [ -n "${S3_BUCKET:-}" ]; then
-  if [ -n "${BACKUP_RCLONE_CRYPT_PASSWORD:-}" ]; then
-    DEST="offsitecrypt:"
-    log "objects: syncing $S3_BUCKET to encrypted off-site path objects/"
-  else
-    DEST="offsite:$BUCKET/objects"
-    log "objects: syncing $S3_BUCKET to off-site path objects/ UNENCRYPTED (set BACKUP_RCLONE_CRYPT_PASSWORD)"
-  fi
-  $RCLONE sync "source:$S3_BUCKET" "$DEST" --transfers 4 --checkers 8 || die "object sync failed"
-  COUNT="$($RCLONE size "$DEST" --json 2>/dev/null | sed -n 's/.*"count":\([0-9]*\).*/\1/p')"
-  log "objects: synced (${COUNT:-?} objects off-site)"
-else
-  log "objects: skipped (BACKUP_OBJECTS=false or S3_* not set)"
-fi
+exit 0

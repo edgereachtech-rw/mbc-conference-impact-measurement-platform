@@ -12,8 +12,7 @@ configuration.
 | Server            | Own VPS (or at least its own Compose project and directory) | Own VPS                                                     |
 | Subdomain         | `staging.<domain>`                                          | `<domain>` (the public hostname delegates receive)          |
 | Database          | Own PostgreSQL instance and `pgdata` volume                 | Own PostgreSQL instance and `pgdata` volume                 |
-| Object storage    | Own bucket and keys                                         | Own bucket and keys                                         |
-| Credentials       | Separate `.env`: database password, S3 keys, `SESSION_SECRET`, SMTP, Garage secrets | Separate `.env`; nothing is shared with staging |
+| Credentials       | Separate `.env`: database password, `SESSION_SECRET`, SMTP, off-site backup keys | Separate `.env`; nothing is shared with staging |
 | Email             | Real SMTP relay, but only to internal test addresses        | Real SMTP relay to delegates                                |
 | Error tracking    | Sentry project or environment tag `staging`                 | Sentry environment `production`                             |
 | Backups           | Daily, short retention                                      | Daily, hourly on 12-13 November 2026, off-site, long retention |

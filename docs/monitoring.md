@@ -12,7 +12,7 @@ channel; the named primary and backup contacts live in the runbook (E0-11).
 | `GET /api/health` | on the API's own origin, public | API process is up (liveness); does not touch the database |
 | `GET /api/ready` | on the API's own origin, public | API can serve: `200 {status:"ok", checks:{database:"ok"}}` or `503 {status:"error", checks:{database:"down"}}` |
 | `GET /` and `/signin` | on the web app's origin, public | Web app renders |
-| Container healthchecks | `docker compose ps` | api (`/health`), web (`/`), worker (process), db (`pg_isready`), garage (`garage status`), backup (`crond`) |
+| Container healthchecks | `docker compose ps` | api (`/health`), web (`/`), worker (process), db (`pg_isready`), backup (`crond`) |
 | JSON logs | `docker compose logs <service>` | pino (api, worker) with request ids, paths without query strings; rotated 5 x 10 MB per service |
 | Sentry events | Sentry project | Unhandled errors from web, api and worker, scrubbed of personal data, tagged with `service` and the image SHA as release |
 | Worker heartbeat | Healthchecks.io | One ping every `HEARTBEAT_INTERVAL_SECONDS` (120) while the worker runs |

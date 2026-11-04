@@ -18,7 +18,7 @@ acceptance criteria and the question bank. Engineering rules live in [CLAUDE.md]
 - `apps/api`: Express 5 REST API (`/api/v1` from the next increment) with Zod validation and Prisma
 - Worker: pg-boss job runner, shipped as a second entry point of `apps/api` (see below)
 - `packages/shared`: Zod schemas, types and definitions shared by web, api and worker
-- PostgreSQL 16, Garage (S3-compatible object storage), SMTP relay, Docker Compose
+- PostgreSQL 16, SMTP relay, Docker Compose
 
 ## Prerequisites
 

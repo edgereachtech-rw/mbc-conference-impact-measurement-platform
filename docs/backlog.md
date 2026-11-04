@@ -3,7 +3,7 @@
 **First pilot:** ITTEC 2026 (November 12-13, 2026, physical and virtual)
 **Production go-live:** Saturday, November 7, 2026
 **Source:** *M.Bryan ITTEC Measurement Impact Platform: Development Workplan and Requirements* (section numbers below refer to that document)
-**Stack:** Next.js (TypeScript) + Express.js API + PostgreSQL 16, Docker Compose on a VPS, Garage (S3-compatible object storage, AGPL-3.0; replaces MinIO, whose Docker repository is no longer available) storage, SMTP relay for email, pg-boss worker for jobs
+**Stack:** Next.js (TypeScript) + Express.js API + PostgreSQL 16, Docker Compose on a VPS, SMTP relay for email, pg-boss worker for jobs. No object storage (removed 2026-11-04; see the change note under E0-2)
 **Backlog date:** October 27, 2026
 
 ---
@@ -71,8 +71,9 @@ the delegate's Attendance tab) and the invitation email (E3-1, an activation lin
 the pack, the card, and mail attachments. See the README for how each behaves.
 
 Not built, and worth saying: there is no delegate photo and no upload anywhere in the platform. If
-the card should carry a portrait later, that means wiring Garage/S3, an upload on the profile, size
-and type limits, deletion, and a privacy line in the notice — a piece of work in its own right.
+the card should carry a portrait later, that means introducing object storage (removed from the
+stack 2026-11-04), an upload on the profile, size and type limits, deletion, and a privacy line in
+the notice — a piece of work in its own right.
 
 ### Follow-up programme built, 2026-11-03
 
@@ -163,7 +164,7 @@ the approval gate and the audit entries are unchanged, only the file formats.
 | ID | Story | Acceptance criteria | Pri | Inc |
 |---|---|---|---|---|
 | E0-1 | As the dev team, I want a monorepo with `apps/web`, `apps/api`, `packages/shared` so rules are written once | Shared Zod schemas, types and scoring rules imported by both apps; lint, type-check and tests run in CI | P0 | 1 |
-| E0-2 | As the dev team, I want Docker Compose deployment | Services: web, api, worker, db, garage (S3-compatible, replaces MinIO), backup. Web and api publish ports; db, garage, worker and backup stay on the internal network. Healthchecks on api and db. Images pinned to exact versions. Named volumes never removed in production | P0 | 1 |
+| E0-2 | As the dev team, I want Docker Compose deployment | Services: web, api, worker, db, backup. Web and api publish ports; db, worker and backup stay on the internal network. Healthchecks on api and db. Images pinned to exact versions. Named volumes never removed in production | P0 | 1 |
 
 Change of 2026-10-31 (decided by M.Bryan): the **Caddy reverse proxy was removed** from the stack.
 E0-2 originally read "Services: caddy, web, api, worker, db, garage, backup. Only Caddy publishes
@@ -191,11 +192,39 @@ ports." What this changes, and what now has to hold instead:
   log, so link tokens stay out, but there is no IP masking or header filtering in front of them.
   **Open: who provides the security headers and whether the terminator's access log needs the same
   privacy treatment** (E17 / S16 reviews this).
+
+Change of 2026-11-04 (decided by M.Bryan): **object storage was removed** from the stack. E0-2
+listed a `garage` service and E0-7 synced its bucket off-site. Nothing ever used it: no S3 client
+was a dependency of any package, neither the api nor the worker read an `S3_*` variable, and the
+only upload path (`apps/api/src/routes/imports.ts`) parses the spreadsheet with
+`multer.memoryStorage()` and discards the bytes. What this changes:
+
+- **Import source files are not retained.** D3 step 2 and the Files note in E2's design section
+  specify storage under `imports/<event>/<run>/` in a private bucket, with signed admin-only
+  downloads. That is now dropped, not deferred. `import_run` keeps the file name, SHA-256 hash,
+  size, headers, mapping and row counts, and `import_row` keeps the parsed rows, so the preview,
+  the commit, the audit trail and the row report are unaffected. What is gone is the ability to
+  re-download the original file an admin uploaded.
+- **OQ-22 is answered by construction.** The unresolved source-file retention policy was a risk
+  because files with delegate names and email addresses could accumulate under no defined rule.
+  There are no files, so there is nothing to retain, nothing to delete and no deletion job to
+  build. The question closes rather than staying open into go-live.
+- **E14-3's optional evidence upload stays unbuilt**, as it already was. Building it later means
+  bringing back an S3 service, the `S3_*` variables and a retention decision with it; that is a
+  new decision, not a resumption of this one.
+- **Backups cover the database alone.** `backup.sh` lost its `rclone sync` step, `remotes.sh` lost
+  the application-side remote, and the restore runbook lost its object-restore section. The
+  `offsite` Garage in `deploy/backup/docker-compose.test.yml` stays: it imitates the external
+  backup provider, not platform storage.
+- **The api no longer waits on it to start.** `api` had `depends_on: garage: service_healthy`, so
+  an unhealthy object store that nothing used could stop the platform from booting.
+
+Reversing this is a code and configuration change, not a product decision.
 | E0-3 | As the dev team, I want CI/CD | Push to main builds images tagged with the commit, deploys to staging, runs migrations as a one-off command. Rollback = redeploy previous tag | P0 | 1 |
 | E0-4 | As the dev team, I want HTTPS on a dedicated subdomain | Valid certificate, HTTP redirects to HTTPS, one domain for web and `/api` (no CORS) | P0 | 1 |
 | E0-5 | As the dev team, I want a staging environment mirroring production | Separate database, subdomain and credentials. Seeded with test data flagged `is_test` | P0 | 1 |
 | E0-6 | As the dev team, I want error tracking and structured logs | Sentry in web and api; JSON logs (pino) with rotation limits; no personal data in logs | P0 | 1 |
-| E0-7 | As the dev team, I want daily backups | `pg_dump` encrypted and sent off-site; object storage (Garage) files synced off-site; heartbeat to Healthchecks.io; hourly dumps on Nov 12-13 | P0 | 1, 6 |
+| E0-7 | As the dev team, I want daily backups | `pg_dump` encrypted and sent off-site; heartbeat to Healthchecks.io; hourly dumps on Nov 12-13. The object-storage sync was dropped with Garage on 2026-11-04: the database is the whole backup | P0 | 1, 6 |
 | E0-8 | As the dev team, I want uptime and server alerts | Uptime check on sign-in page and a form URL; CPU/memory/disk alerts at 80-85%; failed-job alert; SSL expiry alert | P0 | 5 |
 | E0-9 | As the dev team, I want a worker heartbeat | Worker pings Healthchecks.io every few minutes; alert if missed for 5 minutes | P0 | 5 |
 | E0-10 | As the dev team, I want server hardening | SSH key only, firewall 22/80/443, Fail2ban, automatic security updates, separate sudo users | P0 | 1 |
@@ -293,8 +322,9 @@ What this leaves open, and who it falls to:
   were disabled or the gate had not passed; the test now asserts acceptance instead.
 
 Re-introducing any of the three is a configuration and code change, not a product decision, so it
-can be reversed. Nothing else in D9 or D6.1 changed: files still go to private object storage, the
-audit trail is unchanged, and parsing is still values-only.
+can be reversed. Nothing else in D9 or D6.1 changed at the time: the audit trail is unchanged and
+parsing is still values-only. The file storage those sections describe was then dropped altogether
+by the change of 2026-11-04 under E0-2 — uploads are parsed in memory and the bytes discarded.
 
 ---
 
@@ -351,7 +381,7 @@ are not settled by this note.
 ### D3. Import workflow (E2-1, E2-8 to E2-11)
 
 1. **Select event and registration source.** The admin picks the event the file belongs to and explicitly selects the registration source (or its saved mapping) the file came from; the platform never guesses the source from the file. Imports into an archived event are refused.
-2. **Upload.** Accepted types: `.csv` (UTF-8, comma or semicolon, header row required) and `.xlsx` (first worksheet unless chosen). Limits (decided): 10 MB and 5,000 rows per file; a larger file is refused at upload with the instruction to split the export; `.xls` and every other type are refused. The file is stored in private object storage under an import-run key, never in the database, never exposed through a public URL and never served back without an admin authorisation; the original file is only needed to produce the preview and the commit. Its retention and deletion follow the policy in D9, whose duration and trigger are unresolved (OQ-22) and guarded by the temporary safeguard described there; the import audit history and the row report have their own lifecycle and do not depend on the file. Content is parsed server-side; formulas, macros and embedded or external links are never executed, cells are read as values only.
+2. **Upload.** Accepted types: `.csv` (UTF-8, comma or semicolon, header row required) and `.xlsx` (first worksheet unless chosen). Limits (decided): 10 MB and 5,000 rows per file; a larger file is refused at upload with the instruction to split the export; `.xls` and every other type are refused. **Superseded 2026-11-04 (see the change note under E0-2): the file is not stored at all.** It is parsed in memory and the bytes are discarded; `import_run` keeps its name, hash and size. The sentences that follow described the storage that was dropped, and OQ-22 closes with it. ~~The file is stored in private object storage under an import-run key, never in the database, never exposed through a public URL and never served back without an admin authorisation; the original file is only needed to produce the preview and the commit. Its retention and deletion follow the policy in D9, whose duration and trigger are unresolved (OQ-22) and guarded by the temporary safeguard described there.~~ The import audit history and the row report have their own lifecycle and do not depend on the file. Content is parsed server-side; formulas, macros and embedded or external links are never executed, cells are read as values only.
 3. **Validate.** File-level: type, size, readable encoding, header row present, every required field mapped. Row-level: email syntactically valid after normalisation, name present, attendance format recognised, enumerations recognised, no control characters, cell length limits. A row with any error is rejected; the rest of the file proceeds.
 4. **Preview (dry run).** Before anything is written the admin sees: accepted rows; rejected rows with row number and reason; duplicate rows within the file (identical repeats of one registration, later occurrences flagged); rows that share an email but differ in name or details (quarantined as conflicts, none of them processed); rows that match an existing event record (will update); rows that match an existing platform identity in another event (will link); rows that conflict (D5). Counts for each group and a downloadable row-level report.
 5. **Confirm.** An explicit confirm step commits the run. The preview is bound to the run id together with a fingerprint: the file hash, the mapping, and a snapshot token of the event's delegate records and of every matched identity (their ids and `updated_at` values). A preview expires after 30 minutes. At confirmation the server re-runs validation and matching inside the commit transaction and compares each row's outcome with the preview; if the fingerprint or any outcome differs (a record edited, another run committed, an identity changed meanwhile), the commit is refused with a "preview out of date" response, nothing is written, and a fresh preview is required. Closing the page discards the run.
@@ -422,7 +452,7 @@ Proposed model (OD-1 to approve):
 | --- | --- | --- |
 | **delegate identity** (new) | One row per person: current canonical email, display name, timestamps, optional link to `user_account` | Created at import time, before any sign-in; unique on the normalised current email; uniqueness also checked against every identity's historical addresses (D5.1). Keeps `user_account` purely an authentication record |
 | `delegate` (existing, per event) | Registration and event-specific facts | Gains `identity_id` (required for new rows, back-filled for existing rows by email); keeps `event_id`, `email` as imported, status, `user_account_id` becomes derived from the identity and is retired after back-fill |
-| `import_run` (new) | One per upload: event, actor, file name and storage key, mapping used, counts, status (previewed, committed, discarded), timestamps | Admin-only read; append-only outcome |
+| `import_run` (new) | One per upload: event, actor, file name, hash and size (no storage key: the file itself is not kept, see the change of 2026-11-04 under E0-2), mapping used, counts, status (previewed, committed, discarded), timestamps | Admin-only read; append-only outcome |
 | `import_row` (new) | One per file row: row number, outcome (accepted, updated, linked, duplicate_in_file, rejected, conflict), reason code (for conflicts: `external_id_mismatch`, `email_owned_by_other_identity`, `name_mismatch`, `inactive_account`, `shared_email_in_file`, `inconsistent_repeat`, `previous_email_of_identity`, `address_under_migration_review`), the delegate id it produced or touched | Powers the row report and the conflict queue |
 | identity email history (new; implementation decision) | Previous canonical emails of an identity with the change date, the administrator and the audit reference; written only by E2-12, by the migration backfill from verified evidence, and by audited admin decisions (`migration.address_resolved`) | Reserved addresses: never reassigned to another identity by import or email change until a separately reviewed reuse policy exists; used only to recognise old-email import rows together with trusted linkage (D5.1); never consulted for sign-in eligibility |
 | `attendance` (E6, later) | Day and session attendance per event delegate | Unchanged by this note; registration imports never create attendance rows (decision 2026-10-29) |
@@ -471,7 +501,7 @@ Required changes when Increment 1b is implemented (impact only, not done here):
 ### D9. Import security, privacy, auditability, error handling and recovery
 
 - **Authorisation.** Upload, preview, confirm, history and conflict resolution are M.Bryan-admin-only; nothing is exposed to any other role, to delegates or to anonymous callers. Every route has a server-side check and a test.
-- **Files.** Stored in Garage under `imports/<event>/<run>/` with the original name recorded in `import_run`, in a private bucket with no public URL; downloads go through an admin-authorised, short-lived signed request and are audited. The original file has one purpose, producing the preview and the commit; after the run reaches a terminal state it is only a retained copy. Retention duration and deletion trigger are unresolved (OQ-22): no duration is assumed here, and the final policy must be approved by the product owner and the legal or privacy stakeholders before production go-live. Temporary safeguard against unbounded retention until then: the retention setting is mandatory in production configuration and the startup validation refuses to enable uploads without an explicit value taken from the approved policy, so production cannot accumulate files under an undefined rule; staging and development use a short rehearsal value chosen by the team. Deletion runs as a scheduled worker job: a failed deletion is retried with backoff, every failure is logged with the run id (never the file contents) and raised through the existing monitoring alerts, and a report of files past their deletion point is available to admins and checked in the pre-go-live gate. Import audit history and row-level reports have their own lifecycle and are never deleted by the file job. XLSX is parsed with values only; CSV is parsed with a strict reader (no formula evaluation; cells starting with `=`, `+`, `-`, `@` are stored as text and flagged in exports to prevent spreadsheet injection on the way back out).
+- **Files.** **Superseded 2026-11-04 (see the change note under E0-2): nothing is stored.** The upload is parsed in memory and the bytes are discarded as soon as the preview is built; `import_run` records the original name, a SHA-256 of the bytes and the size, which is what the preview fingerprint needs. There is no bucket, no signed download, no retention duration and no deletion job, and OQ-22 closes as answered rather than staying open into go-live. The original plan, now dropped, was: storage in Garage under `imports/<event>/<run>/` in a private bucket with no public URL, admin-authorised short-lived signed downloads, a retention policy to be approved before go-live, and a scheduled deletion job with retries and alerting. Import audit history and row-level reports are unaffected and keep their own lifecycle. XLSX is parsed with values only; CSV is parsed with a strict reader (no formula evaluation; cells starting with `=`, `+`, `-`, `@` are stored as text and flagged in exports to prevent spreadsheet injection on the way back out).
 - **Personal data.** Row contents live in `import_row` and `delegate` only. Application logs carry run or request ids, counts and row numbers, never emails, names or row contents (existing scrubber). Import audit entries carry actor, event, run id, counts and record ids, never row contents. Identity audit entries hold what the requirement needs to investigate the action: `identity.email_changed` and `identity.email_change_refused` carry the old and new address, the administrator, the verification method, the decision and the timestamp (E2-12), and never a token, code, cookie or session value. The row report download is audited.
 - **Audit contract, per operation.** Success events are written inside the business transaction they describe, so they commit only when that transaction commits and a refused or rolled-back operation can never leave a success event; refusal and failure events are written outside the business transaction, in their own transaction after the refusal or rollback, so the evidence is durable and does not depend on state the rollback invalidated; the audit log is append-only and existing rows are never edited or deleted; entries carry actor, event, run or request id, reason category and record ids, with old and new values only where the requirement needs them (E2-12 addresses, E2-13 statuses, changed delegate fields), and never a token, code, cookie, session value or row contents. Per operation: **import preview** writes `import.previewed`; **import commit** writes `import.committed` (counts including quarantined rows) plus one `delegate.imported`, `delegate.updated_by_import`, `identity.created` or `identity.linked` per changed record, and a failed commit writes `import.commit_failed` and none of those; **discard** writes `import.discarded`; **conflict resolution** writes `import.conflict_resolved` on success, `import.resolution_refused` when the server refuses the action, `import.resolution_failed` when it fails after acceptance; **email change (E2-12)** writes `identity.email_changed`, `identity.email_change_refused` or `identity.email_change_failed`; **delegate account status change (E2-13)** writes `identity.account_status_changed`, `identity.account_status_refused` or `identity.account_status_failed`; **migration address decision** writes `migration.address_resolved`, `migration.address_resolution_refused` or `migration.address_resolution_failed`. Rule: a successful operation writes its success events and no refusal or failure event; a refused or failed operation writes exactly one refusal or failure event and none of its success events. If writing the refusal or failure event itself fails, the operation stays failed, no success event is ever manufactured, the business data stays unchanged, and the failed write is surfaced through the application log and the existing monitoring alerts for operational recovery. **Migration gate runs are a report, not a success event:** each completed run of the backfill and address gate writes exactly one `migration.identity_backfill` entry carrying `result` pass or fail, the per-invariant results, counts and ids only; the report is durable independently of the backfill transaction: it is written outside that transaction, after its commit or rollback, from the gate's own result record and never from application state the rollback invalidates, so it exists whether the backfill committed or rolled back; a failed run therefore records `fail` and needs no separate failure event, and writes no `identity.*` or `import.*` success event; `result` pass can be written only from a run in which H1 to H5 all passed and the backfill committed, and the import feature is enabled only by the existence of such a durable pass report, so a missing or failed report leaves imports disabled. If the report mechanism itself fails, the run is treated as failed whatever the backfill did: the migration is not reported as passed, production imports remain disabled, the condition is raised through the monitoring alerts and the runbook recovery path (rerun the gate, which writes a fresh report), and no report is reconstructed afterwards from memory or logs. Events for distinct operations in one test scenario are expected independently, each under its own operation's rule, so a scenario can legitimately contain a refused resolution, a failed migration report and a successful email change at once.
 - **Errors.** Unreadable file, wrong type, missing headers and oversize files fail at upload with a clear message. Row errors never abort the run. A failed commit rolls back the whole run and leaves the preview available to retry; partial commits are impossible by construction (one transaction).
@@ -757,7 +787,7 @@ paired results can be computed, and the repeated questions are locked.
 |---|---|---|---|---|
 | E14-1 | As a delegate, I want to record a measure for an action | Measure, why it matters, baseline, target, baseline date, target date, actual result and date, source, other influencing factors | P1 | 4 |
 | E14-2 | As a delegate, I want "Not yet known" / "Not applicable" | Accepted wherever a measure cannot be given | P1 | 4 |
-| E14-3 | As a delegate, I want to describe or provide evidence | Types: example of what I did differently, completed work product or process, manager/stakeholder confirmation, organisational measure, case example. Description text required; **file upload optional** to MinIO with type/size limits and virus scanning | P1 | 4 |
+| E14-3 | As a delegate, I want to describe or provide evidence | Types: example of what I did differently, completed work product or process, manager/stakeholder confirmation, organisational measure, case example. Description text required; **file upload optional**, with type/size limits and virus scanning. Not built: there is no object storage since 2026-11-04, so building it means introducing a bucket and a retention decision first | P1 | 4 |
 | E14-4 | As M.Bryan, I want evidence labelled | Each item labelled **self-reported** or **supported by another source**; reports keep the distinction (S12.2, S13.3) | P1 | 5 |
 | E14-5 | As a delegate, I do not have to disclose confidential organisational information | Notice on every evidence form; all fields optional | P0 | 4 |
 
@@ -985,7 +1015,7 @@ Decided rows stay in the table for traceability. Items that are implementation d
 | Ambiguous session structure | Wrong plan flow | Decide OQ-5 |
 | Registration file quality (missing or shared emails, inconsistent columns) | Delegates cannot sign in or are duplicated | Mapping step, row-level preview, conflict queue, sample exports requested (OQ-20) |
 | Silent identity merge across events | One person sees another's records | Conflicts held for admin resolution, never auto-merged; cross-delegate access tests in 1b and 1c |
-| Import files hold personal data | Leak through storage or logs | Object storage with retention, admin-only access, logs carry counts and row numbers only |
+| Import files hold personal data | Leak through storage or logs | The file is never stored (change of 2026-11-04): it is parsed in memory and discarded, so only the parsed rows in `import_row` persist, under admin-only access; logs carry counts and row numbers only |
 | Delegate import slips past Oct 30 | Invitations and pre-assessment cannot start | 1b is the only work before Inc 2; cut saved-mapping reuse (manual mapping stays) first |
 
 ---

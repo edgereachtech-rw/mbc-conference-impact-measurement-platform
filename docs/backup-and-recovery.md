@@ -18,15 +18,15 @@ What is backed up:
 - **PostgreSQL** (`DB_NAME`): `pg_dump` custom format, compressed, encrypted with `age` to the
   public key in `BACKUP_AGE_PUBLIC_KEY` before it is written anywhere, uploaded to
   `db/<tier>/<database>-<UTC timestamp>.dump.age`.
-- **Object storage** (uploads, exports): `rclone sync` of the application bucket to
-  `objects/` in the off-site bucket, encrypted at rest with an rclone `crypt` remote
-  (`BACKUP_RCLONE_CRYPT_PASSWORD`). File names are encrypted too.
 - The Compose files and migrations are in git; `deploy/.env` is not backed up by this
   job and must be kept in the password manager (see below).
 
-What is not: TLS certificates (they belong to the terminator in front of the server), container
-logs, the pg-boss queue
-(jobs are re-created from the database state).
+The database is the whole backup. The platform stores no files: registration imports are parsed in
+memory and discarded, and the object store was removed on 2026-11-04 (see `docs/backlog.md`). If a
+bucket comes back, a sync step comes back with it.
+
+What is not backed up: TLS certificates (they belong to the terminator in front of the server),
+container logs, the pg-boss queue (jobs are re-created from the database state).
 
 ## Where the keys are kept (never on the server)
 
@@ -34,7 +34,6 @@ logs, the pg-boss queue
 | ------------------------------ | ------------------------------------------------ | ------------------------ |
 | age **private** key            | Password manager (shared vault "ITTEC platform"), plus one printed copy in the M.Bryan safe | Dev lead and M.Bryan operations lead |
 | age public key                 | `deploy/.env` (`BACKUP_AGE_PUBLIC_KEY`)           | Anyone; it only encrypts |
-| rclone crypt passphrase        | Password manager, same vault                      | Same two people          |
 | Off-site bucket credentials    | `deploy/.env` on the server and in the vault      | Write-capable key on the server; a separate read-only key in the vault for restores from elsewhere |
 | `deploy/.env` (whole file)     | Password manager, updated whenever it changes     | Dev lead                 |
 
@@ -140,21 +139,12 @@ curl -fsS https://$APP_DOMAIN/api/health
 
 Keep the renamed broken database until the incident review is done, then drop it.
 
-### 4. Object storage
-
-```bash
-docker compose -f docker-compose.yml run --rm backup sh -c \
-  '. /backup/remotes.sh && rclone sync offsitecrypt: "source:$S3_BUCKET" --dry-run'   # review
-docker compose -f docker-compose.yml run --rm backup sh -c \
-  '. /backup/remotes.sh && rclone sync offsitecrypt: "source:$S3_BUCKET"'             # restore
-```
-
-### 5. Whole server lost
+### 4. Whole server lost
 
 1. Provision a new server (deploy/README.md "first-time setup"), restore `deploy/.env` from the
    password manager, point DNS at the new server.
-2. `docker compose -f docker-compose.yml up -d db garage` and `sh scripts/garage-init.sh`.
-3. Steps 1 and 3 above with the newest dump, then step 4 for objects, then start the rest.
+2. `docker compose -f docker-compose.yml up -d db`.
+3. Steps 1 and 3 above with the newest dump, then start the rest.
 4. Run the restore test again against the new server before announcing recovery.
 
 ## Restore-test checklist (workplan Increment 6, before go-live)
@@ -171,7 +161,6 @@ name and results in the runbook.
       only by rows created after the dump (check `occurred_at` of the newest audit row).
 - [ ] `audit_log` append-only trigger present in the restore (printed by the script).
 - [ ] A spot check: one delegate looked up by email in `restore_test` matches the live record.
-- [ ] Object copy: one recent upload decrypts from `offsitecrypt:` and matches the original.
 - [ ] Time from "start" to "restore_test verified" recorded; must be under 2 hours including key
       retrieval.
 - [ ] `DROP DATABASE restore_test` afterwards and the temporary key file shredded.

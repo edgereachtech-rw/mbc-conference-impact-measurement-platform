@@ -10,18 +10,16 @@ local development (with `docker-compose.override.yml`), staging and production.
 | api     | built from apps/api       | Express API on 44444                                                                         |
 | worker  | same image as api         | pg-boss job runner (`node dist/worker.js`)                                                   |
 | db      | postgres:16.15-alpine3.23 | PostgreSQL 16, volume `pgdata`                                                               |
-| garage  | dxflrs/garage:v2.5.0      | S3-compatible object storage, volumes `garagemeta`, `garagedata`                             |
 | backup  | postgres:16.15-alpine3.23 | Placeholder until E0-7 (encrypted off-site backups)                                          |
 | mailpit | axllent/mailpit:v1.32.0   | Development only: catches outgoing email                                                     |
 
-Why Garage and not MinIO: MinIO's Docker images are no longer published (the `minio/minio`
-repository was removed from Docker Hub and quay.io has no tags, checked 2026-10-28). Garage is
-AGPL-licensed, actively released and speaks the same S3 API. The applications only see the `S3_*`
-variables, so an external bucket (Hetzner Object Storage, Backblaze B2, AWS S3) is a `.env`
-change plus deleting the `garage` service.
+No object storage: the Garage service was removed on 2026-11-04 (decision recorded in
+`docs/backlog.md`) because nothing in the platform used it. Registration import files are parsed
+in memory and never stored, and no other feature writes a file. Anything that needs a bucket later
+brings back an S3 service and the `S3_*` variables with it.
 
 Never run `docker compose down -v` on a server. It deletes the named volumes and with them the
-database, the uploaded files and the TLS certificates.
+database and the captured email.
 
 ## Local run (laptop)
 
@@ -31,7 +29,7 @@ Prerequisites: Docker Desktop (or Docker Engine 24+ with the Compose plugin).
 cd deploy
 cp .env.example .env          # defaults work locally; secrets can stay as placeholders
 docker compose up -d          # merges docker-compose.override.yml automatically
-docker compose ps             # wait until api, db, garage, web are "healthy"
+docker compose ps             # wait until api, db, web are "healthy"
 curl http://localhost/api/health
 ```
 
@@ -42,17 +40,11 @@ What the override gives you:
 - hot reload: the repository is bind-mounted; `web` runs `next dev`, `api` runs `tsx watch`,
   `worker` runs `tsx watch src/worker.ts`. Dependencies are installed once by the `deps` service
   into Docker volumes, so your host `node_modules` is untouched
-- PostgreSQL on 127.0.0.1:5432, Garage S3 on 127.0.0.1:3900
+- PostgreSQL on 127.0.0.1:5432
 - Mailpit inbox at http://127.0.0.1:8025; api and worker send mail to it
 
 First start takes a few minutes (dependency install plus the first Next.js compile). On Windows
 and macOS the file watchers use polling, so a change can take a second or two to show.
-
-Object storage needs one bootstrap after the first start (creates the layout, key and bucket):
-
-```bash
-sh scripts/garage-init.sh
-```
 
 To run the production images locally instead of the dev servers:
 
@@ -84,11 +76,7 @@ Staging and production are identical stacks on separate servers (or at least sep
    docker compose -f docker-compose.yml up -d
    docker compose -f docker-compose.yml ps
    ```
-5. Initialise object storage (once):
-   ```bash
-   sh scripts/garage-init.sh
-   ```
-6. Apply database migrations (see below), then open `https://APP_DOMAIN/api/health` and the
+5. Apply database migrations (see below), then open `https://APP_DOMAIN/api/health` and the
    home page.
 
 Always pass `-f docker-compose.yml` on servers so the development override is never merged.
@@ -140,7 +128,6 @@ additive during the conference window so rollback never needs a restore.
 docker compose -f docker-compose.yml logs -f --tail=200 api     # logs (json-file, rotated 5 x 10 MB)
 docker compose -f docker-compose.yml restart worker
 docker compose -f docker-compose.yml exec db psql -U "$DB_USER" "$DB_NAME"
-docker compose -f docker-compose.yml exec garage /garage status
 docker system prune -f                                           # old images only; volumes are kept
 ```
 
@@ -189,7 +176,6 @@ and health output only.
 # as the deploy user on the server
 git clone <repo> /srv/mbc-impact && cd /srv/mbc-impact/deploy
 cp .env.example .env && chmod 600 .env     # fill in; set IMAGE_PREFIX=ghcr.io/<owner>/<repo>
-sh scripts/garage-init.sh                  # after the first `docker compose -f docker-compose.yml up -d db garage`
 ```
 
 The workflow then performs `git fetch && git checkout <sha>` in `DEPLOY_PATH` so the Compose files

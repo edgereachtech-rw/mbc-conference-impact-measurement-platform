@@ -1,33 +1,34 @@
 #!/usr/bin/env sh
-# One-time initialisation of a Garage object store after the first `docker compose up -d`:
+# Initialises the "offsite" Garage instance used by backup/test-local.sh: the local stand-in for
+# the off-site S3 bucket (Backblaze B2, Cloudflare R2, ...) that real backups are sent to.
 #   1. assigns the single node to the cluster layout
-#   2. imports the S3 key pair (S3_ACCESS_KEY / S3_SECRET_KEY from .env)
-#   3. creates S3_BUCKET and grants the key read/write/owner on it
+#   2. imports the S3 key pair
+#   3. creates the bucket and grants the key read/write/owner on it
 # Safe to re-run: every step is skipped when it has already been done.
 #
-# Usage (from deploy/):  sh scripts/garage-init.sh
+# This is test infrastructure only. The platform itself has no object storage: the Garage service
+# was removed from the stack on 2026-11-04 because nothing used it.
 #
-# Overrides (used by backup/test-local.sh for the "offsite" instance):
-#   COMPOSE="docker compose -f ... -f ..."   compose command to use
-#   GARAGE_SERVICE=offsite                    service name (default garage)
-#   GARAGE_KEY_ID / GARAGE_KEY_SECRET / GARAGE_BUCKET / GARAGE_KEY_NAME
+# Called by backup/test-local.sh, which supplies all of these:
+#   COMPOSE          compose command to use
+#   OFFSITE_SERVICE  service name (default offsite)
+#   OFFSITE_KEY_ID / OFFSITE_KEY_SECRET / OFFSITE_BUCKET / OFFSITE_KEY_NAME / OFFSITE_CAPACITY
 set -eu
 export MSYS_NO_PATHCONV=1 # Git Bash on Windows: keep /garage as a container path
 
 cd "$(dirname "$0")/.."
-[ -f .env ] || { echo ".env not found in $(pwd)"; exit 1; }
-set -a
-# shellcheck source=/dev/null
-. ./.env
-set +a
 
 COMPOSE="${COMPOSE:-docker compose}"
-SERVICE="${GARAGE_SERVICE:-garage}"
-KEY_ID="${GARAGE_KEY_ID:-$S3_ACCESS_KEY}"
-KEY_SECRET="${GARAGE_KEY_SECRET:-$S3_SECRET_KEY}"
-BUCKET="${GARAGE_BUCKET:-$S3_BUCKET}"
-KEY_NAME="${GARAGE_KEY_NAME:-app}"
-CAPACITY="${GARAGE_CAPACITY:-20G}"
+SERVICE="${OFFSITE_SERVICE:-offsite}"
+KEY_NAME="${OFFSITE_KEY_NAME:-backup}"
+CAPACITY="${OFFSITE_CAPACITY:-1G}"
+for v in OFFSITE_KEY_ID OFFSITE_KEY_SECRET OFFSITE_BUCKET; do
+  eval "val=\${$v:-}"
+  [ -n "$val" ] || { echo "offsite-init: $v is not set"; exit 1; }
+done
+KEY_ID="$OFFSITE_KEY_ID"
+KEY_SECRET="$OFFSITE_KEY_SECRET"
+BUCKET="$OFFSITE_BUCKET"
 
 garage() { $COMPOSE exec -T -e RUST_LOG=error "$SERVICE" /garage "$@"; }
 
