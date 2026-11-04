@@ -145,7 +145,7 @@ export const ITTEC_END_OF_CONFERENCE: AssessmentTemplate = {
           helpText: null,
           type: 'single_choice',
           required: true,
-          area: 'Expectation status',
+          area: 'Expectations met',
           options: [
             { value: 'fully', label: 'Fully' },
             { value: 'partly', label: 'Partly' },
@@ -162,7 +162,7 @@ export const ITTEC_END_OF_CONFERENCE: AssessmentTemplate = {
           helpText: null,
           type: 'long_text',
           required: false,
-          area: 'Expectation status',
+          area: 'Expectations met',
           referenceOf: { stage: 'pre_conference', prompt: EXPECTATION_PROMPT },
           visibleWhen: 'reference_answered',
         },

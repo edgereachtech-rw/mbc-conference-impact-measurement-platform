@@ -30,6 +30,12 @@ export type FollowUpWave = (typeof followUpWaves)[number];
 /** The three waves created by default; the longer-term one is added deliberately. */
 export const DEFAULT_FOLLOW_UP_WAVES = [1, 2, 3] as const;
 
+/**
+ * The longer-term wave (requirement 11.5, E12-7). It is not part of the default schedule: an
+ * admin adds it when an event needs results that take longer than 90 days to emerge.
+ */
+export const LONGER_TERM_WAVE = 4;
+
 export const followUpWaveOf = (wave: number): FollowUpWave | undefined =>
   followUpWaves.find((w) => w.wave === wave);
 
