@@ -292,6 +292,26 @@ Revised 2026-10-29: there is no sign-up. "First sign-in" replaces "sign-up" wher
 
 ---
 
+### Session attendance presupposes the day (decision of 2026-11-05)
+
+The attendance requirements record session attendance "on top where practical". Two rules fix
+what practical means here:
+
+1. **A delegate can be in a session only on a day they attended.** The session screen lists only
+   delegates with a day record of *attended* or *partial* on the session's date, and the save
+   refuses anyone else (`notPresent` in the result, never recorded, audited). A session's rate is
+   therefore of those checked in that day, not of everyone registered; the registered total is
+   kept beside it for context. Correcting a day record to *absent* withdraws the day, and the
+   platform removes that delegate's session records for the date in the same transaction,
+   reporting `sessionsRemoved`.
+2. **Session attendance is recorded manually by an admin.** No QR per session and nothing
+   inferred: not from a feedback submission, not from a session being on the programme. The
+   delegate's code checks them in for the *day*; the admin ticks sessions.
+
+This keeps the session feedback rule intact (a form only accepts answers from a delegate recorded
+in that session) and stops the contradiction that was possible before: a delegate recorded in a
+session on a day they were marked absent.
+
 ### Test delegates (decision of 2026-11-05)
 
 Staff need to walk the platform from the delegate's side — sign in, answer, build a plan, receive

@@ -139,6 +139,30 @@ describe.skipIf(!hasDatabase)('session feedback', () => {
     identityIds.push(a.identity.id, b.identity.id);
     delegates.dee = a.delegate.id;
     delegates.vee = b.delegate.id;
+    // Session attendance presupposes the day (decision of 2026-11-05): both delegates are
+    // checked in on every date these sessions fall on before any session is recorded.
+    const sessionDates = await prisma.eventSession.findMany({
+      where: { id: { in: [sessionId, otherSessionId] } },
+      select: { eventDateId: true },
+    });
+    const admin = await prisma.userAccount.findFirstOrThrow({
+      where: { id: { in: accountIds }, role: 'admin' },
+      select: { id: true },
+    });
+    await prisma.attendanceRecord.createMany({
+      data: [...new Set(sessionDates.map((s) => s.eventDateId))].flatMap((eventDateId) =>
+        [delegates.dee!, delegates.vee!].map((delegateId) => ({
+          eventId,
+          delegateId,
+          eventDateId,
+          status: 'attended' as const,
+          mode: 'physical' as const,
+          method: 'manual' as const,
+          recordedByUserId: admin.id,
+        })),
+      ),
+      skipDuplicates: true,
+    });
     // Dee attended the keynote; Vee attended only the other session.
     await call('post', `/events/${eventId}/attendance/sessions/${sessionId}`, {
       add: [delegates.dee],

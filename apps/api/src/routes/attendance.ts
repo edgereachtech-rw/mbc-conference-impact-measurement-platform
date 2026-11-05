@@ -128,7 +128,10 @@ function countsOf(
 export function attendanceRouter({ prisma, config, middleware, now }: Deps): Router {
   const router = Router();
   const clock = now ?? (() => new Date());
-  const eligible: Eligible = config.allowTestRegistrations ? ['active', 'test'] : ['active'];
+  // Attendance is an admin act on a registration, not a sign-in: a test delegate is checked in,
+  // listed and corrected like anyone else, whatever the sign-in flag says (decision of
+  // 2026-11-06). Whether they count in the figures is the event's switch, applied in reports.
+  const eligible: Eligible = ['active', 'test'];
   const guard = middleware.requireRole(...IMPORT_ROLES);
 
   function requireAdmin(res: Response) {
@@ -571,6 +574,9 @@ export function attendanceRouter({ prisma, config, middleware, now }: Deps): Rou
         throw new HttpError(409, 'no_change', 'The record already has these values.');
       }
       const at = clock();
+      // A correction to absent withdraws the day, and session attendance presupposes the day
+      // (decision of 2026-11-05): the delegate's session records for that date go with it.
+      let sessionsRemoved = 0;
       const row = await prisma().$transaction(async (tx) => {
         const updated = await tx.attendanceRecord.update({
           where: { id: current.id },
@@ -584,6 +590,15 @@ export function attendanceRouter({ prisma, config, middleware, now }: Deps): Rou
           },
           select: RECORD_SELECT,
         });
+        if (next.status === 'absent') {
+          const gone = await tx.sessionAttendance.deleteMany({
+            where: {
+              delegateId: current.delegateId,
+              session: { eventDateId: current.eventDateId },
+            },
+          });
+          sessionsRemoved = gone.count;
+        }
         await audit(tx, {
           action: 'attendance.corrected',
           entityType: 'attendance_record',
@@ -600,6 +615,7 @@ export function attendanceRouter({ prisma, config, middleware, now }: Deps): Rou
             recordedByUserId: current.recordedByUserId,
           },
           newValue: {
+            sessionsRemoved,
             delegateId: current.delegateId,
             eventDateId: current.eventDateId,
             status: next.status,
@@ -611,7 +627,7 @@ export function attendanceRouter({ prisma, config, middleware, now }: Deps): Rou
         return updated;
       });
       const emails = await emailsOf([row.recordedByUserId]);
-      res.json({ record: recordView(row, emails) });
+      res.json({ record: recordView(row, emails), sessionsRemoved });
     },
   );
 
@@ -680,13 +696,19 @@ export function attendanceRouter({ prisma, config, middleware, now }: Deps): Rou
     const event = await loadEvent(String(req.params.eventId));
     const session = event.sessions.find((s) => s.id === String(req.params.sessionId));
     if (!session) throw new HttpError(404, 'not_found', 'Session not found.');
-    const [delegates, rows] = await Promise.all([
-      registered(event.id),
+    // Session attendance presupposes the day (decision of 2026-11-05): only delegates checked in
+    // on the session's date are listed, so an admin cannot record someone who was not there.
+    const [registeredCount, presentThatDay, rows] = await Promise.all([
+      prisma().delegate.count({
+        where: { eventId: event.id, registrationStatus: { in: [...eligible] } },
+      }),
+      presentOn(event.id, session.eventDateId),
       prisma().sessionAttendance.findMany({
         where: { sessionId: session.id },
         select: { delegateId: true, recordedAt: true, recordedByUserId: true },
       }),
     ]);
+    const delegates = presentThatDay;
     const byDelegate = new Map(rows.map((r) => [r.delegateId, r]));
     const emails = await emailsOf(rows.map((r) => r.recordedByUserId));
     const list: SessionAttendanceList = {
@@ -708,13 +730,29 @@ export function attendanceRouter({ prisma, config, middleware, now }: Deps): Rou
         };
       }),
       counts: {
-        registered: delegates.length,
+        registered: registeredCount,
+        present: delegates.length,
         attended: rows.length,
         rate: delegates.length ? round1((rows.length / delegates.length) * 100) : null,
       },
     };
     res.json(list);
   });
+
+  /** Eligible delegates with a day record of attended or partial on one event date, by name. */
+  async function presentOn(eventId: string, eventDateId: string) {
+    const records = await prisma().attendanceRecord.findMany({
+      where: {
+        eventDateId,
+        status: { in: ['attended', 'partial'] },
+        delegate: { eventId, registrationStatus: { in: [...eligible] } },
+      },
+      select: { delegate: { select: DELEGATE_SELECT } },
+    });
+    return records
+      .map((r) => r.delegate)
+      .sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
+  }
 
   router.post(
     '/events/:eventId/attendance/sessions/:sessionId',
@@ -728,10 +766,19 @@ export function attendanceRouter({ prisma, config, middleware, now }: Deps): Rou
       const input = req.body as z.infer<typeof sessionAttendanceSetSchema>;
       const add = [...new Set(input.add)];
       const remove = new Set(input.remove);
-      const [delegates, existing] = await Promise.all([
+      const [delegates, dayRecords, existing] = await Promise.all([
         prisma().delegate.findMany({
           where: { id: { in: add }, eventId: event.id, registrationStatus: { in: [...eligible] } },
           select: { id: true },
+        }),
+        // A delegate can only be in a session on a day they attended (decision of 2026-11-05).
+        prisma().attendanceRecord.findMany({
+          where: {
+            delegateId: { in: add },
+            eventDateId: session.eventDateId,
+            status: { in: ['attended', 'partial'] },
+          },
+          select: { delegateId: true },
         }),
         prisma().sessionAttendance.findMany({
           where: { sessionId: session.id, delegateId: { in: [...add, ...remove] } },
@@ -739,10 +786,12 @@ export function attendanceRouter({ prisma, config, middleware, now }: Deps): Rou
         }),
       ]);
       const known = new Set(delegates.map((d) => d.id));
+      const thereThatDay = new Set(dayRecords.map((r) => r.delegateId));
       const present = new Set(existing.map((r) => r.delegateId));
-      const toAdd = add.filter((id) => known.has(id) && !present.has(id));
+      const toAdd = add.filter((id) => known.has(id) && thereThatDay.has(id) && !present.has(id));
       const toRemove = [...remove].filter((id) => present.has(id));
       const skipped = add.filter((id) => !known.has(id));
+      const notPresent = add.filter((id) => known.has(id) && !thereThatDay.has(id));
       const at = clock();
       await prisma().$transaction(async (tx) => {
         if (toAdd.length) {
@@ -774,11 +823,12 @@ export function attendanceRouter({ prisma, config, middleware, now }: Deps): Rou
             removed: toRemove,
             reason: input.reason,
             skipped,
+            notPresent,
           },
           ...clientOf(res),
         });
       });
-      res.json({ added: toAdd.length, removed: toRemove.length, skipped });
+      res.json({ added: toAdd.length, removed: toRemove.length, skipped, notPresent });
     },
   );
 
@@ -950,7 +1000,8 @@ export async function attendanceOverviewFor(
     },
   });
   if (!event) return null;
-  const eligible: Eligible = deps.config.allowTestRegistrations ? ['active', 'test'] : ['active'];
+  // The delegate's own code and record: same rule, the sign-in gate already decided access.
+  const eligible: Eligible = ['active', 'test'];
   const [delegates, records] = await Promise.all([
     prisma.delegate.findMany({
       where: { eventId, registrationStatus: { in: [...eligible] } },

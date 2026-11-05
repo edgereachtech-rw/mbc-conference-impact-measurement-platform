@@ -185,7 +185,7 @@ function stub() {
             recordedAt: null,
             recordedBy: null,
           })),
-          counts: { registered: 3, attended: 1, rate: 33.3 },
+          counts: { registered: 3, present: 3, attended: 1, rate: 33.3 },
         });
       }
       if (url.includes(`/attendance/sessions/${S1}`))

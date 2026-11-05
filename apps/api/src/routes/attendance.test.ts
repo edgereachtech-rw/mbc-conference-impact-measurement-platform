@@ -336,7 +336,12 @@ describe.skipIf(!hasDatabase)('attendance management', () => {
       add: [delegates.dee, delegates.vee, delegates.gone],
     });
     expect(set.status, set.text).toBe(200);
-    expect(set.body).toEqual({ added: 2, removed: 0, skipped: [delegates.gone] });
+    expect(set.body).toEqual({
+      added: 2,
+      removed: 0,
+      skipped: [delegates.gone],
+      notPresent: [],
+    });
     const undo = await call('post', `${base}/sessions/${sessionId}`, {
       remove: [delegates.vee],
       reason: 'Marked by mistake',
@@ -344,7 +349,8 @@ describe.skipIf(!hasDatabase)('attendance management', () => {
     expect(undo.body).toMatchObject({ added: 0, removed: 1 });
     const session = await call('get', `${base}/sessions/${sessionId}`);
     expect(session.status, session.text).toBe(200);
-    expect(session.body.counts).toEqual({ registered: 3, attended: 1, rate: 33.3 });
+    // Everyone attended day 1, so all three are listed; the rate is of those present that day.
+    expect(session.body.counts).toEqual({ registered: 3, present: 3, attended: 1, rate: 33.3 });
     expect(
       session.body.rows.map((r: { delegate: { name: string }; attended: boolean }) => [
         r.delegate.name,
@@ -392,5 +398,48 @@ describe.skipIf(!hasDatabase)('attendance management', () => {
     ]);
     const events = await call('get', `/me/events/${eventId}`, undefined, cookies.delegate);
     expect(events.body.event.attendance.status).toBe('partial');
+  });
+
+  it('records a session only for delegates checked in that day, and a correction to absent withdraws their session records', async () => {
+    const base = `/events/${eventId}/attendance`;
+    // Dee is in the day-1 session above. Nobody attended day 2, and the day is closed.
+    const day2Session = await prisma.eventSession.create({
+      data: {
+        eventId,
+        eventDateId: day2,
+        title: 'Day 2 workshop',
+        sessionType: 'workshop',
+        startTime: '09:00',
+        endTime: '10:00',
+      },
+    });
+    const refused = await call('post', `${base}/sessions/${day2Session.id}`, {
+      add: [delegates.dee],
+    });
+    expect(refused.status, refused.text).toBe(200);
+    // Registered, but not there that day: reported back, never recorded.
+    expect(refused.body).toEqual({
+      added: 0,
+      removed: 0,
+      skipped: [],
+      notPresent: [delegates.dee],
+    });
+    const list = await call('get', `${base}/sessions/${day2Session.id}`);
+    expect(list.body.counts).toEqual({ registered: 3, present: 0, attended: 0, rate: null });
+    expect(list.body.rows).toEqual([]);
+
+    // Correcting Dee's day-1 record to absent withdraws the day, and the session record with it.
+    const record = await prisma.attendanceRecord.findFirstOrThrow({
+      where: { delegateId: delegates.dee, eventDateId: day1 },
+      select: { id: true },
+    });
+    const corrected = await call('patch', `${base}/records/${record.id}`, {
+      status: 'absent',
+      reason: 'Left before any session started',
+    });
+    expect(corrected.status, corrected.text).toBe(200);
+    expect(corrected.body.sessionsRemoved).toBe(1);
+    const after = await call('get', `${base}/sessions/${sessionId}`);
+    expect(after.body.counts).toMatchObject({ present: 2, attended: 0 });
   });
 });

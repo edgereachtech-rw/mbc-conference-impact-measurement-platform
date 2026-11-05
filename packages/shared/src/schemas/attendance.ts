@@ -176,12 +176,29 @@ export const sessionAttendanceListSchema = z.object({
     }),
   ),
   counts: z.object({
+    /** Eligible registrations of the event, for context. */
     registered: z.number().int(),
+    /**
+     * Delegates checked in on the session's date (attended or partial). Only they are listed and
+     * only they can be recorded, so this is the denominator of the rate (decision of 2026-11-05).
+     */
+    present: z.number().int(),
     attended: z.number().int(),
     rate: z.number().nullable(),
   }),
 });
 export type SessionAttendanceList = z.infer<typeof sessionAttendanceListSchema>;
+
+/** What a session-attendance save reports back. */
+export const sessionAttendanceResultSchema = z.object({
+  added: z.number().int(),
+  removed: z.number().int(),
+  /** Ids that are not eligible registrations of this event. */
+  skipped: z.array(z.uuid()),
+  /** Ids registered but not checked in on the session's date: never recorded (2026-11-05). */
+  notPresent: z.array(z.uuid()),
+});
+export type SessionAttendanceResult = z.infer<typeof sessionAttendanceResultSchema>;
 
 export const delegateAttendanceProfileSchema = z.object({
   delegate: delegateRef,

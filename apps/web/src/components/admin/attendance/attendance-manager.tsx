@@ -1445,7 +1445,7 @@ function SessionDialog({
       title={list ? `Session attendance: ${list.session.title}` : 'Session attendance'}
       description={
         list
-          ? `${formatDateShort(list.session.date)} ${list.session.startTime}–${list.session.endTime} · ${list.counts.attended} of ${list.counts.registered} recorded${list.counts.rate !== null ? ` (${list.counts.rate}%)` : ''}`
+          ? `${formatDateShort(list.session.date)} ${list.session.startTime}–${list.session.endTime} · ${list.counts.attended} of the ${list.counts.present} checked in that day recorded${list.counts.rate !== null ? ` (${list.counts.rate}%)` : ''}`
           : undefined
       }
       onClose={onClose}
@@ -1480,6 +1480,19 @@ function SessionDialog({
         </p>
       ) : (
         <div className="space-y-3">
+          {/*
+            Session attendance presupposes the day (decision of 2026-11-05): only delegates
+            checked in on the session's date are listed, so nobody can be recorded who was not
+            there. Anyone else has to be checked in on the date first.
+          */}
+          {list.counts.registered > list.counts.present ? (
+            <p role="note" className="text-sm text-corp-muted">
+              Only delegates checked in on {formatDateShort(list.session.date)} are listed.{' '}
+              {list.counts.registered - list.counts.present} registered delegate
+              {list.counts.registered - list.counts.present === 1 ? '' : 's'} not checked in that
+              day cannot be recorded here: check them in on the date first.
+            </p>
+          ) : null}
           <ul
             aria-label="Delegates"
             className="max-h-96 divide-y divide-corp-line overflow-y-auto text-sm"
