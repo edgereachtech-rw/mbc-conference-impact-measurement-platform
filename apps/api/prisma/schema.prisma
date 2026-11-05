@@ -440,6 +440,9 @@ model Event {
   location       String?
   format         EventFormat @default(hybrid)
   status         EventStatus @default(draft)
+  /// Whether registrations with status `test` count in this event's reports, dashboards and
+  /// summaries. Off by default; never affects whether a test delegate may sign in.
+  countTestDelegates Boolean @default(false) @map("count_test_delegates")
   /// Structured profile (E1 brief, section 3). The slug is the unique event code.
   description    String      @default("")
   eventType      EventType   @default(conference) @map("event_type")

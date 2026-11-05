@@ -15,6 +15,7 @@ import { clientOf, principalOf, type createAuthMiddleware } from '../auth/middle
 import { canConfigureEvents, EVENT_SETUP_ROLES } from '../auth/policies.js';
 import type { PrismaClient } from '../db.js';
 import { audit } from '../lib/audit.js';
+import { figureStatuses } from '../lib/eligible.js';
 import { HttpError } from '../lib/errors.js';
 import { validate } from '../lib/validate.js';
 
@@ -40,12 +41,10 @@ const isoDate = (d: Date) => d.toISOString().slice(0, 10);
  * stage, and an enabled wave with no questions cannot be scheduled or opened. ITTEC's approved
  * follow-up wording is loaded into its waves by `db:seed` as that event's data.
  */
-export function followUpRouter({ prisma, config, middleware, now }: Deps): Router {
+export function followUpRouter({ prisma, middleware, now }: Deps): Router {
   const router = Router();
   const clock = now ?? (() => new Date());
   const guard = middleware.requireRole(...EVENT_SETUP_ROLES);
-  const eligible = () =>
-    config.allowTestRegistrations ? (['active', 'test'] as const) : (['active'] as const);
 
   function requireAdmin(res: Response) {
     const principal = principalOf(res);
@@ -66,6 +65,13 @@ export function followUpRouter({ prisma, config, middleware, now }: Deps): Route
   }
 
   async function scheduleOf(eventId: string) {
+    // The response-rate denominator is a figure, so it follows the event's choice about test
+    // delegates; invitations (sending) keep following the sign-in flag.
+    const flag = await prisma().event.findUnique({
+      where: { id: eventId },
+      select: { countTestDelegates: true },
+    });
+    const counted = figureStatuses(flag ?? { countTestDelegates: false });
     const [rows, eligibleCount] = await Promise.all([
       prisma().assessmentStageConfig.findMany({
         where: { eventId, stage: 'follow_up' },
@@ -80,7 +86,7 @@ export function followUpRouter({ prisma, config, middleware, now }: Deps): Route
         },
       }),
       prisma().delegate.count({
-        where: { eventId, registrationStatus: { in: [...eligible()] } },
+        where: { eventId, registrationStatus: { in: [...counted] } },
       }),
     ]);
     // Invitations are counted per wave: the denominator of a response rate is who was asked.

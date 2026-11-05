@@ -1,17 +1,21 @@
 import {
   delegateListQuerySchema,
   delegateListStatuses,
+  delegateTestMarkSchema,
   type DelegateListItem,
   type DelegateListQuery,
   type DelegateListStatus,
 } from '@mbc/shared';
 import { Router } from 'express';
 
-import { principalOf, type createAuthMiddleware } from '../auth/middleware.js';
-import { DELEGATE_READ_ROLES, hasRole } from '../auth/policies.js';
+import { clientOf, principalOf, type createAuthMiddleware } from '../auth/middleware.js';
+import { canWriteDelegate, DELEGATE_READ_ROLES, hasRole } from '../auth/policies.js';
 import type { PrismaClient } from '../db.js';
 import type { Prisma } from '../generated/prisma/client.js';
+import { audit } from '../lib/audit.js';
 import { HttpError } from '../lib/errors.js';
+
+const UUID = /^[0-9a-f-]{36}$/i;
 
 interface Deps {
   prisma: () => PrismaClient;
@@ -112,6 +116,60 @@ export function eventDelegateRouter({ prisma, middleware }: Deps): Router {
         createdAt: r.createdAt.toISOString(),
       }));
       res.json({ delegates, page: query.page, pageSize: query.pageSize, total, counts });
+    },
+  );
+
+  /**
+   * Marks registrations as test delegates, or back to real ones (decision of 2026-11-05). Test
+   * delegates are imported like everyone else; this is the one place they are told apart. Only
+   * active ↔ test switches: a pending, cancelled or duplicate registration is skipped and counted,
+   * so a careless "select all" cannot revive a cancellation.
+   */
+  router.post(
+    '/events/:eventId/delegates/test',
+    middleware.requireRole(...DELEGATE_READ_ROLES),
+    async (req, res) => {
+      const principal = principalOf(res);
+      if (!canWriteDelegate(principal)) throw new HttpError(403, 'forbidden', 'Read-only role.');
+      const parsed = delegateTestMarkSchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        const issue = parsed.error.issues[0];
+        throw new HttpError(
+          422,
+          'validation_failed',
+          `${issue?.path.join('.')}: ${issue?.message}`,
+        );
+      }
+      const { delegateIds, test } = parsed.data;
+      const eventId = String(req.params.eventId);
+      if (!UUID.test(eventId)) throw new HttpError(404, 'not_found', 'Event not found.');
+      const from = test ? 'active' : 'test';
+      const to = test ? 'test' : 'active';
+      const result = await prisma().$transaction(async (tx) => {
+        const rows = await tx.delegate.findMany({
+          where: { id: { in: delegateIds }, eventId },
+          select: { id: true, registrationStatus: true },
+        });
+        const switching = rows.filter((r) => r.registrationStatus === from).map((r) => r.id);
+        if (switching.length) {
+          await tx.delegate.updateMany({
+            where: { id: { in: switching } },
+            data: { registrationStatus: to },
+          });
+          await audit(tx, {
+            action: 'delegate.test_marked',
+            entityType: 'event',
+            entityId: eventId,
+            eventId,
+            actorUserId: principal.userId,
+            // Counts and the direction only: never names or addresses.
+            newValue: { to, updated: switching.length, skipped: rows.length - switching.length },
+            ...clientOf(res),
+          });
+        }
+        return { updated: switching.length, skipped: delegateIds.length - switching.length };
+      });
+      res.json(result);
     },
   );
 

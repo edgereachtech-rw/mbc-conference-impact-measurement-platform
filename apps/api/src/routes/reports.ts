@@ -18,6 +18,7 @@ import { canConfigureEvents, REPORT_ROLES } from '../auth/policies.js';
 import type { PrismaClient } from '../db.js';
 import type { Prisma } from '../generated/prisma/client.js';
 import { audit } from '../lib/audit.js';
+import { figureStatuses } from '../lib/eligible.js';
 import { HttpError } from '../lib/errors.js';
 import { parseBlocks } from '../export/blocks.js';
 import { toDocx } from '../export/docx.js';
@@ -46,13 +47,19 @@ const UUID = /^[0-9a-f-]{36}$/i;
  * and set of sections; nothing is ever sent anywhere by the platform. Every view of an external
  * report and every download is audited with counts, never content.
  */
-export function reportRouter({ prisma, config, middleware, now }: Deps): Router {
+export function reportRouter({ prisma, middleware, now }: Deps): Router {
   const router = Router();
   const clock = now ?? (() => new Date());
   const guard = middleware.requireRole(...REPORT_ROLES);
-  const eligible: EligibleStatuses = config.allowTestRegistrations
-    ? ['active', 'test']
-    : ['active'];
+  /** Who a report counts: the event's own choice about test delegates, never the sign-in flag. */
+  async function eligibleFor(eventId: string): Promise<EligibleStatuses> {
+    const event = await prisma().event.findUnique({
+      where: { id: eventId },
+      select: { countTestDelegates: true },
+    });
+    if (!event) throw new HttpError(404, 'not_found', 'Event not found.');
+    return figureStatuses(event);
+  }
 
   function requireAdmin(res: Response) {
     const principal = principalOf(res);
@@ -123,7 +130,7 @@ export function reportRouter({ prisma, config, middleware, now }: Deps): Router 
     const sections = reportSections.filter((s) => requested.includes(s));
     const built = await buildReport({
       db: prisma(),
-      eligible,
+      eligible: await eligibleFor(eventId),
       now: clock(),
       eventId,
       filters: {
@@ -154,7 +161,9 @@ export function reportRouter({ prisma, config, middleware, now }: Deps): Router 
   router.get('/events/:eventId/reports/organisations', guard, async (req, res) => {
     requireAdmin(res);
     const event = await loadEvent(String(req.params.eventId));
-    res.json({ organisations: await organisationsOf(prisma(), event.id, eligible) });
+    res.json({
+      organisations: await organisationsOf(prisma(), event.id, await eligibleFor(event.id)),
+    });
   });
 
   router.get('/events/:eventId/reports/:kind', guard, async (req, res) => {

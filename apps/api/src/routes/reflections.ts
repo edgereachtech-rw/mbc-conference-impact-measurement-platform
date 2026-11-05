@@ -21,6 +21,7 @@ import { canConfigureEvents, EVENT_SETUP_ROLES } from '../auth/policies.js';
 import type { PrismaClient } from '../db.js';
 import type { Prisma } from '../generated/prisma/client.js';
 import { audit } from '../lib/audit.js';
+import { figureStatuses } from '../lib/eligible.js';
 import { HttpError } from '../lib/errors.js';
 
 interface Deps {
@@ -108,9 +109,17 @@ export function reflectionRouter({ prisma, config, middleware, now }: Deps): Rou
     return event;
   }
 
+  /** Who the figures count: the event's choice about test delegates, not the sign-in flag. */
+  async function figureStatusesFor(eventId: string) {
+    const event = await prisma().event.findUnique({
+      where: { id: eventId },
+      select: { countTestDelegates: true },
+    });
+    return figureStatuses(event ?? { countTestDelegates: false });
+  }
   async function registeredCount(eventId: string) {
     return prisma().delegate.count({
-      where: { eventId, registrationStatus: { in: [...eligible()] } },
+      where: { eventId, registrationStatus: { in: [...(await figureStatusesFor(eventId))] } },
     });
   }
 
@@ -539,7 +548,10 @@ export function reflectionRouter({ prisma, config, middleware, now }: Deps): Rou
     const activity = await loadActivity(String(req.params.eventId), String(req.params.activityId));
     const [registered, responses, allQuestions] = await Promise.all([
       prisma().delegate.findMany({
-        where: { eventId: activity.eventId, registrationStatus: { in: [...eligible()] } },
+        where: {
+          eventId: activity.eventId,
+          registrationStatus: { in: [...(await figureStatusesFor(activity.eventId))] },
+        },
         select: DELEGATE_SELECT,
         orderBy: [{ name: 'asc' }],
       }),

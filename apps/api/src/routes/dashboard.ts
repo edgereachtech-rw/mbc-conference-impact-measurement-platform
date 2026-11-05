@@ -11,6 +11,7 @@ import type { AuthConfig } from '../auth/config.js';
 import { principalOf, type createAuthMiddleware } from '../auth/middleware.js';
 import { canRunImports, IMPORT_ROLES } from '../auth/policies.js';
 import type { PrismaClient } from '../db.js';
+import { figureStatuses } from '../lib/eligible.js';
 import { HttpError } from '../lib/errors.js';
 import { stageSummaryFor, type EligibleStatuses } from './assessments.js';
 import { attendanceOverviewFor } from './attendance.js';
@@ -31,9 +32,6 @@ const isoDate = (d: Date) => d.toISOString().slice(0, 10);
 export function dashboardRouter({ prisma, config, middleware, now }: Deps): Router {
   const router = Router();
   const clock = now ?? (() => new Date());
-  const eligible: EligibleStatuses = config.allowTestRegistrations
-    ? ['active', 'test']
-    : ['active'];
 
   router.get(
     '/events/:eventId/dashboard',
@@ -51,6 +49,7 @@ export function dashboardRouter({ prisma, config, middleware, now }: Deps): Rout
           slug: true,
           name: true,
           status: true,
+          countTestDelegates: true,
           format: true,
           startsOn: true,
           endsOn: true,
@@ -71,6 +70,8 @@ export function dashboardRouter({ prisma, config, middleware, now }: Deps): Rout
         },
       });
       if (!event) throw new HttpError(404, 'not_found', 'Event not found.');
+      // Figures count what the event says they count; the sign-in flag plays no part here.
+      const eligible: EligibleStatuses = figureStatuses(event);
       const at = clock();
 
       const [byStatus, signedUp, invited, physical, virtual, messageTotals, lastMessage] =

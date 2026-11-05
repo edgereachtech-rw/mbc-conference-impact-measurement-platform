@@ -1,6 +1,11 @@
 'use client';
 
-import type { DelegateListItem, DelegateListResponse, DelegateListStatus } from '@mbc/shared';
+import type {
+  DelegateListItem,
+  DelegateListResponse,
+  DelegateListStatus,
+  DelegateTestMarkResult,
+} from '@mbc/shared';
 import { Loader2Icon, MailIcon, SearchIcon } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
@@ -84,6 +89,7 @@ export function DelegateTable({ eventId, eventName = 'this event', onMessageSent
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   /** "Every delegate matching the current filter", beyond the page on screen. */
   const [allMatching, setAllMatching] = useState(false);
+  const [marking, setMarking] = useState(false);
   const [composer, setComposer] = useState<Composer | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const headerCheckbox = useRef<HTMLInputElement>(null);
@@ -153,6 +159,31 @@ export function DelegateTable({ eventId, eventName = 'this event', onMessageSent
       return next;
     });
     if (!on) setAllMatching(false);
+  }
+  /** Marks the ticked registrations as test delegates, or back to real ones. */
+  async function markTest(test: boolean) {
+    if (allMatching || selected.size === 0) return;
+    setMarking(true);
+    setError(null);
+    try {
+      const result = await apiFetch<DelegateTestMarkResult>(`/events/${eventId}/delegates/test`, {
+        method: 'POST',
+        body: JSON.stringify({ delegateIds: [...selected], test }),
+      });
+      const what = test ? 'marked as test delegates' : 'marked as real delegates';
+      setNotice(
+        `${result.updated} ${what}` +
+          (result.skipped
+            ? `; ${result.skipped} left as they were (only active and test registrations switch)`
+            : ''),
+      );
+      setSelected(new Set());
+      setReload((n) => n + 1);
+    } catch (e) {
+      setError(describeError(e, 'The delegates could not be marked.'));
+    } finally {
+      setMarking(false);
+    }
   }
   function clearSelection() {
     setSelected(new Set());
@@ -356,6 +387,28 @@ export function DelegateTable({ eventId, eventName = 'this event', onMessageSent
               className="inline-flex min-h-10 items-center rounded-none border border-white/40 px-3 font-medium hover:bg-white/10"
             >
               Clear
+            </button>
+            {/*
+              Test delegates (decision of 2026-11-05): imported like anyone else, told apart here.
+              Only an explicit selection can be marked — "all matching" is refused, so a filter
+              that happens to match everyone cannot turn the whole event into a rehearsal.
+            */}
+            <button
+              type="button"
+              onClick={() => void markTest(true)}
+              disabled={marking || allMatching || selected.size === 0}
+              title={allMatching ? 'Tick the delegates one by one to mark them as test' : undefined}
+              className="inline-flex min-h-10 items-center rounded-none border border-white/40 px-3 font-medium hover:bg-white/10 disabled:opacity-50"
+            >
+              Mark as test delegates
+            </button>
+            <button
+              type="button"
+              onClick={() => void markTest(false)}
+              disabled={marking || allMatching || selected.size === 0}
+              className="inline-flex min-h-10 items-center rounded-none border border-white/40 px-3 font-medium hover:bg-white/10 disabled:opacity-50"
+            >
+              Mark as real delegates
             </button>
             <button
               type="button"

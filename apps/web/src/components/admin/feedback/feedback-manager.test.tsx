@@ -31,6 +31,7 @@ const event: EventDetail = {
   imageUrl: null,
   additionalInfo: null,
   status: 'active',
+  countTestDelegates: false,
   startsOn: '2026-11-12',
   endsOn: '2026-11-12',
   dates: [{ id: D1, date: '2026-11-12' }],

@@ -89,6 +89,7 @@ export function eventDetailOf(event: EventRow): EventDetail {
     imageUrl: event.imageUrl,
     additionalInfo: event.additionalInfo,
     status: event.status,
+    countTestDelegates: event.countTestDelegates,
     startsOn: isoDate(event.startsOn),
     endsOn: isoDate(event.endsOn),
     dates: event.dates.map((d) => ({ id: d.id, date: isoDate(d.date) })),
@@ -271,8 +272,12 @@ export function eventSetupRouter({ prisma, middleware, now }: Deps): Router {
       format: fields.format ?? event.format,
       location: fields.location === undefined ? event.location : fields.location,
     };
-    const profileIssues = eventProfileIssues(merged);
-    if (profileIssues.length) throw new HttpError(422, 'validation_failed', profileIssues[0]!);
+    // The venue rule guards the profile: a patch that touches neither format nor location (for
+    // example the test-delegates switch) must not be refused for a venue nobody is changing.
+    if (fields.format !== undefined || fields.location !== undefined) {
+      const profileIssues = eventProfileIssues(merged);
+      if (profileIssues.length) throw new HttpError(422, 'validation_failed', profileIssues[0]!);
+    }
     if (Object.keys(fields).length === 0) {
       // Nothing to change (for example only a read-only field was sent): no update, no audit row.
       res.json({ event: eventDetailOf(event) });

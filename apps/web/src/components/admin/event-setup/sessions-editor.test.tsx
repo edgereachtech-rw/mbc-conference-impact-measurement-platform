@@ -21,6 +21,7 @@ const base: EventDetail = {
   imageUrl: null,
   additionalInfo: null,
   status: 'draft',
+  countTestDelegates: false,
   startsOn: '2026-11-10',
   endsOn: '2026-11-12',
   dates: [

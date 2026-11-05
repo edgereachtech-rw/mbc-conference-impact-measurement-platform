@@ -38,6 +38,7 @@ const eventWith = (stages: EventDetail['assessmentStages']): EventDetail => ({
   imageUrl: null,
   additionalInfo: null,
   status: 'active',
+  countTestDelegates: false,
   startsOn: '2026-11-12',
   endsOn: '2026-11-13',
   dates: [{ id: 'd1', date: '2026-11-13' }],

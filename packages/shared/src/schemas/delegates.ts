@@ -63,3 +63,23 @@ export const delegateListResponseSchema = z.object({
   counts: z.record(z.enum(delegateListStatuses), z.number().int()),
 });
 export type DelegateListResponse = z.infer<typeof delegateListResponseSchema>;
+
+/**
+ * Marking registrations as test delegates, or back to real ones (decision of 2026-11-05). A test
+ * delegate is imported like anyone else and then marked by an admin, so staff can use the platform
+ * from the delegate's side. Only active and test registrations switch; the rest are skipped and
+ * reported, never changed.
+ */
+export const delegateTestMarkSchema = z.object({
+  delegateIds: z.array(z.uuid()).min(1).max(500),
+  test: z.boolean(),
+});
+export type DelegateTestMark = z.infer<typeof delegateTestMarkSchema>;
+
+export const delegateTestMarkResultSchema = z.object({
+  /** Registrations whose status changed. */
+  updated: z.number().int(),
+  /** Registrations left alone: already in the requested state, or pending, cancelled or duplicate. */
+  skipped: z.number().int(),
+});
+export type DelegateTestMarkResult = z.infer<typeof delegateTestMarkResultSchema>;

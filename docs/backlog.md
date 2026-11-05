@@ -292,6 +292,40 @@ Revised 2026-10-29: there is no sign-up. "First sign-in" replaces "sign-up" wher
 
 ---
 
+### Test delegates (decision of 2026-11-05)
+
+Staff need to walk the platform from the delegate's side — sign in, answer, build a plan, receive
+the emails — without their rehearsal showing up in ITTEC's figures. Three things, decided and
+built 2026-11-05:
+
+1. **A test delegate is imported like any other.** No special import path: the registration
+   arrives `active` from the normal file.
+2. **An admin marks them from the delegate list.** Tick the registrations, press *Mark as test
+   delegates* (or *Mark as real delegates* to reverse). Only `active` ↔ `test` switches; pending,
+   cancelled and duplicate registrations are skipped and counted back, so a careless selection
+   can never revive a cancellation. "All matching" is refused for this action: only an explicit
+   selection can be marked. Audited as `delegate.test_marked` with counts and direction only.
+3. **The event decides whether test delegates count.** A per-event switch, *Count test delegates
+   in reports and figures* (`countTestDelegates`, default off), on the Delegates tab. Off, every
+   report, dashboard, stage summary, paired result, response list and response-rate denominator
+   excludes them; on, they are included so a report can be checked end to end before any real
+   delegate has answered.
+
+What this deliberately separates: **counting** is now the event's choice, while **access** — may a
+`test` registration sign in, answer, be invited or reminded — stays the environment rule
+`AUTH_ALLOW_TEST_REGISTRATIONS`, forbidden in production. The two used to share one flag. So on
+staging, test delegates can do everything a delegate can and are still kept out of the figures;
+on production they exist as rows, count only if switched on, and cannot sign in. Letting test
+accounts into production would be a security decision, not a reporting one, and is not taken here.
+
+Consequence worth knowing: the ten seeded `test` registrations on staging no longer appear in
+staging reports unless the switch is on. Attendance lists are unchanged — an admin has to see a
+test delegate to check them in — and invitations, reminders and onboarding still reach them.
+
+Found and fixed on the way: the event PATCH applied the venue/format rule to every patch, so a
+hybrid event without a venue could not change any setting at all, this one included. The rule now
+runs only when format or location is in the patch.
+
 ### Import gates waived (decision of 2026-10-31)
 
 Registration uploads are now **always allowed**. Three guards described in D9 and D6.1 below were

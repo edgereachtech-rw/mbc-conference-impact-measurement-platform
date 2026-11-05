@@ -15,6 +15,7 @@ import { TransferPlansManager } from '@/components/admin/transfer-plans/transfer
 import { consoleButton } from '@/components/console/page';
 import { apiFetch } from '@/lib/api';
 import { TabStrip, useTabState } from '@/components/console/tabs';
+import { TestDelegatesSetting } from './test-delegates-setting';
 import { describeError } from '@/lib/imports';
 
 import { AssessmentConfig } from './assessment-config';
@@ -188,6 +189,7 @@ export function EventSettings({ initialEvent }: EventSettingsProps) {
         {tab === 'delegates' ? (
           <div className="space-y-8">
             <OnboardingSender eventId={event.id} timezone={event.timezone} />
+            <TestDelegatesSetting event={event} onSaved={saved} />
             <EventWorkspace eventId={event.id} eventName={event.name} />
           </div>
         ) : null}

@@ -66,6 +66,7 @@ x-app-env: &app-env
   AUTH_RATE_LIMIT_PER_IP: ${AUTH_RATE_LIMIT_PER_IP:-10}
   AUTH_VERIFY_LIMIT_PER_IP: ${AUTH_VERIFY_LIMIT_PER_IP:-20}
   AUTH_ALLOWED_ORIGINS: ${AUTH_ALLOWED_ORIGINS:-}
+  AUTH_ALLOW_TEST_REGISTRATIONS: ${AUTH_ALLOW_TEST_REGISTRATIONS:-false}
   # Widens the session cookie to a parent domain when the web app and the API are different
   # hostnames (app.example.com / api.example.com). Leave empty for one host on two ports.
   COOKIE_DOMAIN: ${COOKIE_DOMAIN:-}

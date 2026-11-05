@@ -167,7 +167,14 @@ export const eventCreateSchema = eventProfileFieldsSchema
   .superRefine(noDuplicateDates);
 export type EventCreate = z.infer<typeof eventCreateSchema>;
 
-export const eventPatchSchema = eventProfileFieldsSchema.partial();
+export const eventPatchSchema = eventProfileFieldsSchema.partial().extend({
+  /**
+   * Whether test delegates count in this event's reports, dashboards and summaries (decision of
+   * 2026-11-05). Off by default so a rehearsal never leaks into the figures; never affects
+   * whether a test delegate may sign in.
+   */
+  countTestDelegates: z.boolean().optional(),
+});
 export type EventPatch = z.infer<typeof eventPatchSchema>;
 
 export const eventStatusSchema = z.object({ status: z.enum(eventStatuses) });
@@ -335,6 +342,8 @@ export const eventDetailSchema = z.object({
   imageUrl: z.string().nullable(),
   additionalInfo: z.string().nullable(),
   status: z.enum(eventStatuses),
+  /** Whether test delegates count in reports and figures; see eventPatchSchema. */
+  countTestDelegates: z.boolean(),
   /** Derived: the earliest and latest selected dates (brief section 4, pending confirmation). */
   startsOn: isoDateSchema,
   endsOn: isoDateSchema,

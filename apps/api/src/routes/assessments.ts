@@ -54,6 +54,7 @@ import { MEDIA_TYPES, toXlsx } from '../export/xlsx.js';
 import { csvCell } from '../imports/service.js';
 import { organiserName } from '../mail/branding.js';
 import { audit } from '../lib/audit.js';
+import { figureStatuses } from '../lib/eligible.js';
 import { HttpError } from '../lib/errors.js';
 
 interface Deps {
@@ -499,8 +500,17 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
   const router = Router();
   const clock = now ?? (() => new Date());
   const guard = middleware.requireRole(...EVENT_SETUP_ROLES);
+  /** Who may act as a delegate here (answer, be reminded): the sign-in flag, as everywhere. */
   const eligibleStatuses = () =>
     config.allowTestRegistrations ? (['active', 'test'] as const) : (['active'] as const);
+  /** Who the admin figures count (summary, paired results, responses): the event's own choice. */
+  async function figureStatusesFor(eventId: string) {
+    const event = await prisma().event.findUnique({
+      where: { id: eventId },
+      select: { countTestDelegates: true },
+    });
+    return figureStatuses(event ?? { countTestDelegates: false });
+  }
 
   function stageOf(value: string): AssessmentStage {
     if (!(assessmentStages as readonly string[]).includes(value)) {
@@ -1109,14 +1119,16 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
   router.get('/events/:eventId/assessments/:stage/summary', guard, async (req, res) => {
     requireAdmin(res);
     const stage = await stageFromReq(req, false);
-    const summary = await stageSummaryFor(prisma(), stage, eligibleStatuses());
+    const summary = await stageSummaryFor(prisma(), stage, await figureStatusesFor(stage.eventId));
     res.json({ summary });
   });
 
   router.get('/events/:eventId/assessments/:stage/paired', guard, async (req, res) => {
     requireAdmin(res);
     const stage = await stageFromReq(req, false);
-    res.json({ paired: await pairedResultsFor(prisma(), stage, eligibleStatuses()) });
+    res.json({
+      paired: await pairedResultsFor(prisma(), stage, await figureStatusesFor(stage.eventId)),
+    });
   });
 
   // Delegates the stage applies to who have not submitted it, for reminders (E5-9).
@@ -1187,7 +1199,7 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
     const rows = await prisma().assessmentResponse.findMany({
       where: {
         stageConfigId: stage.id,
-        delegate: { registrationStatus: { in: [...eligibleStatuses()] } },
+        delegate: { registrationStatus: { in: [...(await figureStatusesFor(stage.eventId))] } },
       },
       select: {
         delegateId: true,
