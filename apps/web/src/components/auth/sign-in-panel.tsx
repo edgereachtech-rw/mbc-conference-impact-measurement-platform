@@ -87,7 +87,7 @@ export function SignInPanel({ safeNext, initialEmail, invite }: SignInState & { 
             {platform.shortName}
           </p>
           <h2 className="mt-3 font-display text-2xl leading-tight font-semibold text-white md:text-3xl xl:text-4xl">
-            Training is worth what you do with it afterwards.
+            The true value of learning is what changes afterwards.
           </h2>
           {/* Hidden below `lg`: with it, the band pushed the form off a 360px screen, and the
               form is the only thing a delegate came here to do. */}
