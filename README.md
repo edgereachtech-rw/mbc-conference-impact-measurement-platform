@@ -565,12 +565,15 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   landing place of that day's QR code; `#reflections` remains an alias that lands on the open
   day. The reflections list is loaded once by the page (`useMyReflections`) and each tab shows
   one activity (`ReflectionsPanel` with `activityId`).
-- One tab per transfer plan (task of 2026-11-07): the delegate event page shows each plan as its
-  own tab, named as the delegate named it ("Plan 1", "Coaching rollout"), after Session
-  feedback in journey order; "Start another plan" inside a plan tab creates the next and opens
-  its tab. `#transfer-plan` remains an alias (reminder emails, the dashboard) that lands on the
-  plan to act on: the first not completed, else the latest. The plan list is loaded once by the
-  page (`useMyTransferPlans`) and each tab shows one plan (`TransferPlanPanel` with `planId`).
+- One Transfer plans tab, the plans as tabs inside it (task of 2026-11-07): the delegate event
+  page keeps a single "Transfer plans" tab after Session feedback; within it a second strip
+  names each plan as the delegate named it ("Plan 1", "Coaching rollout") with its status or a
+  waiting impact check, and the chosen plan's page sits beneath (`TransferPlansTabs`). "Start
+  another plan" creates the next and selects it. The address names the chosen plan
+  (`#transfer-plan-<id>`) so a reload keeps it; plain `#transfer-plan` (reminder emails, the
+  dashboard, the QR code) lands on the plan to act on: the first not completed, else the latest.
+  The plan list is loaded once by the page (`useMyTransferPlans`) and each plan page shows one
+  plan (`TransferPlanPanel` with `planId`).
 - Session feedback follows the day's attendance (task of 2026-11-07): a delegate may answer a
   session's feedback when their attendance record for that session's date is attended or
   partial. A per-session check-in is no longer required; session attendance stays a separate

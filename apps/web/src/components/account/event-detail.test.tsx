@@ -98,6 +98,22 @@ describe('EventDetail', () => {
                   priorityAction: null,
                   submittedAt: null,
                   completedAt: null,
+                  outcome: 'pending',
+                  checkDue: false,
+                  updatedAt: '2026-11-12T10:00:00.000Z',
+                  reminder,
+                },
+                {
+                  id: '11111111-1111-4111-8111-222222222222',
+                  sequence: 2,
+                  title: 'Coaching rollout',
+                  status: 'draft',
+                  actions: 1,
+                  priorityAction: 'Coach two team leads',
+                  submittedAt: null,
+                  completedAt: null,
+                  outcome: 'pending',
+                  checkDue: false,
                   updatedAt: '2026-11-12T10:00:00.000Z',
                   reminder,
                 },
@@ -171,14 +187,22 @@ describe('EventDetail', () => {
         'Attendance',
         'Day 1 reflection',
         'Session feedback',
-        'Plan 1',
+        'Transfer plans',
         'End-of-conference evaluation',
         '30-day follow-up',
       ]),
     );
-    expect(within(tabs).getByRole('tab', { name: 'Plan 1' }).getAttribute('aria-selected')).toBe(
-      'true',
-    );
+    expect(
+      within(tabs).getByRole('tab', { name: 'Transfer plans' }).getAttribute('aria-selected'),
+    ).toBe('true');
+    // The plans are tabs inside the tab (2026-11-07): the first open one is on, the other a tap away.
+    const planTabs = await screen.findByRole('tablist', { name: 'Your plans' });
+    expect(
+      within(planTabs)
+        .getAllByRole('tab')
+        .map((t) => t.getAttribute('aria-selected')),
+    ).toEqual(['true', 'false']);
+    expect(within(planTabs).getByRole('tab', { name: /Coaching rollout/ })).toBeTruthy();
     expect(screen.queryByRole('region', { name: 'Event' })).toBeNull();
     expect(calls).toContain('/api/v1/me/events/e1/transfer-plans');
     expect(calls).toContain('/api/v1/me/events/e1/assessments');

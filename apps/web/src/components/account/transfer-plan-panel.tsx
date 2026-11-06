@@ -1695,3 +1695,107 @@ function ProgressDialog({
     </Dialog>
   );
 }
+
+// ------------------------------------------------------------------ the plans, grouped
+
+/**
+ * The Transfer plans tab (task of 2026-11-07): the delegate's plans as tabs inside one tab, the
+ * chosen plan's page beneath. The page address names the chosen plan (`#transfer-plan-<id>`) so
+ * a reload keeps it; plain `#transfer-plan` lands on the plan to act on.
+ */
+export function TransferPlansTabs({
+  eventId,
+  timezone,
+  plans,
+  selectedPlanId,
+  onSelectPlan,
+  onPlansChanged,
+  onRetry,
+}: {
+  eventId: string;
+  timezone: string;
+  plans: MyTransferPlansState;
+  selectedPlanId: string | null;
+  onSelectPlan: (planId: string) => void;
+  onPlansChanged: () => void;
+  onRetry: () => void;
+}) {
+  if (plans.kind === 'loading') return <StatePanel kind="loading" title="Loading your plans…" />;
+  if (plans.kind === 'error') {
+    return (
+      <StatePanel
+        kind="error"
+        title="Plans unavailable"
+        description={plans.message}
+        requestId={plans.requestId}
+        action={
+          <button
+            type="button"
+            onClick={onRetry}
+            className={consoleButton({ variant: 'secondary' })}
+          >
+            Try again
+          </button>
+        }
+      />
+    );
+  }
+  const list = plans.plans;
+  const selected =
+    list.find((p) => p.id === selectedPlanId) ?? list.find((p) => p.id === defaultPlan(list));
+  return (
+    <div className="space-y-4">
+      {list.length > 1 ? (
+        <div
+          role="tablist"
+          aria-label="Your plans"
+          className="-mx-gutter flex gap-1 overflow-x-auto border-b border-corp-line px-gutter md:mx-0 md:px-0"
+        >
+          {list.map((p) => {
+            const on = p.id === selected?.id;
+            return (
+              <button
+                key={p.id}
+                type="button"
+                role="tab"
+                id={`plan-tab-${p.id}`}
+                aria-selected={on}
+                aria-controls={`plan-panel-${p.id}`}
+                onClick={() => onSelectPlan(p.id)}
+                className={
+                  on
+                    ? '-mb-px flex min-h-tap shrink-0 flex-col items-start justify-center border-b-2 border-corp-accent px-3 py-2 text-left text-sm font-semibold whitespace-nowrap text-corp-ink'
+                    : 'flex min-h-tap shrink-0 flex-col items-start justify-center border-b-2 border-transparent px-3 py-2 text-left text-sm font-medium whitespace-nowrap text-corp-muted hover:text-corp-ink'
+                }
+              >
+                <span>{planTitleOf(p)}</span>
+                <span className="text-xs font-normal">
+                  {p.checkDue ? 'Impact check waiting' : transferPlanStatusLabels[p.status]}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+      {selected ? (
+        <div
+          role={list.length > 1 ? 'tabpanel' : undefined}
+          id={`plan-panel-${selected.id}`}
+          aria-labelledby={list.length > 1 ? `plan-tab-${selected.id}` : undefined}
+        >
+          <TransferPlanPanel
+            key={selected.id}
+            eventId={eventId}
+            timezone={timezone}
+            planId={selected.id}
+            plans={plans}
+            onPlansChanged={onPlansChanged}
+            onOpenPlan={onSelectPlan}
+          />
+        </div>
+      ) : (
+        <p className="text-sm text-corp-muted">No plan yet.</p>
+      )}
+    </div>
+  );
+}
