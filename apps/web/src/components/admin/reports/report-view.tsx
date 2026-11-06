@@ -623,7 +623,7 @@ export function ReportView({ report, timezone }: { report: EventReport; timezone
                         {formatDateShort(f.date)} · {f.title}
                       </span>{' '}
                       <span className="text-corp-muted">
-                        {f.submitted} responses from {f.attended} recorded as attending
+                        {f.submitted} responses from {f.attended} checked in that day
                       </span>
                     </p>
                     {f.ratings.map((r) => (

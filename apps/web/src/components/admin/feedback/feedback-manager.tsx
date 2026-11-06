@@ -125,7 +125,7 @@ export function FeedbackManager({ event }: FeedbackManagerProps) {
         The feedback questions are recorded once, below, and every session&rsquo;s form follows
         them. Each session gets its own link and QR code. Share the link at the end of the session
         for the {FEEDBACK_ENCOURAGED_MINUTES}-minute feedback period; the form stays open until its
-        deadline. Only delegates recorded as attending the session can answer, and feedback never
+        deadline. Only delegates checked in on the day of the session can answer, and feedback never
         records attendance.
       </p>
       <QuestionsPanel
@@ -393,7 +393,7 @@ function SessionCard({
           </StatusPill>
         </div>
         <p className="text-sm text-corp-text">
-          {session.attended} recorded as attending · {session.submitted} submitted
+          {session.attended} checked in that day · {session.submitted} submitted
           {session.openedAt
             ? ` · period started ${formatInstant(session.openedAt, event.timezone)}`
             : ''}
@@ -757,7 +757,7 @@ function DashboardDialog({
             <p className="text-sm text-corp-text">
               <span className="font-semibold text-corp-ink">{data.session.submitted}</span> delegate
               {data.session.submitted === 1 ? '' : 's'} submitted feedback (latest response each) ·{' '}
-              {data.session.attended} recorded as attending.
+              {data.session.attended} checked in that day.
             </p>
             {data.distributions.map((d) => (
               <section key={d.questionId} aria-label={d.prompt} className="space-y-1">

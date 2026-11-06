@@ -571,6 +571,11 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   its tab. `#transfer-plan` remains an alias (reminder emails, the dashboard) that lands on the
   plan to act on: the first not completed, else the latest. The plan list is loaded once by the
   page (`useMyTransferPlans`) and each tab shows one plan (`TransferPlanPanel` with `planId`).
+- Session feedback follows the day's attendance (task of 2026-11-07): a delegate may answer a
+  session's feedback when their attendance record for that session's date is attended or
+  partial. A per-session check-in is no longer required; session attendance stays a separate
+  record for the programme. The admin counts ("checked in that day"), the invitation chasers and
+  the export label follow the same rule.
 - Session feedback questions belong to the event (task of 2026-11-07): one set, recorded once
   under "Feedback questions" on the admin Session feedback tab, that every session's feedback
   form follows. Enabling feedback on a session no longer copies the questions onto it; the

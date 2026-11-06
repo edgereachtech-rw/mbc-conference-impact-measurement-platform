@@ -120,12 +120,16 @@ describe.skipIf(!hasDatabase)('emailing the session feedback form', () => {
       identityIds.push(registered.identity.id);
       delegates[name] = registered.delegate.id;
     }
+    // Attendance is by day (2026-11-07): Ada and Bo were checked in on the session's date.
     for (const name of ['Ada', 'Bo']) {
-      await prisma.sessionAttendance.create({
+      await prisma.attendanceRecord.create({
         data: {
           eventId,
-          sessionId,
+          eventDateId: dateId,
           delegateId: delegates[name]!,
+          status: 'attended',
+          mode: 'physical',
+          method: 'manual',
           recordedByUserId: admin.account.id,
         },
       });

@@ -99,7 +99,7 @@ describe.skipIf(!hasDatabase)('session feedback', () => {
       organiser: 'M.Bryan',
       format: 'virtual',
       timezone: 'Africa/Lagos',
-      dates: ['2026-11-12'],
+      dates: ['2026-11-12', '2026-11-13'],
     });
     expect(created.status, created.text).toBe(201);
     eventId = created.body.event.id;
@@ -114,7 +114,7 @@ describe.skipIf(!hasDatabase)('session feedback', () => {
     expect(s1.status, s1.text).toBe(201);
     const s2 = await call('post', `/events/${eventId}/sessions`, {
       title: 'Another session',
-      date: '2026-11-12',
+      date: '2026-11-13',
       startTime: '11:00',
       endTime: '12:00',
       sessionType: 'workshop',
@@ -139,36 +139,29 @@ describe.skipIf(!hasDatabase)('session feedback', () => {
     identityIds.push(a.identity.id, b.identity.id);
     delegates.dee = a.delegate.id;
     delegates.vee = b.delegate.id;
-    // Session attendance presupposes the day (decision of 2026-11-05): both delegates are
-    // checked in on every date these sessions fall on before any session is recorded.
-    const sessionDates = await prisma.eventSession.findMany({
-      where: { id: { in: [sessionId, otherSessionId] } },
-      select: { eventDateId: true },
-    });
+    // Feedback follows the day's attendance (2026-11-07): Dee was checked in on the keynote's
+    // day, Vee only on the other session's day.
+    const [first, other] = await Promise.all(
+      [sessionId, otherSessionId].map((id) =>
+        prisma.eventSession.findUniqueOrThrow({ where: { id }, select: { eventDateId: true } }),
+      ),
+    );
     const admin = await prisma.userAccount.findFirstOrThrow({
       where: { id: { in: accountIds }, role: 'admin' },
       select: { id: true },
     });
     await prisma.attendanceRecord.createMany({
-      data: [...new Set(sessionDates.map((s) => s.eventDateId))].flatMap((eventDateId) =>
-        [delegates.dee!, delegates.vee!].map((delegateId) => ({
-          eventId,
-          delegateId,
-          eventDateId,
-          status: 'attended' as const,
-          mode: 'physical' as const,
-          method: 'manual' as const,
-          recordedByUserId: admin.id,
-        })),
-      ),
-      skipDuplicates: true,
-    });
-    // Dee attended the keynote; Vee attended only the other session.
-    await call('post', `/events/${eventId}/attendance/sessions/${sessionId}`, {
-      add: [delegates.dee],
-    });
-    await call('post', `/events/${eventId}/attendance/sessions/${otherSessionId}`, {
-      add: [delegates.vee],
+      data: [
+        { delegateId: delegates.dee!, eventDateId: first!.eventDateId },
+        { delegateId: delegates.vee!, eventDateId: other!.eventDateId },
+      ].map((r) => ({
+        eventId,
+        ...r,
+        status: 'attended' as const,
+        mode: 'physical' as const,
+        method: 'manual' as const,
+        recordedByUserId: admin.id,
+      })),
     });
   });
   afterAll(async () => {
@@ -278,7 +271,7 @@ describe.skipIf(!hasDatabase)('session feedback', () => {
     expect(bad.body.problems[q1!.id]).toMatch(/Choose one of the ratings/);
     expect(bad.body.problems[q3!.id]).toMatch(/Choose a rating/);
     expect(bad.body.problems).not.toHaveProperty(q4!.id);
-    const attendanceBefore = await prisma.sessionAttendance.count({ where: { eventId } });
+    const attendanceBefore = await prisma.attendanceRecord.count({ where: { eventId } });
     const first = await call(
       'put',
       `/me/feedback/${code}`,
@@ -325,7 +318,7 @@ describe.skipIf(!hasDatabase)('session feedback', () => {
       revision: 1,
       answers: expect.objectContaining({ [q1!.id]: 'excellent' }),
     });
-    expect(await prisma.sessionAttendance.count({ where: { eventId } })).toBe(attendanceBefore);
+    expect(await prisma.attendanceRecord.count({ where: { eventId } })).toBe(attendanceBefore);
     const auditRow = await prisma.auditLog.findFirstOrThrow({
       where: { eventId, action: 'feedback.submitted' },
     });
@@ -364,8 +357,25 @@ describe.skipIf(!hasDatabase)('session feedback', () => {
   it('shows the dashboard with question-specific percentages, written answers, an anonymised view and a matching export', async () => {
     const base = `/events/${eventId}/feedback/sessions/${sessionId}`;
     // A second attendee answers only the ratings, differently.
-    await call('post', `/events/${eventId}/attendance/sessions/${sessionId}`, {
-      add: [delegates.vee],
+    // Vee is checked in on the keynote's day too, so her feedback now counts (day attendance).
+    const keynote = await prisma.eventSession.findUniqueOrThrow({
+      where: { id: sessionId },
+      select: { eventDateId: true },
+    });
+    const recorder = await prisma.userAccount.findFirstOrThrow({
+      where: { id: { in: accountIds }, role: 'admin' },
+      select: { id: true },
+    });
+    await prisma.attendanceRecord.create({
+      data: {
+        eventId,
+        delegateId: delegates.vee!,
+        eventDateId: keynote.eventDateId,
+        status: 'attended',
+        mode: 'virtual',
+        method: 'manual',
+        recordedByUserId: recorder.id,
+      },
     });
     const code = (await call('get', `/events/${eventId}/feedback`)).body.sessions.find(
       (s: { id: string }) => s.id === sessionId,

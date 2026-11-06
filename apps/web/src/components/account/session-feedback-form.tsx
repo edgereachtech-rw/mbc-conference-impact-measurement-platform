@@ -23,7 +23,7 @@ type State =
 /**
  * One session's feedback form, reached through the session's link or QR code: the session and
  * speaker are shown automatically, three ratings are required, the written answers optional.
- * Only delegates recorded as attending can submit; a response can be updated while the form is
+ * Only delegates checked in on the session's day can submit; a response can be updated while the form is
  * open. Submitting never records attendance.
  */
 export function SessionFeedbackForm({ code }: { code: string }) {
@@ -196,8 +196,8 @@ function Form({
           role="alert"
           className="rounded-none border-2 border-danger bg-danger/10 px-4 py-3 text-sm font-semibold text-danger"
         >
-          Feedback is open to delegates recorded as attending this session. If you attended, ask the
-          organisers to record it, then come back to this link.
+          Feedback is open to delegates checked in on the day of this session. If you were there,
+          ask the organisers to record it, then come back to this link.
         </div>
       ) : feedback.window !== 'open' ? (
         <p className="text-sm text-corp-muted">

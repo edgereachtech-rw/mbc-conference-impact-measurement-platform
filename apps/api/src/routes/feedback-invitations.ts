@@ -5,6 +5,7 @@ import type { AuthConfig } from '../auth/config.js';
 import { clientOf, principalOf, type createAuthMiddleware } from '../auth/middleware.js';
 import { canConfigureEvents, EVENT_SETUP_ROLES } from '../auth/policies.js';
 import type { PrismaClient } from '../db.js';
+import type { Prisma } from '../generated/prisma/client.js';
 import { audit } from '../lib/audit.js';
 import { HttpError } from '../lib/errors.js';
 import type { Logger } from '../lib/logger.js';
@@ -70,6 +71,7 @@ export function feedbackInvitationRouter({
         feedbackEnabled: true,
         feedbackCode: true,
         feedbackClosesAt: true,
+        eventDateId: true,
         eventDate: { select: { date: true } },
         event: {
           select: {
@@ -103,8 +105,11 @@ export function feedbackInvitationRouter({
   }
 
   async function stateOf(session: Session, at: Date): Promise<FeedbackInvitationState> {
-    const attendee = {
-      sessionAttendance: { some: { sessionId: session.id } },
+    const attendee: Prisma.DelegateWhereInput = {
+      // Attendees are the delegates checked in on the session's day (2026-11-07).
+      attendanceRecords: {
+        some: { eventDateId: session.eventDateId, status: { in: ['attended', 'partial'] } },
+      },
       registrationStatus: { in: [...eligible()] },
     };
     const [attended, invited, submitted, notSent, notSubmitted, last] = await Promise.all([
@@ -178,7 +183,9 @@ export function feedbackInvitationRouter({
       const { scope } = req.body;
       const recipients = await prisma().delegate.findMany({
         where: {
-          sessionAttendance: { some: { sessionId: session.id } },
+          attendanceRecords: {
+            some: { eventDateId: session.eventDateId, status: { in: ['attended', 'partial'] } },
+          },
           registrationStatus: { in: [...eligible()] },
           ...(scope === 'not_sent'
             ? { feedbackInvitations: { none: { sessionId: session.id, status: 'sent' } } }

@@ -17,7 +17,7 @@ type State =
  * Emailing the session feedback form (task of 2026-11-03).
  *
  * The link and the QR code are already on this card; this sends them. Only the delegates recorded
- * as attending the session can submit, so they are the only ones written to, and the counts here
+ * checked in on the session's day can submit, so they are the only ones written to, and the counts here
  * say exactly who would receive what before anything goes out.
  */
 export function FeedbackInvite({
@@ -89,7 +89,7 @@ export function FeedbackInvite({
     <div className="space-y-2 border-t border-corp-line pt-3">
       <p className="text-sm text-corp-text">
         <span className="font-semibold text-corp-ink">Email the form</span> to the {s.attended}{' '}
-        delegate{s.attended === 1 ? '' : 's'} recorded as attending this session.{' '}
+        delegate{s.attended === 1 ? '' : 's'} checked in on the day of this session.{' '}
         {s.invited > 0 ? `${s.invited} already sent. ` : ''}
         {s.submitted} answered so far.
       </p>

@@ -148,7 +148,7 @@ describe('SessionFeedbackForm', () => {
     render(<SessionFeedbackForm code="abc123def456" />);
     const card = await screen.findByRole('article', { name: 'Feedback: Measuring transfer' });
     expect(within(card).getByRole('alert').textContent).toMatch(
-      /recorded as attending this session/,
+      /checked in on the day of this session/,
     );
     expect(within(card).queryByRole('button', { name: /Submit feedback/ })).toBeNull();
   });

@@ -72,9 +72,15 @@ const questionViewOf = (q: QuestionRow): FeedbackQuestionView => ({
   responseCount: q._count.answers,
 });
 
+// Attendance is the day's (2026-11-07): how many delegates were checked in on the session's date.
 const SESSION_INCLUDE = {
-  eventDate: { select: { date: true } },
-  _count: { select: { attendance: true, feedbackResponses: true } },
+  eventDate: {
+    select: {
+      date: true,
+      _count: { select: { attendance: { where: { status: { in: ['attended', 'partial'] } } } } },
+    },
+  },
+  _count: { select: { feedbackResponses: true } },
 } satisfies Prisma.EventSessionInclude;
 /**
  * A session with the event's feedback questions attached (2026-11-07): the questions are
@@ -96,7 +102,7 @@ export function newFeedbackCode(): string {
 
 /**
  * Session feedback: enabled per session by admins, reached by the session's link or QR code,
- * answered after the session by delegates recorded as attending it. One response per delegate,
+ * answered after the session by delegates checked in on its day (2026-11-07; before, a per-session check-in). One response per delegate,
  * updatable with earlier revisions kept; the dashboard counts the latest. Never creates
  * attendance. Answers are never logged.
  */
@@ -130,7 +136,7 @@ export function feedbackRouter({ prisma, config, middleware, now }: Deps): Route
       closesAt: iso(s.feedbackClosesAt),
       window: feedbackWindowState({ enabled: s.feedbackEnabled, closesAt: s.feedbackClosesAt }, at),
       questions: s.feedbackQuestions.map(questionViewOf),
-      attended: s._count.attendance,
+      attended: s.eventDate._count.attendance,
       submitted: s._count.feedbackResponses,
     };
   }
@@ -560,7 +566,7 @@ export function feedbackRouter({ prisma, config, middleware, now }: Deps): Route
         ['Date', d.session.date],
         ['Time', `${d.session.startTime}-${d.session.endTime}`],
         ['Speaker or facilitator', d.session.speaker ?? ''],
-        ['Delegates recorded as attending', d.session.attended],
+        ['Delegates checked in that day', d.session.attended],
         ['Feedback submissions (latest per delegate)', d.session.submitted],
         ['Generated at (UTC)', d.generatedAt],
         [],
@@ -647,9 +653,15 @@ export function feedbackRouter({ prisma, config, middleware, now }: Deps): Route
       select: { id: true },
     });
     if (!delegate) throw new HttpError(404, 'not_found', 'This feedback link is not valid.');
+    // Feedback is open to delegates checked in for the session's day (2026-11-07): the day's
+    // attendance record, attended or partial, not a per-session check-in.
     const [attendance, response] = await Promise.all([
-      prisma().sessionAttendance.findUnique({
-        where: { delegateId_sessionId: { delegateId: delegate.id, sessionId: session.id } },
+      prisma().attendanceRecord.findFirst({
+        where: {
+          delegateId: delegate.id,
+          eventDateId: session.eventDateId,
+          status: { in: ['attended', 'partial'] },
+        },
         select: { id: true },
       }),
       prisma().sessionFeedbackResponse.findUnique({
@@ -726,7 +738,7 @@ export function feedbackRouter({ prisma, config, middleware, now }: Deps): Route
         throw new HttpError(
           403,
           'not_attended',
-          'Feedback is open to delegates recorded as attending this session. If you attended, ask the organisers to record it.',
+          'Feedback is open to delegates checked in on the day of this session. If you were there, ask the organisers to record your attendance.',
         );
       }
       const { answers } = req.body as z.infer<typeof feedbackSubmitSchema>;
@@ -766,7 +778,7 @@ export function feedbackRouter({ prisma, config, middleware, now }: Deps): Route
         });
         return;
       }
-      const attendanceBefore = await prisma().sessionAttendance.count({
+      const attendanceBefore = await prisma().attendanceRecord.count({
         where: { delegateId: s.delegate.id },
       });
       const updated = Boolean(s.response);
@@ -852,13 +864,14 @@ export function feedbackRouter({ prisma, config, middleware, now }: Deps): Route
           feedbackClosesAt: true,
           title: true,
           speaker: true,
+          eventDateId: true,
           eventDate: { select: { date: true } },
         },
         orderBy: [{ eventDate: { date: 'asc' } }, { startTime: 'asc' }],
       }),
-      prisma().sessionAttendance.findMany({
-        where: { delegateId: delegate.id },
-        select: { sessionId: true },
+      prisma().attendanceRecord.findMany({
+        where: { delegateId: delegate.id, status: { in: ['attended', 'partial'] } },
+        select: { eventDateId: true },
       }),
       prisma().sessionFeedbackResponse.findMany({
         where: { delegateId: delegate.id },
@@ -866,7 +879,8 @@ export function feedbackRouter({ prisma, config, middleware, now }: Deps): Route
       }),
     ]);
     const at = clock();
-    const attendedIds = new Set(attended.map((a) => a.sessionId));
+    // Attendance is by day (2026-11-07): every session of a day the delegate was checked in for.
+    const attendedDays = new Set(attended.map((a) => a.eventDateId));
     const submitted = new Map(responses.map((r) => [r.sessionId, r.updatedAt]));
     const items: MyFeedbackListItem[] = sessions.map((s) => ({
       sessionId: s.id,
@@ -879,7 +893,7 @@ export function feedbackRouter({ prisma, config, middleware, now }: Deps): Route
         feedbackWindowState({ enabled: true, closesAt: s.feedbackClosesAt }, at) === 'open'
           ? 'open'
           : 'closed',
-      attended: attendedIds.has(s.id),
+      attended: attendedDays.has(s.eventDateId),
       submittedAt: submitted.get(s.id)?.toISOString() ?? null,
     }));
     res.json({ sessions: items });
