@@ -38,10 +38,14 @@ export function nextSteps(journey: Journey): NextStep[] {
     steps.push({
       key: `assessment:${a.stage}:${a.wave}`,
       label: a.state === 'draft' ? `Finish your ${name}` : `Complete your ${name}`,
+      // The pre-conference one is the delegate's first act on the platform and the baseline every
+      // later result is measured against, so its hint says why it comes first.
       hint:
         a.state === 'draft'
-          ? 'Saved but not submitted yet.'
-          : 'Open now. Your answers are saved as you go.',
+          ? 'Saved but not submitted yet. Pick up where you left off.'
+          : a.stage === 'pre_conference'
+            ? 'Open now. It records where you start, so the conference can show what changed. Your answers are saved as you go.'
+            : 'Open now. Your answers are saved as you go.',
       tab: 'assessments',
       started: a.state === 'draft',
     });

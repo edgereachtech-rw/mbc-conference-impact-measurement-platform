@@ -45,6 +45,20 @@ describe('NextStepsPanel', () => {
       name: /Complete your pre-conference assessment/,
     });
     expect(assessment.getAttribute('href')).toBe(`/account/events/${EVENT_ID}#assessments`);
+    // The first outstanding item is the one big card with the only accent button: the delegate's
+    // first act on the platform must not be one row among several (2026-11-06).
+    expect(assessment.getAttribute('aria-label')).toBe(
+      'Start now: Complete your pre-conference assessment',
+    );
+    expect(screen.getByText(/Start here/)).toBeTruthy();
+    expect(
+      screen.getByRole('heading', { name: 'First thing, create your expectation' }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole('heading', { name: 'Complete your pre-conference assessment' }),
+    ).toBeTruthy();
+    expect(screen.getByText(/records where you start/)).toBeTruthy();
+    expect(screen.getByText('Also waiting for you')).toBeTruthy();
     expect(
       screen.getByRole('link', { name: /Start your transfer plan/ }).getAttribute('href'),
     ).toBe(`/account/events/${EVENT_ID}#transfer-plan`);

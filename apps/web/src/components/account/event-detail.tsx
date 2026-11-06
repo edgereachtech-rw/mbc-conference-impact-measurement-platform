@@ -99,6 +99,15 @@ function Overview({ event, contactEmail }: { event: MyEvent; contactEmail: strin
         : 'neutral';
   return (
     <>
+      {/* Where the delegate is in the journey comes before the event facts: the open step (the
+          pre-conference assessment, before the conference) is what they came to do. */}
+      {event.period === 'upcoming' ? (
+        <>
+          <JourneyStrip event={event} />
+          <AttendingBadge eventId={event.id} eventName={event.name} />
+        </>
+      ) : null}
+
       <section aria-labelledby="event-facts-title" className="space-y-3">
         <h2 id="event-facts-title" className="font-corporate text-h3 text-corp-ink">
           Event
@@ -173,13 +182,6 @@ function Overview({ event, contactEmail }: { event: MyEvent; contactEmail: strin
           ; the organisers correct registrations and every change is recorded.
         </p>
       </section>
-
-      {event.period === 'upcoming' ? (
-        <>
-          <JourneyStrip event={event} />
-          <AttendingBadge eventId={event.id} eventName={event.name} />
-        </>
-      ) : null}
     </>
   );
 }

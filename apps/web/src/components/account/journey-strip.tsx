@@ -1,6 +1,8 @@
 'use client';
 
 import type { Journey, MyEvent } from '@mbc/shared';
+import { ArrowRightIcon } from 'lucide-react';
+import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
 import { apiFetch } from '@/lib/api';
@@ -134,6 +136,19 @@ export function JourneyStrip({ event }: { event: Pick<MyEvent, 'id' | 'startsOn'
               >
                 {state ? state.label : '…'}
               </span>
+              {state?.tone === 'now' ? (
+                // A step the delegate can act on now links straight to the tab that holds it, so
+                // "Open now" is a door and not only a label (2026-11-06).
+                <Link
+                  href={`#${index === 0 || index === steps.length - 1 ? 'assessments' : 'attendance'}`}
+                  className="inline-flex min-h-10 items-center gap-1 text-sm font-semibold text-corp-green-text hover:underline"
+                >
+                  {index === 0 || index === steps.length - 1
+                    ? 'Go to assessments'
+                    : 'Go to attendance'}
+                  <ArrowRightIcon className="size-4" aria-hidden="true" />
+                </Link>
+              ) : null}
             </li>
           );
         })}

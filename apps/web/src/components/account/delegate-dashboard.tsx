@@ -17,7 +17,7 @@ interface Props {
 }
 
 /**
- * Dashboard content (`/account`): key figures, every event as a card with its View more button,
+ * Dashboard content (`/account`): key figures, every event as a card with its Start your learning journey button,
  * and the help note. Everything about events comes from `GET /me/events`; the page holds no
  * event facts of its own.
  */
@@ -35,6 +35,10 @@ export function DelegateDashboard({ contactEmail, initialEvents }: Props) {
 
   return (
     <div className="space-y-8">
+      {/* First on the screen: the one thing to do now (the pre-conference assessment, before the
+          conference). The figures below are context; they never outrank an open task. */}
+      {focus ? <NextStepsPanel event={focus} /> : null}
+
       {state.kind === 'ready' ? (
         <section aria-label="Key figures" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           <StatTile
@@ -59,8 +63,6 @@ export function DelegateDashboard({ contactEmail, initialEvents }: Props) {
           />
         </section>
       ) : null}
-
-      {focus ? <NextStepsPanel event={focus} /> : null}
 
       <section aria-labelledby="dashboard-events-title" className="space-y-3">
         <div className="flex items-baseline justify-between">

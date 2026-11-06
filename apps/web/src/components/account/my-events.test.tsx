@@ -74,9 +74,9 @@ describe('MyEventsScreen', () => {
     expect(within(card).getByText('12-13 November 2026')).toBeTruthy();
     expect(within(card).getByText('In person')).toBeTruthy();
     expect(within(card).getByText('not recorded')).toBeTruthy();
-    expect(within(card).getByRole('link', { name: 'View more' }).getAttribute('href')).toBe(
-      '/account/events/e1',
-    );
+    expect(
+      within(card).getByRole('link', { name: 'Start your learning journey' }).getAttribute('href'),
+    ).toBe('/account/events/e1');
     const pastList = screen.getByRole('list', { name: 'Past events' });
     const pastCard = within(pastList).getByRole('article', { name: 'Past Summit' });
     expect(within(pastCard).getByText('Online event')).toBeTruthy(); // no location: the format is shown
@@ -133,7 +133,7 @@ describe('MyEventsScreen', () => {
 });
 
 describe('DelegateDashboard', () => {
-  it('shows key figures and every event as a card, upcoming first, with View more buttons', () => {
+  it('shows key figures and every event as a card, upcoming first, with Start your learning journey buttons', () => {
     render(
       <DelegateDashboard contactEmail="conference@example.com" initialEvents={[past, lagos]} />,
     );
@@ -146,7 +146,7 @@ describe('DelegateDashboard', () => {
     expect(cards.map((c) => c.getAttribute('aria-label'))).toEqual([lagos.name, 'Past Summit']);
     expect(
       within(grid)
-        .getAllByRole('link', { name: 'View more' })
+        .getAllByRole('link', { name: 'Start your learning journey' })
         .map((l) => l.getAttribute('href')),
     ).toEqual(['/account/events/e1', '/account/events/e2']);
     expect(screen.getByRole('link', { name: 'All my events' }).getAttribute('href')).toBe(

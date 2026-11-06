@@ -38,7 +38,7 @@ const past: MyEvent = {
 };
 
 describe('EventCardGrid', () => {
-  it('shows each event as a card with its facts, pills and a View more button to its page', () => {
+  it('shows each event as a card with its facts, pills and a Start your learning journey button to its page', () => {
     render(<EventCardGrid events={[lagos, past]} label="Events" />);
     const grid = screen.getByRole('list', { name: 'Events' });
     const first = within(grid).getByRole('article', { name: lagos.name });
@@ -47,9 +47,9 @@ describe('EventCardGrid', () => {
     expect(within(first).getByText('12-13 November 2026')).toBeTruthy();
     expect(within(first).getByText('Lagos Oriental Hotel')).toBeTruthy();
     expect(within(first).getByText('not recorded')).toBeTruthy();
-    expect(within(first).getByRole('link', { name: 'View more' }).getAttribute('href')).toBe(
-      '/account/events/e1',
-    );
+    expect(
+      within(first).getByRole('link', { name: 'Start your learning journey' }).getAttribute('href'),
+    ).toBe('/account/events/e1');
     const second = within(grid).getByRole('article', { name: 'Past Summit' });
     expect(within(second).getByText('Past')).toBeTruthy();
     expect(within(second).getByText('Online event')).toBeTruthy(); // no venue: the format is shown

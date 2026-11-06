@@ -46,13 +46,16 @@ export function EventCard({ event }: { event: MyEvent }) {
           <MapPinIcon className="mt-0.5 size-4 shrink-0 text-corp-muted" aria-hidden="true" />
           <div className="min-w-0">
             <dt className="sr-only">Where</dt>
-            <dd className="truncate text-corp-text">
+            {/* The venue wraps rather than truncating: on a phone the card is the only place a
+                delegate reads the full address. */}
+            <dd className="break-words text-corp-text">
               {event.location ?? formatWhereLabel[event.format]}
             </dd>
           </div>
         </div>
       </dl>
-      <div className="mt-auto flex items-center justify-between gap-3 border-t border-corp-line pt-3 text-xs text-corp-muted">
+      {/* Stacked on phones so the button keeps its full label; side by side from `sm`. */}
+      <div className="mt-auto flex flex-col gap-3 border-t border-corp-line pt-3 text-xs text-corp-muted sm:flex-row sm:items-center sm:justify-between">
         <span>
           Attendance:{' '}
           <span className="font-semibold text-corp-ink">
@@ -63,9 +66,9 @@ export function EventCard({ event }: { event: MyEvent }) {
         </span>
         <Link
           href={`/account/events/${event.id}`}
-          className={consoleButton({ variant: 'secondary', size: 'sm' })}
+          className={`${consoleButton({ variant: 'secondary', size: 'sm' })} w-full sm:w-auto`}
         >
-          View more <ArrowRightIcon className="size-4" aria-hidden="true" />
+          Start your learning journey <ArrowRightIcon className="size-4" aria-hidden="true" />
         </Link>
       </div>
     </article>
