@@ -278,7 +278,8 @@ describe('AssessmentsPanel', () => {
     const card = await screen.findByRole('article', { name: 'During-conference assessment' });
     // Only the first section is on screen; nothing lets the delegate skip ahead or number the
     // questions (2026-11-06).
-    expect(within(card).getByText('0 of 2 sections submitted')).toBeTruthy();
+    // No section counter on the card (2026-11-07): the sections lead one into the next.
+    expect(within(card).queryByText(/sections submitted/)).toBeNull();
     expect(within(card).getByRole('region', { name: 'About the sessions' })).toBeTruthy();
     expect(within(card).queryByText(/Are you a manager?/)).toBeNull();
     expect(within(card).queryByText(/Section 1 of 2/)).toBeNull();
@@ -313,7 +314,7 @@ describe('AssessmentsPanel', () => {
     await user.click(within(done).getByRole('button', { name: 'Continue to the next section' }));
 
     // The second section has taken its place; the submitted one is out of the way.
-    expect(within(card).getByText('1 of 2 sections submitted')).toBeTruthy();
+    expect(within(card).queryByText(/sections submitted/)).toBeNull();
     expect(within(card).getByRole('region', { name: 'About you' })).toBeTruthy();
     expect(within(card).queryByRole('region', { name: 'About the sessions' })).toBeNull();
     expect(within(card).queryByRole('button', { name: /Previous section/ })).toBeNull();

@@ -83,7 +83,7 @@ export function SignInPanel({ safeNext, initialEmail, invite }: SignInState & { 
         </a>
 
         <div className="mt-6 max-w-md lg:mt-0">
-          <p className="font-display text-eyebrow tracking-[0.14em] text-brand-accent uppercase">
+          <p className="font-display text-base font-semibold tracking-[0.14em] text-brand-accent uppercase md:text-lg xl:text-xl">
             {platform.shortName}
           </p>
           <h2 className="mt-3 font-display text-2xl leading-tight font-semibold text-white md:text-3xl xl:text-4xl">

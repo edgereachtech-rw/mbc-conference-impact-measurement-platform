@@ -370,11 +370,6 @@ function AssessmentCard({
       <div className="flex flex-wrap items-center gap-2">
         <StatusPill tone="neutral">{stageWhen[assessment.stage]}</StatusPill>
         <StatusPill tone={submitted ? 'positive' : tone}>{statusText}</StatusPill>
-        {canAnswer && groups.length > 1 ? (
-          <StatusPill tone={remaining === 0 ? 'positive' : 'attention'}>
-            {groups.length - remaining} of {groups.length} sections submitted
-          </StatusPill>
-        ) : null}
       </div>
       <div>
         <h3 className="font-corporate text-base font-semibold text-corp-ink md:text-lg">
