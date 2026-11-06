@@ -1,4 +1,4 @@
-import { assessmentStageNames } from './events.js';
+import { assessmentStageNames, type AssessmentStage } from './events.js';
 import type { Journey } from './reports.js';
 
 /**
@@ -15,7 +15,11 @@ import type { Journey } from './reports.js';
 
 /** The tab of the event page that each step opens. */
 export type DelegateTab =
-  'assessments' | 'attendance' | 'reflections' | 'feedback' | 'transfer-plan';
+  | `assessment-${AssessmentStage}-${number}`
+  | 'attendance'
+  | 'reflections'
+  | 'feedback'
+  | 'transfer-plan';
 
 export interface NextStep {
   /** Stable key, for React and for tests. */
@@ -46,7 +50,7 @@ export function nextSteps(journey: Journey): NextStep[] {
           : a.stage === 'pre_conference'
             ? 'Open now. It records where you start, so the conference can show what changed. Your answers are saved as you go.'
             : 'Open now. Your answers are saved as you go.',
-      tab: 'assessments',
+      tab: `assessment-${a.stage}-${a.wave}`,
       started: a.state === 'draft',
     });
   }

@@ -38,6 +38,7 @@ When the two disagree, stop and list the conflict instead of guessing.
 ## Commands (keep this section current)
 - pnpm install | pnpm dev | pnpm build | pnpm lint | pnpm typecheck | pnpm test
 - docker compose -f deploy/docker-compose.yml up -d
+- pnpm --filter @mbc/api db:seed:demo  (development only: one complete demo event, idempotent)
 
 ## Definition of done
 Works on a phone, validated on the server, access rules tested, migration applies cleanly,

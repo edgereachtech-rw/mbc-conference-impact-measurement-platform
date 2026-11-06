@@ -15,6 +15,7 @@ import {
   type DelegateQuestionView,
   type KnowledgeFeedback,
   type MyAssessment,
+  type AssessmentStage,
 } from '@mbc/shared';
 import { AlertCircleIcon, CheckCircle2Icon, Loader2Icon, XCircleIcon } from 'lucide-react';
 import Link from 'next/link';
@@ -32,31 +33,15 @@ import { describeError } from '@/lib/imports';
  */
 const formKeyOf = (a: Pick<MyAssessment, 'stage' | 'wave'>) => `${a.stage}:${a.wave}`;
 
-interface AssessmentsPanelProps {
-  eventId: string;
-  timezone: string;
-}
-
-type State =
+export type MyAssessmentsState =
   | { kind: 'loading' }
   | { kind: 'ready'; assessments: MyAssessment[] }
   | { kind: 'error'; message: string; requestId?: string };
 
-/**
- * The delegate's assessments for one event: each enabled stage that is upcoming, open or closed.
- * An open stage shows its questions one section per step; each section is submitted on its own
- * (after a review popup listing its answers) and locks, and the stage counts as submitted once
- * every section is. Missing required answers are flagged in a highlighted banner and on the
- * questions themselves. A closed or submitted stage shows the answers read-only, section by
- * section. A knowledge question is saved the moment it is answered, shows whether the answer
- * was right, and cannot be changed afterwards. Everything is served and checked by the API for
- * the signed-in delegate only.
- */
-export function AssessmentsPanel({ eventId, timezone }: AssessmentsPanelProps) {
-  const [state, setState] = useState<State>({ kind: 'loading' });
+/** The delegate's assessments for one event, loaded once and shared by the tabs that show them. */
+export function useMyAssessments(eventId: string) {
+  const [state, setState] = useState<MyAssessmentsState>({ kind: 'loading' });
   const [attempt, setAttempt] = useState(0);
-  /** The stage tab the delegate chose; until then the first stage still open to answer. */
-  const [chosen, setChosen] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -76,20 +61,60 @@ export function AssessmentsPanel({ eventId, timezone }: AssessmentsPanelProps) {
     };
   }, [eventId, attempt]);
 
+  return {
+    state,
+    retry: () => setAttempt((n) => n + 1),
+    update: (assessments: MyAssessment[]) => setState({ kind: 'ready', assessments }),
+  };
+}
+
+/** The tab id of one assessment on the delegate's event page (`#assessment-follow_up-2`). */
+export const assessmentTabId = (a: Pick<MyAssessment, 'stage' | 'wave'>) =>
+  `assessment-${a.stage}-${a.wave}` as const;
+
+interface AssessmentsPanelProps {
+  eventId: string;
+  timezone: string;
+  stage: AssessmentStage;
+  wave: number;
+  state: MyAssessmentsState;
+  onUpdated: (assessments: MyAssessment[]) => void;
+  onRetry: () => void;
+}
+
+/**
+ * One assessment of the delegate's, as its own tab on the event page (2026-11-06; before, every
+ * stage sat behind a second row of tabs inside one "Assessments" tab). An open stage shows its
+ * questions one section at a time; each section is submitted on its own (after a review popup
+ * listing its answers) and locks, the next section follows, and the stage counts as submitted
+ * once every section is. Missing required answers are flagged in a highlighted banner and on the
+ * questions themselves. A closed or submitted stage shows the answers read-only. A knowledge
+ * question is saved the moment it is answered, shows whether the answer was right, and cannot be
+ * changed afterwards. Everything is served and checked by the API for the signed-in delegate only.
+ */
+export function AssessmentsPanel({
+  eventId,
+  timezone,
+  stage,
+  wave,
+  state,
+  onUpdated,
+  onRetry,
+}: AssessmentsPanelProps) {
   if (state.kind === 'loading') {
-    return <StatePanel kind="loading" title="Loading your assessments…" />;
+    return <StatePanel kind="loading" title="Loading your assessment…" />;
   }
   if (state.kind === 'error') {
     return (
       <StatePanel
         kind="error"
-        title="Assessments unavailable"
+        title="Assessment unavailable"
         description={state.message}
         requestId={state.requestId}
         action={
           <button
             type="button"
-            onClick={() => setAttempt((n) => n + 1)}
+            onClick={onRetry}
             className={consoleButton({ variant: 'secondary' })}
           >
             Try again
@@ -98,71 +123,24 @@ export function AssessmentsPanel({ eventId, timezone }: AssessmentsPanelProps) {
       />
     );
   }
-  if (state.assessments.length === 0) {
+  const shown = state.assessments.find((a) => a.stage === stage && a.wave === wave);
+  if (!shown) {
     return (
       <StatePanel
         kind="empty"
-        title="No assessments open yet"
-        description="The organisers will open the pre-conference check-in, the conference days and the follow-ups here when it is time. You will be told by email."
+        title="This assessment is not open yet"
+        description="The organisers open each assessment when it is time. You will be told by email."
       />
     );
   }
-  const list = state.assessments;
-  const fallback = formKeyOf(
-    list.find((a) => a.status === 'open' && !a.response?.submittedAt) ?? list[0]!,
-  );
-  const stage = list.some((a) => formKeyOf(a) === chosen) ? chosen! : fallback;
-  const shown = list.find((a) => formKeyOf(a) === stage)!;
   return (
-    <div className="space-y-4">
-      {list.length > 1 ? (
-        <div
-          role="tablist"
-          aria-label="Assessment stages"
-          className="-mx-gutter flex gap-1 overflow-x-auto border-b border-corp-line px-gutter md:mx-0 md:px-0"
-        >
-          {list.map((a) => {
-            const done = Boolean(a.response?.submittedAt);
-            return (
-              <button
-                key={formKeyOf(a)}
-                type="button"
-                role="tab"
-                id={`stage-tab-${formKeyOf(a)}`}
-                aria-selected={formKeyOf(a) === stage}
-                aria-controls={`stage-panel-${formKeyOf(a)}`}
-                onClick={() => setChosen(formKeyOf(a))}
-                className={
-                  formKeyOf(a) === stage
-                    ? '-mb-px flex shrink-0 flex-col items-start border-b-2 border-corp-accent px-3 py-2 text-left text-sm font-semibold whitespace-nowrap text-corp-ink'
-                    : 'flex shrink-0 flex-col items-start border-b-2 border-transparent px-3 py-2 text-left text-sm font-medium whitespace-nowrap text-corp-muted hover:text-corp-ink'
-                }
-              >
-                <span>{a.waveLabel || stageLabels[a.stage]}</span>
-                <span className="text-xs font-normal text-corp-muted">
-                  {done
-                    ? 'Submitted'
-                    : a.status === 'open'
-                      ? 'Open'
-                      : a.status === 'closed'
-                        ? 'Closed'
-                        : 'Opens later'}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      ) : null}
-      <div role="tabpanel" id={`stage-panel-${stage}`} aria-labelledby={`stage-tab-${stage}`}>
-        <AssessmentCard
-          key={formKeyOf(shown)}
-          eventId={eventId}
-          timezone={timezone}
-          assessment={shown}
-          onUpdated={(assessments) => setState({ kind: 'ready', assessments })}
-        />
-      </div>
-    </div>
+    <AssessmentCard
+      key={formKeyOf(shown)}
+      eventId={eventId}
+      timezone={timezone}
+      assessment={shown}
+      onUpdated={onUpdated}
+    />
   );
 }
 
@@ -187,7 +165,6 @@ function AssessmentCard({
   });
   const [problems, setProblems] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<'draft' | 'submit' | 'check' | null>(null);
-  const [step, setStep] = useState(0);
   const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
   /** The highlighted message shown when a submission is attempted with required answers missing. */
   const [banner, setBanner] = useState<string | null>(null);
@@ -238,9 +215,18 @@ function AssessmentCard({
     (g) => g.questions.length > 0,
   );
   const keyOf = (g: (typeof groups)[number]) => sectionKeyOf(g.section?.id ?? null);
-  // Sections are shown one at a time whenever there is more than one, also read-only.
+  // Sections come one after another (2026-11-06): while answering, the section on screen is
+  // always the first not yet submitted, so a delegate finishes one before the next appears and
+  // nothing lets them skip ahead. Once everything is submitted, or the stage is read-only, every
+  // section is shown together.
   const stepped = groups.length > 1;
-  const current = stepped ? groups[Math.min(step, groups.length - 1)]! : (groups[0] ?? null);
+  const step = stepped
+    ? Math.max(
+        0,
+        groups.findIndex((g) => !submittedKeys.has(keyOf(g))),
+      )
+    : 0;
+  const current = stepped ? groups[step]! : (groups[0] ?? null);
   const currentKey = current ? keyOf(current) : GENERAL_SECTION;
   const currentLocked = current ? submittedKeys.has(currentKey) : false;
   const remaining = groups.filter((g) => !submittedKeys.has(keyOf(g))).length;
@@ -280,7 +266,7 @@ function AssessmentCard({
     }
     return next;
   }
-  /** Shows the problems, the highlighted banner, and jumps to the first step that holds one. */
+  /** Shows the problems and the highlighted banner; they are always in the section on screen. */
   function showProblems(next: Record<string, string>) {
     setProblems(next);
     setReview(null);
@@ -290,10 +276,6 @@ function AssessmentCard({
         ? 'One question needs attention before you can submit. It is highlighted below.'
         : `${count} questions need attention before you can submit. They are highlighted below.`,
     );
-    if (stepped) {
-      const index = groups.findIndex((g) => g.questions.some((q) => next[q.id]));
-      if (index >= 0) setStep(index);
-    }
   }
 
   async function save(
@@ -367,30 +349,20 @@ function AssessmentCard({
     setReview({ key: currentKey, done: null });
   }
 
-  function goTo(index: number) {
+  /** Closing the popup after a section is submitted lands on the next one: it is already current. */
+  function closeReview() {
+    setReview(null);
     setNotice(null);
     setBanner(null);
-    setStep(Math.max(0, Math.min(index, groups.length - 1)));
   }
 
-  /** After a section is submitted, move on to the next one still open. */
-  function closeReview() {
-    const done = review?.done;
-    setReview(null);
-    if (done === 'section' && stepped) {
-      const next = groups.findIndex((g, i) => i > step && !submittedKeys.has(keyOf(g)));
-      const first = groups.findIndex((g) => !submittedKeys.has(keyOf(g)));
-      goTo(next >= 0 ? next : first >= 0 ? first : step);
-    }
-  }
-
-  const visibleGroups = stepped && current ? [current] : groups;
+  const visibleGroups = canAnswer && stepped && current ? [current] : groups;
   const reviewGroup = review ? groups.find((g) => keyOf(g) === review.key) : null;
   const submitLabel = groups.length > 1 ? 'Submit section' : 'Submit answers';
 
   return (
     <article
-      aria-label={stageLabels[assessment.stage]}
+      aria-label={assessment.waveLabel || stageLabels[assessment.stage]}
       className={`space-y-4 rounded-none border border-corp-line bg-white p-4 shadow-panel md:p-5 ${
         assessment.status === 'open' && !submitted ? 'border-l-4 border-l-corp-accent' : ''
       }`}
@@ -442,38 +414,6 @@ function AssessmentCard({
           }}
           className="space-y-5"
         >
-          {stepped ? (
-            <div className="flex flex-col gap-2 border-b border-corp-line pb-3 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-xs font-semibold tracking-[0.08em] text-corp-muted uppercase">
-                Section {step + 1} of {groups.length}
-              </p>
-              <ol className="flex flex-wrap gap-1" aria-label="Sections">
-                {groups.map((g, i) => {
-                  const done = submittedKeys.has(keyOf(g));
-                  return (
-                    <li key={keyOf(g)}>
-                      <button
-                        type="button"
-                        aria-current={i === step ? 'step' : undefined}
-                        onClick={() => goTo(i)}
-                        className={
-                          i === step
-                            ? 'min-h-9 rounded-none bg-corp-ink px-3 text-xs font-semibold text-white'
-                            : done
-                              ? 'min-h-9 rounded-none border border-corp-green bg-corp-green-soft px-3 text-xs font-medium text-corp-green-text hover:bg-corp-surface'
-                              : 'min-h-9 rounded-none border border-corp-line bg-white px-3 text-xs font-medium text-corp-text hover:bg-corp-surface'
-                        }
-                      >
-                        {done ? '✓ ' : ''}
-                        {g.section?.title ?? 'Start'}
-                      </button>
-                    </li>
-                  );
-                })}
-              </ol>
-            </div>
-          ) : null}
-
           {banner ? (
             <div
               role="alert"
@@ -551,7 +491,6 @@ function AssessmentCard({
                           </div>
                         ) : null}
                         <QuestionField
-                          index={assessment.questions.findIndex((x) => x.id === q.id)}
                           question={q}
                           value={answers[q.id]}
                           disabled={
@@ -600,18 +539,8 @@ function AssessmentCard({
               {notice.text}
             </p>
           ) : null}
-          {canAnswer || stepped ? (
+          {canAnswer ? (
             <div className="flex flex-col gap-2 border-t border-corp-line pt-4 sm:flex-row sm:items-center sm:justify-end">
-              {stepped && step > 0 ? (
-                <button
-                  type="button"
-                  disabled={busy !== null}
-                  onClick={() => goTo(step - 1)}
-                  className={`${consoleButton({ variant: 'ghost' })} sm:mr-auto`}
-                >
-                  Previous section
-                </button>
-              ) : null}
               {canAnswer ? (
                 currentLocked ? (
                   <p className="text-sm text-corp-muted">
@@ -640,16 +569,6 @@ function AssessmentCard({
                   </>
                 )
               ) : null}
-              {stepped && step < groups.length - 1 ? (
-                <button
-                  type="button"
-                  disabled={busy !== null}
-                  onClick={() => goTo(step + 1)}
-                  className={consoleButton()}
-                >
-                  Next section
-                </button>
-              ) : null}
             </div>
           ) : null}
           {submitted ? (
@@ -658,7 +577,7 @@ function AssessmentCard({
               {assessment.response?.submittedAt
                 ? formatInstant(assessment.response.submittedAt, timezone)
                 : ''}
-              . Your answers are shown above{stepped ? ', section by section' : ''}.
+              . Your answers are shown above.
             </p>
           ) : null}
         </form>
@@ -677,7 +596,7 @@ function AssessmentCard({
           }
           description={
             review.done
-              ? 'Thank you. Your answers are recorded.'
+              ? undefined
               : 'Check your answers below. Once submitted they cannot be changed.'
           }
           onClose={closeReview}
@@ -690,7 +609,9 @@ function AssessmentCard({
                 onClick={closeReview}
                 className={consoleButton({ variant: 'accent' })}
               >
-                {review.done === 'section' && remaining > 0 ? 'Continue' : 'Close'}
+                {review.done === 'section' && remaining > 0
+                  ? 'Continue to the next section'
+                  : 'Close'}
               </button>
             ) : (
               <>
@@ -717,15 +638,27 @@ function AssessmentCard({
             )
           }
         >
-          <AnswerSummary
-            groups={review.done === 'all' ? groups : [reviewGroup]}
-            answers={answers}
-          />
-          {review.done === 'section' && remaining > 0 ? (
-            <p className="mt-4 text-sm text-corp-text">
-              {remaining} more section{remaining === 1 ? '' : 's'} to submit.
-            </p>
-          ) : null}
+          {review.done ? (
+            // The confirmation (2026-11-06): a check, what was recorded, and what comes next, so
+            // the delegate never wonders whether it went through or where to go from here.
+            <div className="flex flex-col items-center gap-3 py-2 text-center" role="status">
+              <CheckCircle2Icon className="size-14 text-corp-green-text" aria-hidden="true" />
+              <p className="text-base font-semibold text-corp-ink">
+                {review.done === 'all'
+                  ? 'Thank you. Every section is submitted and your answers are recorded.'
+                  : `Thank you. “${reviewGroup.section?.title ?? 'Your answers'}” is recorded.`}
+              </p>
+              <p className="max-w-prose text-sm text-corp-text">
+                {review.done === 'all'
+                  ? 'Nothing more to do here. We will email you when the next step opens.'
+                  : current && remaining > 0
+                    ? `Next: “${current.section?.title ?? 'the remaining questions'}”. ${remaining} section${remaining === 1 ? '' : 's'} left; your answers save as you go.`
+                    : 'Nothing more to do here.'}
+              </p>
+            </div>
+          ) : (
+            <AnswerSummary groups={[reviewGroup]} answers={answers} />
+          )}
         </Dialog>
       ) : null}
     </article>
@@ -775,7 +708,6 @@ function AnswerSummary({
 }
 
 function QuestionField({
-  index,
   question,
   value,
   disabled,
@@ -785,7 +717,6 @@ function QuestionField({
   onChange,
   onKnowledgeChoice,
 }: {
-  index: number;
   question: DelegateQuestionView;
   value: unknown;
   disabled: boolean;
@@ -798,7 +729,7 @@ function QuestionField({
   const id = useId();
   const label = (
     <span className="block text-sm font-semibold text-corp-ink">
-      {index + 1}. {question.prompt}
+      {question.prompt}
       {question.required ? <span className="text-brand-danger"> *</span> : null}
     </span>
   );

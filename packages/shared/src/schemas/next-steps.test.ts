@@ -41,7 +41,7 @@ describe('nextSteps', () => {
       'Start your transfer plan',
     ]);
     expect(steps[1]!.started).toBe(true);
-    expect(steps[0]!.tab).toBe('assessments');
+    expect(steps[0]!.tab).toBe('assessment-pre_conference-1');
   });
 
   it('names each follow-up wave, and keeps them apart', () => {
@@ -199,7 +199,7 @@ describe('nextSteps', () => {
       }),
     );
     expect(steps.map((s) => s.tab)).toEqual([
-      'assessments',
+      'assessment-pre_conference-1',
       'attendance',
       'reflections',
       'feedback',

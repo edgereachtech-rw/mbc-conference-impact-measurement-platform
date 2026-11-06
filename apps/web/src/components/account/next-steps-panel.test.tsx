@@ -22,7 +22,7 @@ const event = {
 const journey = {
   event: { id: EVENT_ID, name: 'ITTEC 2026', timezone: 'Africa/Lagos' },
   attendance: { status: 'pending', dates: [] },
-  assessments: [{ stage: 'pre_conference', state: 'open', submittedAt: null }],
+  assessments: [{ stage: 'pre_conference', wave: 1, state: 'open', submittedAt: null }],
   reflections: { available: 0, submitted: 0 },
   feedback: { sessions: 0, submitted: 0 },
   plan: null,
@@ -44,7 +44,9 @@ describe('NextStepsPanel', () => {
     const assessment = await screen.findByRole('link', {
       name: /Complete your pre-conference assessment/,
     });
-    expect(assessment.getAttribute('href')).toBe(`/account/events/${EVENT_ID}#assessments`);
+    expect(assessment.getAttribute('href')).toBe(
+      `/account/events/${EVENT_ID}#assessment-pre_conference-1`,
+    );
     // The first outstanding item is the one big card with the only accent button: the delegate's
     // first act on the platform must not be one row among several (2026-11-06).
     expect(assessment.getAttribute('aria-label')).toBe(
@@ -73,7 +75,9 @@ describe('NextStepsPanel', () => {
         json({
           journey: {
             ...journey,
-            assessments: [{ stage: 'pre_conference', state: 'submitted', submittedAt: 'x' }],
+            assessments: [
+              { stage: 'pre_conference', wave: 1, state: 'submitted', submittedAt: 'x' },
+            ],
             plan: {
               status: 'submitted',
               actions: 1,

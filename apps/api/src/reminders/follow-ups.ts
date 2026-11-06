@@ -77,7 +77,7 @@ export async function sendDueFollowUpInvitations(deps: FollowUpInvitationDeps) {
   for (const wave of waves) {
     const label = waveLabel('follow_up', wave.wave, wave.dueAfterDays);
     const branding = brandingForEvent(deps.mailConfig, wave.event);
-    const formUrl = `${deps.appUrl.replace(/\/$/, '')}/account/events/${wave.event.id}#assessments`;
+    const formUrl = `${deps.appUrl.replace(/\/$/, '')}/account/events/${wave.event.id}#assessment-follow_up-${wave.wave}`;
     const deadline = wave.closesAt
       ? new Intl.DateTimeFormat('en-GB', {
           day: 'numeric',

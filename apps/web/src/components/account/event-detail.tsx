@@ -1,9 +1,16 @@
 'use client';
 
-import { overallAttendanceLabels, type MyEvent } from '@mbc/shared';
+import {
+  overallAttendanceLabels,
+  type AssessmentStage,
+  type MyAssessment,
+  type MyEvent,
+} from '@mbc/shared';
 
 import { StatusPill } from '@/components/admin/page-header';
+import { consoleButton } from '@/components/console/page';
 import { TabStrip, useTabState } from '@/components/console/tabs';
+import { stageLabels, stageWhen } from '@/lib/events';
 import {
   attendanceFormatLabel,
   capacityLabel,
@@ -12,8 +19,7 @@ import {
   formatLabel,
 } from '@/lib/my-events';
 
-import { AssessmentsPanel } from './assessments-panel';
-import { JourneyPanel } from './journey-panel';
+import { AssessmentsPanel, assessmentTabId, useMyAssessments } from './assessments-panel';
 import { AttendanceCodes } from './attendance-codes';
 import { AttendingBadge } from './attending-badge';
 import { JourneyStrip } from './journey-strip';
@@ -21,60 +27,133 @@ import { ReflectionsPanel } from './reflections-panel';
 import { SessionFeedbackList } from './session-feedback-list';
 import { TransferPlanPanel } from './transfer-plan-panel';
 
-type Tab =
-  | 'overview'
-  | 'journey'
-  | 'assessments'
-  | 'attendance'
-  | 'reflections'
-  | 'feedback'
-  | 'transfer-plan';
+type StaticTab = 'overview' | 'attendance' | 'reflections' | 'feedback' | 'transfer-plan';
+type AssessmentTab = ReturnType<typeof assessmentTabId>;
+/** `assessments` is an alias older links carry: it resolves to the assessment to act on. */
+type Tab = StaticTab | AssessmentTab | 'assessments';
+type TabItem = { id: Tab; label: string; hint: string };
 
-/** In journey order: before the event, at the event, after it. */
-const TABS: Array<{ id: Tab; label: string; hint: string }> = [
-  { id: 'overview', label: 'Overview', hint: 'The event and your registration' },
-  { id: 'journey', label: 'My journey', hint: 'What you have given and where you stand' },
-  { id: 'assessments', label: 'Assessments', hint: 'Before, during and after the event' },
-  { id: 'attendance', label: 'Attendance', hint: 'Your check-in codes and record' },
-  { id: 'reflections', label: 'Daily reflections', hint: 'A short reflection per day' },
-  { id: 'feedback', label: 'Session feedback', hint: 'Feedback on sessions you attended' },
-  { id: 'transfer-plan', label: 'Transfer plan', hint: 'What you will do differently' },
-];
+const STATIC: Record<StaticTab, TabItem> = {
+  overview: { id: 'overview', label: 'Overview', hint: 'The event and your registration' },
+  attendance: { id: 'attendance', label: 'Attendance', hint: 'Your check-in codes and record' },
+  reflections: {
+    id: 'reflections',
+    label: 'Daily reflections',
+    hint: 'A short reflection per day',
+  },
+  feedback: {
+    id: 'feedback',
+    label: 'Session feedback',
+    hint: 'Feedback on sessions you attended',
+  },
+  'transfer-plan': {
+    id: 'transfer-plan',
+    label: 'Transfer plan',
+    hint: 'What you will do differently',
+  },
+};
 
-const TAB_IDS = TABS.map((t) => t.id);
+/**
+ * The tabs in the order the delegate meets them (2026-11-06): each assessment is a tab of its
+ * own, placed where it falls in the journey. Before the event the pre-conference assessment; at
+ * the event attendance, anything asked during the conference, reflections, session feedback and
+ * the Transfer Plan; at the close the evaluation; after it each follow-up wave in turn.
+ */
+function journeyTabs(forms: readonly MyAssessment[]): TabItem[] {
+  const of = (stage: AssessmentStage): TabItem[] =>
+    forms
+      .filter((a) => a.stage === stage)
+      .sort((a, b) => a.wave - b.wave)
+      .map((a) => ({
+        id: assessmentTabId(a),
+        label: a.waveLabel || stageLabels[a.stage],
+        hint: stageWhen[a.stage],
+      }));
+  return [
+    STATIC.overview,
+    ...of('pre_conference'),
+    STATIC.attendance,
+    ...of('during_conference'),
+    STATIC.reflections,
+    STATIC.feedback,
+    STATIC['transfer-plan'],
+    ...of('end_of_conference'),
+    ...of('follow_up'),
+  ];
+}
 
 /**
  * One event as the API serves it to the delegate, arranged in tabs: the overview (event facts,
- * registration, journey) first, then one tab per record the delegate owns. Links such as the
- * reminder email's `#transfer-plan` open that tab directly; choosing a tab updates the address
- * so a reload keeps it. The attendance line only ever comes from an attendance record.
+ * registration, journey) first, then one tab per record the delegate owns, each assessment among
+ * them in journey order. Links such as the reminder email's `#transfer-plan` open that tab
+ * directly, and `#assessments` lands on the assessment to act on; choosing a tab updates the
+ * address so a reload keeps it. The attendance line only ever comes from an attendance record.
  */
 export function EventDetail({ event, contactEmail }: { event: MyEvent; contactEmail: string }) {
-  const [tab, choose] = useTabState<Tab>(TAB_IDS, 'overview');
+  const assessments = useMyAssessments(event.id);
+  const forms = assessments.state.kind === 'ready' ? assessments.state.assessments : [];
+  const tabs = journeyTabs(forms);
+  const ids: Tab[] = [...tabs.map((t) => t.id), 'assessments'];
+  const [chosen, choose] = useTabState<Tab>(ids, 'overview');
+  // The alias: the first assessment still open to answer, else the first assessment there is.
+  const actOn =
+    forms.find((a) => a.status === 'open' && !a.response?.submittedAt) ?? forms[0] ?? null;
+  const tab: Tab =
+    chosen === 'assessments' ? (actOn ? assessmentTabId(actOn) : 'overview') : chosen;
+  const current = tabs.find((t) => t.id === tab) ?? STATIC.overview;
+  const form = tab.startsWith('assessment-') ? forms.find((a) => assessmentTabId(a) === tab) : null;
 
-  const current = TABS.find((t) => t.id === tab)!;
   return (
     <div className="space-y-5">
       <TabStrip
         label="Your records for this event"
-        tabs={TABS}
-        current={tab}
+        tabs={tabs}
+        current={current.id}
         onChoose={choose}
         bleed
       />
-      <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`} className="space-y-6">
-        {tab !== 'overview' ? (
+      {assessments.state.kind === 'error' ? (
+        <p
+          role="alert"
+          className="flex flex-wrap items-center gap-3 border border-danger bg-danger/10 px-4 py-3 text-sm text-danger"
+        >
+          Your assessments could not be loaded, so their tabs are missing.
+          <button
+            type="button"
+            onClick={assessments.retry}
+            className={consoleButton({ variant: 'ghost', size: 'sm' })}
+          >
+            Try again
+          </button>
+        </p>
+      ) : null}
+      <div
+        role="tabpanel"
+        id={`panel-${current.id}`}
+        aria-labelledby={`tab-${current.id}`}
+        className="space-y-6"
+      >
+        {current.id !== 'overview' ? (
           <div>
             <h2 className="font-corporate text-h3 text-corp-ink">{current.label}</h2>
             <p className="text-sm text-corp-muted">{current.hint}</p>
           </div>
         ) : null}
-        {tab === 'overview' ? <Overview event={event} contactEmail={contactEmail} /> : null}
-        {tab === 'journey' ? <JourneyPanel eventId={event.id} timezone={event.timezone} /> : null}
-        {tab === 'assessments' ? (
-          <AssessmentsPanel eventId={event.id} timezone={event.timezone} />
+        {current.id === 'overview' ? <Overview event={event} contactEmail={contactEmail} /> : null}
+        {form ? (
+          <AssessmentsPanel
+            eventId={event.id}
+            timezone={event.timezone}
+            stage={form.stage}
+            wave={form.wave}
+            state={assessments.state}
+            onUpdated={assessments.update}
+            onRetry={assessments.retry}
+          />
         ) : null}
-        {tab === 'attendance' ? <AttendanceCodes eventId={event.id} /> : null}
+        {tab === 'attendance' ? (
+          <AttendanceCodes eventId={event.id} timezone={event.timezone} />
+        ) : null}
         {tab === 'reflections' ? (
           <ReflectionsPanel eventId={event.id} timezone={event.timezone} />
         ) : null}

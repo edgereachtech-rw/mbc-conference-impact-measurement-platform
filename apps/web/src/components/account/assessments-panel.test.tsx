@@ -1,9 +1,9 @@
-import type { MyAssessment } from '@mbc/shared';
+import type { AssessmentStage, MyAssessment } from '@mbc/shared';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { AssessmentsPanel } from './assessments-panel';
+import { AssessmentsPanel, useMyAssessments } from './assessments-panel';
 
 const question = (id: string, extra: Record<string, unknown>) => ({
   id,
@@ -200,22 +200,33 @@ const puts = (calls: Array<{ url: string; init?: RequestInit }>) =>
 
 afterEach(() => vi.unstubAllGlobals());
 
+/** Loads the list as the event page does and shows the one assessment under test. */
+function Harness({ stage, wave = 1 }: { stage: AssessmentStage; wave?: number }) {
+  const { state, retry, update } = useMyAssessments('e1');
+  return (
+    <AssessmentsPanel
+      eventId="e1"
+      timezone="Africa/Lagos"
+      stage={stage}
+      wave={wave}
+      state={state}
+      onUpdated={update}
+      onRetry={retry}
+    />
+  );
+}
 describe('AssessmentsPanel', () => {
-  it('shows open and upcoming stages, flags missing answers in a banner, saves a draft and submits after a review popup', async () => {
+  it('shows one stage per tab, flags missing answers in a banner, saves a draft and submits after a review popup', async () => {
     const calls = stub([open, upcoming]);
     const user = userEvent.setup();
-    render(<AssessmentsPanel eventId="e1" timezone="Africa/Lagos" />);
-    const tabs = await screen.findByRole('tablist', { name: 'Assessment stages' });
+    // An upcoming stage on its own tab says so; no second row of stage tabs exists any more.
+    const later = render(<Harness stage="follow_up" />);
     expect(
-      within(tabs)
-        .getAllByRole('tab')
-        .map((t) => t.textContent),
-    ).toEqual(['Pre-conference assessmentOpen', 'Follow-up assessmentOpens later']);
-    await user.click(within(tabs).getByRole('tab', { name: /Follow-up assessment/ }));
-    expect(screen.getByRole('article', { name: 'Follow-up assessment' }).textContent).toMatch(
-      /Opens later/,
-    );
-    await user.click(within(tabs).getByRole('tab', { name: /Pre-conference assessment/ }));
+      (await screen.findByRole('article', { name: 'Follow-up assessment' })).textContent,
+    ).toMatch(/Opens later/);
+    expect(screen.queryByRole('tablist')).toBeNull();
+    later.unmount();
+    render(<Harness stage="pre_conference" />);
     const card = await screen.findByRole('article', { name: 'Pre-conference assessment' });
     expect(within(card).getByText('Open')).toBeTruthy();
 
@@ -260,49 +271,53 @@ describe('AssessmentsPanel', () => {
     expect(within(card).queryByRole('button', { name: 'Submit answers' })).toBeNull();
   });
 
-  it('submits sections one at a time, locks each, and completes the stage with the last one', async () => {
+  it('walks through the sections in order: the next one appears only after the current is submitted', async () => {
     const calls = stub([sectioned]);
     const user = userEvent.setup();
-    render(<AssessmentsPanel eventId="e1" timezone="Africa/Lagos" />);
+    render(<Harness stage="during_conference" />);
     const card = await screen.findByRole('article', { name: 'During-conference assessment' });
-    expect(within(card).getByText('Section 1 of 2')).toBeTruthy();
+    // Only the first section is on screen; nothing lets the delegate skip ahead or number the
+    // questions (2026-11-06).
     expect(within(card).getByText('0 of 2 sections submitted')).toBeTruthy();
     expect(within(card).getByRole('region', { name: 'About the sessions' })).toBeTruthy();
     expect(within(card).queryByText(/Are you a manager?/)).toBeNull();
-
-    // Move on without answering, submit the second section first.
-    await user.click(within(card).getByRole('button', { name: 'Next section' }));
-    expect(within(card).getByText('Section 2 of 2')).toBeTruthy();
-    await user.click(within(card).getByLabelText('Yes'));
-    await user.click(within(card).getByRole('button', { name: 'Submit section' }));
-    const review = await screen.findByRole('dialog', { name: 'Submit this section?' });
-    expect(within(review).getByRole('region', { name: 'Summary: About you' }).textContent).toMatch(
-      /Are you a manager\?Yes/,
-    );
+    expect(within(card).queryByText(/Section 1 of 2/)).toBeNull();
     expect(
-      within(review).queryByRole('region', { name: 'Summary: About the sessions' }),
+      within(card).queryByRole('button', { name: /Next section|Previous section/ }),
     ).toBeNull();
-    await user.click(within(review).getByRole('button', { name: 'Submit now' }));
-    expect(puts(calls)[0]).toEqual({ answers: { d: true }, submitSection: 's2' });
-    const done = await screen.findByRole('dialog', { name: 'Section submitted' });
-    expect(done.textContent).toMatch(/1 more section to submit/);
-    await user.click(within(done).getByRole('button', { name: 'Continue' }));
-
-    // Back on the first section, which is still open; the submitted one is locked.
-    expect(within(card).getByText('Section 1 of 2')).toBeTruthy();
-    expect(within(card).getByText('1 of 2 sections submitted')).toBeTruthy();
-    await user.click(within(card).getByRole('button', { name: '✓ About you' }));
-    expect(within(card).getByLabelText('Yes')).toHaveProperty('disabled', true);
-    expect(within(card).getByText('This section is submitted and cannot be changed.')).toBeTruthy();
-    await user.click(within(card).getByRole('button', { name: 'Previous section' }));
+    expect(within(card).queryByRole('list', { name: 'Sections' })).toBeNull();
+    expect(within(card).queryByText(/^1\. /)).toBeNull();
+    expect(within(card).getByText('Did you attend the keynote?')).toBeTruthy();
 
     // A required answer missing in this section is flagged in the banner, nothing is sent.
     await user.click(within(card).getByRole('button', { name: 'Submit section' }));
     expect(within(card).getAllByRole('alert')[0]!.textContent).toMatch(
       /One question needs attention/,
     );
-    expect(puts(calls)).toHaveLength(1);
+    expect(puts(calls)).toHaveLength(0);
+
+    // Submitting the first section: review, then the confirmation says what comes next.
     await user.click(within(card).getAllByLabelText('Yes')[0]!);
+    await user.click(within(card).getByRole('button', { name: 'Submit section' }));
+    const review = await screen.findByRole('dialog', { name: 'Submit this section?' });
+    expect(
+      within(review).getByRole('region', { name: 'Summary: About the sessions' }).textContent,
+    ).toMatch(/Did you attend the keynote\?Yes/);
+    expect(within(review).queryByRole('region', { name: 'Summary: About you' })).toBeNull();
+    await user.click(within(review).getByRole('button', { name: 'Submit now' }));
+    expect(puts(calls)[0]).toEqual({ answers: { a: true }, submitSection: 's1' });
+    const done = await screen.findByRole('dialog', { name: 'Section submitted' });
+    expect(within(done).getByRole('status').textContent).toMatch(
+      /“About the sessions” is recorded.*Next: “About you”.*1 section left/,
+    );
+    await user.click(within(done).getByRole('button', { name: 'Continue to the next section' }));
+
+    // The second section has taken its place; the submitted one is out of the way.
+    expect(within(card).getByText('1 of 2 sections submitted')).toBeTruthy();
+    expect(within(card).getByRole('region', { name: 'About you' })).toBeTruthy();
+    expect(within(card).queryByRole('region', { name: 'About the sessions' })).toBeNull();
+    expect(within(card).queryByRole('button', { name: /Previous section/ })).toBeNull();
+    await user.click(within(card).getByLabelText('Yes'));
     await user.click(within(card).getByRole('button', { name: 'Submit section' }));
     await user.click(
       within(await screen.findByRole('dialog', { name: 'Submit this section?' })).getByRole(
@@ -310,27 +325,24 @@ describe('AssessmentsPanel', () => {
         { name: 'Submit now' },
       ),
     );
-    expect(puts(calls)[1]).toEqual({ answers: { d: true, a: true }, submitSection: 's1' });
+    expect(puts(calls)[1]).toEqual({ answers: { a: true, d: true }, submitSection: 's2' });
     const all = await screen.findByRole('dialog', { name: 'All sections submitted' });
-    // The final summary shows every section with its title.
-    expect(within(all).getByRole('region', { name: 'Summary: About the sessions' })).toBeTruthy();
-    expect(within(all).getByRole('region', { name: 'Summary: About you' })).toBeTruthy();
+    expect(within(all).getByRole('status').textContent).toMatch(
+      /Every section is submitted.*email you when the next step opens/,
+    );
     await user.click(within(all).getByRole('button', { name: 'Close' }));
     expect(within(card).getByText('Submitted')).toBeTruthy();
-    // Read-only afterwards, still one section at a time, every section marked as submitted.
+    // Read-only afterwards, every section shown together.
     expect(within(card).getByRole('region', { name: 'About the sessions' })).toBeTruthy();
-    expect(within(card).queryByRole('region', { name: 'About you' })).toBeNull();
-    expect(within(card).getByText(/shown above, section by section/)).toBeTruthy();
-    await user.click(within(card).getByRole('button', { name: 'Next section' }));
     expect(within(card).getByRole('region', { name: 'About you' })).toBeTruthy();
-    expect(within(card).getByRole('button', { name: '✓ About the sessions' })).toBeTruthy();
+    expect(within(card).getByText(/shown above/)).toBeTruthy();
     expect(within(card).queryByRole('button', { name: /Save draft|Submit/ })).toBeNull();
   });
 
   it('saves a knowledge answer at once, shows the result and locks it, and handles exclusive and "Other" options', async () => {
     const calls = stub([scored]);
     const user = userEvent.setup();
-    render(<AssessmentsPanel eventId="e1" timezone="Africa/Lagos" />);
+    render(<Harness stage="follow_up" />);
     const card = await screen.findByRole('article', { name: 'Follow-up assessment' });
     expect(card.textContent).toMatch(/saved as soon as you choose it/);
 
@@ -418,7 +430,7 @@ describe('AssessmentsPanel', () => {
       },
     };
     stub([withBlock]);
-    render(<AssessmentsPanel eventId="e1" timezone="Africa/Lagos" />);
+    render(<Harness stage="end_of_conference" />);
     const card = await screen.findByRole('article', { name: 'End-of-conference evaluation' });
     expect(
       within(card).getByRole('note', { name: 'Before the conference, you said' }).textContent,
@@ -469,7 +481,7 @@ describe('AssessmentsPanel', () => {
     };
     const calls = stub([after]);
     const user = userEvent.setup();
-    render(<AssessmentsPanel eventId="e1" timezone="Africa/Lagos" />);
+    render(<Harness stage="end_of_conference" />);
     const card = await screen.findByRole('article', { name: 'End-of-conference evaluation' });
     expect(within(card).getByText(/To what extent was this expectation met/)).toBeTruthy();
     expect(within(card).queryByRole('note')).toBeNull();
@@ -487,7 +499,7 @@ describe('AssessmentsPanel', () => {
   it('shows a section introduction plainly, or highlighted when the admin marked it so', async () => {
     // As it is: a subtitle under the title, no note role.
     stub([sectioned]);
-    const { unmount } = render(<AssessmentsPanel eventId="e1" timezone="Africa/Lagos" />);
+    const { unmount } = render(<Harness stage="during_conference" />);
     let card = await screen.findByRole('article', { name: 'During-conference assessment' });
     expect(within(card).getByText('Think about today.')).toBeTruthy();
     expect(within(card).queryByRole('note', { name: 'Introduction' })).toBeNull();
@@ -502,7 +514,7 @@ describe('AssessmentsPanel', () => {
     };
     vi.unstubAllGlobals();
     stub([highlighted]);
-    render(<AssessmentsPanel eventId="e1" timezone="Africa/Lagos" />);
+    render(<Harness stage="during_conference" />);
     card = await screen.findByRole('article', { name: 'During-conference assessment' });
     const intro = within(card).getByRole('note', { name: 'Introduction' });
     expect(intro.textContent).toBe('Think about today.');
@@ -510,7 +522,7 @@ describe('AssessmentsPanel', () => {
 
   it('shows the empty state when nothing is open', async () => {
     stub([]);
-    render(<AssessmentsPanel eventId="e1" timezone="Africa/Lagos" />);
-    expect(await screen.findByText('No assessments open yet')).toBeTruthy();
+    render(<Harness stage="pre_conference" />);
+    expect(await screen.findByText('This assessment is not open yet')).toBeTruthy();
   });
 });

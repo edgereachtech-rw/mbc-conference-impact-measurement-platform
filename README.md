@@ -70,7 +70,20 @@ pnpm --filter @mbc/api db:migrate   # prisma migrate dev: create and apply migra
 pnpm --filter @mbc/api db:deploy    # prisma migrate deploy: apply committed migrations (CI, servers)
 pnpm --filter @mbc/api db:seed      # idempotent: ITTEC 2026 event, categories, ADMIN_EMAIL admin,
                                     # plus 10 test delegates when SEED_TEST_DELEGATES=true
+pnpm --filter @mbc/api db:seed:demo # development only, idempotent: one complete demo event
 ```
+
+Demo event for development (`db:seed:demo`, added 2026-11-06): creates `demo-conference-2026`, an
+active hybrid event two weeks ahead with two dates, a two-day programme with feedback enabled on
+the talks, the pre-conference assessment open now, the end-of-conference evaluation scheduled for
+the last afternoon, follow-up waves 1 to 3 scheduled and the longer-term wave drafted, every stage
+carrying its ITTEC question set, the two daily reflections as drafts, and 24 active, 2 pending,
+1 cancelled and 4 test delegates whose addresses are under `demo.example.com` and who can sign in
+(the mail reaches Mailpit). When the API is running it also saves ten delegates' pre-conference
+answers through the real API, eight submitted and two drafts, so reports have data. It refuses to
+run with `NODE_ENV=production`, never touches other events, and a second run only adds what is
+missing. `API_URL` names the API (default `http://127.0.0.1:44444`); `SKIP_RESPONSES=true` leaves
+the answers out.
 
 Identity migration gate (Increment 1b, backlog D6.1 and D9): `pnpm --filter @mbc/api identity:backfill --dry-run`
 classifies every registration and delegate account, verifies invariants H1 to H5 and rolls back
@@ -596,8 +609,8 @@ measures | evidence }`, the list replaced with ids kept; own actions only, 404 o
   Screens: the event dashboard at `/admin/events/:id/dashboard` (the whole document with the
   filters, then the event's own panels: registrations by status, messages, and a way into each
   assessment stage), a "Reports" tab on the event page for the other four kinds with the approval
-  controls and the downloads, and "My journey" on the delegate's event page (their attendance by
-  date, each stage's state, reflections and feedback given, and their plan in numbers). Not
+  controls and the downloads, and the journey strip on the delegate's event overview (where they stand
+  in the journey, with a link to each open step; the "My journey" tab was removed 2026-11-06). Not
   built: support requests (backlog E13) and nominating organisation expectations are not collected
   by the platform, so both report as `not_collected` rather than as zero; PDF and DOCX rendering
   (E16-7) and the full data export (E16-9) are untouched. **Every report is also reachable in
