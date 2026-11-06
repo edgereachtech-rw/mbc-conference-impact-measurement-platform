@@ -78,8 +78,8 @@ export function JourneyStrip({ event }: { event: Pick<MyEvent, 'id' | 'startsOn'
 
   useEffect(() => {
     let cancelled = false;
-    apiFetch<Journey>(`/me/events/${event.id}/journey`).then(
-      (data) => {
+    apiFetch<{ journey: Journey }>(`/me/events/${event.id}/journey`).then(
+      ({ journey: data }) => {
         if (!cancelled) setJourney(data);
       },
       () => {

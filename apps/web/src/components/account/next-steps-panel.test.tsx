@@ -36,7 +36,7 @@ describe('NextStepsPanel', () => {
       'fetch',
       vi.fn(async (url: string) => {
         calls.push(url);
-        return json(journey);
+        return json({ journey });
       }),
     );
     render(<NextStepsPanel event={event} />);
@@ -57,19 +57,21 @@ describe('NextStepsPanel', () => {
       'fetch',
       vi.fn(async () =>
         json({
-          ...journey,
-          assessments: [{ stage: 'pre_conference', state: 'submitted', submittedAt: 'x' }],
-          plan: {
-            status: 'submitted',
-            actions: 1,
-            priority: null,
-            applied: 0,
-            measures: 0,
-            withResult: 0,
-            evidence: 0,
-            reminder: 'none',
-            nextReminderAt: null,
-            updatedAt: 'x',
+          journey: {
+            ...journey,
+            assessments: [{ stage: 'pre_conference', state: 'submitted', submittedAt: 'x' }],
+            plan: {
+              status: 'submitted',
+              actions: 1,
+              priority: null,
+              applied: 0,
+              measures: 0,
+              withResult: 0,
+              evidence: 0,
+              reminder: 'none',
+              nextReminderAt: null,
+              updatedAt: 'x',
+            },
           },
         }),
       ),
@@ -87,5 +89,17 @@ describe('NextStepsPanel', () => {
     // The dashboard is not the place for an alarm about a panel that only suggests things.
     await vi.waitFor(() => expect(container.textContent).not.toMatch(/What to do next/));
     expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('gives up rather than spinning forever when the body is not a journey', async () => {
+    // Regression (2026-11-06): the panel read the body as the journey itself, and the throw from
+    // reading its fields in the success branch left the spinner on screen indefinitely.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => json({ unexpected: true })),
+    );
+    const { container } = render(<NextStepsPanel event={event} />);
+    await vi.waitFor(() => expect(container.textContent).not.toMatch(/Checking what is waiting/));
+    expect(container.textContent).not.toMatch(/What to do next/);
   });
 });

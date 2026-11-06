@@ -34,14 +34,15 @@ export function NextStepsPanel({ event }: { event: MyEvent }) {
 
   useEffect(() => {
     let cancelled = false;
-    apiFetch<Journey>(`/me/events/${event.id}/journey`).then(
-      (journey) => {
+    // The API wraps the journey (`{ journey }`). The catch follows the success branch so a body of
+    // the wrong shape ends as "unavailable" rather than a spinner that never stops.
+    apiFetch<{ journey: Journey }>(`/me/events/${event.id}/journey`)
+      .then(({ journey }) => {
         if (!cancelled) setLoaded({ kind: 'ready', steps: nextSteps(journey), for: event.id });
-      },
-      () => {
+      })
+      .catch(() => {
         if (!cancelled) setLoaded({ kind: 'unavailable', for: event.id });
-      },
-    );
+      });
     return () => {
       cancelled = true;
     };

@@ -53,7 +53,7 @@ export async function resolveSignIn({
 const WHAT_IT_DOES = [
   'Record what you want to get out of the conference, before it starts.',
   'Check in each day, give session feedback and build your transfer plan.',
-  'Follow up at 30, 60 and 90 days on what you have been able to apply.',
+  'Follow up at 30, 60,  90 and beyond days on what you have been able to apply.',
 ];
 
 /**
@@ -118,7 +118,7 @@ export function SignInPanel({ safeNext, initialEmail, invite }: SignInState & { 
             <p className="text-base text-brand-muted">
               {initialEmail
                 ? 'Your invitation is ready. Confirm your email below and we will send a one-time link and code.'
-                : 'No password needed. We email a secure link and a one-time code to the address you registered with.'}
+                : 'No password needed. We email a secure link and a one-time code to the email address you registered with.'}
             </p>
           </div>
 
@@ -138,8 +138,8 @@ export function SignInPanel({ safeNext, initialEmail, invite }: SignInState & { 
 
           <div className="space-y-2 text-xs text-brand-muted">
             <p>
-              For registered delegates and the conference team. Nothing is created for an email that
-              is not registered.
+              expectations, knowledge, confidence, and learning needs to help us tailor your
+              conference experience and measure your progress afterwards
             </p>
             <p className="flex flex-col gap-1 sm:flex-row sm:flex-wrap sm:gap-x-4">
               <Link href="/privacy" className="font-semibold text-corp-green-text hover:underline">

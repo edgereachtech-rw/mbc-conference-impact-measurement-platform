@@ -88,11 +88,12 @@ export function AttendingBadge({ eventId, eventName }: { eventId: string; eventN
   return (
     <Panel>
       <h3 className="font-corporate text-base font-semibold text-corp-ink">
-        Tell people you are coming
+        Tell people you are coming : I will Attend
       </h3>
       <p className="mt-1 text-sm text-corp-muted">
-        Share this on LinkedIn or send it to your team. It carries your name, the dates and the
-        organisation that nominated you.
+        If you are yetto download your i will attend card, kindly download it, post it on your
+        social media and share it with your network to let people know you will be attending the
+        event.
       </p>
       <div className="mt-4 flex flex-col items-center gap-4 sm:flex-row sm:items-start">
         <div
