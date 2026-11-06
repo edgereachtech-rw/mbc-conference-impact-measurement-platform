@@ -3,7 +3,22 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { ReflectionsPanel } from './reflections-panel';
+import { ReflectionsPanel, useMyReflections } from './reflections-panel';
+
+/** Loads the list as the event page does and shows one day's reflection, as its tab would. */
+function Harness({ activityId }: { activityId: string }) {
+  const { state, retry, update } = useMyReflections('e1');
+  return (
+    <ReflectionsPanel
+      eventId="e1"
+      timezone="Africa/Lagos"
+      activityId={activityId}
+      state={state}
+      onUpdated={update}
+      onRetry={retry}
+    />
+  );
+}
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -93,11 +108,16 @@ describe('ReflectionsPanel', () => {
   it('flags missing required answers, reviews in a popup, submits once and shows the answers read-only', async () => {
     const calls = stub([open, upcoming]);
     const user = userEvent.setup();
-    render(<ReflectionsPanel eventId="e1" timezone="Africa/Lagos" />);
+    // Each day is its own tab (2026-11-07): day 2 on its tab says it opens later, and day 1's
+    // tab shows day 1 alone.
+    const dayTwo = render(<Harness activityId={A2} />);
+    const later = await screen.findByRole('article', { name: 'Day 2 reflection' });
+    expect(later.textContent).toMatch(/Opens later.*appear here when the reflection opens/);
+    dayTwo.unmount();
+    render(<Harness activityId={A1} />);
     const card = await screen.findByRole('article', { name: 'Day 1 reflection' });
     expect(within(card).getByText('Open')).toBeTruthy();
-    const later = screen.getByRole('article', { name: 'Day 2 reflection' });
-    expect(later.textContent).toMatch(/Opens later.*appear here when the reflection opens/);
+    expect(screen.queryByRole('article', { name: 'Day 2 reflection' })).toBeNull();
 
     await user.click(within(card).getByRole('button', { name: 'Submit reflection' }));
     expect(within(card).getAllByRole('alert')[0]!.textContent).toMatch(
@@ -135,9 +155,9 @@ describe('ReflectionsPanel', () => {
     expect(within(card).queryByRole('button', { name: 'Submit reflection' })).toBeNull();
   });
 
-  it('shows the empty state when no reflection is published', async () => {
+  it('says so when the day the tab names is not published yet', async () => {
     stub([]);
-    render(<ReflectionsPanel eventId="e1" timezone="Africa/Lagos" />);
-    expect(await screen.findByText(/No daily reflection is open yet/)).toBeTruthy();
+    render(<Harness activityId={A1} />);
+    expect(await screen.findByText(/This reflection is not open yet/)).toBeTruthy();
   });
 });

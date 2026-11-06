@@ -63,7 +63,7 @@ export function renderOnboardingPack(
     <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;">
       <tr><td style="padding:6px 0;border-bottom:1px solid #eef2f6;font-size:15px;color:#1f2937;"><strong>Before</strong> &nbsp;A short check-in: where you are now and what you want to change.</td></tr>
       <tr><td style="padding:6px 0;border-bottom:1px solid #eef2f6;font-size:15px;color:#1f2937;"><strong>At the conference</strong> &nbsp;Check in each day with the code below, give feedback on sessions, and build your Transfer Plan.</td></tr>
-      <tr><td style="padding:6px 0;font-size:15px;color:#1f2937;"><strong>Afterwards</strong> &nbsp;Short follow-ups at 30, 60,  90 and beyond days asking what you have been able to apply.</td></tr>
+      <tr><td style="padding:6px 0;font-size:15px;color:#1f2937;"><strong>Afterwards</strong> &nbsp;Short follow-ups at 30, 60 and 90 days, and later on, asking what you have been able to apply.</td></tr>
     </table>
 ${
   input.dates.length > 0
@@ -87,7 +87,7 @@ ${input.firstStep ? `\n    <p style="${P}"><strong>Your first step:</strong> ${e
     'WHAT HAPPENS WHEN',
     'Before: a short check-in on where you are now and what you want to change.',
     'At the conference: check in each day with your code, give session feedback, build your Transfer Plan.',
-    'Afterwards: short follow-ups at 30, 60,  90 and beyond days.',
+    'Afterwards: short follow-ups at 30, 60 and 90 days, and later on.',
     '',
     ...(input.dates.length > 0
       ? [

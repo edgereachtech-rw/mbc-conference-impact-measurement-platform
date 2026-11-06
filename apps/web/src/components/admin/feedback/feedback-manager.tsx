@@ -39,7 +39,7 @@ interface FeedbackManagerProps {
 }
 
 type DialogState =
-  | { kind: 'question'; session: FeedbackSessionView; question: FeedbackQuestionView | null }
+  | { kind: 'question'; question: FeedbackQuestionView | null }
   | { kind: 'link'; session: FeedbackSessionView }
   | { kind: 'dashboard'; session: FeedbackSessionView }
   | null;
@@ -58,14 +58,19 @@ export function FeedbackManager({ event }: FeedbackManagerProps) {
   const [notice, setNotice] = useState<string | null>(null);
   const [dialog, setDialog] = useState<DialogState>(null);
   const [version, setVersion] = useState(0);
+  /** The event's feedback questions, recorded once; every session's form follows them (2026-11-07). */
+  const [questions, setQuestions] = useState<FeedbackQuestionView[] | null>(null);
   const readOnly = event.status === 'archived';
   const refresh = useCallback(() => setVersion((n) => n + 1), []);
 
   useEffect(() => {
     let cancelled = false;
-    apiFetch<{ sessions: FeedbackSessionView[] }>(`/events/${event.id}/feedback`).then(
+    apiFetch<{ questions: FeedbackQuestionView[]; sessions: FeedbackSessionView[] }>(
+      `/events/${event.id}/feedback`,
+    ).then(
       (r) => {
         if (cancelled) return;
+        setQuestions(r.questions);
         setSessions(r.sessions);
         setError(null);
       },
@@ -117,11 +122,20 @@ export function FeedbackManager({ event }: FeedbackManagerProps) {
   return (
     <div className="space-y-6">
       <p className="text-sm text-corp-text">
-        Each session gets its own feedback form, link and QR code. Share the link at the end of the
-        session for the {FEEDBACK_ENCOURAGED_MINUTES}-minute feedback period; the form stays open
-        until its deadline. Only delegates recorded as attending the session can answer, and
-        feedback never records attendance.
+        The feedback questions are recorded once, below, and every session&rsquo;s form follows
+        them. Each session gets its own link and QR code. Share the link at the end of the session
+        for the {FEEDBACK_ENCOURAGED_MINUTES}-minute feedback period; the form stays open until its
+        deadline. Only delegates recorded as attending the session can answer, and feedback never
+        records attendance.
       </p>
+      <QuestionsPanel
+        eventId={event.id}
+        questions={questions ?? []}
+        readOnly={readOnly}
+        onChanged={done}
+        onError={(message) => setError({ message })}
+        onDialog={setDialog}
+      />
       {notice ? (
         <p role="status" className="text-sm font-semibold text-corp-green-text">
           {notice}
@@ -149,7 +163,6 @@ export function FeedbackManager({ event }: FeedbackManagerProps) {
       {dialog?.kind === 'question' ? (
         <QuestionDialog
           eventId={event.id}
-          session={dialog.session}
           question={dialog.question}
           onClose={() => setDialog(null)}
           onSaved={() => done(dialog.question ? 'Question saved.' : 'Question added.')}
@@ -167,6 +180,147 @@ export function FeedbackManager({ event }: FeedbackManagerProps) {
         />
       ) : null}
     </div>
+  );
+}
+
+/** The event's feedback questions: one set, edited here, asked on every session's form. */
+function QuestionsPanel({
+  eventId,
+  questions,
+  readOnly,
+  onChanged,
+  onError,
+  onDialog,
+}: {
+  eventId: string;
+  questions: FeedbackQuestionView[];
+  readOnly: boolean;
+  onChanged: (message: string) => void;
+  onError: (message: string) => void;
+  onDialog: (d: DialogState) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const base = `/events/${eventId}/feedback/questions`;
+  async function run(work: () => Promise<unknown>, message: string) {
+    setBusy(true);
+    try {
+      await work();
+      onChanged(message);
+    } catch (e) {
+      onError(describeError(e, 'The change could not be saved.').message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  function reorder(ids: string[]) {
+    void run(
+      () =>
+        apiFetch(`${base}/order`, { method: 'PUT', body: JSON.stringify({ questionIds: ids }) }),
+      'Order saved.',
+    );
+  }
+  return (
+    <Panel>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h3 className="font-corporate text-base font-semibold text-corp-ink">
+            Feedback questions ({questions.length})
+          </h3>
+          <p className="text-xs text-corp-muted">
+            Asked on every session&rsquo;s feedback form. The standard five appear when the first
+            session&rsquo;s feedback is enabled; edit them here once.
+          </p>
+        </div>
+        {!readOnly ? (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => onDialog({ kind: 'question', question: null })}
+            className={consoleButton({ variant: 'ghost', size: 'sm' })}
+          >
+            <PlusIcon aria-hidden="true" /> Add question
+          </button>
+        ) : null}
+      </div>
+      {questions.length === 0 ? (
+        <p className="mt-3 text-sm text-corp-muted">
+          No questions yet. Enable feedback on a session to start with the standard five, or add
+          your own.
+        </p>
+      ) : (
+        <ol aria-label="Feedback questions" className="mt-3 divide-y divide-corp-line text-sm">
+          {questions.map((q, i) => (
+            <li key={q.id} className="flex flex-wrap items-start justify-between gap-2 py-2">
+              <div className="min-w-0 flex-1">
+                <p className="text-corp-ink">
+                  {i + 1}. {q.prompt}
+                </p>
+                <p className="text-xs text-corp-muted">
+                  {feedbackQuestionTypeLabels[q.type]} · {q.required ? 'Required' : 'Optional'}
+                  {q.version > 1 ? ` · version ${q.version}` : ''}
+                  {q.responseCount ? ` · ${q.responseCount} answers` : ''}
+                </p>
+              </div>
+              {!readOnly ? (
+                <div className="flex gap-1">
+                  <button
+                    type="button"
+                    aria-label={`Move up: ${q.prompt}`}
+                    disabled={busy || i === 0}
+                    onClick={() => {
+                      const ids = questions.map((x) => x.id);
+                      [ids[i - 1], ids[i]] = [ids[i]!, ids[i - 1]!];
+                      reorder(ids);
+                    }}
+                    className={consoleButton({ variant: 'ghost', size: 'sm' })}
+                  >
+                    <ArrowUpIcon aria-hidden="true" />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Move down: ${q.prompt}`}
+                    disabled={busy || i === questions.length - 1}
+                    onClick={() => {
+                      const ids = questions.map((x) => x.id);
+                      [ids[i], ids[i + 1]] = [ids[i + 1]!, ids[i]!];
+                      reorder(ids);
+                    }}
+                    className={consoleButton({ variant: 'ghost', size: 'sm' })}
+                  >
+                    <ArrowDownIcon aria-hidden="true" />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Edit: ${q.prompt}`}
+                    disabled={busy}
+                    onClick={() => onDialog({ kind: 'question', question: q })}
+                    className={consoleButton({ variant: 'ghost', size: 'sm' })}
+                  >
+                    <PencilIcon aria-hidden="true" />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Remove: ${q.prompt}`}
+                    disabled={busy}
+                    onClick={() =>
+                      void run(
+                        () => apiFetch(`${base}/${q.id}`, { method: 'DELETE' }),
+                        q.responseCount
+                          ? 'Question retired; its answers are kept.'
+                          : 'Question removed.',
+                      )
+                    }
+                    className={consoleButton({ variant: 'ghost', size: 'sm' })}
+                  >
+                    <Trash2Icon aria-hidden="true" />
+                  </button>
+                </div>
+              ) : null}
+            </li>
+          ))}
+        </ol>
+      )}
+    </Panel>
   );
 }
 
@@ -336,117 +490,10 @@ function SessionCard({
               sessionId={session.id}
               sessionTitle={session.title}
             />
-            <div className="space-y-2">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h4 className="text-sm font-semibold text-corp-ink">
-                  Questions ({session.questions.length})
-                </h4>
-                {!readOnly ? (
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => onDialog({ kind: 'question', session, question: null })}
-                    className={consoleButton({ variant: 'ghost', size: 'sm' })}
-                  >
-                    <PlusIcon aria-hidden="true" /> Add question
-                  </button>
-                ) : null}
-              </div>
-              <ol
-                aria-label={`Questions: ${session.title}`}
-                className="divide-y divide-corp-line text-sm"
-              >
-                {session.questions.map((q, i) => (
-                  <li key={q.id} className="flex flex-wrap items-start justify-between gap-2 py-2">
-                    <div className="min-w-0 flex-1">
-                      <p className="text-corp-ink">
-                        {i + 1}. {q.prompt}
-                      </p>
-                      <p className="text-xs text-corp-muted">
-                        {feedbackQuestionTypeLabels[q.type]} ·{' '}
-                        {q.required ? 'Required' : 'Optional'}
-                        {q.version > 1 ? ` · version ${q.version}` : ''}
-                        {q.responseCount ? ` · ${q.responseCount} answers` : ''}
-                      </p>
-                    </div>
-                    {!readOnly ? (
-                      <div className="flex gap-1">
-                        <button
-                          type="button"
-                          aria-label={`Move up: ${q.prompt}`}
-                          disabled={busy || i === 0}
-                          onClick={() => {
-                            const ids = session.questions.map((x) => x.id);
-                            [ids[i - 1], ids[i]] = [ids[i]!, ids[i - 1]!];
-                            void run(
-                              () =>
-                                apiFetch(`${base}/questions/order`, {
-                                  method: 'PUT',
-                                  body: JSON.stringify({ questionIds: ids }),
-                                }),
-                              'Order saved.',
-                            );
-                          }}
-                          className={consoleButton({ variant: 'ghost', size: 'sm' })}
-                        >
-                          <ArrowUpIcon aria-hidden="true" />
-                        </button>
-                        <button
-                          type="button"
-                          aria-label={`Move down: ${q.prompt}`}
-                          disabled={busy || i === session.questions.length - 1}
-                          onClick={() => {
-                            const ids = session.questions.map((x) => x.id);
-                            [ids[i], ids[i + 1]] = [ids[i + 1]!, ids[i]!];
-                            void run(
-                              () =>
-                                apiFetch(`${base}/questions/order`, {
-                                  method: 'PUT',
-                                  body: JSON.stringify({ questionIds: ids }),
-                                }),
-                              'Order saved.',
-                            );
-                          }}
-                          className={consoleButton({ variant: 'ghost', size: 'sm' })}
-                        >
-                          <ArrowDownIcon aria-hidden="true" />
-                        </button>
-                        <button
-                          type="button"
-                          aria-label={`Edit: ${q.prompt}`}
-                          disabled={busy}
-                          onClick={() => onDialog({ kind: 'question', session, question: q })}
-                          className={consoleButton({ variant: 'ghost', size: 'sm' })}
-                        >
-                          <PencilIcon aria-hidden="true" />
-                        </button>
-                        <button
-                          type="button"
-                          aria-label={`Remove: ${q.prompt}`}
-                          disabled={busy}
-                          onClick={() =>
-                            void run(
-                              () => apiFetch(`${base}/questions/${q.id}`, { method: 'DELETE' }),
-                              q.responseCount
-                                ? 'Question retired; its answers are kept.'
-                                : 'Question removed.',
-                            )
-                          }
-                          className={consoleButton({ variant: 'ghost', size: 'sm' })}
-                        >
-                          <Trash2Icon aria-hidden="true" />
-                        </button>
-                      </div>
-                    ) : null}
-                  </li>
-                ))}
-              </ol>
-            </div>
           </>
         ) : (
           <p className="text-sm text-corp-muted">
-            Enabling creates the standard five questions (three ratings, two written) for this
-            session, which you can edit.
+            Enabling creates the link and QR code; the form asks the event&rsquo;s questions above.
           </p>
         )}
       </article>
@@ -508,13 +555,11 @@ function LinkDialog({ session, onClose }: { session: FeedbackSessionView; onClos
 
 function QuestionDialog({
   eventId,
-  session,
   question,
   onClose,
   onSaved,
 }: {
   eventId: string;
-  session: FeedbackSessionView;
   question: FeedbackQuestionView | null;
   onClose: () => void;
   onSaved: () => void;
@@ -535,7 +580,7 @@ function QuestionDialog({
     setBusy(true);
     setError(null);
     try {
-      const base = `/events/${eventId}/feedback/sessions/${session.id}/questions`;
+      const base = `/events/${eventId}/feedback/questions`;
       await apiFetch(question ? `${base}/${question.id}` : base, {
         method: question ? 'PATCH' : 'POST',
         body: JSON.stringify({ ...draft, prompt: draft.prompt.trim() }),
@@ -553,7 +598,7 @@ function QuestionDialog({
       description={
         question?.responseCount
           ? `${question.responseCount} delegates answered this wording; changing it creates a new version and keeps their answers on the old one.`
-          : session.title
+          : 'Asked on every session’s feedback form of this event.'
       }
       onClose={onClose}
       closeDisabled={busy}

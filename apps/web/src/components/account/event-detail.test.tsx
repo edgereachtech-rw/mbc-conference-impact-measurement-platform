@@ -132,7 +132,23 @@ describe('EventDetail', () => {
                     form('pre_conference', 1, '', 'open'),
                   ],
                 }
-              : { reflections: [], sessions: [] };
+              : url.endsWith('/reflections')
+                ? {
+                    reflections: [
+                      {
+                        id: '44444444-4444-4444-8444-444444444444',
+                        date: '2026-11-12',
+                        title: 'Day 1 reflection',
+                        status: 'open',
+                        opensAt: null,
+                        closesAt: null,
+                        questions: [],
+                        submission: null,
+                        canSubmit: true,
+                      },
+                    ],
+                  }
+                : { sessions: [] };
         return new Response(JSON.stringify(body), {
           status: 200,
           headers: { 'content-type': 'application/json' },
@@ -153,7 +169,7 @@ describe('EventDetail', () => {
         'Overview',
         'Pre-conference assessment',
         'Attendance',
-        'Daily reflections',
+        'Day 1 reflection',
         'Session feedback',
         'Transfer plan',
         'End-of-conference evaluation',

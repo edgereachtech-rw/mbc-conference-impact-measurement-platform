@@ -213,12 +213,16 @@ describe.skipIf(!hasDatabase)('session feedback', () => {
         (q: { prompt: string; type: string; required: boolean }) => [q.prompt, q.type, q.required],
       ),
     ).toEqual(DEFAULT_FEEDBACK_QUESTIONS.map((q) => [q.prompt, q.type, q.required]));
-    // The other session is untouched; the code survives a disable/enable cycle.
+    // The questions are the event's (2026-11-07): the other session follows the same five even
+    // while disabled; the list carries them once. The code survives a disable/enable cycle.
     const list = await call('get', base);
-    expect(list.body.sessions.find((s: { id: string }) => s.id === otherSessionId)).toMatchObject({
-      enabled: false,
-      questions: [],
-    });
+    expect(list.body.questions).toHaveLength(5);
+    const other = list.body.sessions.find((s: { id: string }) => s.id === otherSessionId);
+    expect(other.enabled).toBe(false);
+    expect(other.questions).toHaveLength(5);
+    expect(
+      await prisma.sessionFeedbackQuestion.count({ where: { eventId, sessionId: { not: null } } }),
+    ).toBe(0);
     const disabled = await call('patch', `${base}/sessions/${sessionId}`, { enabled: false });
     expect(disabled.body.session).toMatchObject({ enabled: false, window: 'disabled', code: null });
     const again = await call('patch', `${base}/sessions/${sessionId}`, { enabled: true });
@@ -470,7 +474,7 @@ describe.skipIf(!hasDatabase)('session feedback', () => {
     );
 
     // Editing an answered rating question's wording versions it; the distribution follows the key.
-    const versioned = await call('patch', `${base}/questions/${q1!.id}`, {
+    const versioned = await call('patch', `/events/${eventId}/feedback/questions/${q1!.id}`, {
       prompt: 'How relevant was this session to your work?',
     });
     expect(versioned.body.question).toMatchObject({ version: 2 });

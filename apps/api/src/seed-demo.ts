@@ -357,7 +357,7 @@ export async function seedDemo(prisma: PrismaClient) {
   if ((await prisma.eventSession.count({ where: { eventId } })) === 0) {
     let withFeedback = 0;
     for (const s of PROGRAMME) {
-      const row = await prisma.eventSession.create({
+      await prisma.eventSession.create({
         data: {
           eventId,
           eventDateId: dates[s.day]!.id,
@@ -371,20 +371,18 @@ export async function seedDemo(prisma: PrismaClient) {
           feedbackCode: s.feedback ? randomBytes(9).toString('base64url') : null,
         },
       });
-      if (s.feedback) {
-        withFeedback += 1;
-        await prisma.sessionFeedbackQuestion.createMany({
-          data: DEFAULT_FEEDBACK_QUESTIONS.map((q, i) => ({
-            sessionId: row.id,
-            eventId,
-            order: i + 1,
-            prompt: q.prompt,
-            type: q.type,
-            required: q.required,
-          })),
-        });
-      }
+      if (s.feedback) withFeedback += 1;
     }
+    // The feedback questions are the event's, recorded once; every session's form follows them.
+    await prisma.sessionFeedbackQuestion.createMany({
+      data: DEFAULT_FEEDBACK_QUESTIONS.map((q, i) => ({
+        eventId,
+        order: i + 1,
+        prompt: q.prompt,
+        type: q.type,
+        required: q.required,
+      })),
+    });
     log(`${PROGRAMME.length} sessions (${withFeedback} with feedback)`);
   }
 

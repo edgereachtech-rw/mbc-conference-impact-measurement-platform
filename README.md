@@ -551,7 +551,8 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   with no improvement yet, impact demonstrated, sustained impact) with checks waiting and
   answered. Migration `20261106210930_transfer_plan_outcome_and_impact_checks`.
 - QR codes for every delegate action (task of 2026-11-06): the admin event page has a "QR codes"
-  tab (`ActionQrCodes`) with one code per action: the daily reflection, each session's feedback
+  tab (`ActionQrCodes`) with one code per action: each day's reflection (its own tab and code per
+  day since 2026-11-07, target `reflection-<activity id>`), each session's feedback
   (its existing `/feedback/:code` link), the transfer plan, and every enabled assessment with
   questions (the end-of-conference evaluation among them). Codes are shown on screen, printed
   ("Print all") or downloaded as PNG. They carry `/go/:eventId/:target` on the web origin
@@ -559,6 +560,21 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   be, applies the consent gate, and redirects to `/account/events/:eventId#<tab>`, so a scan
   lands on the one section with nothing to navigate. The event page still decides what the
   delegate may see: a code for a closed assessment lands on it in its read-only state.
+- One tab per conference day's reflection (task of 2026-11-07): the delegate event page shows
+  "Day 1 reflection", "Day 2 reflection" and so on as separate tabs in journey order, each the
+  landing place of that day's QR code; `#reflections` remains an alias that lands on the open
+  day. The reflections list is loaded once by the page (`useMyReflections`) and each tab shows
+  one activity (`ReflectionsPanel` with `activityId`).
+- Session feedback questions belong to the event (task of 2026-11-07): one set, recorded once
+  under "Feedback questions" on the admin Session feedback tab, that every session's feedback
+  form follows. Enabling feedback on a session no longer copies the questions onto it; the
+  standard five are created for the event when its first session is enabled, and editing,
+  reordering, versioning and retiring happen once (`/events/:eventId/feedback/questions...`).
+  The list (`GET /events/:eventId/feedback`) returns `{ questions, sessions }`, each session's
+  view still carrying the shared set so delegate forms and dashboards read as before. Migration
+  `20261106220208_event_level_feedback_questions` makes `session_id` nullable, builds the
+  event's set from the earliest per-session copy of each question, re-points existing answers
+  to it by order, deletes the per-session copies and retires any that still hold answers.
 - Business measures and evidence on Transfer Plans (task of 2026-10-31; backlog E14-1 to E14-5,
   E16-6): each planned action of the delegate's existing plan can carry any number of measures
   and any number of evidence records; saving either bumps the plan's `version` like every other

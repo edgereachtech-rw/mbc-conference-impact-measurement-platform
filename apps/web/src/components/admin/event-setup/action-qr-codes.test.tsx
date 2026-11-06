@@ -98,6 +98,24 @@ describe('ActionQrCodes', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async (url: string) => {
+        if (url.endsWith('/reflections')) {
+          return json({
+            dates: [
+              {
+                date: { id: D1, date: '2026-11-12' },
+                activity: { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1', title: 'Day 1 reflection' },
+              },
+              {
+                date: { id: '44444444-4444-4444-8444-444444444445', date: '2026-11-13' },
+                activity: { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2', title: 'Day 2 reflection' },
+              },
+              {
+                date: { id: '44444444-4444-4444-8444-444444444446', date: '2026-11-14' },
+                activity: null,
+              },
+            ],
+          });
+        }
         expect(url).toBe('/api/v1/events/e1/feedback');
         return json({
           sessions: [
@@ -110,28 +128,39 @@ describe('ActionQrCodes', () => {
     render(<ActionQrCodes event={event} />);
     const cards = await screen.findAllByRole('article');
     expect(cards.map((c) => c.getAttribute('aria-label'))).toEqual([
-      'Daily reflection',
+      'Day 1 reflection',
+      'Day 2 reflection',
       'Measuring transfer',
       'Transfer plan',
       'End-of-conference evaluation',
       '30-day follow-up',
     ]);
     const origin = window.location.origin;
-    expect(within(cards[0]!).getByText(`${origin}/go/e1/reflections`)).toBeTruthy();
-    expect(within(cards[1]!).getByText(`${origin}/feedback/abc123def456`)).toBeTruthy();
-    expect(within(cards[2]!).getByText(`${origin}/go/e1/transfer-plan`)).toBeTruthy();
+    // Day 1 and day 2 carry different codes, each landing on its own tab (2026-11-07).
     expect(
-      within(cards[3]!).getByText(`${origin}/go/e1/assessment-end_of_conference-1`),
+      within(cards[0]!).getByText(
+        `${origin}/go/e1/reflection-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1`,
+      ),
     ).toBeTruthy();
-    expect(within(cards[4]!).getByText(`${origin}/go/e1/assessment-follow_up-1`)).toBeTruthy();
+    expect(
+      within(cards[1]!).getByText(
+        `${origin}/go/e1/reflection-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2`,
+      ),
+    ).toBeTruthy();
+    expect(within(cards[2]!).getByText(`${origin}/feedback/abc123def456`)).toBeTruthy();
+    expect(within(cards[3]!).getByText(`${origin}/go/e1/transfer-plan`)).toBeTruthy();
+    expect(
+      within(cards[4]!).getByText(`${origin}/go/e1/assessment-end_of_conference-1`),
+    ).toBeTruthy();
+    expect(within(cards[5]!).getByText(`${origin}/go/e1/assessment-follow_up-1`)).toBeTruthy();
     // Each card renders its code as an image once generated, with a download of it.
-    const image = await within(cards[0]!).findByRole('img', { name: 'QR code: Daily reflection' });
+    const image = await within(cards[0]!).findByRole('img', { name: 'QR code: Day 1 reflection' });
     expect(image.getAttribute('src')).toMatch(/^data:image\/png/);
     expect(
       within(cards[0]!)
         .getByRole('link', { name: /Download PNG/ })
         .getAttribute('download'),
-    ).toBe('daily-reflection-qr.png');
+    ).toBe('day-1-reflection-qr.png');
     expect(screen.getByRole('button', { name: /Print all/ })).toBeTruthy();
   });
 });

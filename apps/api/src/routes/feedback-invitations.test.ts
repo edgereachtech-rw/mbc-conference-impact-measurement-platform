@@ -194,7 +194,7 @@ describe.skipIf(!hasDatabase)('emailing the session feedback form', () => {
   it('chases only the attendees who have not answered', async () => {
     // Ada answers; Bo does not.
     const question = await prisma.sessionFeedbackQuestion.create({
-      data: { eventId, sessionId, order: 1, prompt: 'How was it?', type: 'rating' },
+      data: { eventId, order: 1, prompt: 'How was it?', type: 'rating' },
     });
     await prisma.sessionFeedbackResponse.create({
       data: {

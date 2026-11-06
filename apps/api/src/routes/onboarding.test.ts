@@ -181,7 +181,7 @@ describe.skipIf(!hasDatabase)('onboarding pack', () => {
     expect(toDee.html).toMatch(/Friday,? 13 November 2026/);
     expect(toDee.html).toContain('Lagos Oriental Hotel');
     // What the pack is for, and the honest line about what a code is not.
-    expect(toDee.html).toMatch(/30, 60 and 90 days/);
+    expect(toDee.html).toMatch(/30, 60 and 90 days, and later on/);
     expect(toDee.html).toMatch(/holding the code is not attendance/);
     expect(toDee.text).toContain('WHAT HAPPENS WHEN');
     // The cancelled registration is not among the recipients.

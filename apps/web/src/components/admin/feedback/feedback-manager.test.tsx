@@ -131,7 +131,8 @@ describe('FeedbackManager', () => {
       'fetch',
       vi.fn(async (url: string, init?: RequestInit) => {
         calls.push({ url, init });
-        if (url.endsWith('/feedback') && !init?.method) return json({ sessions: [session] });
+        if (url.endsWith('/feedback') && !init?.method)
+          return json({ questions: session.enabled ? session.questions : [], sessions: [session] });
         if (url.endsWith(`/feedback/sessions/${S1}`) && init?.method === 'PATCH') {
           session = enabled;
           return json({ session });
@@ -177,9 +178,9 @@ describe('FeedbackManager', () => {
       name: 'Feedback: Measuring transfer',
     });
     expect(within(enabledCard).getByText('Open')).toBeTruthy();
-    expect(
-      within(enabledCard).getByRole('list', { name: 'Questions: Measuring transfer' }).textContent,
-    ).toMatch(
+    // The questions are the event's, listed once above the sessions (2026-11-07).
+    expect(within(enabledCard).queryByRole('list', { name: /Questions/ })).toBeNull();
+    expect(screen.getByRole('list', { name: 'Feedback questions' }).textContent).toMatch(
       /1\. How would you rate the relevance.*Rating.*Required.*2 answers.*2\. What was your main takeaway.*Written answer.*Optional/,
     );
 

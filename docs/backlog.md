@@ -696,7 +696,7 @@ Required changes when Increment 1b is implemented (impact only, not done here):
 |---|---|---|---|---|
 | E8-1 | As M.Bryan, I want a link and QR code per session | Stable deep link per session; QR image generated and downloadable for display | P0 | 3 |
 | E8-2 | As a delegate, I want the right form to open directly | After signing in (if needed), the form opens with **session title and speaker/facilitator already displayed**; no session picker | P0 | 3 |
-| E8-3 | As a delegate, I want to rate the session | Q1-Q3 required; scale Excellent / Good / Fair / Poor. Q4-Q5 optional text (Appendix A, Q-SF-1 to 5) | P0 | 3 |
+| E8-3 | As a delegate, I want to rate the session | Q1-Q3 required; scale Excellent / Good / Fair / Poor. Q4-Q5 optional text (Appendix A, Q-SF-1 to 5) . **Decision 2026-11-07:** the questions are recorded once per event and every session's form follows them; enabling a session copies nothing | P0 | 3 |
 | E8-4 | As a delegate, I want confirmation after submitting | Clear confirmation message | P0 | 3 |
 | E8-5 | As a delegate, I want only sessions I attended to be evaluated | Form limited to delegates recorded as attending the session (or the day, if session attendance not captured). Clear message otherwise | P0 | 3 |
 | E8-6 | As a delegate, I want the form to stay open after the five minutes | Available for the rest of the conference and follow-up period; no hard close at five minutes | P0 | 3 |

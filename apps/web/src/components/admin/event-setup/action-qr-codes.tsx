@@ -1,13 +1,13 @@
 'use client';
 
-import type { EventDetail, FeedbackSessionView } from '@mbc/shared';
+import type { EventDetail, FeedbackSessionView, ReflectionDateView } from '@mbc/shared';
 import { DownloadIcon, PrinterIcon } from 'lucide-react';
 import QRCode from 'qrcode';
 import { useEffect, useState } from 'react';
 
 import { consoleButton, Panel, StatePanel } from '@/components/console/page';
 import { apiFetch } from '@/lib/api';
-import { assessmentTarget, deepLinkPath } from '@/lib/deep-links';
+import { assessmentTarget, deepLinkPath, reflectionTarget } from '@/lib/deep-links';
 import { formatDateShort, stageLabels } from '@/lib/events';
 import { describeError } from '@/lib/imports';
 
@@ -21,25 +21,30 @@ interface Code {
 }
 
 /**
- * One QR code per action a delegate takes (task of 2026-11-06): the daily reflection, each
+ * One QR code per action a delegate takes (task of 2026-11-06): each day's reflection, each
  * session's feedback, the transfer plan and every assessment the event runs. Shown in the room
  * or printed; a scan signs the delegate in if need be and lands on that section, with no
  * navigating through the platform. Session feedback reuses the session's own feedback link.
  */
 export function ActionQrCodes({ event }: { event: EventDetail }) {
   const [sessions, setSessions] = useState<FeedbackSessionView[] | null>(null);
+  const [dates, setDates] = useState<ReflectionDateView[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
-    apiFetch<{ sessions: FeedbackSessionView[] }>(`/events/${event.id}/feedback`).then(
-      (r) => {
-        if (!cancelled) setSessions(r.sessions);
+    Promise.all([
+      apiFetch<{ sessions: FeedbackSessionView[] }>(`/events/${event.id}/feedback`),
+      apiFetch<{ dates: ReflectionDateView[] }>(`/events/${event.id}/reflections`),
+    ]).then(
+      ([feedback, reflections]) => {
+        if (cancelled) return;
+        setSessions(feedback.sessions);
+        setDates(reflections.dates);
       },
       (e: unknown) => {
-        if (!cancelled)
-          setError(describeError(e, 'The session feedback links could not be loaded.').message);
+        if (!cancelled) setError(describeError(e, 'The links could not be loaded.').message);
       },
     );
     return () => {
@@ -65,16 +70,19 @@ export function ActionQrCodes({ event }: { event: EventDetail }) {
       />
     );
   }
-  if (!sessions) return <StatePanel kind="loading" title="Preparing the QR codes…" />;
+  if (!sessions || !dates) return <StatePanel kind="loading" title="Preparing the QR codes…" />;
 
+  // One code per day's reflection (2026-11-07): day 1 and day 2 land on different tabs.
   const codes: Code[] = [
-    {
-      key: 'reflections',
-      group: 'Daily reflection',
-      title: 'Daily reflection',
-      hint: 'One code for every conference day: the delegate lands on the reflection published for that day.',
-      path: deepLinkPath(event.id, 'reflections'),
-    },
+    ...dates
+      .filter((d) => d.activity)
+      .map<Code>((d) => ({
+        key: `reflection:${d.activity!.id}`,
+        group: 'Daily reflection',
+        title: d.activity!.title,
+        hint: `${formatDateShort(d.date.date)}. Lands on this day's reflection; it answers once the organisers publish it.`,
+        path: deepLinkPath(event.id, reflectionTarget(d.activity!.id)),
+      })),
     ...sessions
       .filter((s) => s.enabled && s.path)
       .map<Code>((s) => ({

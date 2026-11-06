@@ -5,6 +5,7 @@ import {
   type AssessmentStage,
   type MyAssessment,
   type MyEvent,
+  type MyReflection,
 } from '@mbc/shared';
 
 import { StatusPill } from '@/components/admin/page-header';
@@ -23,24 +24,23 @@ import { AssessmentsPanel, assessmentTabId, useMyAssessments } from './assessmen
 import { AttendanceCodes } from './attendance-codes';
 import { AttendingBadge } from './attending-badge';
 import { JourneyStrip } from './journey-strip';
-import { ReflectionsPanel } from './reflections-panel';
+import { ReflectionsPanel, reflectionTabId, useMyReflections } from './reflections-panel';
 import { SessionFeedbackList } from './session-feedback-list';
 import { TransferPlanPanel } from './transfer-plan-panel';
 
-type StaticTab = 'overview' | 'attendance' | 'reflections' | 'feedback' | 'transfer-plan';
+type StaticTab = 'overview' | 'attendance' | 'feedback' | 'transfer-plan';
 type AssessmentTab = ReturnType<typeof assessmentTabId>;
-/** `assessments` is an alias older links carry: it resolves to the assessment to act on. */
-type Tab = StaticTab | AssessmentTab | 'assessments';
+type ReflectionTab = ReturnType<typeof reflectionTabId>;
+/**
+ * `assessments` and `reflections` are aliases older links carry: each resolves to the one to
+ * act on (the open assessment; today's reflection).
+ */
+type Tab = StaticTab | AssessmentTab | ReflectionTab | 'assessments' | 'reflections';
 type TabItem = { id: Tab; label: string; hint: string };
 
 const STATIC: Record<StaticTab, TabItem> = {
   overview: { id: 'overview', label: 'Overview', hint: 'The event and your registration' },
   attendance: { id: 'attendance', label: 'Attendance', hint: 'Your check-in codes and record' },
-  reflections: {
-    id: 'reflections',
-    label: 'Daily reflections',
-    hint: 'A short reflection per day',
-  },
   feedback: {
     id: 'feedback',
     label: 'Session feedback',
@@ -59,7 +59,10 @@ const STATIC: Record<StaticTab, TabItem> = {
  * the event attendance, anything asked during the conference, reflections, session feedback and
  * the Transfer Plan; at the close the evaluation; after it each follow-up wave in turn.
  */
-function journeyTabs(forms: readonly MyAssessment[]): TabItem[] {
+function journeyTabs(
+  forms: readonly MyAssessment[],
+  reflections: readonly MyReflection[],
+): TabItem[] {
   const of = (stage: AssessmentStage): TabItem[] =>
     forms
       .filter((a) => a.stage === stage)
@@ -74,7 +77,14 @@ function journeyTabs(forms: readonly MyAssessment[]): TabItem[] {
     ...of('pre_conference'),
     STATIC.attendance,
     ...of('during_conference'),
-    STATIC.reflections,
+    // One tab per conference day's reflection (2026-11-07), each with its own QR code.
+    ...[...reflections]
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .map<TabItem>((r) => ({
+        id: reflectionTabId(r),
+        label: r.title,
+        hint: `Reflection for ${formatDay(r.date)}`,
+      })),
     STATIC.feedback,
     STATIC['transfer-plan'],
     ...of('end_of_conference'),
@@ -91,17 +101,30 @@ function journeyTabs(forms: readonly MyAssessment[]): TabItem[] {
  */
 export function EventDetail({ event, contactEmail }: { event: MyEvent; contactEmail: string }) {
   const assessments = useMyAssessments(event.id);
+  const reflections = useMyReflections(event.id);
   const forms = assessments.state.kind === 'ready' ? assessments.state.assessments : [];
-  const tabs = journeyTabs(forms);
-  const ids: Tab[] = [...tabs.map((t) => t.id), 'assessments'];
+  const days = reflections.state.kind === 'ready' ? reflections.state.reflections : [];
+  const tabs = journeyTabs(forms, days);
+  const ids: Tab[] = [...tabs.map((t) => t.id), 'assessments', 'reflections'];
   const [chosen, choose] = useTabState<Tab>(ids, 'overview');
   // The alias: the first assessment still open to answer, else the first assessment there is.
   const actOn =
     forms.find((a) => a.status === 'open' && !a.response?.submittedAt) ?? forms[0] ?? null;
+  // Today's reflection, else the first there is.
+  const reflectOn = days.find((r) => r.status === 'open') ?? days[0] ?? null;
   const tab: Tab =
-    chosen === 'assessments' ? (actOn ? assessmentTabId(actOn) : 'overview') : chosen;
+    chosen === 'assessments'
+      ? actOn
+        ? assessmentTabId(actOn)
+        : 'overview'
+      : chosen === 'reflections'
+        ? reflectOn
+          ? reflectionTabId(reflectOn)
+          : 'overview'
+        : chosen;
   const current = tabs.find((t) => t.id === tab) ?? STATIC.overview;
   const form = tab.startsWith('assessment-') ? forms.find((a) => assessmentTabId(a) === tab) : null;
+  const day = tab.startsWith('reflection-') ? days.find((r) => reflectionTabId(r) === tab) : null;
 
   return (
     <div className="space-y-5">
@@ -154,8 +177,15 @@ export function EventDetail({ event, contactEmail }: { event: MyEvent; contactEm
         {tab === 'attendance' ? (
           <AttendanceCodes eventId={event.id} timezone={event.timezone} />
         ) : null}
-        {tab === 'reflections' ? (
-          <ReflectionsPanel eventId={event.id} timezone={event.timezone} />
+        {day ? (
+          <ReflectionsPanel
+            eventId={event.id}
+            timezone={event.timezone}
+            activityId={day.id}
+            state={reflections.state}
+            onUpdated={reflections.update}
+            onRetry={reflections.retry}
+          />
         ) : null}
         {tab === 'feedback' ? (
           <SessionFeedbackList eventId={event.id} timezone={event.timezone} />

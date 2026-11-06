@@ -10,25 +10,15 @@ import { ApiError, apiFetch } from '@/lib/api';
 import { formatDateShort, formatInstant } from '@/lib/events';
 import { describeError } from '@/lib/imports';
 
-interface ReflectionsPanelProps {
-  eventId: string;
-  timezone: string;
-}
-
-type State =
+export type MyReflectionsState =
   | { kind: 'loading' }
   | { kind: 'ready'; reflections: MyReflection[] }
   | { kind: 'error'; message: string; requestId?: string };
 
-/**
- * The delegate's Daily Learning Reflections: one short questionnaire per conference day the
- * organisers enabled, answered once, with a review popup before sending and a confirmation
- * after. Submitting a reflection records nothing about attendance.
- */
-export function ReflectionsPanel({ eventId, timezone }: ReflectionsPanelProps) {
-  const [state, setState] = useState<State>({ kind: 'loading' });
+/** The delegate's daily reflections for one event, loaded once and shared by the tabs. */
+export function useMyReflections(eventId: string) {
+  const [state, setState] = useState<MyReflectionsState>({ kind: 'loading' });
   const [attempt, setAttempt] = useState(0);
-
   useEffect(() => {
     let cancelled = false;
     apiFetch<{ reflections: MyReflection[] }>(`/me/events/${eventId}/reflections`).then(
@@ -46,19 +36,51 @@ export function ReflectionsPanel({ eventId, timezone }: ReflectionsPanelProps) {
       cancelled = true;
     };
   }, [eventId, attempt]);
+  return {
+    state,
+    retry: () => setAttempt((n) => n + 1),
+    update: (reflections: MyReflection[]) => setState({ kind: 'ready', reflections }),
+  };
+}
 
-  if (state.kind === 'loading') return <StatePanel kind="loading" title="Loading reflections…" />;
+/** The tab id of one day's reflection on the delegate's event page (`#reflection-<activity id>`). */
+export const reflectionTabId = (r: Pick<MyReflection, 'id'>) => `reflection-${r.id}` as const;
+
+interface ReflectionsPanelProps {
+  eventId: string;
+  timezone: string;
+  /** The reflection activity this tab shows. */
+  activityId: string;
+  state: MyReflectionsState;
+  onUpdated: (reflections: MyReflection[]) => void;
+  onRetry: () => void;
+}
+
+/**
+ * One day's reflection, as its own tab (task of 2026-11-07; before, every day sat in one list).
+ * The day's QR code lands here. Answers are saved by the card below; the list the tabs share
+ * is refreshed from the server's reply so every tab stays current.
+ */
+export function ReflectionsPanel({
+  eventId,
+  timezone,
+  activityId,
+  state,
+  onUpdated,
+  onRetry,
+}: ReflectionsPanelProps) {
+  if (state.kind === 'loading') return <StatePanel kind="loading" title="Loading reflection…" />;
   if (state.kind === 'error') {
     return (
       <StatePanel
         kind="error"
-        title="Reflections unavailable"
+        title="Reflection unavailable"
         description={state.message}
         requestId={state.requestId}
         action={
           <button
             type="button"
-            onClick={() => setAttempt((n) => n + 1)}
+            onClick={onRetry}
             className={consoleButton({ variant: 'secondary' })}
           >
             Try again
@@ -67,25 +89,22 @@ export function ReflectionsPanel({ eventId, timezone }: ReflectionsPanelProps) {
       />
     );
   }
-  if (state.reflections.length === 0) {
+  const reflection = state.reflections.find((r) => r.id === activityId);
+  if (!reflection) {
     return (
       <p className="text-sm text-corp-muted">
-        No daily reflection is open yet. The organisers open one at the end of a conference day.
+        This reflection is not open yet. The organisers open it at the end of the conference day.
       </p>
     );
   }
   return (
-    <div className="space-y-4">
-      {state.reflections.map((r) => (
-        <ReflectionCard
-          key={r.id}
-          eventId={eventId}
-          timezone={timezone}
-          reflection={r}
-          onUpdated={(reflections) => setState({ kind: 'ready', reflections })}
-        />
-      ))}
-    </div>
+    <ReflectionCard
+      key={reflection.id}
+      eventId={eventId}
+      timezone={timezone}
+      reflection={reflection}
+      onUpdated={onUpdated}
+    />
   );
 }
 

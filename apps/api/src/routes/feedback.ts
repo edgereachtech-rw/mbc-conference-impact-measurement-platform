@@ -74,14 +74,20 @@ const questionViewOf = (q: QuestionRow): FeedbackQuestionView => ({
 
 const SESSION_INCLUDE = {
   eventDate: { select: { date: true } },
-  feedbackQuestions: {
-    where: { retiredAt: null },
-    orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
-    include: QUESTION_INCLUDE,
-  },
   _count: { select: { attendance: true, feedbackResponses: true } },
 } satisfies Prisma.EventSessionInclude;
-type SessionRow = Prisma.EventSessionGetPayload<{ include: typeof SESSION_INCLUDE }>;
+/**
+ * A session with the event's feedback questions attached (2026-11-07): the questions are
+ * recorded once per event and every session's form follows them, so they are loaded once and
+ * handed to each session rather than copied onto it.
+ */
+type SessionRow = Prisma.EventSessionGetPayload<{ include: typeof SESSION_INCLUDE }> & {
+  feedbackQuestions: QuestionRow[];
+};
+const withQuestions = <T extends object>(row: T, feedbackQuestions: QuestionRow[]) => ({
+  ...row,
+  feedbackQuestions,
+});
 
 /** A short, unguessable code for the session's link and QR code. */
 export function newFeedbackCode(): string {
@@ -139,14 +145,42 @@ export function feedbackRouter({ prisma, config, middleware, now }: Deps): Route
     return event;
   }
 
-  async function loadSession(eventId: string, sessionId: string) {
-    if (!UUID.test(sessionId)) throw new HttpError(404, 'not_found', 'Session not found.');
-    const row = await prisma().eventSession.findFirst({
-      where: { id: sessionId, eventId },
-      include: SESSION_INCLUDE,
+  /** The event's active feedback questions, in order. */
+  function eventQuestions(eventId: string, db: Prisma.TransactionClient | PrismaClient = prisma()) {
+    return db.sessionFeedbackQuestion.findMany({
+      where: { eventId, sessionId: null, retiredAt: null },
+      orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
+      include: QUESTION_INCLUDE,
     });
+  }
+  /** The default questionnaire, once, for an event that has no questions at all yet. */
+  async function ensureEventQuestions(tx: Prisma.TransactionClient, eventId: string) {
+    const existing = await tx.sessionFeedbackQuestion.count({
+      where: { eventId, sessionId: null },
+    });
+    if (existing > 0) return 0;
+    await tx.sessionFeedbackQuestion.createMany({
+      data: DEFAULT_FEEDBACK_QUESTIONS.map((q, i) => ({
+        eventId,
+        order: i + 1,
+        prompt: q.prompt,
+        type: q.type,
+        required: q.required,
+      })),
+    });
+    return DEFAULT_FEEDBACK_QUESTIONS.length;
+  }
+  async function loadSession(eventId: string, sessionId: string): Promise<SessionRow> {
+    if (!UUID.test(sessionId)) throw new HttpError(404, 'not_found', 'Session not found.');
+    const [row, questions] = await Promise.all([
+      prisma().eventSession.findFirst({
+        where: { id: sessionId, eventId },
+        include: SESSION_INCLUDE,
+      }),
+      eventQuestions(eventId),
+    ]);
     if (!row) throw new HttpError(404, 'not_found', 'Session not found.');
-    return row;
+    return withQuestions(row, questions);
   }
 
   // ---------------------------------------------------------------- admin: configuration
@@ -154,16 +188,22 @@ export function feedbackRouter({ prisma, config, middleware, now }: Deps): Route
   router.get('/events/:eventId/feedback', guard, async (req, res) => {
     requireAdmin(res);
     const event = await loadEvent(String(req.params.eventId));
-    const sessions = await prisma().eventSession.findMany({
-      where: { eventId: event.id },
-      include: SESSION_INCLUDE,
-      orderBy: [{ eventDate: { date: 'asc' } }, { startTime: 'asc' }, { createdAt: 'asc' }],
-    });
+    const [rows, questions] = await Promise.all([
+      prisma().eventSession.findMany({
+        where: { eventId: event.id },
+        include: SESSION_INCLUDE,
+        orderBy: [{ eventDate: { date: 'asc' } }, { startTime: 'asc' }, { createdAt: 'asc' }],
+      }),
+      eventQuestions(event.id),
+    ]);
     const at = clock();
-    res.json({ sessions: sessions.map((s) => sessionViewOf(s, at)) });
+    res.json({
+      questions: questions.map(questionViewOf),
+      sessions: rows.map((s) => sessionViewOf(withQuestions(s, questions), at)),
+    });
   });
 
-  // Enabling creates the code and, for a session without questions, the default questionnaire.
+  // Enabling creates the code and, for an event without questions yet, the default questionnaire.
   router.patch(
     '/events/:eventId/feedback/sessions/:sessionId',
     guard,
@@ -189,23 +229,7 @@ export function feedbackRouter({ prisma, config, middleware, now }: Deps): Route
           },
           include: SESSION_INCLUDE,
         });
-        let seeded = 0;
-        if (input.enabled && row.feedbackQuestions.length === 0) {
-          const existing = await tx.sessionFeedbackQuestion.count({ where: { sessionId: row.id } });
-          if (existing === 0) {
-            await tx.sessionFeedbackQuestion.createMany({
-              data: DEFAULT_FEEDBACK_QUESTIONS.map((q, i) => ({
-                sessionId: row.id,
-                eventId: event.id,
-                order: i + 1,
-                prompt: q.prompt,
-                type: q.type,
-                required: q.required,
-              })),
-            });
-            seeded = DEFAULT_FEEDBACK_QUESTIONS.length;
-          }
-        }
+        const seeded = input.enabled ? await ensureEventQuestions(tx, event.id) : 0;
         await audit(tx, {
           action: input.enabled ? 'feedback.enabled' : 'feedback.disabled',
           entityType: 'event_session',
@@ -220,9 +244,7 @@ export function feedbackRouter({ prisma, config, middleware, now }: Deps): Route
           },
           ...clientOf(res),
         });
-        return seeded
-          ? tx.eventSession.findUniqueOrThrow({ where: { id: row.id }, include: SESSION_INCLUDE })
-          : row;
+        return withQuestions(row, await eventQuestions(event.id, tx));
       });
       res.json({ session: sessionViewOf(updated, at) });
     },
@@ -238,11 +260,14 @@ export function feedbackRouter({ prisma, config, middleware, now }: Deps): Route
     }
     const at = clock();
     const updated = await prisma().$transaction(async (tx) => {
-      const row = await tx.eventSession.update({
-        where: { id: session.id },
-        data: { feedbackOpenedAt: at },
-        include: SESSION_INCLUDE,
-      });
+      const row = withQuestions(
+        await tx.eventSession.update({
+          where: { id: session.id },
+          data: { feedbackOpenedAt: at },
+          include: SESSION_INCLUDE,
+        }),
+        session.feedbackQuestions,
+      );
       await audit(tx, {
         action: 'feedback.opened',
         entityType: 'event_session',
@@ -260,22 +285,20 @@ export function feedbackRouter({ prisma, config, middleware, now }: Deps): Route
   // ---------------------------------------------------------------- admin: questions
 
   router.post(
-    '/events/:eventId/feedback/sessions/:sessionId/questions',
+    '/events/:eventId/feedback/questions',
     guard,
     validated(feedbackQuestionFieldsSchema),
     async (req, res) => {
       const principal = requireAdmin(res);
       const event = await loadEvent(String(req.params.eventId));
-      const session = await loadSession(event.id, String(req.params.sessionId));
       const input = req.body as z.infer<typeof feedbackQuestionFieldsSchema>;
       const last = await prisma().sessionFeedbackQuestion.aggregate({
-        where: { sessionId: session.id, retiredAt: null },
+        where: { eventId: event.id, sessionId: null, retiredAt: null },
         _max: { order: true },
       });
       const created = await prisma().$transaction(async (tx) => {
         const row = await tx.sessionFeedbackQuestion.create({
           data: {
-            sessionId: session.id,
             eventId: event.id,
             order: (last._max.order ?? 0) + 1,
             prompt: input.prompt,
@@ -290,7 +313,7 @@ export function feedbackRouter({ prisma, config, middleware, now }: Deps): Route
           entityId: row.id,
           eventId: event.id,
           actorUserId: principal.userId,
-          newValue: { sessionId: session.id, prompt: row.prompt, type: row.type },
+          newValue: { prompt: row.prompt, type: row.type },
           ...clientOf(res),
         });
         return row;
@@ -300,14 +323,14 @@ export function feedbackRouter({ prisma, config, middleware, now }: Deps): Route
   );
 
   router.patch(
-    '/events/:eventId/feedback/sessions/:sessionId/questions/:questionId',
+    '/events/:eventId/feedback/questions/:questionId',
     guard,
     validated(feedbackQuestionPatchSchema),
     async (req, res) => {
       const principal = requireAdmin(res);
       const event = await loadEvent(String(req.params.eventId));
-      const session = await loadSession(event.id, String(req.params.sessionId));
-      const current = session.feedbackQuestions.find((q) => q.id === String(req.params.questionId));
+      const questions = await eventQuestions(event.id);
+      const current = questions.find((q) => q.id === String(req.params.questionId));
       if (!current) throw new HttpError(404, 'not_found', 'Question not found.');
       const patch = req.body as z.infer<typeof feedbackQuestionPatchSchema>;
       const next = {
@@ -327,7 +350,6 @@ export function feedbackRouter({ prisma, config, middleware, now }: Deps): Route
           });
           saved = await tx.sessionFeedbackQuestion.create({
             data: {
-              sessionId: session.id,
               eventId: event.id,
               questionKey: current.questionKey,
               version: current.version + 1,
@@ -364,49 +386,45 @@ export function feedbackRouter({ prisma, config, middleware, now }: Deps): Route
     },
   );
 
-  router.delete(
-    '/events/:eventId/feedback/sessions/:sessionId/questions/:questionId',
-    guard,
-    async (req, res) => {
-      const principal = requireAdmin(res);
-      const event = await loadEvent(String(req.params.eventId));
-      const session = await loadSession(event.id, String(req.params.sessionId));
-      const current = session.feedbackQuestions.find((q) => q.id === String(req.params.questionId));
-      if (!current) throw new HttpError(404, 'not_found', 'Question not found.');
-      const keep = current._count.answers > 0;
-      await prisma().$transaction(async (tx) => {
-        if (keep) {
-          await tx.sessionFeedbackQuestion.update({
-            where: { id: current.id },
-            data: { retiredAt: clock() },
-          });
-        } else {
-          await tx.sessionFeedbackQuestion.delete({ where: { id: current.id } });
-        }
-        await audit(tx, {
-          action: keep ? 'feedback.question_retired' : 'feedback.question_deleted',
-          entityType: 'session_feedback_question',
-          entityId: current.id,
-          eventId: event.id,
-          actorUserId: principal.userId,
-          oldValue: { prompt: current.prompt, answers: current._count.answers },
-          ...clientOf(res),
+  router.delete('/events/:eventId/feedback/questions/:questionId', guard, async (req, res) => {
+    const principal = requireAdmin(res);
+    const event = await loadEvent(String(req.params.eventId));
+    const questions = await eventQuestions(event.id);
+    const current = questions.find((q) => q.id === String(req.params.questionId));
+    if (!current) throw new HttpError(404, 'not_found', 'Question not found.');
+    const keep = current._count.answers > 0;
+    await prisma().$transaction(async (tx) => {
+      if (keep) {
+        await tx.sessionFeedbackQuestion.update({
+          where: { id: current.id },
+          data: { retiredAt: clock() },
         });
+      } else {
+        await tx.sessionFeedbackQuestion.delete({ where: { id: current.id } });
+      }
+      await audit(tx, {
+        action: keep ? 'feedback.question_retired' : 'feedback.question_deleted',
+        entityType: 'session_feedback_question',
+        entityId: current.id,
+        eventId: event.id,
+        actorUserId: principal.userId,
+        oldValue: { prompt: current.prompt, answers: current._count.answers },
+        ...clientOf(res),
       });
-      res.status(204).end();
-    },
-  );
+    });
+    res.status(204).end();
+  });
 
   router.put(
-    '/events/:eventId/feedback/sessions/:sessionId/questions/order',
+    '/events/:eventId/feedback/questions/order',
     guard,
     validated(feedbackQuestionOrderSchema),
     async (req, res) => {
       const principal = requireAdmin(res);
       const event = await loadEvent(String(req.params.eventId));
-      const session = await loadSession(event.id, String(req.params.sessionId));
+      const questions = await eventQuestions(event.id);
       const { questionIds } = req.body as z.infer<typeof feedbackQuestionOrderSchema>;
-      const ids = session.feedbackQuestions.map((q) => q.id);
+      const ids = questions.map((q) => q.id);
       if (questionIds.length !== ids.length || !ids.every((id) => questionIds.includes(id))) {
         throw new HttpError(
           422,
@@ -420,16 +438,15 @@ export function feedbackRouter({ prisma, config, middleware, now }: Deps): Route
         }
         await audit(tx, {
           action: 'feedback.questions_reordered',
-          entityType: 'event_session',
-          entityId: session.id,
+          entityType: 'event',
+          entityId: event.id,
           eventId: event.id,
           actorUserId: principal.userId,
           newValue: { questionIds },
           ...clientOf(res),
         });
       });
-      const fresh = await loadSession(event.id, session.id);
-      res.json({ session: sessionViewOf(fresh, clock()) });
+      res.json({ questions: (await eventQuestions(event.id)).map(questionViewOf) });
     },
   );
 
@@ -449,7 +466,7 @@ export function feedbackRouter({ prisma, config, middleware, now }: Deps): Route
         orderBy: { updatedAt: 'desc' },
       }),
       prisma().sessionFeedbackQuestion.findMany({
-        where: { sessionId: session.id },
+        where: { eventId: session.eventId },
         select: { id: true, questionKey: true },
       }),
     ]);
@@ -615,11 +632,12 @@ export function feedbackRouter({ prisma, config, middleware, now }: Deps): Route
   async function sessionForDelegate(res: Response, code: string) {
     const principal = requireDelegate(res);
     if (!CODE.test(code)) throw new HttpError(404, 'not_found', 'This feedback link is not valid.');
-    const session = await prisma().eventSession.findFirst({
+    const found = await prisma().eventSession.findFirst({
       where: { feedbackCode: code, feedbackEnabled: true, event: { status: 'active' } },
       include: { ...SESSION_INCLUDE, event: { select: { id: true, name: true, timezone: true } } },
     });
-    if (!session) throw new HttpError(404, 'not_found', 'This feedback link is not valid.');
+    if (!found) throw new HttpError(404, 'not_found', 'This feedback link is not valid.');
+    const session = withQuestions(found, await eventQuestions(found.eventId));
     const delegate = await prisma().delegate.findFirst({
       where: {
         eventId: session.eventId,
