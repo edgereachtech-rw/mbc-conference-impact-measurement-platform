@@ -100,8 +100,10 @@ export function journeyRouter({ prisma, config, middleware, now }: Deps): Router
         }),
         db.eventSession.count({ where: { eventId, feedbackEnabled: true } }),
         db.sessionFeedbackResponse.count({ where: { eventId, delegateId: delegate.id } }),
-        db.transferPlan.findUnique({
-          where: { eventId_delegateId: { eventId, delegateId: delegate.id } },
+        // The latest of the delegate's plans (2026-11-06): the one they are working on now.
+        db.transferPlan.findFirst({
+          where: { eventId, delegateId: delegate.id },
+          orderBy: { sequence: 'desc' },
           include: {
             actions: {
               orderBy: { order: 'asc' },

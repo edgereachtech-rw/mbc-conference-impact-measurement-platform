@@ -9,7 +9,9 @@ import {
   measureSummaries,
   measureSummaryLabels,
   planActionFieldLabels,
+  planTitleOf,
   reminderFrequencyLabels,
+  transferPlanStatusLabels,
   type ActionProgressStatus,
   type EventDetail,
   type PlanActionView,
@@ -72,10 +74,11 @@ export function TransferPlansManager({ event }: TransferPlansManagerProps) {
   const [error, setError] = useState<{ message: string; requestId?: string } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [version, setVersion] = useState(0);
-  const [status, setStatus] = useState<'all' | 'draft' | 'submitted'>('all');
+  const [status, setStatus] = useState<'all' | 'draft' | 'submitted' | 'completed'>('all');
   const [search, setSearch] = useState('');
   const [progressFilter, setProgressFilter] = useState<'all' | ActionProgressStatus>('all');
-  const [viewing, setViewing] = useState<string | null>(null);
+  /** The plan being read: a delegate may have several (2026-11-06). */
+  const [viewing, setViewing] = useState<{ delegateId: string; planId: string } | null>(null);
   const [exportProblem, setExportProblem] = useState<string | null>(null);
   const readOnly = event.status === 'archived';
   const refresh = useCallback(() => setVersion((n) => n + 1), []);
@@ -123,7 +126,8 @@ export function TransferPlansManager({ event }: TransferPlansManagerProps) {
   }
   if (!list || !refs) return <StatePanel kind="loading" title="Loading transfer plans…" />;
 
-  const submitted = list.plans.filter((p) => p.status === 'submitted').length;
+  const submitted = list.plans.filter((p) => p.status !== 'draft').length;
+  const completed = list.plans.filter((p) => p.status === 'completed').length;
   const applied = list.plans.reduce(
     (n, p) => n + appliedStatuses.reduce((m, s) => m + (p.progress[s] ?? 0), 0),
     0,
@@ -197,13 +201,13 @@ export function TransferPlansManager({ event }: TransferPlansManagerProps) {
         <StatTile
           label="Plans started"
           value={list.plans.length}
-          hint="Delegates who opened a plan"
+          hint={`by ${new Set(list.plans.map((p) => p.delegate.id)).size} delegates; one may keep several`}
         />
         <StatTile
           label="Plans submitted"
           value={submitted}
           tone={submitted > 0 ? 'positive' : 'neutral'}
-          hint="Counted as completed plans"
+          hint={`${completed} of them completed, with a result and evidence on every action`}
         />
         <StatTile
           label="Actions applied"
@@ -283,6 +287,7 @@ export function TransferPlansManager({ event }: TransferPlansManagerProps) {
               <option value="all">All</option>
               <option value="draft">Draft</option>
               <option value="submitted">Submitted</option>
+              <option value="completed">Completed</option>
             </NativeSelect>
           </div>
           <div className="space-y-1 md:w-52">
@@ -342,18 +347,23 @@ export function TransferPlansManager({ event }: TransferPlansManagerProps) {
               </thead>
               <tbody className="divide-y divide-corp-line">
                 {rows.map((p) => (
-                  <tr key={p.delegate.id}>
+                  <tr key={p.planId}>
                     <td className="px-4 py-2">
                       <p className="font-semibold text-corp-ink">{p.delegate.name}</p>
                       <p className="text-xs text-corp-muted">
                         {p.delegate.organisation ?? p.delegate.email}
                       </p>
+                      <p className="text-xs text-corp-text">{planTitleOf(p)}</p>
                     </td>
                     <td className="px-4 py-2">
-                      <StatusPill tone={p.status === 'submitted' ? 'positive' : 'neutral'}>
-                        {p.status === 'submitted' ? 'Submitted' : 'Draft'}
+                      <StatusPill tone={p.status === 'draft' ? 'neutral' : 'positive'}>
+                        {transferPlanStatusLabels[p.status]}
                       </StatusPill>
-                      {p.submittedAt ? (
+                      {p.status === 'completed' && p.completedAt ? (
+                        <p className="mt-1 text-xs text-corp-muted">
+                          {formatInstant(p.completedAt, event.timezone)}
+                        </p>
+                      ) : p.submittedAt ? (
                         <p className="mt-1 text-xs text-corp-muted">
                           {formatInstant(p.submittedAt, event.timezone)}
                         </p>
@@ -393,7 +403,7 @@ export function TransferPlansManager({ event }: TransferPlansManagerProps) {
                     <td className="px-4 py-2 text-right">
                       <button
                         type="button"
-                        onClick={() => setViewing(p.delegate.id)}
+                        onClick={() => setViewing({ delegateId: p.delegate.id, planId: p.planId })}
                         className={consoleButton({ variant: 'ghost', size: 'sm' })}
                       >
                         <EyeIcon aria-hidden="true" /> View
@@ -412,7 +422,8 @@ export function TransferPlansManager({ event }: TransferPlansManagerProps) {
       {viewing ? (
         <PlanDialog
           eventId={event.id}
-          delegateId={viewing}
+          delegateId={viewing.delegateId}
+          planId={viewing.planId}
           timezone={event.timezone}
           onClose={() => setViewing(null)}
         />
@@ -528,11 +539,14 @@ function ReferencesPanel({
 function PlanDialog({
   eventId,
   delegateId,
+  planId,
   timezone,
   onClose,
 }: {
   eventId: string;
   delegateId: string;
+  /** Which of the delegate's plans to read (2026-11-06). */
+  planId: string;
   timezone: string;
   onClose: () => void;
 }) {
@@ -543,7 +557,7 @@ function PlanDialog({
   useEffect(() => {
     let cancelled = false;
     apiFetch<{ plan: TransferPlanAdminDetail }>(
-      `/events/${eventId}/transfer-plans/${delegateId}`,
+      `/events/${eventId}/transfer-plans/${delegateId}?plan=${encodeURIComponent(planId)}`,
     ).then(
       (r) => {
         if (!cancelled) setDetail(r.plan);
@@ -555,7 +569,7 @@ function PlanDialog({
     return () => {
       cancelled = true;
     };
-  }, [eventId, delegateId]);
+  }, [eventId, delegateId, planId]);
 
   const plan: TransferPlanView | null =
     detail && view === 'submitted' && detail.snapshot ? detail.snapshot : (detail?.plan ?? null);
@@ -584,14 +598,16 @@ function PlanDialog({
       {detail && plan ? (
         <div className="space-y-5 text-sm">
           <div className="flex flex-wrap items-center gap-2">
-            <StatusPill tone={detail.plan.status === 'submitted' ? 'positive' : 'neutral'}>
-              {detail.plan.status === 'submitted'
-                ? `Submitted ${formatInstant(detail.plan.submittedAt, timezone)}`
-                : 'Draft'}
+            <StatusPill tone={detail.plan.status === 'draft' ? 'neutral' : 'positive'}>
+              {detail.plan.status === 'completed'
+                ? `Completed ${formatInstant(detail.plan.completedAt, timezone)}`
+                : detail.plan.status === 'submitted'
+                  ? `Submitted ${formatInstant(detail.plan.submittedAt, timezone)}`
+                  : 'Draft'}
             </StatusPill>
             <span className="text-xs text-corp-muted">
-              Last changed {formatInstant(detail.plan.updatedAt, timezone)} · version{' '}
-              {detail.plan.version}
+              {planTitleOf(detail.plan)} · last changed{' '}
+              {formatInstant(detail.plan.updatedAt, timezone)} · version {detail.plan.version}
             </span>
             {detail.snapshot ? (
               <div role="group" aria-label="Version" className="ml-auto flex gap-1">

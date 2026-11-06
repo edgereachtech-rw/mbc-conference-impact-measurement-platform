@@ -841,6 +841,7 @@ export async function buildReport(input: BuildInput): Promise<BuiltReport> {
             },
           },
           reminders: { select: { status: true } },
+          impactChecks: { select: { dueOn: true, answeredAt: true } },
         },
       })
     : [];
@@ -893,16 +894,27 @@ export async function buildReport(input: BuildInput): Promise<BuiltReport> {
 
   let transfer: TransferSection | null = null;
   if (sections.has('transfer')) {
-    const started = plans.length;
-    const submitted = plans.filter((p) => p.status === 'submitted').length;
-    const incomplete = plans.filter(
-      (p) => p.status === 'draft' && planHasContent(p.actions),
+    // Delegates, not plans (2026-11-06): one delegate may hold several plans, and the figures
+    // describe people. A delegate counts as submitted once any plan is submitted or completed,
+    // as incomplete when they have written something but submitted nothing, else as empty.
+    const done = (s: (typeof plans)[number]['status']) => s === 'submitted' || s === 'completed';
+    const byDelegate = new Map<string, (typeof plans)[number][]>();
+    for (const p of plans)
+      byDelegate.set(p.delegateId, [...(byDelegate.get(p.delegateId) ?? []), p]);
+    const people = [...byDelegate.entries()];
+    const started = people.length;
+    const submittedIds = new Set(
+      people.filter(([, ps]) => ps.some((p) => done(p.status))).map(([id]) => id),
+    );
+    const submitted = submittedIds.size;
+    const incomplete = people.filter(
+      ([id, ps]) => !submittedIds.has(id) && ps.some((p) => planHasContent(p.actions)),
     ).length;
-    const empty = plans.filter((p) => p.status === 'draft' && !planHasContent(p.actions)).length;
+    const empty = people.filter(
+      ([id, ps]) => !submittedIds.has(id) && !ps.some((p) => planHasContent(p.actions)),
+    ).length;
     const attendeeIds = [...attendees].filter((id) => population.byId.has(id));
-    const submittedAttendees = plans.filter(
-      (p) => p.status === 'submitted' && attendees.has(p.delegateId),
-    ).length;
+    const submittedAttendees = [...submittedIds].filter((id) => attendees.has(id)).length;
     const byStatus = Object.fromEntries(actionProgressStatuses.map((s) => [s, 0])) as Record<
       ActionProgressStatus,
       number
@@ -1081,6 +1093,53 @@ export async function buildReport(input: BuildInput): Promise<BuiltReport> {
         ],
         measures: measureCounts(),
         evidence: evidenceCounts(),
+        // Impact after completion (2026-11-06): per delegate, the furthest point any of their
+        // completed plans reached, as the delegate reported it. Completion is application;
+        // impact is a separate claim with evidence, and sustained impact a later confirmation.
+        impact: (() => {
+          const rank: Record<(typeof plans)[number]['outcome'], number> = {
+            pending: 0,
+            applied: 1,
+            impact_demonstrated: 2,
+            sustained_impact: 3,
+          };
+          const best = new Map<string, number>();
+          for (const p of plans) {
+            if (p.status !== 'completed') continue;
+            best.set(p.delegateId, Math.max(best.get(p.delegateId) ?? 0, rank[p.outcome]));
+          }
+          const atLeast = (level: number) => [...best.values()].filter((r) => r >= level).length;
+          const completedDelegates = best.size;
+          const checks = plans.flatMap((p) => p.impactChecks);
+          return {
+            completed: figure(
+              completedDelegates,
+              started,
+              'Delegates with at least one completed plan (every action applied, with evidence), of delegates with a plan.',
+              started ? 'ok' : 'no_response',
+            ),
+            applied: figure(
+              [...best.values()].filter((r) => r === 1).length,
+              completedDelegates,
+              'Delegates whose completed plans show application but no measurable improvement yet, of delegates with a completed plan. Self-reported.',
+              completedDelegates ? 'ok' : 'no_response',
+            ),
+            impactDemonstrated: figure(
+              atLeast(2),
+              completedDelegates,
+              'Delegates reporting a measurable improvement with evidence (including those later sustained), of delegates with a completed plan. Self-reported, with evidence recorded on the plan.',
+              completedDelegates ? 'ok' : 'no_response',
+            ),
+            sustainedImpact: figure(
+              atLeast(3),
+              completedDelegates,
+              'Delegates whose reported improvement a later check found to have continued, of delegates with a completed plan.',
+              completedDelegates ? 'ok' : 'no_response',
+            ),
+            checksWaiting: checks.filter((c) => !c.answeredAt && isoDate(c.dueOn)! <= today).length,
+            checksAnswered: checks.filter((c) => c.answeredAt).length,
+          };
+        })(),
       },
     };
   }

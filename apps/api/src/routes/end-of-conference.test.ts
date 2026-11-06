@@ -418,9 +418,12 @@ describe.skipIf(!hasDatabase)('end-of-conference evaluation', () => {
     });
     expect(dee.context.planStatus).toBe('no');
     // A started plan is reported as started (prefilled on the readiness block).
+    const deePlanId = (
+      await call('get', `/me/events/${eventId}/transfer-plans`, undefined, cookies.dee)
+    ).body.plans[0].id as string;
     await call(
       'put',
-      `/me/events/${eventId}/transfer-plan`,
+      `/me/events/${eventId}/transfer-plans/${deePlanId}`,
       { version: 1, actions: [{ action: 'Define measures first', isPriority: true }] },
       cookies.dee,
     );

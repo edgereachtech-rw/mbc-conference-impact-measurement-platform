@@ -328,6 +328,7 @@ function firstNonNumber(rows: MeasureDraft[]): string | null {
 
 export function MeasuresDialog({
   eventId,
+  planId,
   action,
   version,
   onClose,
@@ -335,6 +336,7 @@ export function MeasuresDialog({
   onStale,
 }: {
   eventId: string;
+  planId: string;
   action: PlanActionView;
   version: number;
   onClose: () => void;
@@ -362,7 +364,7 @@ export function MeasuresDialog({
     setProblem(null);
     try {
       const result = await apiFetch<MyTransferPlan>(
-        `/me/events/${eventId}/transfer-plan/actions/${action.id}/measures`,
+        `/me/events/${eventId}/transfer-plans/${planId}/actions/${action.id}/measures`,
         { method: 'PUT', body: JSON.stringify({ version, measures: measurePayload(rows) }) },
       );
       onSaved(result);
@@ -673,6 +675,7 @@ function evidencePayload(rows: EvidenceDraft[]): EvidenceFields[] {
 
 export function EvidenceDialog({
   eventId,
+  planId,
   action,
   version,
   onClose,
@@ -680,6 +683,7 @@ export function EvidenceDialog({
   onStale,
 }: {
   eventId: string;
+  planId: string;
   action: PlanActionView;
   version: number;
   onClose: () => void;
@@ -706,7 +710,7 @@ export function EvidenceDialog({
     setProblem(null);
     try {
       const result = await apiFetch<MyTransferPlan>(
-        `/me/events/${eventId}/transfer-plan/actions/${action.id}/evidence`,
+        `/me/events/${eventId}/transfer-plans/${planId}/actions/${action.id}/evidence`,
         { method: 'PUT', body: JSON.stringify({ version, evidence: evidencePayload(rows) }) },
       );
       onSaved(result);

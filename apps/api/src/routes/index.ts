@@ -86,7 +86,15 @@ export function apiRouter(deps: ApiDeps): Router {
     feedbackRouter({ prisma: deps.prisma, config: deps.config, middleware, now: deps.now }),
   );
   router.use(
-    transferPlanRouter({ prisma: deps.prisma, config: deps.config, middleware, now: deps.now }),
+    transferPlanRouter({
+      prisma: deps.prisma,
+      config: deps.config,
+      middleware,
+      mailer: deps.mailer,
+      mailConfig: deps.mailConfig,
+      logger: deps.logger,
+      now: deps.now,
+    }),
   );
   router.use(
     meEventsRouter({ prisma: deps.prisma, config: deps.config, middleware, now: deps.now }),

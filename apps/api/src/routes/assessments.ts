@@ -1434,6 +1434,7 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
       // never retypes it (E12-2). Loaded once per request, whichever stages are on screen.
       prisma().transferPlan.findFirst({
         where: { eventId, delegateId },
+        orderBy: { sequence: 'desc' },
         select: {
           status: true,
           actions: {

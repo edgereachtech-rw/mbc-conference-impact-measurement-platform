@@ -7,13 +7,21 @@ import {
   planActionFieldLabels,
   progressDetailPrompt,
   progressNeedsDetail,
+  NO_REMINDERS,
+  planCompletionGaps,
+  planTitleOf,
   reminderFrequencies,
   reminderFrequencyLabels,
+  transferPlanStatusLabels,
+  weekdays,
   type ActionProgressStatus,
   type MyTransferPlan,
+  type MyTransferPlans,
   type PlanActionFields,
   type PlanActionView,
   type ReminderFrequency,
+  type ReminderPreference,
+  type TransferPlanSummary,
 } from '@mbc/shared';
 import {
   AlertCircleIcon,
@@ -39,34 +47,50 @@ interface TransferPlanPanelProps {
   timezone: string;
 }
 
-type State =
+type ListState =
+  | { kind: 'loading' }
+  | { kind: 'ready'; plans: TransferPlanSummary[] }
+  | { kind: 'error'; message: string; requestId?: string };
+
+type PlanState =
   | { kind: 'loading' }
   | { kind: 'ready'; data: MyTransferPlan }
   | { kind: 'error'; message: string; requestId?: string };
 
+/** The plan a delegate most likely wants on arrival: the first still open, else the latest. */
+function defaultPlan(plans: TransferPlanSummary[]): string | null {
+  return plans.find((p) => p.status !== 'completed')?.id ?? plans.at(-1)?.id ?? null;
+}
+
 /**
- * The delegate's Individual Transfer Plan (backlog E9, E10, E12-8 to 12-11): one continuous
- * plan per event, saved as a draft in any Transfer Planning session, submitted once the final
- * session has started, then kept open for changes and progress records. Every save carries the
- * version last seen so two tabs cannot overwrite each other.
+ * The delegate's Individual Transfer Plans (backlog E9, E10, E12-8 to 12-11): one or more plans
+ * per event (2026-11-06), each saved as a draft in any Transfer Planning session, submitted once
+ * the final session has started, kept open for changes and progress records, and marked
+ * completed once every action has a result and evidence. Every save carries the version last
+ * seen so two tabs cannot overwrite each other.
  */
 export function TransferPlanPanel({ eventId, timezone }: TransferPlanPanelProps) {
-  const [state, setState] = useState<State>({ kind: 'loading' });
+  const [list, setList] = useState<ListState>({ kind: 'loading' });
   const [attempt, setAttempt] = useState(0);
+  const [chosen, setChosen] = useState<string | null>(null);
+  const [plan, setPlan] = useState<{ id: string; state: PlanState } | null>(null);
   // Kept outside the editor, which remounts on every new plan version.
   const [notice, setNotice] = useState<string | null>(null);
-  const [done, setDone] = useState(false);
+  const [done, setDone] = useState<'submitted' | 'completed' | null>(null);
+  const [starting, setStarting] = useState<{ title: string; busy: boolean; error?: string } | null>(
+    null,
+  );
 
   useEffect(() => {
     let cancelled = false;
-    apiFetch<MyTransferPlan>(`/me/events/${eventId}/transfer-plan`).then(
+    apiFetch<MyTransferPlans>(`/me/events/${eventId}/transfer-plans`).then(
       (data) => {
-        if (!cancelled) setState({ kind: 'ready', data });
+        if (!cancelled) setList({ kind: 'ready', plans: data.plans });
       },
       (e: unknown) => {
         if (!cancelled) {
-          const failure = describeError(e, 'Your plan could not be loaded.');
-          setState({ kind: 'error', message: failure.message, requestId: failure.requestId });
+          const failure = describeError(e, 'Your plans could not be loaded.');
+          setList({ kind: 'error', message: failure.message, requestId: failure.requestId });
         }
       },
     );
@@ -75,14 +99,77 @@ export function TransferPlanPanel({ eventId, timezone }: TransferPlanPanelProps)
     };
   }, [eventId, attempt]);
 
-  if (state.kind === 'loading') return <StatePanel kind="loading" title="Loading your plan…" />;
-  if (state.kind === 'error') {
+  const plans = list.kind === 'ready' ? list.plans : [];
+  const selected = chosen && plans.some((p) => p.id === chosen) ? chosen : defaultPlan(plans);
+
+  useEffect(() => {
+    if (!selected) return;
+    let cancelled = false;
+    // No loading state is set here: while the ids differ, `current` below is null and the
+    // loading panel shows; a reload of the same plan keeps the old data until the new arrives.
+    apiFetch<MyTransferPlan>(`/me/events/${eventId}/transfer-plans/${selected}`).then(
+      (data) => {
+        if (!cancelled) setPlan({ id: selected, state: { kind: 'ready', data } });
+      },
+      (e: unknown) => {
+        if (!cancelled) {
+          const failure = describeError(e, 'Your plan could not be loaded.');
+          setPlan({
+            id: selected,
+            state: { kind: 'error', message: failure.message, requestId: failure.requestId },
+          });
+        }
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [eventId, selected, attempt]);
+
+  /** The list reflects what the editor just changed: status, title, counts, next reminder. */
+  function refreshList() {
+    apiFetch<MyTransferPlans>(`/me/events/${eventId}/transfer-plans`).then(
+      (data) => setList({ kind: 'ready', plans: data.plans }),
+      () => undefined,
+    );
+  }
+
+  function updated(data: MyTransferPlan, message?: string) {
+    setPlan({ id: data.plan.id, state: { kind: 'ready', data } });
+    setNotice(message ?? null);
+    refreshList();
+  }
+
+  async function startAnother() {
+    if (!starting) return;
+    setStarting({ ...starting, busy: true, error: undefined });
+    try {
+      const created = await apiFetch<MyTransferPlan>(`/me/events/${eventId}/transfer-plans`, {
+        method: 'POST',
+        body: JSON.stringify({ title: starting.title.trim() }),
+      });
+      setStarting(null);
+      setNotice(null);
+      setChosen(created.plan.id);
+      setPlan({ id: created.plan.id, state: { kind: 'ready', data: created } });
+      refreshList();
+    } catch (e) {
+      setStarting({
+        ...starting,
+        busy: false,
+        error: describeError(e, 'The plan could not be started.').message,
+      });
+    }
+  }
+
+  if (list.kind === 'loading') return <StatePanel kind="loading" title="Loading your plans…" />;
+  if (list.kind === 'error') {
     return (
       <StatePanel
         kind="error"
-        title="Plan unavailable"
-        description={state.message}
-        requestId={state.requestId}
+        title="Plans unavailable"
+        description={list.message}
+        requestId={list.requestId}
         action={
           <button
             type="button"
@@ -95,34 +182,162 @@ export function TransferPlanPanel({ eventId, timezone }: TransferPlanPanelProps)
       />
     );
   }
+
+  const current = plan && plan.id === selected ? plan.state : null;
   return (
-    <>
-      <PlanEditor
-        key={state.data.plan.version}
-        eventId={eventId}
-        timezone={timezone}
-        data={state.data}
-        notice={notice}
-        onUpdated={(data, message) => {
-          setState({ kind: 'ready', data });
-          setNotice(message ?? null);
-        }}
-        onSubmitted={(data) => {
-          setState({ kind: 'ready', data });
-          setNotice(null);
-          setDone(true);
-        }}
-        onReload={() => setAttempt((n) => n + 1)}
-      />
+    <div className="space-y-6">
+      <section aria-label="Your plans" className="space-y-3">
+        <ul className="grid gap-3 sm:grid-cols-2">
+          {plans.map((p) => {
+            const open = p.id === selected;
+            return (
+              <li key={p.id}>
+                <button
+                  type="button"
+                  aria-pressed={open}
+                  onClick={() => {
+                    setChosen(p.id);
+                    setNotice(null);
+                  }}
+                  className={`flex w-full min-h-tap flex-col items-start gap-1 border p-3 text-left transition-shadow hover:shadow-elevated ${
+                    open ? 'border-corp-accent border-l-4 bg-white' : 'border-corp-line bg-white'
+                  }`}
+                >
+                  <span className="flex w-full items-center justify-between gap-2">
+                    <span className="font-semibold text-corp-ink">{planTitleOf(p)}</span>
+                    <StatusPill
+                      tone={
+                        p.status === 'completed'
+                          ? 'positive'
+                          : p.status === 'submitted'
+                            ? 'positive'
+                            : 'neutral'
+                      }
+                    >
+                      {transferPlanStatusLabels[p.status]}
+                    </StatusPill>
+                  </span>
+                  <span className="text-xs text-corp-muted">
+                    {p.actions === 1 ? '1 action' : `${p.actions} actions`}
+                    {p.priorityAction ? ` · ${p.priorityAction}` : ''}
+                  </span>
+                  <span className="text-xs text-corp-muted">
+                    {p.status === 'completed' && p.completedAt
+                      ? `Completed ${formatInstant(p.completedAt, timezone)}`
+                      : p.reminder.nextReminderAt
+                        ? `Next reminder ${formatInstant(p.reminder.nextReminderAt, timezone)}`
+                        : 'No reminders'}
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+        {starting ? (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void startAnother();
+            }}
+            className="flex flex-col gap-2 border border-corp-line bg-white p-3 sm:flex-row sm:items-end"
+          >
+            <div className="flex-1 space-y-1">
+              <label htmlFor="new-plan-title" className="text-sm font-semibold text-corp-ink">
+                What is this plan about?
+              </label>
+              <input
+                id="new-plan-title"
+                value={starting.title}
+                maxLength={120}
+                disabled={starting.busy}
+                onChange={(e) => setStarting({ ...starting, title: e.target.value })}
+                placeholder={`Plan ${plans.length + 1}`}
+                className="h-11 w-full rounded-none border border-corp-line bg-white px-3 text-base md:text-sm"
+              />
+              {starting.error ? (
+                <p role="alert" className="text-xs text-brand-danger">
+                  {starting.error}
+                </p>
+              ) : null}
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                disabled={starting.busy}
+                onClick={() => setStarting(null)}
+                className={consoleButton({ variant: 'ghost' })}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={starting.busy}
+                className={consoleButton({ variant: 'accent' })}
+              >
+                {starting.busy ? <Loader2Icon className="animate-spin" aria-hidden="true" /> : null}
+                Start this plan
+              </button>
+            </div>
+          </form>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setStarting({ title: '', busy: false })}
+            className={consoleButton({ variant: 'secondary' })}
+          >
+            <PlusIcon aria-hidden="true" /> Start another plan
+          </button>
+        )}
+      </section>
+
+      {!selected ? (
+        <p className="text-sm text-corp-muted">No plan yet. Start one above.</p>
+      ) : !current || current.kind === 'loading' ? (
+        <StatePanel kind="loading" title="Loading your plan…" />
+      ) : current.kind === 'error' ? (
+        <StatePanel
+          kind="error"
+          title="Plan unavailable"
+          description={current.message}
+          requestId={current.requestId}
+          action={
+            <button
+              type="button"
+              onClick={() => setAttempt((n) => n + 1)}
+              className={consoleButton({ variant: 'secondary' })}
+            >
+              Try again
+            </button>
+          }
+        />
+      ) : (
+        <PlanEditor
+          key={`${current.data.plan.id}:${current.data.plan.version}`}
+          eventId={eventId}
+          timezone={timezone}
+          data={current.data}
+          notice={notice}
+          onUpdated={updated}
+          onSubmitted={(data) => {
+            updated(data);
+            setDone('submitted');
+          }}
+          onCompleted={(data) => {
+            updated(data);
+            setDone('completed');
+          }}
+          onReload={() => setAttempt((n) => n + 1)}
+        />
+      )}
       {done ? (
         <Dialog
-          title="Plan submitted"
-          onClose={() => setDone(false)}
+          title={done === 'completed' ? 'Plan completed' : 'Plan submitted'}
+          onClose={() => setDone(null)}
           size="md"
           footer={
             <button
               type="button"
-              onClick={() => setDone(false)}
+              onClick={() => setDone(null)}
               className={consoleButton({ variant: 'primary' })}
             >
               Close
@@ -130,12 +345,13 @@ export function TransferPlanPanel({ eventId, timezone }: TransferPlanPanelProps)
           }
         >
           <p className="text-sm text-corp-text">
-            Thank you. Your plan is submitted. Come back to this page to record progress on each
-            action and to adjust the plan as things change.
+            {done === 'completed'
+              ? 'Thank you. Your plan is completed, with a result and evidence on every action, and the organisers have been told. Its reminders have stopped. Start another plan whenever you take on something new.'
+              : 'Thank you. Your plan is submitted. Come back to this page to record progress on each action and to adjust the plan as things change.'}
           </p>
         </Dialog>
       ) : null}
-    </>
+    </div>
   );
 }
 
@@ -217,6 +433,7 @@ function PlanEditor({
   notice,
   onUpdated,
   onSubmitted,
+  onCompleted,
   onReload,
 }: {
   eventId: string;
@@ -225,26 +442,49 @@ function PlanEditor({
   notice: string | null;
   onUpdated: (data: MyTransferPlan, message?: string) => void;
   onSubmitted: (data: MyTransferPlan) => void;
+  onCompleted: (data: MyTransferPlan) => void;
   onReload: () => void;
 }) {
   const { plan } = data;
   const [actions, setActions] = useState<ActionDraft[]>(() => plan.actions.map(draftOf));
-  const [frequency, setFrequency] = useState<ReminderFrequency>(plan.reminder.frequency);
-  const [startOn, setStartOn] = useState(plan.reminder.startOn ?? '');
+  const [title, setTitle] = useState(plan.title);
+  const [reminder, setReminder] = useState<ReminderPreference>({
+    frequency: plan.reminder.frequency,
+    startOn: plan.reminder.startOn,
+    endOn: plan.reminder.endOn,
+    time: plan.reminder.time || NO_REMINDERS.time,
+    days: plan.reminder.days,
+  });
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<{ message: string; stale?: boolean } | null>(null);
   const [dialog, setDialog] = useState<
     | null
     | { kind: 'review' }
+    | { kind: 'complete' }
     | { kind: 'progress'; action: PlanActionView }
     | { kind: 'measures'; action: PlanActionView }
     | { kind: 'evidence'; action: PlanActionView }
   >(null);
   const id = useId();
   const submitted = plan.status === 'submitted';
+  /** Completed plans are finished: read-only, reminders stopped (2026-11-06). */
+  const locked = plan.status === 'completed';
   const finalSession = data.sessions.find((s) => s.isFinal);
   const hasContent = actions.some((a) => a.action.trim() !== '');
+  /** What still stands between a submitted plan and completion, from the saved plan. */
+  const gaps = submitted ? planCompletionGaps(plan.actions) : [];
+
+  function setPreference(patch: Partial<ReminderPreference>) {
+    setDirty(true);
+    setReminder((r) => ({ ...r, ...patch }));
+  }
+  function toggleDay(day: number) {
+    const days = reminder.days.includes(day)
+      ? reminder.days.filter((d) => d !== day)
+      : [...reminder.days, day].sort((a, b) => a - b);
+    setPreference({ days });
+  }
 
   function update(key: string, patch: Partial<ActionDraft>) {
     setDirty(true);
@@ -278,14 +518,23 @@ function PlanEditor({
     setBusy(true);
     setFailure(null);
     try {
-      const saved = await apiFetch<MyTransferPlan>(`/me/events/${eventId}/transfer-plan`, {
-        method: 'PUT',
-        body: JSON.stringify({
-          version: plan.version,
-          actions: payloadOf(actions),
-          reminder: { frequency, startOn: startOn || null },
-        }),
-      });
+      const saved = await apiFetch<MyTransferPlan>(
+        `/me/events/${eventId}/transfer-plans/${plan.id}`,
+        {
+          method: 'PUT',
+          body: JSON.stringify({
+            version: plan.version,
+            title: title.trim(),
+            actions: payloadOf(actions),
+            reminder: {
+              ...reminder,
+              startOn: reminder.startOn || null,
+              endOn: reminder.endOn || null,
+              days: reminder.frequency === 'twice_weekly' ? reminder.days : [],
+            },
+          }),
+        },
+      );
       setDirty(false);
       return saved;
     } catch (e) {
@@ -319,10 +568,13 @@ function PlanEditor({
     setBusy(true);
     setFailure(null);
     try {
-      const result = await apiFetch<MyTransferPlan>(`/me/events/${eventId}/transfer-plan/submit`, {
-        method: 'POST',
-        body: JSON.stringify({ version: current.plan.version }),
-      });
+      const result = await apiFetch<MyTransferPlan>(
+        `/me/events/${eventId}/transfer-plans/${plan.id}/submit`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ version: current.plan.version }),
+        },
+      );
       onSubmitted(result);
     } catch (e) {
       setDialog(null);
@@ -333,21 +585,71 @@ function PlanEditor({
     }
   }
 
+  /** Marks the submitted plan completed; the server checks the results and evidence again. */
+  async function complete() {
+    setBusy(true);
+    setFailure(null);
+    try {
+      const result = await apiFetch<MyTransferPlan>(
+        `/me/events/${eventId}/transfer-plans/${plan.id}/complete`,
+        { method: 'POST', body: JSON.stringify({ version: plan.version }) },
+      );
+      setDialog(null);
+      onCompleted(result);
+    } catch (e) {
+      setDialog(null);
+      if (e instanceof ApiError && e.code === 'plan_incomplete') {
+        setFailure({
+          message:
+            'Every action needs a result and evidence before the plan can be completed. Reload the plan to see what is missing.',
+          stale: true,
+        });
+      } else {
+        setFailure(describeError(e, 'Your plan could not be completed.'));
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center gap-2">
-        <StatusPill tone={submitted ? 'positive' : 'neutral'}>
-          {submitted ? 'Submitted' : 'Draft'}
+        <StatusPill tone={submitted || locked ? 'positive' : 'neutral'}>
+          {transferPlanStatusLabels[plan.status]}
         </StatusPill>
         <p className="text-sm text-corp-muted">
-          {submitted
-            ? `Submitted ${formatInstant(plan.submittedAt, timezone)}. You can keep updating it; the organisers keep your original submission.`
-            : data.canSubmit
-              ? 'Save as often as you like, then submit when your plan is ready.'
-              : finalSession
-                ? `Keep saving your draft. You submit from the start of the final Transfer Planning session on ${formatDateShort(finalSession.date)} at ${finalSession.startTime}.`
-                : 'Keep saving your draft until you are ready to submit.'}
+          {locked
+            ? `Completed ${formatInstant(plan.completedAt, timezone)}. This plan is finished and its reminders have stopped; it stays here to read. Start another plan for anything new.`
+            : submitted
+              ? `Submitted ${formatInstant(plan.submittedAt, timezone)}. You can keep updating it; the organisers keep your original submission.`
+              : data.canSubmit
+                ? 'Save as often as you like, then submit when your plan is ready.'
+                : finalSession
+                  ? `Keep saving your draft. You submit from the start of the final Transfer Planning session on ${formatDateShort(finalSession.date)} at ${finalSession.startTime}.`
+                  : 'Keep saving your draft until you are ready to submit.'}
         </p>
+      </div>
+
+      <div className="space-y-1">
+        <label htmlFor={`${id}-title`} className="text-sm font-semibold text-corp-ink">
+          Plan name
+        </label>
+        <p className="text-xs text-corp-muted">
+          Optional. A few words on what this plan is about, so you can tell your plans apart.
+        </p>
+        <input
+          id={`${id}-title`}
+          value={title}
+          maxLength={120}
+          disabled={busy || locked}
+          placeholder={`Plan ${plan.sequence}`}
+          onChange={(e) => {
+            setDirty(true);
+            setTitle(e.target.value);
+          }}
+          className={input}
+        />
       </div>
 
       {data.sessions.length > 0 ? (
@@ -405,7 +707,7 @@ function PlanEditor({
             index={index}
             count={actions.length}
             saved={plan.actions.find((p) => p.id === a.id) ?? null}
-            disabled={busy}
+            disabled={busy || locked}
             onChange={(patch) => update(a.key, patch)}
             onPriority={() => setPriority(a.key)}
             onMove={(delta) => move(a.key, delta)}
@@ -420,7 +722,8 @@ function PlanEditor({
         <button
           type="button"
           onClick={add}
-          disabled={busy}
+          disabled={busy || locked}
+          hidden={locked}
           className={consoleButton({ variant: 'secondary' })}
         >
           <PlusIcon aria-hidden="true" /> Add an action
@@ -435,8 +738,9 @@ function PlanEditor({
           Reminders
         </h3>
         <p className="text-sm text-corp-muted">
-          When and how often would you like to be reminded about your plan? Reminders arrive by
-          email and mention your first priority. Change or stop them here at any time.
+          {locked
+            ? 'This plan is completed, so its reminders have stopped.'
+            : 'When and how often would you like to be reminded about this plan? Reminders arrive by email at the time you choose and mention your first priority. In the last week before they end, the email says so and you can extend them here. Change or stop them at any time.'}
         </p>
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="space-y-1">
@@ -445,12 +749,9 @@ function PlanEditor({
             </label>
             <NativeSelect
               id={`${id}-frequency`}
-              value={frequency}
-              disabled={busy}
-              onChange={(e) => {
-                setDirty(true);
-                setFrequency(e.target.value as ReminderFrequency);
-              }}
+              value={reminder.frequency}
+              disabled={busy || locked}
+              onChange={(e) => setPreference({ frequency: e.target.value as ReminderFrequency })}
               className="rounded-none border-corp-line"
             >
               {reminderFrequencies.map((f) => (
@@ -461,20 +762,81 @@ function PlanEditor({
             </NativeSelect>
           </div>
           <div className="space-y-1">
+            <label htmlFor={`${id}-time`} className="text-sm font-semibold text-corp-ink">
+              At what time
+            </label>
+            <input
+              id={`${id}-time`}
+              type="time"
+              value={reminder.time}
+              disabled={busy || locked || reminder.frequency === 'none'}
+              onChange={(e) => setPreference({ time: e.target.value || NO_REMINDERS.time })}
+              className={input}
+            />
+            <p className="text-xs text-corp-muted">Event time ({timezone}).</p>
+          </div>
+          {reminder.frequency === 'twice_weekly' ? (
+            <fieldset className="space-y-1 sm:col-span-2">
+              <legend className="text-sm font-semibold text-corp-ink">Which two days</legend>
+              <div className="flex flex-wrap gap-2">
+                {weekdays.map((d) => {
+                  const on = reminder.days.includes(d.value);
+                  return (
+                    <label
+                      key={d.value}
+                      className={`inline-flex min-h-10 cursor-pointer items-center gap-2 border px-3 text-sm ${
+                        on
+                          ? 'border-corp-green bg-corp-green-soft text-corp-ink'
+                          : 'border-corp-line bg-white text-corp-text'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={on}
+                        disabled={busy || locked || (!on && reminder.days.length >= 2)}
+                        onChange={() => toggleDay(d.value)}
+                        className="size-4"
+                      />
+                      {d.label}
+                    </label>
+                  );
+                })}
+              </div>
+              {reminder.days.length !== 2 ? (
+                <p className="text-xs text-brand-danger">Choose two days.</p>
+              ) : null}
+            </fieldset>
+          ) : null}
+          <div className="space-y-1">
             <label htmlFor={`${id}-start`} className="text-sm font-semibold text-corp-ink">
               Start from
             </label>
             <input
               id={`${id}-start`}
               type="date"
-              value={startOn}
-              disabled={busy || frequency === 'none'}
-              onChange={(e) => {
-                setDirty(true);
-                setStartOn(e.target.value);
-              }}
+              value={reminder.startOn ?? ''}
+              disabled={busy || locked || reminder.frequency === 'none'}
+              onChange={(e) => setPreference({ startOn: e.target.value || null })}
               className={input}
             />
+            <p className="text-xs text-corp-muted">Leave empty to start right away.</p>
+          </div>
+          <div className="space-y-1">
+            <label htmlFor={`${id}-end`} className="text-sm font-semibold text-corp-ink">
+              Until
+            </label>
+            <input
+              id={`${id}-end`}
+              type="date"
+              value={reminder.endOn ?? ''}
+              min={reminder.startOn ?? undefined}
+              disabled={busy || locked || reminder.frequency === 'none'}
+              onChange={(e) => setPreference({ endOn: e.target.value || null })}
+              className={input}
+            />
+            <p className="text-xs text-corp-muted">
+              Leave empty to keep going until the plan is completed. To extend, pick a later date.
+            </p>
           </div>
         </div>
         {plan.reminder.nextReminderAt ? (
@@ -490,29 +852,77 @@ function PlanEditor({
         ) : null}
       </section>
 
-      <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
-        <button
-          type="button"
-          disabled={busy || !dirty}
-          onClick={() => void saveDraft()}
-          className={consoleButton({
-            variant: submitted || !data.canSubmit ? 'accent' : 'secondary',
-          })}
+      {submitted ? (
+        <section
+          aria-labelledby={`${id}-finish`}
+          className="space-y-3 border border-corp-line bg-white p-4"
         >
-          {busy ? <Loader2Icon className="animate-spin" aria-hidden="true" /> : null}
-          {submitted ? 'Save changes' : 'Save draft'}
-        </button>
-        {!submitted && data.canSubmit ? (
+          <h3 id={`${id}-finish`} className="font-semibold text-corp-ink">
+            Finishing this plan
+          </h3>
+          <p className="text-sm text-corp-muted">
+            A plan is completed once every action has a result (a measure with an actual value, or
+            results in a progress record) and at least one piece of evidence. Completing it stops
+            the reminders, freezes the plan and tells the organisers.
+          </p>
+          {gaps.length > 0 ? (
+            <ul aria-label="Still needed before completion" className="space-y-1 text-sm">
+              {gaps.map((g) => (
+                <li key={g.actionId} className="flex items-start gap-2 text-corp-text">
+                  <AlertCircleIcon
+                    className="mt-0.5 size-4 shrink-0 text-corp-accent-deep"
+                    aria-hidden="true"
+                  />
+                  <span>
+                    <span className="font-semibold text-corp-ink">{g.action}</span>: needs{' '}
+                    {g.missing.map((m) => (m === 'result' ? 'a result' : 'evidence')).join(' and ')}
+                    .
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-corp-green-text">
+              Every action has a result and evidence. You can complete the plan.
+            </p>
+          )}
           <button
             type="button"
-            disabled={busy || !hasContent}
-            onClick={() => setDialog({ kind: 'review' })}
-            className={consoleButton({ variant: 'accent' })}
+            disabled={busy || dirty || gaps.length > 0}
+            onClick={() => setDialog({ kind: 'complete' })}
+            className={consoleButton({ variant: 'primary' })}
           >
-            Submit my plan
+            Mark this plan completed
           </button>
-        ) : null}
-      </div>
+          {dirty ? <p className="text-xs text-corp-muted">Save your changes first.</p> : null}
+        </section>
+      ) : null}
+
+      {locked ? null : (
+        <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            disabled={busy || !dirty}
+            onClick={() => void saveDraft()}
+            className={consoleButton({
+              variant: submitted || !data.canSubmit ? 'accent' : 'secondary',
+            })}
+          >
+            {busy ? <Loader2Icon className="animate-spin" aria-hidden="true" /> : null}
+            {submitted ? 'Save changes' : 'Save draft'}
+          </button>
+          {!submitted && data.canSubmit ? (
+            <button
+              type="button"
+              disabled={busy || !hasContent}
+              onClick={() => setDialog({ kind: 'review' })}
+              className={consoleButton({ variant: 'accent' })}
+            >
+              Submit my plan
+            </button>
+          ) : null}
+        </div>
+      )}
 
       {dialog?.kind === 'review' ? (
         <Dialog
@@ -568,14 +978,57 @@ function PlanEditor({
             ))}
           </ol>
           <p className="mt-4 text-sm text-corp-muted">
-            Reminders: {reminderFrequencyLabels[frequency].toLowerCase()}
-            {frequency !== 'none' && startOn ? ` from ${formatDateShort(startOn)}` : ''}.
+            Reminders: {reminderFrequencyLabels[reminder.frequency].toLowerCase()}
+            {reminder.frequency !== 'none' && reminder.startOn
+              ? ` from ${formatDateShort(reminder.startOn)}`
+              : ''}
+            {reminder.frequency !== 'none' && reminder.endOn
+              ? ` until ${formatDateShort(reminder.endOn)}`
+              : ''}
+            .
+          </p>
+        </Dialog>
+      ) : null}
+
+      {dialog?.kind === 'complete' ? (
+        <Dialog
+          title="Complete this plan?"
+          description="Every action has a result and evidence. Once completed, the plan cannot be changed, its reminders stop, and the organisers are told."
+          onClose={() => setDialog(null)}
+          closeDisabled={busy}
+          footer={
+            <>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => setDialog(null)}
+                className={consoleButton({ variant: 'ghost' })}
+              >
+                Not yet
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void complete()}
+                className={consoleButton({ variant: 'primary' })}
+              >
+                {busy ? <Loader2Icon className="animate-spin" aria-hidden="true" /> : null}
+                Complete the plan
+              </button>
+            </>
+          }
+        >
+          <p className="text-sm text-corp-text">
+            {planTitleOf(plan)}: {plan.actions.filter((a) => a.action.trim()).length} action
+            {plan.actions.filter((a) => a.action.trim()).length === 1 ? '' : 's'}, each with a
+            result and evidence.
           </p>
         </Dialog>
       ) : null}
       {dialog?.kind === 'progress' ? (
         <ProgressDialog
           eventId={eventId}
+          planId={plan.id}
           action={dialog.action}
           onClose={() => setDialog(null)}
           onSaved={(result) => {
@@ -587,6 +1040,7 @@ function PlanEditor({
       {dialog?.kind === 'measures' ? (
         <MeasuresDialog
           eventId={eventId}
+          planId={plan.id}
           action={dialog.action}
           version={plan.version}
           onClose={() => setDialog(null)}
@@ -603,6 +1057,7 @@ function PlanEditor({
       {dialog?.kind === 'evidence' ? (
         <EvidenceDialog
           eventId={eventId}
+          planId={plan.id}
           action={dialog.action}
           version={plan.version}
           onClose={() => setDialog(null)}
@@ -879,11 +1334,13 @@ function ActionCard({
 
 function ProgressDialog({
   eventId,
+  planId,
   action,
   onClose,
   onSaved,
 }: {
   eventId: string;
+  planId: string;
   action: PlanActionView;
   onClose: () => void;
   onSaved: (data: MyTransferPlan) => void;
@@ -908,7 +1365,7 @@ function ProgressDialog({
     setProblem(null);
     try {
       const result = await apiFetch<MyTransferPlan>(
-        `/me/events/${eventId}/transfer-plan/actions/${action.id}/progress`,
+        `/me/events/${eventId}/transfer-plans/${planId}/actions/${action.id}/progress`,
         {
           method: 'POST',
           body: JSON.stringify({

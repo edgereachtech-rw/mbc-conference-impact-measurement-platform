@@ -739,10 +739,18 @@ schedule is ordered so the closing session is last. Submission requires at least
 action with an action text; the "required at submission" list proposed under A5 is **not**
 enforced until confirmed (OQ: confirm which of Q-TP-1, 2, 4, 5, 6, 13, 14 are mandatory). Every
 save after submission keeps the plan's status; version 1 as submitted is kept as a snapshot and
-every later save and progress record is in the audit history. Reminder preferences (E10-1, E10-2,
-E10-5, E10-6, E10-7, E10-8, E10-9) are built with the frequencies none, weekly, every two weeks
-and monthly; "once", "every other day", "twice a week", day and time, channel and end date
-(E10-2 to E10-4) remain open until the reminder content and cadence are confirmed.
+every later save and progress record is in the audit history.
+
+Revision of 2026-11-06 (task of that day): **E9-2 no longer holds as written.** A delegate may
+keep several plans for one event, numbered in order; the first is still created on first access
+and every delegate route takes the plan id. Reminder preferences (E10-1 to E10-3, E10-5 to E10-9)
+are built per plan: none, daily, every other day, twice a week on two chosen weekdays, weekly,
+every two weeks, monthly; a time of day in the event timezone; a start date and an end date; the
+worker stops at the end date and, in the last seven days, sends a "last days" email that asks the
+delegate to complete the plan or extend the reminders. "Once" and the channel (E10-4) stay open.
+A submitted plan is **completed** only when every written action has a result and evidence;
+completion freezes it, stops its reminders, is audited and emails every active admin. E9-9's
+"completed meaning a submitted plan" is now "submitted or completed"; counts are per delegate.
 
 ---
 
@@ -750,11 +758,11 @@ and monthly; "once", "every other day", "twice a week", day and time, channel an
 
 | ID | Story | Acceptance criteria | Pri | Inc |
 |---|---|---|---|---|
-| E10-1 | As a delegate, I want to set when reminders begin | Start date | P0 | 4 |
-| E10-2 | As a delegate, I want to choose frequency | Once; every other day; twice a week (choose days); weekly; every two weeks; monthly | P0 | 4 |
-| E10-3 | As a delegate, I want a preferred day and time | Day/time (where applicable) with my timezone; stored in UTC | P0 | 4 |
+| E10-1 | As a delegate, I want to set when reminders begin | **Done 2026-11-06.** Start date per plan | P0 | 4 |
+| E10-2 | As a delegate, I want to choose frequency | **Done 2026-11-06** except "once": daily; every other day; twice a week (two chosen weekdays); weekly; every two weeks; monthly | P0 | 4 |
+| E10-3 | As a delegate, I want a preferred day and time | **Done 2026-11-06.** Weekdays for twice a week, a time of day in the event timezone; the next send is stored in UTC | P0 | 4 |
 | E10-4 | As a delegate, I want to choose the channel | Email at launch; model supports further channels (SMS, WhatsApp) later | P0 | 4 |
-| E10-5 | As a delegate, I want to set an end date or stop reminders | Optional end date; "stop reminders" action; resume possible | P0 | 4 |
+| E10-5 | As a delegate, I want to set an end date or stop reminders | **Done 2026-11-06.** Optional end date; frequency "none" stops them; a later end date extends them; completing the plan stops them for good | P0 | 4 |
 | E10-6 | As a delegate, I want to change my preferences from my account | Includes setting reminders at the end-of-conference stage (S4) and as part of follow-ups | P0 | 4 |
 | E10-7 | As the platform, I record preferences and each reminder sent | `reminder_preference` (with history) and `reminder_log` (time, channel, status, provider message ID) | P0 | 5 |
 | E10-8 | As the platform, I send reminders on schedule | Worker sends due reminders; **idempotent** (never sent twice, even if the worker restarts or overlaps); retries on failure; stops at end date or when stopped | P0 | 5 |

@@ -4,7 +4,13 @@ export type { EmailBranding, EmailButton, EmailContent, RenderedEmail } from './
 export { renderLayout, escapeHtml } from './layout.js';
 
 export type TemplateName =
-  'invitation' | 'magic-link' | 'test-delivery' | 'admin-message' | 'transfer-plan-reminder';
+  | 'invitation'
+  | 'magic-link'
+  | 'test-delivery'
+  | 'admin-message'
+  | 'transfer-plan-reminder'
+  | 'transfer-plan-completed'
+  | 'transfer-plan-impact-check';
 
 /** Formats an expiry for humans: "15 minutes", "7 days". */
 function describeDuration(minutes: number): string {
@@ -143,6 +149,13 @@ export interface TransferPlanReminderInput {
   planUrl: string;
   /** How often the delegate chose to be reminded, in words ("every two weeks"). */
   frequency: string;
+  /** What the delegate calls the plan ("Plan 2", "Coaching rollout"). */
+  planTitle?: string;
+  /**
+   * Set during the last seven days of the reminder window (2026-11-06): the email says the
+   * reminders are about to stop and asks the delegate to complete the plan or extend them.
+   */
+  finalWeek?: { endsOn: string };
 }
 
 /** A reminder the delegate asked for: a nudge to record progress on their plan. */
@@ -150,21 +163,68 @@ export function renderTransferPlanReminder(
   branding: EmailBranding,
   input: TransferPlanReminderInput,
 ): RenderedEmail {
+  const plan = input.planTitle ? `your plan '${input.planTitle}'` : 'the plan you made';
   const paragraphs = [
     input.recipientName ? `Hello ${input.recipientName},` : 'Hello,',
-    `You asked to be reminded ${input.frequency} about the plan you made at ${branding.eventName}. Take two minutes to record where each action stands: what you have tried, what is working, and what has changed.`,
+    `You asked to be reminded ${input.frequency} about ${plan} at ${branding.eventName}. Take two minutes to record where each action stands: what you have tried, what is working, and what has changed.`,
   ];
   if (input.priorityAction) {
     paragraphs.push(`Your first priority: ${input.priorityAction}`);
   }
+  if (input.finalWeek) {
+    paragraphs.push(
+      `These are the last days of your reminders: they stop after ${input.finalWeek.endsOn}. If the plan is done, record each action's result and evidence and mark it completed. If you need more time, extend the reminders on your plan page.`,
+    );
+  }
   return renderLayout(branding, {
-    subject: `How is your ${branding.eventName} plan going?`,
-    preheader: 'A reminder you asked for: record progress on your plan.',
+    subject: input.finalWeek
+      ? `Last days of reminders for your ${branding.eventName} plan`
+      : `How is your ${branding.eventName} plan going?`,
+    preheader: input.finalWeek
+      ? 'Your reminders end soon: complete the plan or extend them.'
+      : 'A reminder you asked for: record progress on your plan.',
     eyebrow: 'Transfer plan',
-    title: 'Record your progress',
+    title: input.finalWeek
+      ? 'Complete your plan, or extend your reminders'
+      : 'Record your progress',
     paragraphs,
     button: { label: 'Open my plan', url: input.planUrl },
     notes: ['You can change how often you hear from us, or stop reminders, on your plan page.'],
+  });
+}
+
+export interface TransferPlanCompletedInput {
+  delegateName: string;
+  planTitle: string;
+  /** Written actions on the plan. */
+  actions: number;
+  /** What the delegate reported: applied with no measurable improvement yet, or impact demonstrated. */
+  outcome: string;
+  /** Absolute link to the organisers' transfer plan list for the event. */
+  adminUrl: string;
+}
+
+/**
+ * To the organisers when a delegate marks a plan completed (2026-11-06): who, which plan, how
+ * many actions, and where to read it. Never the plan's text, which belongs on the admin page.
+ */
+export function renderTransferPlanCompleted(
+  branding: EmailBranding,
+  input: TransferPlanCompletedInput,
+): RenderedEmail {
+  return renderLayout(branding, {
+    subject: `${input.delegateName} completed a transfer plan (${branding.eventName})`,
+    preheader: `${input.planTitle}: every action has a result and evidence.`,
+    eyebrow: 'Transfer plan',
+    title: 'A plan is completed',
+    paragraphs: [
+      `${input.delegateName} has marked "${input.planTitle}" completed for ${branding.eventName}. ${
+        input.actions === 1 ? 'Its one action was' : `Its ${input.actions} actions were`
+      } applied, with evidence.`,
+      `What it has shown so far, as the delegate reports it: ${input.outcome}. Impact checks will ask later whether an improvement appeared or lasted.`,
+      'Open the plan to read the evidence and results as the delegate recorded them.',
+    ],
+    button: { label: 'Open transfer plans', url: input.adminUrl },
   });
 }
 
@@ -266,3 +326,38 @@ export const templates = {
   'follow-up-invitation': renderFollowUpInvitation,
   'session-feedback': renderSessionFeedback,
 } as const;
+
+export interface ImpactCheckInput {
+  recipientName?: string;
+  planTitle: string;
+  /** The plan's outcome so far, in words. */
+  outcome: string;
+  /** True when the plan has shown an improvement: the check asks whether it has continued. */
+  sustaining: boolean;
+  /** Absolute link to the delegate's plan page. */
+  planUrl: string;
+}
+
+/**
+ * An impact check after a plan is completed (2026-11-06): has a measurable improvement appeared
+ * since, or has the one reported continued? Sent once per check; answered on the plan page.
+ */
+export function renderImpactCheck(branding: EmailBranding, input: ImpactCheckInput): RenderedEmail {
+  const question = input.sustaining
+    ? `When you completed "${input.planTitle}" you reported a measurable improvement. Has it continued? Tell us, with the evidence you have, on your plan page.`
+    : `When you completed "${input.planTitle}" you had not yet seen a measurable improvement. Has one appeared since? Tell us either way, with the evidence you have, on your plan page.`;
+  return renderLayout(branding, {
+    subject: input.sustaining
+      ? `Has the improvement from your ${branding.eventName} plan continued?`
+      : `Any measurable improvement from your ${branding.eventName} plan yet?`,
+    preheader: 'A short impact check on your completed plan.',
+    eyebrow: 'Transfer plan',
+    title: input.sustaining ? 'Has the improvement lasted?' : 'Has an improvement appeared?',
+    paragraphs: [
+      input.recipientName ? `Hello ${input.recipientName},` : 'Hello,',
+      question,
+      `So far your plan stands as: ${input.outcome}. "No measurable improvement yet" is a valid answer; it is what the evidence shows that counts.`,
+    ],
+    button: { label: 'Answer on my plan page', url: input.planUrl },
+  });
+}

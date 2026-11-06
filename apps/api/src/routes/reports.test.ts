@@ -450,10 +450,17 @@ describe.skipIf(!hasDatabase)('event dashboards and reports', () => {
     );
     expect(adaEnd.status, adaEnd.text).toBe(200);
 
-    // Transfer plans: Dee submitted, Ada draft with content.
+    // Transfer plans: Dee submitted, Ada draft with content. Each delegate's first plan is
+    // created by the list (2026-11-06); the saves address it by id.
+    const deePlanId = (
+      await call('get', `/me/events/${eventId}/transfer-plans`, undefined, cookies.dee)
+    ).body.plans[0].id as string;
+    const adaPlanId = (
+      await call('get', `/me/events/${eventId}/transfer-plans`, undefined, cookies.ada)
+    ).body.plans[0].id as string;
     const deePlan = await call(
       'put',
-      `/me/events/${eventId}/transfer-plan`,
+      `/me/events/${eventId}/transfer-plans/${deePlanId}`,
       {
         version: 1,
         actions: [
@@ -472,7 +479,7 @@ describe.skipIf(!hasDatabase)('event dashboards and reports', () => {
     expect(deePlan.status, deePlan.text).toBe(200);
     const submitted = await call(
       'post',
-      `/me/events/${eventId}/transfer-plan/submit`,
+      `/me/events/${eventId}/transfer-plans/${deePlanId}/submit`,
       { version: deePlan.body.plan.version },
       cookies.dee,
     );
@@ -480,14 +487,14 @@ describe.skipIf(!hasDatabase)('event dashboards and reports', () => {
     const [a1, a2] = submitted.body.plan.actions as Array<{ id: string }>;
     const progress = await call(
       'post',
-      `/me/events/${eventId}/transfer-plan/actions/${a1!.id}/progress`,
+      `/me/events/${eventId}/transfer-plans/${deePlanId}/actions/${a1!.id}/progress`,
       { status: 'applied', note: 'Briefed them', challenges: 'Diary clashes' },
       cookies.dee,
     );
     expect(progress.status, progress.text).toBe(201);
     const measures = await call(
       'put',
-      `/me/events/${eventId}/transfer-plan/actions/${a2!.id}/measures`,
+      `/me/events/${eventId}/transfer-plans/${deePlanId}/actions/${a2!.id}/measures`,
       {
         version: progress.body.plan.version,
         measures: [
@@ -510,7 +517,7 @@ describe.skipIf(!hasDatabase)('event dashboards and reports', () => {
     expect(measures.status, measures.text).toBe(200);
     const evidence = await call(
       'put',
-      `/me/events/${eventId}/transfer-plan/actions/${a1!.id}/evidence`,
+      `/me/events/${eventId}/transfer-plans/${deePlanId}/actions/${a1!.id}/evidence`,
       {
         version: measures.body.plan.version,
         evidence: [
@@ -527,7 +534,7 @@ describe.skipIf(!hasDatabase)('event dashboards and reports', () => {
     expect(evidence.status, evidence.text).toBe(200);
     const adaPlan = await call(
       'put',
-      `/me/events/${eventId}/transfer-plan`,
+      `/me/events/${eventId}/transfer-plans/${adaPlanId}`,
       {
         version: 1,
         actions: [{ action: 'Try the checklist', isPriority: true }],

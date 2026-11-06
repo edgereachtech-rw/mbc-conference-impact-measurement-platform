@@ -9,7 +9,12 @@ import { z } from 'zod';
  * feedback and the assessments. Nothing here assumes a number of days or sessions.
  */
 
-export const transferPlanStatuses = ['draft', 'submitted'] as const;
+export const transferPlanStatuses = ['draft', 'submitted', 'completed'] as const;
+export const transferPlanStatusLabels: Record<TransferPlanStatus, string> = {
+  draft: 'Draft',
+  submitted: 'Submitted',
+  completed: 'Completed',
+};
 export type TransferPlanStatus = (typeof transferPlanStatuses)[number];
 
 export const actionProgressStatuses = [
@@ -50,14 +55,36 @@ export const progressDetailPrompt: Record<ActionProgressStatus, string | null> =
 export const progressNeedsDetail = (status: ActionProgressStatus) =>
   progressDetailPrompt[status] !== null;
 
-export const reminderFrequencies = ['none', 'weekly', 'fortnightly', 'monthly'] as const;
+export const reminderFrequencies = [
+  'none',
+  'daily',
+  'every_other_day',
+  'twice_weekly',
+  'weekly',
+  'fortnightly',
+  'monthly',
+] as const;
 export type ReminderFrequency = (typeof reminderFrequencies)[number];
 export const reminderFrequencyLabels: Record<ReminderFrequency, string> = {
   none: 'No reminders',
+  daily: 'Every day',
+  every_other_day: 'Every other day',
+  twice_weekly: 'Twice a week, on days I choose',
   weekly: 'Every week',
   fortnightly: 'Every two weeks',
   monthly: 'Every month',
 };
+
+/** ISO weekdays, for the twice-weekly choice. */
+export const weekdays = [
+  { value: 1, label: 'Monday' },
+  { value: 2, label: 'Tuesday' },
+  { value: 3, label: 'Wednesday' },
+  { value: 4, label: 'Thursday' },
+  { value: 5, label: 'Friday' },
+  { value: 6, label: 'Saturday' },
+  { value: 7, label: 'Sunday' },
+] as const;
 
 /** A delegate's own pre-event answer shown back beside the plan, read-only. */
 export const referenceAnswerSchema = z.object({
@@ -91,20 +118,66 @@ export const planActionFieldsSchema = z.object({
 });
 export type PlanActionFields = z.infer<typeof planActionFieldsSchema>;
 
+const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/**
+ * How and when a delegate wants to be reminded about one plan (backlog E10-1 to E10-5, built
+ * 2026-11-06): a frequency, the window it runs in (start and end dates, both optional), the
+ * time of day in the event's timezone, and for "twice a week" the two weekdays.
+ */
+export const reminderPreferenceSchema = z
+  .object({
+    frequency: z.enum(reminderFrequencies).default('none'),
+    startOn: optionalDay,
+    endOn: optionalDay,
+    time: z.string().regex(HHMM, 'Use a time like 09:00.').default('09:00'),
+    /** ISO weekdays, 1 = Monday to 7 = Sunday; exactly two for twice_weekly, else ignored. */
+    days: z.array(z.number().int().min(1).max(7)).max(7).default([]),
+  })
+  .superRefine((r, ctx) => {
+    if (r.frequency === 'none') return;
+    if (r.frequency === 'twice_weekly' && new Set(r.days).size !== 2) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['days'],
+        message: 'Choose two different days of the week.',
+      });
+    }
+    if (r.startOn && r.endOn && r.endOn < r.startOn) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['endOn'],
+        message: 'The end date cannot be before the start date.',
+      });
+    }
+  });
+export type ReminderPreference = z.infer<typeof reminderPreferenceSchema>;
+export const NO_REMINDERS: ReminderPreference = {
+  frequency: 'none',
+  startOn: null,
+  endOn: null,
+  time: '09:00',
+  days: [],
+};
+
 export const transferPlanSaveSchema = z.object({
   /** The version the client last saw; a save against an older version is refused. */
   version: z.number().int().min(1),
+  /** What the delegate calls this plan; empty means "Plan n"; left out, it is unchanged. */
+  title: z.string().trim().max(120).optional(),
   actions: z.array(planActionFieldsSchema).max(50),
-  reminder: z
-    .object({
-      frequency: z.enum(reminderFrequencies).default('none'),
-      startOn: optionalDay,
-    })
-    .default({ frequency: 'none', startOn: null }),
+  reminder: reminderPreferenceSchema.default(NO_REMINDERS),
 });
 export type TransferPlanSave = z.infer<typeof transferPlanSaveSchema>;
 
+/** A further plan for the same event (2026-11-06): a delegate may keep several. */
+export const transferPlanCreateSchema = z.object({
+  title: z.string().trim().max(120).default(''),
+});
+
 export const transferPlanSubmitSchema = z.object({ version: z.number().int().min(1) });
+/** Marks a submitted plan finished; refused until every action has a result and evidence. */
+export const transferPlanCompleteSchema = z.object({ version: z.number().int().min(1) });
 
 export const actionProgressSchema = z
   .object({
@@ -435,21 +508,56 @@ export const transferPlanningSessionSchema = z.object({
   isFinal: z.boolean(),
 });
 
+export const reminderViewSchema = z.object({
+  frequency: z.enum(reminderFrequencies),
+  startOn: z.string().nullable(),
+  endOn: z.string().nullable(),
+  time: z.string(),
+  days: z.array(z.number().int()),
+  nextReminderAt: z.string().nullable(),
+});
+export type ReminderView = z.infer<typeof reminderViewSchema>;
+
 export const transferPlanViewSchema = z.object({
   id: z.uuid(),
   eventId: z.uuid(),
+  /** The n-th plan the delegate made for this event, from 1. */
+  sequence: z.number().int(),
+  /** The delegate's own name for the plan; empty means "Plan n". */
+  title: z.string(),
   status: z.enum(transferPlanStatuses),
   version: z.number().int(),
   submittedAt: z.string().nullable(),
+  completedAt: z.string().nullable(),
   updatedAt: z.string(),
-  reminder: z.object({
-    frequency: z.enum(reminderFrequencies),
-    startOn: z.string().nullable(),
-    nextReminderAt: z.string().nullable(),
-  }),
+  reminder: reminderViewSchema,
   actions: z.array(planActionViewSchema),
 });
 export type TransferPlanView = z.infer<typeof transferPlanViewSchema>;
+
+/** The name a plan is shown under: its title, else "Plan n". */
+export const planTitleOf = (p: { sequence: number; title: string }) =>
+  p.title.trim() || `Plan ${p.sequence}`;
+
+/** One of the delegate's plans in the list, without its actions. */
+export const transferPlanSummarySchema = z.object({
+  id: z.uuid(),
+  sequence: z.number().int(),
+  title: z.string(),
+  status: z.enum(transferPlanStatuses),
+  actions: z.number().int(),
+  priorityAction: z.string().nullable(),
+  submittedAt: z.string().nullable(),
+  completedAt: z.string().nullable(),
+  updatedAt: z.string(),
+  reminder: reminderViewSchema,
+});
+export type TransferPlanSummary = z.infer<typeof transferPlanSummarySchema>;
+
+export const myTransferPlansSchema = z.object({
+  plans: z.array(transferPlanSummarySchema),
+});
+export type MyTransferPlans = z.infer<typeof myTransferPlansSchema>;
 
 export const myTransferPlanSchema = z.object({
   plan: transferPlanViewSchema,
@@ -474,7 +582,12 @@ export const transferPlanListItemSchema = z.object({
     organisation: z.string().nullable(),
     attendanceFormat: z.enum(['physical', 'virtual']),
   }),
+  /** One row per plan: a delegate with three plans has three rows (2026-11-06). */
+  planId: z.uuid(),
+  sequence: z.number().int(),
+  title: z.string(),
   status: z.enum(transferPlanStatuses),
+  completedAt: z.string().nullable(),
   actions: z.number().int(),
   priorityAction: z.string().nullable(),
   submittedAt: z.string().nullable(),
@@ -531,19 +644,166 @@ export type TransferPlanAdminDetail = z.infer<typeof transferPlanAdminDetailSche
 // ------------------------------------------------------------------ helpers
 
 /** The next reminder after `from`, by frequency; null when reminders are off. */
+// ------------------------------------------------------------------ reminder scheduling
+
+const DAY_MS = 86_400_000;
+
+/** The calendar date (YYYY-MM-DD) of an instant in a timezone. */
+export function dateIn(at: Date, timezone: string): string {
+  try {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(at);
+  } catch {
+    return at.toISOString().slice(0, 10);
+  }
+}
+
+/** The zone's offset from UTC, in minutes, at an instant (positive east of Greenwich). */
+function offsetMinutesAt(at: Date, timezone: string): number {
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      hourCycle: 'h23',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    }).formatToParts(at);
+    const get = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? 0);
+    const asUtc = Date.UTC(
+      get('year'),
+      get('month') - 1,
+      get('day'),
+      get('hour'),
+      get('minute'),
+      get('second'),
+    );
+    return Math.round((asUtc - at.getTime()) / 60_000);
+  } catch {
+    return 0;
+  }
+}
+
+/** The instant of a calendar date at a wall-clock time (HH:mm) in a timezone. */
+export function instantOf(date: string, time: string, timezone: string): Date {
+  const [y, mo, d] = date.split('-').map(Number) as [number, number, number];
+  const [h, mi] = time.split(':').map(Number) as [number, number];
+  const wall = Date.UTC(y, mo - 1, d, h, mi);
+  // Two passes settle on the right offset either side of a daylight-saving change.
+  let at = wall;
+  for (let i = 0; i < 2; i++) at = wall - offsetMinutesAt(new Date(at), timezone) * 60_000;
+  return new Date(at);
+}
+
+const addDays = (date: string, days: number) =>
+  new Date(new Date(`${date}T00:00:00.000Z`).getTime() + days * DAY_MS).toISOString().slice(0, 10);
+const daysBetween = (from: string, to: string) =>
+  Math.round(
+    (new Date(`${to}T00:00:00.000Z`).getTime() - new Date(`${from}T00:00:00.000Z`).getTime()) /
+      DAY_MS,
+  );
+/** ISO weekday of a date, 1 = Monday to 7 = Sunday. */
+const isoWeekday = (date: string) => new Date(`${date}T00:00:00.000Z`).getUTCDay() || 7;
+const daysInMonth = (date: string) =>
+  new Date(Date.UTC(Number(date.slice(0, 4)), Number(date.slice(5, 7)), 0)).getUTCDate();
+
+/** Whether a reminder falls on `day`, counting from the window's first day. */
+function reminderDueOn(pref: ReminderPreference, day: string, first: string): boolean {
+  const diff = daysBetween(first, day);
+  switch (pref.frequency) {
+    case 'daily':
+      return true;
+    case 'every_other_day':
+      return diff % 2 === 0;
+    case 'twice_weekly':
+      return pref.days.includes(isoWeekday(day));
+    case 'weekly':
+      return diff % 7 === 0;
+    case 'fortnightly':
+      return diff % 14 === 0;
+    case 'monthly': {
+      // The same day of the month as the first reminder, or the month's last day when it is shorter.
+      const wanted = Math.min(Number(first.slice(8, 10)), daysInMonth(day));
+      return Number(day.slice(8, 10)) === wanted;
+    }
+    default:
+      return false;
+  }
+}
+
+/**
+ * When the next reminder goes out, strictly after `from`: the first day on or after the start
+ * (today when none is set) that the frequency lands on, at the chosen time of day in the event's
+ * timezone, and never after the end date. Null when reminders are off or the window has closed.
+ * The start date anchors the cadence, so a weekly reminder keeps its weekday across sends.
+ */
 export function nextReminderAfter(
-  frequency: ReminderFrequency,
+  pref: ReminderPreference,
   from: Date,
-  startOn: string | null | undefined,
+  timezone: string,
 ): Date | null {
-  if (frequency === 'none') return null;
-  const start = startOn ? new Date(`${startOn}T08:00:00.000Z`) : null;
-  if (start && start > from) return start;
-  const next = new Date(from);
-  if (frequency === 'weekly') next.setUTCDate(next.getUTCDate() + 7);
-  else if (frequency === 'fortnightly') next.setUTCDate(next.getUTCDate() + 14);
-  else next.setUTCMonth(next.getUTCMonth() + 1);
-  return next;
+  if (pref.frequency === 'none') return null;
+  const time = pref.time || '09:00';
+  const today = dateIn(from, timezone);
+  const first = pref.startOn ?? today;
+  const begin = first > today ? first : today;
+  // Two months covers every frequency; monthly from the 31st lands within it.
+  for (let i = 0; i <= 62; i++) {
+    const day = addDays(begin, i);
+    if (pref.endOn && day > pref.endOn) return null;
+    if (!reminderDueOn(pref, day, first)) continue;
+    const at = instantOf(day, time, timezone);
+    if (at > from) return at;
+  }
+  return null;
+}
+
+/** The last seven days of a reminder window, when the email says so and offers an extension. */
+export function inFinalReminderWeek(
+  pref: Pick<ReminderPreference, 'endOn'>,
+  at: Date,
+  timezone: string,
+): boolean {
+  if (!pref.endOn) return false;
+  return dateIn(at, timezone) >= addDays(pref.endOn, -6);
+}
+
+// ------------------------------------------------------------------ completion
+
+export type CompletionGap = 'result' | 'evidence';
+
+/**
+ * What a plan still lacks before it can be marked completed (2026-11-06): every action with
+ * text needs a result (a measure with an actual value, or a progress record with results) and
+ * at least one evidence record. Empty when the plan is ready.
+ */
+export function planCompletionGaps(
+  actions: ReadonlyArray<{
+    id: string;
+    action: string;
+    measures: ReadonlyArray<{ status: MeasureStatus; actualValue: string }>;
+    evidenceRecords: ReadonlyArray<{ description: string }>;
+    progress: ReadonlyArray<{ results: string | null }>;
+  }>,
+): Array<{ actionId: string; action: string; missing: CompletionGap[] }> {
+  const gaps: Array<{ actionId: string; action: string; missing: CompletionGap[] }> = [];
+  for (const a of actions) {
+    if (!a.action.trim()) continue;
+    const missing: CompletionGap[] = [];
+    const hasResult =
+      a.measures.some((m) => m.status === 'identified' && m.actualValue.trim() !== '') ||
+      a.progress.some((p) => (p.results ?? '').trim() !== '');
+    if (!hasResult) missing.push('result');
+    if (!a.evidenceRecords.some((e) => e.description.trim() !== '')) missing.push('evidence');
+    if (missing.length) gaps.push({ actionId: a.id, action: a.action, missing });
+  }
+  return gaps;
 }
 
 /**

@@ -78,33 +78,61 @@ describe('EventDetail', () => {
       'fetch',
       vi.fn(async (url: string) => {
         calls.push(url);
-        const body = url.endsWith('/transfer-plan')
+        const reminder = {
+          frequency: 'none',
+          startOn: null,
+          endOn: null,
+          time: '09:00',
+          days: [],
+          nextReminderAt: null,
+        };
+        const body = url.endsWith('/transfer-plans')
           ? {
-              plan: {
-                id: '11111111-1111-4111-8111-111111111111',
-                eventId: '22222222-2222-4222-8222-222222222222',
-                status: 'draft',
-                version: 1,
-                submittedAt: null,
-                updatedAt: '2026-11-12T10:00:00.000Z',
-                reminder: { frequency: 'none', startOn: null, nextReminderAt: null },
-                actions: [],
-              },
-              sessions: [],
-              canSubmit: false,
-              references: [],
-              reminders: [],
+              plans: [
+                {
+                  id: '11111111-1111-4111-8111-111111111111',
+                  sequence: 1,
+                  title: '',
+                  status: 'draft',
+                  actions: 0,
+                  priorityAction: null,
+                  submittedAt: null,
+                  completedAt: null,
+                  updatedAt: '2026-11-12T10:00:00.000Z',
+                  reminder,
+                },
+              ],
             }
-          : url.endsWith('/assessments')
+          : url.includes('/transfer-plans/')
             ? {
-                // Three stages, served out of journey order: the tabs put them in it.
-                assessments: [
-                  form('follow_up', 1, '30-day follow-up', 'not_yet_open'),
-                  form('end_of_conference', 1, '', 'not_yet_open'),
-                  form('pre_conference', 1, '', 'open'),
-                ],
+                plan: {
+                  id: '11111111-1111-4111-8111-111111111111',
+                  eventId: '22222222-2222-4222-8222-222222222222',
+                  sequence: 1,
+                  title: '',
+                  status: 'draft',
+                  version: 1,
+                  submittedAt: null,
+                  completedAt: null,
+                  updatedAt: '2026-11-12T10:00:00.000Z',
+                  reminder,
+                  actions: [],
+                },
+                sessions: [],
+                canSubmit: false,
+                references: [],
+                reminders: [],
               }
-            : { reflections: [], sessions: [] };
+            : url.endsWith('/assessments')
+              ? {
+                  // Three stages, served out of journey order: the tabs put them in it.
+                  assessments: [
+                    form('follow_up', 1, '30-day follow-up', 'not_yet_open'),
+                    form('end_of_conference', 1, '', 'not_yet_open'),
+                    form('pre_conference', 1, '', 'open'),
+                  ],
+                }
+              : { reflections: [], sessions: [] };
         return new Response(JSON.stringify(body), {
           status: 200,
           headers: { 'content-type': 'application/json' },
@@ -136,7 +164,7 @@ describe('EventDetail', () => {
       within(tabs).getByRole('tab', { name: 'Transfer plan' }).getAttribute('aria-selected'),
     ).toBe('true');
     expect(screen.queryByRole('region', { name: 'Event' })).toBeNull();
-    expect(calls).toContain('/api/v1/me/events/e1/transfer-plan');
+    expect(calls).toContain('/api/v1/me/events/e1/transfer-plans');
     expect(calls).toContain('/api/v1/me/events/e1/assessments');
 
     await user.click(within(tabs).getByRole('tab', { name: '30-day follow-up' }));

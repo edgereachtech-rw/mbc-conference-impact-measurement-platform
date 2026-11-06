@@ -72,11 +72,11 @@ export async function planStatusFor(
   eventId: string,
   delegateId: string,
 ): Promise<PlanStatusValue> {
-  const plan = await db.transferPlan.findUnique({
-    where: { eventId_delegateId: { eventId, delegateId } },
+  // Several plans per delegate (2026-11-06): any submitted or completed one counts as "yes".
+  const plans = await db.transferPlan.findMany({
+    where: { eventId, delegateId },
     select: { status: true, actions: { select: { action: true } } },
   });
-  if (!plan) return 'no';
-  if (plan.status === 'submitted') return 'yes';
-  return planHasContent(plan.actions) ? 'started' : 'no';
+  if (plans.some((p) => p.status === 'submitted' || p.status === 'completed')) return 'yes';
+  return plans.some((p) => planHasContent(p.actions)) ? 'started' : 'no';
 }

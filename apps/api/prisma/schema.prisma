@@ -117,8 +117,31 @@ enum FeedbackQuestionType {
 enum TransferPlanStatus {
   draft
   submitted
+  completed
 
   @@map("transfer_plan_status")
+}
+
+/// What a completed plan has shown so far (2026-11-06): applied with no measurable improvement
+/// yet, an improvement demonstrated with evidence, or that improvement sustained over time. Set
+/// from what the delegate reports and records; never inferred from completion alone.
+enum PlanOutcome {
+  pending
+  applied
+  impact_demonstrated
+  sustained_impact
+
+  @@map("plan_outcome")
+}
+
+/// A delegate's answer to an impact check after completion.
+enum ImpactCheckAnswer {
+  not_yet
+  improved
+  sustained
+  faded
+
+  @@map("impact_check_answer")
 }
 
 /// Progress of one planned action (backlog E12-8, Appendix B). "Started", "in progress" and
@@ -138,6 +161,9 @@ enum ActionProgressStatus {
 
 enum ReminderFrequency {
   none
+  daily
+  every_other_day
+  twice_weekly
   weekly
   fortnightly
   monthly
@@ -771,6 +797,18 @@ model TransferPlan {
   submittedSnapshot Json?              @map("submitted_snapshot")
   reminderFrequency ReminderFrequency  @default(none) @map("reminder_frequency")
   reminderStartOn   DateTime?          @map("reminder_start_on") @db.Date
+  /// The reminder window ends here (inclusive); null runs until the plan is completed or stopped.
+  reminderEndOn     DateTime?          @map("reminder_end_on") @db.Date
+  /// Time of day the reminder goes out, HH:mm in the event timezone.
+  reminderTime      String             @default("09:00") @map("reminder_time")
+  /// ISO weekdays (1 = Monday … 7 = Sunday) for the twice-weekly frequency; empty otherwise.
+  reminderDays      Int[]              @default([]) @map("reminder_days") @db.SmallInt
+  /// Several plans per delegate (2026-11-06): the n-th plan they made for this event.
+  sequence          Int                @default(1)
+  title             String             @default("")
+  completedAt       DateTime?          @map("completed_at") @db.Timestamptz(3)
+  outcome           PlanOutcome        @default(pending)
+  outcomeNote       String             @default("") @map("outcome_note")
   nextReminderAt    DateTime?          @map("next_reminder_at") @db.Timestamptz(3)
   updatedByUserId   String?            @map("updated_by_user_id") @db.Uuid
   createdAt         DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
@@ -780,8 +818,10 @@ model TransferPlan {
   delegate  Delegate                  @relation(fields: [delegateId], references: [id], onDelete: Cascade)
   actions   TransferPlanAction[]
   reminders TransferPlanReminderLog[]
+  impactChecks TransferPlanImpactCheck[]
 
-  @@unique([eventId, delegateId])
+  @@unique([eventId, delegateId, sequence])
+  @@index([eventId, delegateId])
   @@index([nextReminderAt])
   @@map("transfer_plan")
 }
@@ -921,6 +961,8 @@ model TransferPlanReminderLog {
   scheduledFor DateTime  @map("scheduled_for") @db.Timestamptz(3)
   sentAt       DateTime? @map("sent_at") @db.Timestamptz(3)
   status       String
+  /// "reminder", or "final_week" for the last-days notice before the window closes.
+  kind         String    @default("reminder")
   error        String?
   createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
 
@@ -1598,4 +1640,26 @@ model AuthAttempt {
   @@index([emailHash, attemptedAt])
   @@index([ipHash, attemptedAt])
   @@map("auth_attempt")
+}
+
+/// Impact assessment and sustainability after completion (2026-11-06): a check falls due some
+/// days after completion (and after each answer that keeps the question open), the delegate is
+/// emailed once, and answers whether an improvement has appeared, continued or faded.
+model TransferPlanImpactCheck {
+  id         String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  planId     String             @map("plan_id") @db.Uuid
+  round      Int
+  dueOn      DateTime           @map("due_on") @db.Date
+  notifiedAt DateTime?          @map("notified_at") @db.Timestamptz(3)
+  answeredAt DateTime?          @map("answered_at") @db.Timestamptz(3)
+  answer     ImpactCheckAnswer?
+  note       String             @default("")
+  evidence   String             @default("")
+  createdAt  DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  plan TransferPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@unique([planId, round])
+  @@index([dueOn])
+  @@map("transfer_plan_impact_check")
 }

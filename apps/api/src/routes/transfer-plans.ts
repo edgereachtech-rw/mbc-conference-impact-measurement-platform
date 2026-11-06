@@ -5,22 +5,38 @@ import {
   evidenceSupports,
   measureSummaries,
   measuresSaveSchema,
+  addDaysTo,
+  dateIn,
+  IMPACT_CHECK_DAYS,
+  IMPACT_CHECK_ROUNDS,
+  impactCheckAnswerSchema,
+  impactCheckAnswersFor,
   nextReminderAfter,
+  planCompletionGaps,
   planHasContent,
+  planHasResult,
+  planOutcomeLabels,
+  planTitleOf,
   referenceQuestionsSaveSchema,
   summariseMeasures,
+  transferPlanCompleteSchema,
+  transferPlanCreateSchema,
   transferPlanSaveSchema,
   transferPlanSubmitSchema,
   type ActionProgressStatus,
   type EvidenceSupport,
   type EvidenceView,
+  type ImpactCheckView,
   type MeasureReportRow,
   type MeasureSummary,
   type MeasureView,
   type MyTransferPlan,
+  type MyTransferPlans,
   type PlanActionView,
+  type PlanOutcome,
   type TransferPlanAdminDetail,
   type TransferPlanListItem,
+  type TransferPlanSummary,
   type TransferPlanView,
 } from '@mbc/shared';
 import { Router, type NextFunction, type Request, type Response } from 'express';
@@ -34,11 +50,20 @@ import type { Prisma } from '../generated/prisma/client.js';
 import { referenceAnswersFor } from '../assessments/references.js';
 import { audit } from '../lib/audit.js';
 import { HttpError } from '../lib/errors.js';
+import type { Logger } from '../lib/logger.js';
+import { brandingForEvent } from '../mail/branding.js';
+import type { MailConfig } from '../mail/config.js';
+import type { Mailer } from '../mail/mailer.js';
+import { renderTransferPlanCompleted } from '../mail/templates/index.js';
 
 interface Deps {
   prisma: () => PrismaClient;
   config: AuthConfig;
   middleware: ReturnType<typeof createAuthMiddleware>;
+  /** For the note to the organisers when a delegate completes a plan (2026-11-06). */
+  mailer?: () => Mailer;
+  mailConfig?: () => MailConfig;
+  logger?: Logger;
   now?: () => Date;
 }
 
@@ -77,6 +102,7 @@ const PLAN_INCLUDE = {
     include: ACTION_INCLUDE,
   },
   reminders: { orderBy: { createdAt: 'desc' }, take: 20 },
+  impactChecks: { orderBy: { round: 'asc' } },
 } satisfies Prisma.TransferPlanInclude;
 type PlanRow = Prisma.TransferPlanGetPayload<{ include: typeof PLAN_INCLUDE }>;
 export type ActionRow = PlanRow['actions'][number];
@@ -179,22 +205,59 @@ function actionViewOf(a: ActionRow): PlanActionView {
   };
 }
 
+function reminderViewOf(p: {
+  reminderFrequency: PlanRow['reminderFrequency'];
+  reminderStartOn: Date | null;
+  reminderEndOn: Date | null;
+  reminderTime: string;
+  reminderDays: number[];
+  nextReminderAt: Date | null;
+}) {
+  return {
+    frequency: p.reminderFrequency,
+    startOn: isoDate(p.reminderStartOn),
+    endOn: isoDate(p.reminderEndOn),
+    time: p.reminderTime,
+    days: p.reminderDays,
+    nextReminderAt: iso(p.nextReminderAt),
+  };
+}
+
 export function planViewOf(p: PlanRow): TransferPlanView {
   return {
     id: p.id,
     eventId: p.eventId,
+    sequence: p.sequence,
+    title: p.title,
     status: p.status,
     version: p.version,
     submittedAt: iso(p.submittedAt),
+    completedAt: iso(p.completedAt),
+    outcome: p.outcome,
+    outcomeNote: p.outcomeNote,
+    impactChecks: p.impactChecks.map(impactCheckViewOf),
     updatedAt: p.updatedAt.toISOString(),
-    reminder: {
-      frequency: p.reminderFrequency,
-      startOn: isoDate(p.reminderStartOn),
-      nextReminderAt: iso(p.nextReminderAt),
-    },
+    reminder: reminderViewOf(p),
     actions: p.actions.map(actionViewOf),
   };
 }
+
+function impactCheckViewOf(c: PlanRow['impactChecks'][number]): ImpactCheckView {
+  return {
+    id: c.id,
+    round: c.round,
+    dueOn: isoDate(c.dueOn)!,
+    notifiedAt: iso(c.notifiedAt),
+    answeredAt: iso(c.answeredAt),
+    answer: c.answer,
+    note: c.note,
+    evidence: c.evidence,
+  };
+}
+
+/** An impact check that has fallen due and has no answer yet, as of `today` (YYYY-MM-DD). */
+const checkDueOn = (p: PlanRow, today: string) =>
+  p.impactChecks.some((c) => !c.answeredAt && isoDate(c.dueOn)! <= today);
 
 /**
  * Individual Transfer Plans: one per delegate per event, created on first access, saved as a
@@ -202,7 +265,15 @@ export function planViewOf(p: PlanRow): TransferPlanView {
  * for progress and changes afterwards. Admins review; delegates see only their own. Nothing
  * here records attendance. Plan text is never logged.
  */
-export function transferPlanRouter({ prisma, config, middleware, now }: Deps): Router {
+export function transferPlanRouter({
+  prisma,
+  config,
+  middleware,
+  mailer,
+  mailConfig,
+  logger,
+  now,
+}: Deps): Router {
   const router = Router();
   const clock = now ?? (() => new Date());
   const guard = middleware.requireRole(...EVENT_SETUP_ROLES);
@@ -300,21 +371,88 @@ export function transferPlanRouter({ prisma, config, middleware, now }: Deps): R
   const referencesFor = (eventId: string, delegateId: string) =>
     referenceAnswersFor(prisma(), eventId, delegateId);
 
-  async function loadOrCreatePlan(eventId: string, delegateId: string) {
-    const existing = await prisma().transferPlan.findUnique({
-      where: { eventId_delegateId: { eventId, delegateId } },
-      include: PLAN_INCLUDE,
+  /**
+   * A delegate may keep several plans for one event (2026-11-06). The first is created on first
+   * access, as before, so the plan page is never empty; further ones are created on request.
+   */
+  async function ensureFirstPlan(eventId: string, delegateId: string) {
+    const count = await prisma().transferPlan.count({ where: { eventId, delegateId } });
+    if (count === 0) {
+      await prisma().transferPlan.create({ data: { eventId, delegateId, sequence: 1 } });
+    }
+  }
+
+  async function createPlan(eventId: string, delegateId: string, title: string) {
+    const last = await prisma().transferPlan.aggregate({
+      where: { eventId, delegateId },
+      _max: { sequence: true },
     });
-    if (existing) return existing;
     return prisma().transferPlan.create({
-      data: { eventId, delegateId },
+      data: { eventId, delegateId, sequence: (last._max.sequence ?? 0) + 1, title },
       include: PLAN_INCLUDE,
     });
   }
 
-  async function myView(eventId: string, delegateId: string): Promise<MyTransferPlan> {
+  /** One of the delegate's own plans; anyone else's id is simply "not found". */
+  async function loadPlan(eventId: string, delegateId: string, planId: string) {
+    if (!UUID.test(planId)) throw new HttpError(404, 'not_found', 'Plan not found.');
+    const plan = await prisma().transferPlan.findFirst({
+      where: { id: planId, eventId, delegateId },
+      include: PLAN_INCLUDE,
+    });
+    if (!plan) throw new HttpError(404, 'not_found', 'Plan not found.');
+    return plan;
+  }
+
+  /** A completed plan is finished: its results and evidence stand as recorded. */
+  function assertEditable(plan: { status: PlanRow['status'] }) {
+    if (plan.status === 'completed') {
+      throw new HttpError(
+        409,
+        'plan_completed',
+        'This plan is completed and can no longer be changed. Start a new plan for further actions.',
+      );
+    }
+  }
+
+  function summaryOf(p: PlanRow, today: string): TransferPlanSummary {
+    return {
+      id: p.id,
+      sequence: p.sequence,
+      title: p.title,
+      status: p.status,
+      actions: p.actions.filter((a) => a.action.trim() !== '').length,
+      priorityAction: (p.actions.find((a) => a.isPriority) ?? p.actions[0])?.action.trim() || null,
+      submittedAt: iso(p.submittedAt),
+      completedAt: iso(p.completedAt),
+      outcome: p.outcome,
+      checkDue: checkDueOn(p, today),
+      updatedAt: p.updatedAt.toISOString(),
+      reminder: reminderViewOf(p),
+    };
+  }
+
+  async function myPlans(eventId: string, delegateId: string): Promise<MyTransferPlans> {
+    await ensureFirstPlan(eventId, delegateId);
+    const [plans, event] = await Promise.all([
+      prisma().transferPlan.findMany({
+        where: { eventId, delegateId },
+        orderBy: { sequence: 'asc' },
+        include: PLAN_INCLUDE,
+      }),
+      prisma().event.findUniqueOrThrow({ where: { id: eventId }, select: { timezone: true } }),
+    ]);
+    const today = dateIn(clock(), event.timezone);
+    return { plans: plans.map((p) => summaryOf(p, today)) };
+  }
+
+  async function myView(
+    eventId: string,
+    delegateId: string,
+    planId: string,
+  ): Promise<MyTransferPlan> {
     const [plan, event] = await Promise.all([
-      loadOrCreatePlan(eventId, delegateId),
+      loadPlan(eventId, delegateId, planId),
       prisma().event.findUniqueOrThrow({ where: { id: eventId }, select: { timezone: true } }),
     ]);
     const { sessions, canSubmit } = await canSubmitAt(eventId, event.timezone, clock());
@@ -331,21 +469,103 @@ export function transferPlanRouter({ prisma, config, middleware, now }: Deps): R
     };
   }
 
+  /** The organisers hear of every completed plan (2026-11-06); a mail failure never undoes it. */
+  async function notifyAdminsOfCompletion(
+    plan: PlanRow,
+    delegateName: string,
+    outcome: PlanOutcome,
+  ) {
+    if (!mailer || !mailConfig) return;
+    const [event, admins] = await Promise.all([
+      prisma().event.findUniqueOrThrow({
+        where: { id: plan.eventId },
+        select: {
+          id: true,
+          name: true,
+          startsOn: true,
+          endsOn: true,
+          timezone: true,
+          location: true,
+        },
+      }),
+      prisma().userAccount.findMany({
+        where: { role: 'admin', status: 'active' },
+        select: { email: true },
+      }),
+    ]);
+    if (admins.length === 0) return;
+    const branding = brandingForEvent(mailConfig(), event);
+    const rendered = renderTransferPlanCompleted(branding, {
+      delegateName,
+      planTitle: planTitleOf(plan),
+      actions: plan.actions.filter((a) => a.action.trim() !== '').length,
+      outcome: planOutcomeLabels[outcome],
+      adminUrl: `${config.appUrl.replace(/\/$/, '')}/admin/events/${event.id}#transfer-plans`,
+    });
+    let sent = 0;
+    for (const admin of admins) {
+      try {
+        await mailer().send({
+          to: admin.email,
+          subject: rendered.subject,
+          html: rendered.html,
+          text: rendered.text,
+        });
+        sent += 1;
+      } catch (error) {
+        logger?.warn({ err: error }, 'transfer plan completion notice failed');
+      }
+    }
+    logger?.info({ admins: admins.length, sent }, 'transfer plan completion notices');
+  }
+
   // ---------------------------------------------------------------- delegate
 
-  router.get('/me/events/:eventId/transfer-plan', middleware.requireAuth, async (req, res) => {
+  router.get('/me/events/:eventId/transfer-plans', middleware.requireAuth, async (req, res) => {
     const { delegate } = await myRegistration(res, String(req.params.eventId));
-    res.json(await myView(delegate.eventId, delegate.id));
+    res.json(await myPlans(delegate.eventId, delegate.id));
   });
 
+  router.post(
+    '/me/events/:eventId/transfer-plans',
+    middleware.requireAuth,
+    validated(transferPlanCreateSchema),
+    async (req, res) => {
+      const { principal, delegate } = await myRegistration(res, String(req.params.eventId));
+      const { title } = req.body as z.infer<typeof transferPlanCreateSchema>;
+      await ensureFirstPlan(delegate.eventId, delegate.id);
+      const plan = await createPlan(delegate.eventId, delegate.id, title);
+      await audit(prisma(), {
+        action: 'transfer_plan.created',
+        entityType: 'transfer_plan',
+        entityId: plan.id,
+        eventId: delegate.eventId,
+        actorUserId: principal.userId,
+        newValue: { sequence: plan.sequence },
+        ...clientOf(res),
+      });
+      res.status(201).json(await myView(delegate.eventId, delegate.id, plan.id));
+    },
+  );
+
+  router.get(
+    '/me/events/:eventId/transfer-plans/:planId',
+    middleware.requireAuth,
+    async (req, res) => {
+      const { delegate } = await myRegistration(res, String(req.params.eventId));
+      res.json(await myView(delegate.eventId, delegate.id, String(req.params.planId)));
+    },
+  );
+
   router.put(
-    '/me/events/:eventId/transfer-plan',
+    '/me/events/:eventId/transfer-plans/:planId',
     middleware.requireAuth,
     validated(transferPlanSaveSchema),
     async (req, res) => {
       const { principal, delegate } = await myRegistration(res, String(req.params.eventId));
       const input = req.body as z.infer<typeof transferPlanSaveSchema>;
-      const plan = await loadOrCreatePlan(delegate.eventId, delegate.id);
+      const plan = await loadPlan(delegate.eventId, delegate.id, String(req.params.planId));
+      assertEditable(plan);
       if (input.version !== plan.version) {
         throw new HttpError(
           409,
@@ -373,11 +593,17 @@ export function transferPlanRouter({ prisma, config, middleware, now }: Deps): R
       const at = clock();
       const keepIds = new Set(actions.filter((a) => a.id).map((a) => a.id!));
       const removed = plan.actions.filter((a) => !keepIds.has(a.id)).map((a) => a.id);
-      const nextReminderAt = nextReminderAfter(
-        input.reminder.frequency,
-        at,
-        input.reminder.startOn,
-      );
+      const event = await prisma().event.findUniqueOrThrow({
+        where: { id: delegate.eventId },
+        select: { timezone: true },
+      });
+      const reminder = {
+        ...input.reminder,
+        startOn: input.reminder.startOn ?? null,
+        endOn: input.reminder.endOn ?? null,
+        days: input.reminder.frequency === 'twice_weekly' ? [...input.reminder.days].sort() : [],
+      };
+      const nextReminderAt = nextReminderAfter(reminder, at, event.timezone);
       const saved = await prisma().$transaction(async (tx) => {
         if (removed.length) {
           await tx.transferPlanAction.deleteMany({
@@ -410,8 +636,12 @@ export function transferPlanRouter({ prisma, config, middleware, now }: Deps): R
           where: { id: plan.id },
           data: {
             version: plan.version + 1,
-            reminderFrequency: input.reminder.frequency,
-            reminderStartOn: dayOf(input.reminder.startOn),
+            title: input.title,
+            reminderFrequency: reminder.frequency,
+            reminderStartOn: dayOf(reminder.startOn),
+            reminderEndOn: dayOf(reminder.endOn),
+            reminderTime: reminder.time,
+            reminderDays: reminder.days,
             nextReminderAt,
             updatedByUserId: principal.userId,
           },
@@ -435,18 +665,19 @@ export function transferPlanRouter({ prisma, config, middleware, now }: Deps): R
         return row;
       });
       void saved;
-      res.json(await myView(delegate.eventId, delegate.id));
+      res.json(await myView(delegate.eventId, delegate.id, plan.id));
     },
   );
 
   router.post(
-    '/me/events/:eventId/transfer-plan/submit',
+    '/me/events/:eventId/transfer-plans/:planId/submit',
     middleware.requireAuth,
     validated(transferPlanSubmitSchema),
     async (req, res) => {
       const { principal, delegate } = await myRegistration(res, String(req.params.eventId));
       const { version } = req.body as z.infer<typeof transferPlanSubmitSchema>;
-      const plan = await loadOrCreatePlan(delegate.eventId, delegate.id);
+      const plan = await loadPlan(delegate.eventId, delegate.id, String(req.params.planId));
+      assertEditable(plan);
       if (plan.status === 'submitted') {
         throw new HttpError(
           409,
@@ -501,19 +732,20 @@ export function transferPlanRouter({ prisma, config, middleware, now }: Deps): R
           ...clientOf(res),
         });
       });
-      res.json(await myView(delegate.eventId, delegate.id));
+      res.json(await myView(delegate.eventId, delegate.id, plan.id));
     },
   );
 
   router.post(
-    '/me/events/:eventId/transfer-plan/actions/:actionId/progress',
+    '/me/events/:eventId/transfer-plans/:planId/actions/:actionId/progress',
     middleware.requireAuth,
     validated(actionProgressSchema),
     async (req, res) => {
       const { principal, delegate } = await myRegistration(res, String(req.params.eventId));
       const actionId = String(req.params.actionId);
       if (!UUID.test(actionId)) throw new HttpError(404, 'not_found', 'Action not found.');
-      const plan = await loadOrCreatePlan(delegate.eventId, delegate.id);
+      const plan = await loadPlan(delegate.eventId, delegate.id, String(req.params.planId));
+      assertEditable(plan);
       const action = plan.actions.find((a) => a.id === actionId);
       if (!action) throw new HttpError(404, 'not_found', 'Action not found.');
       const input = req.body as z.infer<typeof actionProgressSchema>;
@@ -554,15 +786,16 @@ export function transferPlanRouter({ prisma, config, middleware, now }: Deps): R
           ...clientOf(res),
         });
       });
-      res.status(201).json(await myView(delegate.eventId, delegate.id));
+      res.status(201).json(await myView(delegate.eventId, delegate.id, plan.id));
     },
   );
 
   /** The delegate's own action, by id, with the plan it belongs to. */
-  async function myAction(res: Response, eventId: string, actionId: string) {
+  async function myAction(res: Response, eventId: string, planId: string, actionId: string) {
     const { principal, delegate } = await myRegistration(res, eventId);
     if (!UUID.test(actionId)) throw new HttpError(404, 'not_found', 'Action not found.');
-    const plan = await loadOrCreatePlan(delegate.eventId, delegate.id);
+    const plan = await loadPlan(delegate.eventId, delegate.id, planId);
+    assertEditable(plan);
     const action = plan.actions.find((a) => a.id === actionId);
     if (!action) throw new HttpError(404, 'not_found', 'Action not found.');
     return { principal, delegate, plan, action };
@@ -579,13 +812,14 @@ export function transferPlanRouter({ prisma, config, middleware, now }: Deps): R
   // ids are kept, and an actual result that changes leaves the earlier one behind as a reading.
   // Saving bumps the plan's version like any other change; no second plan is ever created.
   router.put(
-    '/me/events/:eventId/transfer-plan/actions/:actionId/measures',
+    '/me/events/:eventId/transfer-plans/:planId/actions/:actionId/measures',
     middleware.requireAuth,
     validated(measuresSaveSchema),
     async (req, res) => {
       const { principal, delegate, plan, action } = await myAction(
         res,
         String(req.params.eventId),
+        String(req.params.planId),
         String(req.params.actionId),
       );
       const input = req.body as z.infer<typeof measuresSaveSchema>;
@@ -670,20 +904,21 @@ export function transferPlanRouter({ prisma, config, middleware, now }: Deps): R
           ...clientOf(res),
         });
       });
-      res.json(await myView(delegate.eventId, delegate.id));
+      res.json(await myView(delegate.eventId, delegate.id, plan.id));
     },
   );
 
   // Evidence of application on one action (backlog E14-3 to E14-5): descriptions, their type,
   // date and whether each is self-reported or supported by another source. No file is taken.
   router.put(
-    '/me/events/:eventId/transfer-plan/actions/:actionId/evidence',
+    '/me/events/:eventId/transfer-plans/:planId/actions/:actionId/evidence',
     middleware.requireAuth,
     validated(evidenceSaveSchema),
     async (req, res) => {
       const { principal, delegate, plan, action } = await myAction(
         res,
         String(req.params.eventId),
+        String(req.params.planId),
         String(req.params.actionId),
       );
       const input = req.body as z.infer<typeof evidenceSaveSchema>;
@@ -737,7 +972,193 @@ export function transferPlanRouter({ prisma, config, middleware, now }: Deps): R
           ...clientOf(res),
         });
       });
-      res.json(await myView(delegate.eventId, delegate.id));
+      res.json(await myView(delegate.eventId, delegate.id, plan.id));
+    },
+  );
+
+  /**
+   * Marks a submitted plan completed (2026-11-06): every written action must carry a result and
+   * evidence, or the gaps come back for the delegate to fill. Completion stops the reminders,
+   * freezes the plan and tells the organisers.
+   */
+  router.post(
+    '/me/events/:eventId/transfer-plans/:planId/complete',
+    middleware.requireAuth,
+    validated(transferPlanCompleteSchema),
+    async (req, res) => {
+      const { principal, delegate } = await myRegistration(res, String(req.params.eventId));
+      const { version, improvement, note } = req.body as z.infer<typeof transferPlanCompleteSchema>;
+      const plan = await loadPlan(delegate.eventId, delegate.id, String(req.params.planId));
+      assertEditable(plan);
+      if (plan.status !== 'submitted') {
+        throw new HttpError(409, 'not_submitted', 'Submit the plan before completing it.');
+      }
+      if (version !== plan.version) {
+        throw new HttpError(
+          409,
+          'stale_plan',
+          'Your plan changed since you opened it. Reload it first.',
+        );
+      }
+      // Completion shows application: every written action carried out, with evidence.
+      const gaps = planCompletionGaps(plan.actions);
+      if (gaps.length) {
+        res.status(422).json({
+          error: {
+            code: 'plan_incomplete',
+            message:
+              'Every action needs to be applied, with evidence, before the plan can be completed.',
+            requestId: String(res.getHeader('x-request-id') ?? ''),
+          },
+          gaps,
+        });
+        return;
+      }
+      // Impact is the delegate's own report, never read off completion. A claimed improvement
+      // needs a recorded result somewhere on the plan to stand on.
+      if (improvement === 'seen' && !planHasResult(plan.actions)) {
+        throw new HttpError(
+          422,
+          'result_missing',
+          'To report a measurable improvement, record the result on at least one action first (a measure with an actual value, or results on a progress record).',
+        );
+      }
+      const outcome: PlanOutcome = improvement === 'seen' ? 'impact_demonstrated' : 'applied';
+      const at = clock();
+      const event = await prisma().event.findUniqueOrThrow({
+        where: { id: delegate.eventId },
+        select: { timezone: true },
+      });
+      await prisma().$transaction(async (tx) => {
+        await tx.transferPlan.update({
+          where: { id: plan.id },
+          data: {
+            status: 'completed',
+            completedAt: at,
+            outcome,
+            outcomeNote: note,
+            version: plan.version + 1,
+            reminderFrequency: 'none',
+            nextReminderAt: null,
+            updatedByUserId: principal.userId,
+            // The first impact check: has the improvement appeared (or continued) since?
+            impactChecks: {
+              create: {
+                round: 1,
+                dueOn: dayOf(addDaysTo(dateIn(at, event.timezone), IMPACT_CHECK_DAYS))!,
+              },
+            },
+          },
+        });
+        await audit(tx, {
+          action: 'transfer_plan.completed',
+          entityType: 'transfer_plan',
+          entityId: plan.id,
+          eventId: delegate.eventId,
+          actorUserId: principal.userId,
+          newValue: { actions: plan.actions.length, version: plan.version + 1, outcome },
+          ...clientOf(res),
+        });
+      });
+      const who = await prisma().delegate.findUniqueOrThrow({
+        where: { id: delegate.id },
+        select: { name: true },
+      });
+      try {
+        await notifyAdminsOfCompletion(plan, who.name, outcome);
+      } catch (error) {
+        // The plan is completed either way; the organisers can still see it on their list.
+        logger?.warn({ err: error }, 'transfer plan completion notice not sent');
+      }
+      res.json(await myView(delegate.eventId, delegate.id, plan.id));
+    },
+  );
+
+  /**
+   * The delegate answers an impact check (2026-11-06): from "applied", whether a measurable
+   * improvement has appeared; from "impact demonstrated", whether it has continued. The answer
+   * moves the outcome only in the direction the evidence supports, and a further check is
+   * scheduled while the question is still open and rounds remain.
+   */
+  router.post(
+    '/me/events/:eventId/transfer-plans/:planId/impact-checks/:checkId',
+    middleware.requireAuth,
+    validated(impactCheckAnswerSchema),
+    async (req, res) => {
+      const { principal, delegate } = await myRegistration(res, String(req.params.eventId));
+      const input = req.body as z.infer<typeof impactCheckAnswerSchema>;
+      const plan = await loadPlan(delegate.eventId, delegate.id, String(req.params.planId));
+      const checkId = String(req.params.checkId);
+      const check = UUID.test(checkId) ? plan.impactChecks.find((c) => c.id === checkId) : null;
+      if (!check) throw new HttpError(404, 'not_found', 'Impact check not found.');
+      if (plan.status !== 'completed') {
+        throw new HttpError(409, 'not_completed', 'Complete the plan before an impact check.');
+      }
+      if (check.answeredAt) {
+        throw new HttpError(409, 'already_answered', 'This check is already answered.');
+      }
+      if (!impactCheckAnswersFor(plan.outcome).includes(input.answer)) {
+        throw new HttpError(
+          422,
+          'validation_failed',
+          'answer: that answer does not apply to this plan at this point.',
+        );
+      }
+      const at = clock();
+      const event = await prisma().event.findUniqueOrThrow({
+        where: { id: delegate.eventId },
+        select: { timezone: true },
+      });
+      const outcome: PlanOutcome =
+        input.answer === 'improved'
+          ? 'impact_demonstrated'
+          : input.answer === 'sustained'
+            ? 'sustained_impact'
+            : plan.outcome;
+      // Another check while the question is open: an improvement not yet seen, or one newly
+      // seen that may or may not last. A sustained or faded improvement ends the checks.
+      const another =
+        (input.answer === 'not_yet' || input.answer === 'improved') &&
+        check.round < IMPACT_CHECK_ROUNDS;
+      await prisma().$transaction(async (tx) => {
+        await tx.transferPlanImpactCheck.update({
+          where: { id: check.id },
+          data: {
+            answeredAt: at,
+            answer: input.answer,
+            note: input.note,
+            evidence: input.evidence,
+          },
+        });
+        await tx.transferPlan.update({
+          where: { id: plan.id },
+          data: {
+            outcome,
+            version: plan.version + 1,
+            updatedByUserId: principal.userId,
+            ...(another
+              ? {
+                  impactChecks: {
+                    create: {
+                      round: check.round + 1,
+                      dueOn: dayOf(addDaysTo(dateIn(at, event.timezone), IMPACT_CHECK_DAYS))!,
+                    },
+                  },
+                }
+              : {}),
+          },
+        });
+        await audit(tx, {
+          action: 'transfer_plan.impact_check',
+          entityType: 'transfer_plan',
+          entityId: plan.id,
+          eventId: delegate.eventId,
+          actorUserId: principal.userId,
+          newValue: { round: check.round, answer: input.answer, outcome, another },
+          ...clientOf(res),
+        });
+      });
+      res.json(await myView(delegate.eventId, delegate.id, plan.id));
     },
   );
 
@@ -771,8 +1192,9 @@ export function transferPlanRouter({ prisma, config, middleware, now }: Deps): R
           },
         },
       },
-      orderBy: [{ updatedAt: 'desc' }],
+      orderBy: [{ updatedAt: 'desc' }, { sequence: 'asc' }],
     });
+    // One row per plan (2026-11-06): a delegate with several plans appears once per plan.
     const items: TransferPlanListItem[] = plans.map((p) => {
       const progress = Object.fromEntries(actionProgressStatuses.map((s) => [s, 0])) as Record<
         ActionProgressStatus,
@@ -788,7 +1210,12 @@ export function transferPlanRouter({ prisma, config, middleware, now }: Deps): R
       }
       return {
         delegate: p.delegate,
+        planId: p.id,
+        sequence: p.sequence,
+        title: p.title,
         status: p.status,
+        completedAt: iso(p.completedAt),
+        outcome: p.outcome,
         actions: p.actions.length,
         priorityAction: (p.actions.find((a) => a.isPriority) ?? p.actions[0])?.action || null,
         submittedAt: iso(p.submittedAt),
@@ -857,8 +1284,12 @@ export function transferPlanRouter({ prisma, config, middleware, now }: Deps): R
     const event = await loadEvent(String(req.params.eventId));
     const delegateId = String(req.params.delegateId);
     if (!UUID.test(delegateId)) throw new HttpError(404, 'not_found', 'Plan not found.');
+    // `?plan=<id>` picks one of the delegate's plans; without it, their latest (2026-11-06).
+    const wanted = typeof req.query.plan === 'string' ? req.query.plan : null;
+    if (wanted && !UUID.test(wanted)) throw new HttpError(404, 'not_found', 'Plan not found.');
     const plan = await prisma().transferPlan.findFirst({
-      where: { eventId: event.id, delegateId },
+      where: { eventId: event.id, delegateId, ...(wanted ? { id: wanted } : {}) },
+      orderBy: { sequence: 'desc' },
       include: { ...PLAN_INCLUDE, delegate: { select: DELEGATE_SELECT } },
     });
     if (!plan) throw new HttpError(404, 'not_found', 'Plan not found.');

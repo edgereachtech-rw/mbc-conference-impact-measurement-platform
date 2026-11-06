@@ -1,5 +1,5 @@
-import type { MyTransferPlan, PlanActionView } from '@mbc/shared';
-import { render, screen, within } from '@testing-library/react';
+import type { MyTransferPlan, PlanActionView, TransferPlanSummary } from '@mbc/shared';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -8,6 +8,7 @@ import { TransferPlanPanel } from './transfer-plan-panel';
 afterEach(() => vi.unstubAllGlobals());
 
 const PLAN = '11111111-1111-4111-8111-111111111111';
+const PLAN2 = '11111111-1111-4111-8111-222222222222';
 const EVENT = '22222222-2222-4222-8222-222222222222';
 const ACTION = '33333333-3333-4333-8333-333333333333';
 const SESSION = '44444444-4444-4444-8444-444444444444';
@@ -42,16 +43,28 @@ function action(partial: Partial<PlanActionView> = {}): PlanActionView {
   };
 }
 
+const NO_REMINDER = {
+  frequency: 'none' as const,
+  startOn: null,
+  endOn: null,
+  time: '09:00',
+  days: [],
+  nextReminderAt: null,
+};
+
 function plan(partial: Partial<MyTransferPlan> = {}): MyTransferPlan {
   return {
     plan: {
       id: PLAN,
       eventId: EVENT,
+      sequence: 1,
+      title: '',
       status: 'draft',
       version: 1,
       submittedAt: null,
+      completedAt: null,
       updatedAt: '2026-11-12T10:00:00.000Z',
-      reminder: { frequency: 'none', startOn: null, nextReminderAt: null },
+      reminder: NO_REMINDER,
       actions: [],
     },
     sessions: [
@@ -83,18 +96,57 @@ function plan(partial: Partial<MyTransferPlan> = {}): MyTransferPlan {
   };
 }
 
+/** The list entry the API would derive from a plan. */
+function summaryOf(p: MyTransferPlan): TransferPlanSummary {
+  return {
+    id: p.plan.id,
+    sequence: p.plan.sequence,
+    title: p.plan.title,
+    status: p.plan.status,
+    actions: p.plan.actions.filter((a) => a.action.trim()).length,
+    priorityAction: p.plan.actions.find((a) => a.isPriority)?.action ?? null,
+    submittedAt: p.plan.submittedAt,
+    completedAt: p.plan.completedAt,
+    updatedAt: p.plan.updatedAt,
+    reminder: p.plan.reminder,
+  };
+}
+
+/**
+ * Fakes the API for one delegate: the list, each plan by id, saves, submission, progress,
+ * completion and starting another plan (2026-11-06).
+ */
 function stub(initial: MyTransferPlan) {
   const calls: Array<{ url: string; init?: RequestInit; body?: unknown }> = [];
-  let current = initial;
+  const plans = new Map<string, MyTransferPlan>([[initial.plan.id, initial]]);
   vi.stubGlobal(
     'fetch',
     vi.fn(async (url: string, init?: RequestInit) => {
       const body = init?.body ? (JSON.parse(String(init.body)) as unknown) : undefined;
       calls.push({ url, init, body });
+      if (url.endsWith('/transfer-plans') && init?.method === 'POST') {
+        const created = plan({
+          plan: {
+            ...plan().plan,
+            id: PLAN2,
+            sequence: plans.size + 1,
+            title: (body as { title: string }).title,
+          },
+        });
+        plans.set(PLAN2, created);
+        return json(created, 201);
+      }
+      if (url.endsWith('/transfer-plans')) {
+        return json({ plans: [...plans.values()].map(summaryOf) });
+      }
+      const id = /transfer-plans\/([^/?]+)/.exec(url)?.[1] ?? initial.plan.id;
+      let current = plans.get(id)!;
       if (init?.method === 'PUT') {
         const input = body as {
           version: number;
+          title: string;
           actions: Array<{ action: string; isPriority: boolean }>;
+          reminder: MyTransferPlan['plan']['reminder'];
         };
         if (input.version !== current.plan.version) {
           return json(
@@ -113,6 +165,8 @@ function stub(initial: MyTransferPlan) {
           plan: {
             ...current.plan,
             version: current.plan.version + 1,
+            title: input.title,
+            reminder: { ...current.plan.reminder, ...input.reminder },
             actions: input.actions.map((a, i) =>
               action({
                 id: `${ACTION.slice(0, -1)}${i}`,
@@ -124,6 +178,7 @@ function stub(initial: MyTransferPlan) {
             ),
           },
         };
+        plans.set(id, current);
         return json(current);
       }
       if (url.endsWith('/submit')) {
@@ -137,6 +192,21 @@ function stub(initial: MyTransferPlan) {
             version: current.plan.version + 1,
           },
         };
+        plans.set(id, current);
+        return json(current);
+      }
+      if (url.endsWith('/complete')) {
+        current = {
+          ...current,
+          plan: {
+            ...current.plan,
+            status: 'completed',
+            completedAt: '2027-02-20T10:00:00.000Z',
+            version: current.plan.version + 1,
+            reminder: NO_REMINDER,
+          },
+        };
+        plans.set(id, current);
         return json(current);
       }
       if (url.includes('/progress')) {
@@ -164,6 +234,7 @@ function stub(initial: MyTransferPlan) {
             })),
           },
         };
+        plans.set(id, current);
         return json(current, 201);
       }
       return json(current);
@@ -177,12 +248,16 @@ describe('TransferPlanPanel', () => {
     const calls = stub(plan());
     const user = userEvent.setup();
     render(<TransferPlanPanel eventId={EVENT} timezone="Africa/Lagos" />);
-    expect(await screen.findByText('Draft')).toBeTruthy();
-    expect(screen.getByText('How to measure transfer')).toBeTruthy();
+    expect((await screen.findAllByText('Draft')).length).toBeGreaterThan(0);
+    expect(await screen.findByText('How to measure transfer')).toBeTruthy();
     expect(screen.getByText(/final session, submission opens/)).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Submit my plan' }).hasAttribute('disabled')).toBe(
       true,
     );
+    // The plan is listed as "Plan 1" until it is named.
+    expect(
+      within(screen.getByRole('region', { name: 'Your plans' })).getByText('Plan 1'),
+    ).toBeTruthy();
 
     await user.click(screen.getByRole('button', { name: 'Add an action' }));
     const card = screen.getByRole('article', { name: 'Action 1' });
@@ -190,15 +265,20 @@ describe('TransferPlanPanel', () => {
       (within(card).getByLabelText('This is my first priority') as HTMLInputElement).checked,
     ).toBe(true);
     await user.type(within(card).getByLabelText('Action'), 'Define measures first');
+    await user.type(screen.getByLabelText('Plan name'), 'Measures first');
     await user.click(screen.getByRole('button', { name: 'Save draft' }));
     const put = calls.find((c) => c.init?.method === 'PUT');
-    expect(put?.url).toBe(`/api/v1/me/events/${EVENT}/transfer-plan`);
+    expect(put?.url).toBe(`/api/v1/me/events/${EVENT}/transfer-plans/${PLAN}`);
     expect(put?.body).toMatchObject({
       version: 1,
+      title: 'Measures first',
       actions: [{ action: 'Define measures first', isPriority: true, startOn: null }],
-      reminder: { frequency: 'none', startOn: null },
+      reminder: { frequency: 'none', startOn: null, endOn: null, time: '09:00', days: [] },
     });
     expect(await screen.findByText('Draft saved.')).toBeTruthy();
+    expect(
+      within(screen.getByRole('region', { name: 'Your plans' })).getByText('Measures first'),
+    ).toBeTruthy();
 
     await user.click(screen.getByRole('button', { name: 'Submit my plan' }));
     const dialog = await screen.findByRole('dialog', { name: 'Submit your plan?' });
@@ -210,7 +290,7 @@ describe('TransferPlanPanel', () => {
     expect(submit?.body).toEqual({ version: 2 });
     const done = await screen.findByRole('dialog', { name: 'Plan submitted' });
     await user.click(within(done).getByRole('button', { name: 'Close' }));
-    expect(screen.getByText('Submitted')).toBeTruthy();
+    expect(screen.getAllByText('Submitted').length).toBeGreaterThan(0);
     expect(screen.queryByRole('button', { name: 'Submit my plan' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Save changes' })).toBeTruthy();
   });
@@ -229,8 +309,6 @@ describe('TransferPlanPanel', () => {
     expect(screen.queryByRole('button', { name: 'Submit my plan' })).toBeNull();
     // Another tab saved in the meantime: the server now holds version 4.
     calls.length = 0;
-    const current = calls;
-    void current;
     vi.mocked(fetch).mockImplementationOnce(async () =>
       json(
         {
@@ -268,6 +346,13 @@ describe('TransferPlanPanel', () => {
     render(<TransferPlanPanel eventId={EVENT} timezone="Africa/Lagos" />);
     const card = await screen.findByRole('article', { name: 'Brief stakeholders' });
     expect(within(card).getByText('Not yet started')).toBeTruthy();
+    // A submitted plan says what completion still needs.
+    expect(
+      screen.getByRole('list', { name: 'Still needed before completion' }).textContent,
+    ).toMatch(/Brief stakeholders: needs a result and evidence/);
+    expect(
+      screen.getByRole('button', { name: 'Mark this plan completed' }).hasAttribute('disabled'),
+    ).toBe(true);
     await user.click(within(card).getByRole('button', { name: 'Record progress' }));
     const dialog = await screen.findByRole('dialog', { name: 'Record progress' });
     await user.selectOptions(
@@ -283,10 +368,136 @@ describe('TransferPlanPanel', () => {
     );
     await user.click(within(dialog).getByRole('button', { name: 'Save progress' }));
     const post = calls.find((c) => c.url.includes('/progress'));
-    expect(post?.url).toBe(`/api/v1/me/events/${EVENT}/transfer-plan/actions/${ACTION}/progress`);
+    expect(post?.url).toBe(
+      `/api/v1/me/events/${EVENT}/transfer-plans/${PLAN}/actions/${ACTION}/progress`,
+    );
     expect(post?.body).toMatchObject({ status: 'applied', note: 'Used it in the Q1 programme' });
     const updated = await screen.findByRole('article', { name: 'Brief stakeholders' });
     expect(within(updated).getAllByText('Applied').length).toBeGreaterThan(0);
     expect(updated.textContent).toMatch(/Used it in the Q1 programme/);
+  });
+
+  it('completes a submitted plan once every action has a result and evidence, and then locks it', async () => {
+    const calls = stub(
+      plan({
+        canSubmit: false,
+        plan: {
+          ...plan().plan,
+          status: 'submitted',
+          submittedAt: '2026-11-13T13:30:00.000Z',
+          version: 5,
+          actions: [
+            action({
+              measures: [
+                {
+                  id: 'm1',
+                  order: 1,
+                  status: 'identified',
+                  kind: 'quantitative',
+                  name: 'Turnaround',
+                  importance: '',
+                  unit: 'days',
+                  direction: 'lower',
+                  baselineValue: '12',
+                  baselineOn: null,
+                  targetValue: '8',
+                  targetOn: null,
+                  actualValue: '9',
+                  actualOn: '2027-01-15',
+                  source: '',
+                  influences: '',
+                  support: 'self_reported',
+                  readings: [],
+                  updatedAt: '2027-01-15T00:00:00.000Z',
+                },
+              ],
+              evidenceRecords: [
+                {
+                  id: 'e1',
+                  order: 1,
+                  type: 'confirmation',
+                  description: 'Manager confirmed it in the review',
+                  evidenceOn: null,
+                  support: 'supported',
+                  supportedBy: 'Line manager',
+                  reference: '',
+                  updatedAt: '2027-01-15T00:00:00.000Z',
+                },
+              ],
+            }),
+          ],
+        },
+      }),
+    );
+    const user = userEvent.setup();
+    render(<TransferPlanPanel eventId={EVENT} timezone="Africa/Lagos" />);
+    expect(await screen.findByText(/Every action has a result and evidence/)).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Mark this plan completed' }));
+    const confirm = await screen.findByRole('dialog', { name: 'Complete this plan?' });
+    await user.click(within(confirm).getByRole('button', { name: 'Complete the plan' }));
+    const post = calls.find((c) => c.url.endsWith('/complete'));
+    expect(post?.url).toBe(`/api/v1/me/events/${EVENT}/transfer-plans/${PLAN}/complete`);
+    expect(post?.body).toEqual({ version: 5 });
+    const done = await screen.findByRole('dialog', { name: 'Plan completed' });
+    expect(done.textContent).toMatch(/organisers have been told/);
+    await user.click(within(done).getByRole('button', { name: 'Close' }));
+    // Finished: read-only, no saving, no new actions, reminders stopped.
+    expect(screen.getAllByText('Completed').length).toBeGreaterThan(0);
+    expect(screen.getByText(/This plan is finished and its reminders have stopped/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Save changes' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Add an action' })).toBeNull();
+    expect((screen.getByLabelText('Plan name') as HTMLInputElement).disabled).toBe(true);
+  });
+
+  it('lets the delegate start another plan and choose twice-weekly reminders with a window', async () => {
+    const calls = stub(
+      plan({ plan: { ...plan().plan, status: 'submitted', version: 2, actions: [action()] } }),
+    );
+    const user = userEvent.setup();
+    render(<TransferPlanPanel eventId={EVENT} timezone="Africa/Lagos" />);
+    await screen.findByRole('article', { name: 'Brief stakeholders' });
+    await user.click(screen.getByRole('button', { name: 'Start another plan' }));
+    await user.type(screen.getByLabelText('What is this plan about?'), 'Coaching rollout');
+    await user.click(screen.getByRole('button', { name: 'Start this plan' }));
+    const created = calls.find(
+      (c) => c.init?.method === 'POST' && c.url.endsWith('/transfer-plans'),
+    );
+    expect(created?.body).toEqual({ title: 'Coaching rollout' });
+    // Both plans are listed; the new one is open, named, and empty.
+    const list = await screen.findByRole('region', { name: 'Your plans' });
+    expect(within(list).getByText('Plan 1')).toBeTruthy();
+    expect(within(list).getByText('Coaching rollout')).toBeTruthy();
+    expect((screen.getByLabelText('Plan name') as HTMLInputElement).value).toBe('Coaching rollout');
+    expect(screen.queryByRole('article', { name: 'Brief stakeholders' })).toBeNull();
+
+    // Twice a week: the days appear and exactly two can be chosen; the window and time are saved.
+    await user.selectOptions(screen.getByLabelText('How often'), 'twice_weekly');
+    const days = screen.getByRole('group', { name: 'Which two days' });
+    expect(within(days).getByText('Choose two days.')).toBeTruthy();
+    await user.click(within(days).getByLabelText('Tuesday'));
+    await user.click(within(days).getByLabelText('Friday'));
+    expect((within(days).getByLabelText('Monday') as HTMLInputElement).disabled).toBe(true);
+    expect(within(days).queryByText('Choose two days.')).toBeNull();
+    // A time input takes its value by change event: typing into it is not reliable in jsdom.
+    fireEvent.change(screen.getByLabelText('At what time'), { target: { value: '18:00' } });
+    await user.type(screen.getByLabelText('Start from'), '2026-12-10');
+    await user.type(screen.getByLabelText('Until'), '2027-01-31');
+    await user.click(screen.getByRole('button', { name: 'Add an action' }));
+    await user.type(
+      within(screen.getByRole('article', { name: 'Action 1' })).getByLabelText('Action'),
+      'Coach two team leads',
+    );
+    await user.click(screen.getByRole('button', { name: 'Save draft' }));
+    const put = calls.find((c) => c.init?.method === 'PUT');
+    expect(put?.url).toBe(`/api/v1/me/events/${EVENT}/transfer-plans/${PLAN2}`);
+    expect(put?.body).toMatchObject({
+      reminder: {
+        frequency: 'twice_weekly',
+        days: [2, 5],
+        time: '18:00',
+        startOn: '2026-12-10',
+        endOn: '2027-01-31',
+      },
+    });
   });
 });

@@ -70,11 +70,21 @@ const planResponse = (): MyTransferPlan => ({
   plan: {
     id: '11111111-1111-4111-8111-111111111111',
     eventId: EVENT,
+    sequence: 1,
+    title: '',
     status: 'submitted',
     version: 8,
+    completedAt: null,
     submittedAt: '2026-11-13T13:30:00.000Z',
     updatedAt: '2026-11-24T09:00:00.000Z',
-    reminder: { frequency: 'none', startOn: null, nextReminderAt: null },
+    reminder: {
+      frequency: 'none',
+      startOn: null,
+      endOn: null,
+      time: '09:00',
+      days: [],
+      nextReminderAt: null,
+    },
     actions: [action()],
   },
   sessions: [],
@@ -170,6 +180,7 @@ describe('MeasuresDialog', () => {
     render(
       <MeasuresDialog
         eventId={EVENT}
+        planId="p1"
         action={action()}
         version={7}
         onClose={() => {}}
@@ -194,7 +205,7 @@ describe('MeasuresDialog', () => {
     expect(calls).toHaveLength(1);
     expect(calls[0]!.method).toBe('PUT');
     expect(calls[0]!.url).toMatch(
-      new RegExp(`/me/events/${EVENT}/transfer-plan/actions/${ACTION}/measures$`),
+      new RegExp(`/me/events/${EVENT}/transfer-plans/p1/actions/${ACTION}/measures$`),
     );
     expect(calls[0]!.body).toEqual({
       version: 7,
@@ -225,6 +236,7 @@ describe('MeasuresDialog', () => {
     render(
       <MeasuresDialog
         eventId={EVENT}
+        planId="p1"
         action={action({ measures: [measure()] })}
         version={7}
         onClose={() => {}}
@@ -255,6 +267,7 @@ describe('EvidenceDialog', () => {
     render(
       <EvidenceDialog
         eventId={EVENT}
+        planId="p1"
         action={action()}
         version={7}
         onClose={() => {}}
@@ -279,7 +292,7 @@ describe('EvidenceDialog', () => {
     await user.click(screen.getByRole('button', { name: 'Save evidence' }));
     expect(calls).toHaveLength(1);
     expect(calls[0]!.url).toMatch(
-      new RegExp(`/me/events/${EVENT}/transfer-plan/actions/${ACTION}/evidence$`),
+      new RegExp(`/me/events/${EVENT}/transfer-plans/p1/actions/${ACTION}/evidence$`),
     );
     expect(calls[0]!.body).toEqual({
       version: 7,

@@ -508,6 +508,29 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   warning with reload) and the event page's "Transfer plans" tab (counts, sessions, reference
   questions, searchable list with status and action-status filters, CSV export, one plan in full
   with "Current" and "As submitted" views and its history).
+- Several Transfer Plans per delegate, reminder windows and completion (task of 2026-11-06;
+  backlog E9-2 revised, E10-1 to E10-5, E10-8, E10-9): a delegate may keep more than one plan for
+  an event. The first is still created on first access; "Start another plan" (`POST
+/me/events/:id/transfer-plans`, optional title) adds the next, numbered in order, and every
+  delegate route takes the plan id (`/me/events/:id/transfer-plans/:planId...`). Reminders are
+  set per plan: frequency none / daily / every other day / twice a week (two chosen weekdays) /
+  weekly / every two weeks / monthly, a time of day in the event's timezone, a start date and an
+  end date. `nextReminderAfter` in `packages/shared` works the next send out from the start date
+  (so a weekly reminder keeps its weekday), never after the end date; the worker job sends what is
+  due every 15 minutes, logs each attempt with its `kind`, and in the last seven days of a window
+  sends the "last days" variant that asks the delegate to complete the plan or extend the
+  reminders (a later end date). A submitted plan is **completed** (`POST .../complete`) only when
+  every written action has a result (a measure with an actual value, or results on a progress
+  record) and at least one evidence record; `planCompletionGaps` lists what is missing and the
+  delegate page shows it. Completion freezes the plan (saves, progress, measures and evidence are
+  refused with 409 `plan_completed`), stops its reminders, is audited as `transfer_plan.completed`
+  and emails every active admin (`renderTransferPlanCompleted`: delegate, plan name, action
+  count, link; never the plan's text). Reports count delegates, not plans: a delegate with any
+  submitted or completed plan counts as submitted. The organisers' list shows one row per plan
+  with its name; the detail takes `?plan=<id>` and otherwise shows the delegate's latest.
+  Migration `20261106200223_transfer_plans_many_and_reminder_window` adds `sequence`, `title`,
+  `completed_at`, `reminder_end_on`, `reminder_time`, `reminder_days` and the status
+  `completed`, and replaces the one-plan-per-delegate key with (event, delegate, sequence).
 - Business measures and evidence on Transfer Plans (task of 2026-10-31; backlog E14-1 to E14-5,
   E16-6): each planned action of the delegate's existing plan can carry any number of measures
   and any number of evidence records; saving either bumps the plan's `version` like every other

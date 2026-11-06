@@ -70,7 +70,11 @@ const plans: TransferPlanListItem[] = [
       organisation: 'Acme',
       attendanceFormat: 'physical',
     },
+    planId: PLAN,
+    sequence: 1,
+    title: '',
     status: 'submitted',
+    completedAt: null,
     actions: 2,
     priorityAction: 'Brief stakeholders',
     submittedAt: '2026-11-13T13:30:00.000Z',
@@ -88,7 +92,11 @@ const plans: TransferPlanListItem[] = [
       organisation: null,
       attendanceFormat: 'virtual',
     },
+    planId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    sequence: 1,
+    title: '',
     status: 'draft',
+    completedAt: null,
     actions: 0,
     priorityAction: null,
     submittedAt: null,
@@ -105,11 +113,21 @@ const detail: TransferPlanAdminDetail = {
   plan: {
     id: PLAN,
     eventId: 'e1',
+    sequence: 1,
+    title: '',
     status: 'submitted',
     version: 6,
     submittedAt: '2026-11-13T13:30:00.000Z',
+    completedAt: null,
     updatedAt: '2026-11-24T09:00:00.000Z',
-    reminder: { frequency: 'weekly', startOn: null, nextReminderAt: '2026-12-01T09:00:00.000Z' },
+    reminder: {
+      frequency: 'weekly',
+      startOn: null,
+      endOn: null,
+      time: '09:00',
+      days: [],
+      nextReminderAt: '2026-12-01T09:00:00.000Z',
+    },
     actions: [
       {
         id: ACTION,
@@ -211,7 +229,7 @@ function stub() {
         });
       }
       if (url.includes('/transfer-plans/measures')) return json({ rows: [] });
-      if (url.endsWith(`/transfer-plans/${DEE}`)) return json({ plan: detail });
+      if (url.includes(`/transfer-plans/${DEE}?plan=${PLAN}`)) return json({ plan: detail });
       return json({
         plans,
         sessions: [
@@ -254,7 +272,7 @@ describe('TransferPlansManager', () => {
 
     await user.click(screen.getByRole('button', { name: 'View' }));
     const dialog = await screen.findByRole('dialog', { name: 'Dee Legate' });
-    expect(calls.some((c) => c.url.endsWith(`/transfer-plans/${DEE}`))).toBe(true);
+    expect(calls.some((c) => c.url.endsWith(`/transfer-plans/${DEE}?plan=${PLAN}`))).toBe(true);
     expect(dialog.textContent).toMatch(/How to measure transfer/);
     expect(dialog.textContent).toMatch(/Brief stakeholders \(revised\)/);
     expect(dialog.textContent).toMatch(/Not yet known/);
