@@ -54,8 +54,8 @@ export function EventCard({ event }: { event: MyEvent }) {
           </div>
         </div>
       </dl>
-      {/* Stacked on phones so the button keeps its full label; side by side from `sm`. */}
-      <div className="mt-auto flex flex-col gap-3 border-t border-corp-line pt-3 text-xs text-corp-muted sm:flex-row sm:items-center sm:justify-between">
+      {/* Two rows at every width: the attendance line, then the button (2026-11-06). */}
+      <div className="mt-auto flex flex-col gap-3 border-t border-corp-line pt-3 text-xs text-corp-muted">
         <span>
           Attendance:{' '}
           <span className="font-semibold text-corp-ink">
@@ -66,7 +66,7 @@ export function EventCard({ event }: { event: MyEvent }) {
         </span>
         <Link
           href={`/account/events/${event.id}`}
-          className={`${consoleButton({ variant: 'secondary', size: 'sm' })} w-full sm:w-auto`}
+          className={`${consoleButton({ variant: 'secondary', size: 'sm' })} w-full`}
         >
           Start your learning journey <ArrowRightIcon className="size-4" aria-hidden="true" />
         </Link>
