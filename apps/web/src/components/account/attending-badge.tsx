@@ -88,16 +88,17 @@ export function AttendingBadge({ eventId, eventName }: { eventId: string; eventN
   return (
     <Panel>
       <h3 className="font-corporate text-base font-semibold text-corp-ink">
-        Tell people you are coming : I will Attend
+        Tell people you are coming: I will attend
       </h3>
       <p className="mt-1 text-sm text-corp-muted">
-        If you are yetto download your i will attend card, kindly download it, post it on your
-        social media and share it with your network to let people know you will be attending the
-        event.
+        Download your &ldquo;I will attend&rdquo; card, post it on your social media and share it
+        with your network, so people know you will be at the event.
       </p>
-      <div className="mt-4 flex flex-col items-center gap-4 sm:flex-row sm:items-start">
+      {/* The card and its button form one column, the button directly beneath at the card's
+          width, so there is no doubt what "download" fetches (2026-11-06). */}
+      <div className="mx-auto mt-4 flex w-full max-w-[280px] flex-col gap-3">
         <div
-          className="w-full max-w-[260px] shrink-0 border border-corp-line bg-white [&>svg]:h-auto [&>svg]:w-full"
+          className="w-full border border-corp-line bg-white [&>svg]:h-auto [&>svg]:w-full"
           // The SVG comes from our own API, which escapes every value it draws.
           dangerouslySetInnerHTML={svg ? { __html: svg } : undefined}
           aria-hidden={svg ? undefined : true}
@@ -113,15 +114,16 @@ export function AttendingBadge({ eventId, eventName }: { eventId: string; eventN
           type="button"
           onClick={() => void download()}
           disabled={!svg || saving}
-          className={consoleButton({ variant: 'accent' })}
+          className={`${consoleButton({ variant: 'accent' })} w-full`}
         >
           {saving ? (
             <Loader2Icon className="animate-spin" aria-hidden="true" />
           ) : (
             <DownloadIcon aria-hidden="true" />
           )}
-          Download the card
+          Download this card
         </button>
+        <p className="text-center text-xs text-corp-muted">Saved as a PNG image, ready to post.</p>
       </div>
     </Panel>
   );
