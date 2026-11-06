@@ -63,6 +63,9 @@ function plan(partial: Partial<MyTransferPlan> = {}): MyTransferPlan {
       version: 1,
       submittedAt: null,
       completedAt: null,
+      outcome: 'pending',
+      outcomeNote: '',
+      impactChecks: [],
       updatedAt: '2026-11-12T10:00:00.000Z',
       reminder: NO_REMINDER,
       actions: [],
@@ -107,6 +110,8 @@ function summaryOf(p: MyTransferPlan): TransferPlanSummary {
     priorityAction: p.plan.actions.find((a) => a.isPriority)?.action ?? null,
     submittedAt: p.plan.submittedAt,
     completedAt: p.plan.completedAt,
+    outcome: p.plan.outcome,
+    checkDue: p.plan.impactChecks.some((c) => !c.answeredAt),
     updatedAt: p.plan.updatedAt,
     reminder: p.plan.reminder,
   };
@@ -202,6 +207,23 @@ function stub(initial: MyTransferPlan) {
             ...current.plan,
             status: 'completed',
             completedAt: '2027-02-20T10:00:00.000Z',
+            outcome:
+              (body as { improvement: string }).improvement === 'seen'
+                ? 'impact_demonstrated'
+                : 'applied',
+            outcomeNote: (body as { note: string }).note,
+            impactChecks: [
+              {
+                id: 'c1',
+                round: 1,
+                dueOn: '2027-05-21',
+                notifiedAt: null,
+                answeredAt: null,
+                answer: null,
+                note: '',
+                evidence: '',
+              },
+            ],
             version: current.plan.version + 1,
             reminder: NO_REMINDER,
           },
@@ -349,7 +371,7 @@ describe('TransferPlanPanel', () => {
     // A submitted plan says what completion still needs.
     expect(
       screen.getByRole('list', { name: 'Still needed before completion' }).textContent,
-    ).toMatch(/Brief stakeholders: needs a result and evidence/);
+    ).toMatch(/Brief stakeholders: needs to be recorded as applied and evidence/);
     expect(
       screen.getByRole('button', { name: 'Mark this plan completed' }).hasAttribute('disabled'),
     ).toBe(true);
@@ -377,7 +399,7 @@ describe('TransferPlanPanel', () => {
     expect(updated.textContent).toMatch(/Used it in the Q1 programme/);
   });
 
-  it('completes a submitted plan once every action has a result and evidence, and then locks it', async () => {
+  it('completes a submitted plan once every action is applied with evidence, asks about impact, then runs the checks', async () => {
     const calls = stub(
       plan({
         canSubmit: false,
@@ -388,6 +410,7 @@ describe('TransferPlanPanel', () => {
           version: 5,
           actions: [
             action({
+              progressStatus: 'applied',
               measures: [
                 {
                   id: 'm1',
@@ -431,13 +454,23 @@ describe('TransferPlanPanel', () => {
     );
     const user = userEvent.setup();
     render(<TransferPlanPanel eventId={EVENT} timezone="Africa/Lagos" />);
-    expect(await screen.findByText(/Every action has a result and evidence/)).toBeTruthy();
+    expect(await screen.findByText(/Every action is applied, with evidence/)).toBeTruthy();
     await user.click(screen.getByRole('button', { name: 'Mark this plan completed' }));
     const confirm = await screen.findByRole('dialog', { name: 'Complete this plan?' });
+    // Completion asks about impact: a measurable improvement is the delegate's own claim.
+    await user.click(within(confirm).getByLabelText(/Yes, there is a measurable improvement/));
+    await user.type(
+      within(confirm).getByLabelText(/what changed, or what has not changed yet/),
+      'Turnaround fell to 9 days',
+    );
     await user.click(within(confirm).getByRole('button', { name: 'Complete the plan' }));
     const post = calls.find((c) => c.url.endsWith('/complete'));
     expect(post?.url).toBe(`/api/v1/me/events/${EVENT}/transfer-plans/${PLAN}/complete`);
-    expect(post?.body).toEqual({ version: 5 });
+    expect(post?.body).toEqual({
+      version: 5,
+      improvement: 'seen',
+      note: 'Turnaround fell to 9 days',
+    });
     const done = await screen.findByRole('dialog', { name: 'Plan completed' });
     expect(done.textContent).toMatch(/organisers have been told/);
     await user.click(within(done).getByRole('button', { name: 'Close' }));
@@ -447,6 +480,9 @@ describe('TransferPlanPanel', () => {
     expect(screen.queryByRole('button', { name: 'Save changes' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Add an action' })).toBeNull();
     expect((screen.getByLabelText('Plan name') as HTMLInputElement).disabled).toBe(true);
+    // Impact assessment takes over: the reported outcome and the next check's date.
+    expect(screen.getAllByText('Impact demonstrated').length).toBeGreaterThan(0);
+    expect(screen.getByText(/We will ask you on 21 May 2027 whether/)).toBeTruthy();
   });
 
   it('lets the delegate start another plan and choose twice-weekly reminders with a window', async () => {

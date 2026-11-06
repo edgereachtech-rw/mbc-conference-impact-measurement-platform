@@ -75,6 +75,9 @@ const planResponse = (): MyTransferPlan => ({
     status: 'submitted',
     version: 8,
     completedAt: null,
+    outcome: 'pending',
+    outcomeNote: '',
+    impactChecks: [],
     submittedAt: '2026-11-13T13:30:00.000Z',
     updatedAt: '2026-11-24T09:00:00.000Z',
     reminder: {

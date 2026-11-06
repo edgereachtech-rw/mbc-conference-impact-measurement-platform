@@ -17,6 +17,54 @@ export const transferPlanStatusLabels: Record<TransferPlanStatus, string> = {
 };
 export type TransferPlanStatus = (typeof transferPlanStatuses)[number];
 
+/**
+ * What a completed plan has shown so far (2026-11-06). Completion itself proves application,
+ * not impact: the delegate says whether a measurable improvement has appeared, and later checks
+ * ask whether it continued. The platform never promotes a plan on its own.
+ */
+export const planOutcomes = [
+  'pending',
+  'applied',
+  'impact_demonstrated',
+  'sustained_impact',
+] as const;
+export type PlanOutcome = (typeof planOutcomes)[number];
+export const planOutcomeLabels: Record<PlanOutcome, string> = {
+  pending: 'Not yet completed',
+  applied: 'Applied, no measurable improvement yet',
+  impact_demonstrated: 'Impact demonstrated',
+  sustained_impact: 'Sustained impact',
+};
+export const planOutcomeDescriptions: Record<PlanOutcome, string> = {
+  pending: 'The plan is still open.',
+  applied:
+    'The actions were carried out, with evidence, but no measurable improvement in performance or results has been seen yet.',
+  impact_demonstrated:
+    'Evidence shows a relevant improvement in performance or results from the actions.',
+  sustained_impact: 'A later check found the improvement has continued over time.',
+};
+
+/** Answers to an impact check after completion. */
+export const impactCheckAnswers = ['not_yet', 'improved', 'sustained', 'faded'] as const;
+export type ImpactCheckAnswer = (typeof impactCheckAnswers)[number];
+export const impactCheckAnswerLabels: Record<ImpactCheckAnswer, string> = {
+  not_yet: 'No measurable improvement yet',
+  improved: 'Yes, there is a measurable improvement now',
+  sustained: 'Yes, the improvement has continued',
+  faded: 'No, the improvement has not continued',
+};
+/** Days after completion (and after each answer that keeps the question open) before a check falls due. */
+export const IMPACT_CHECK_DAYS = 90;
+/** How many checks a plan gets at most; after that the outcome stands as last reported. */
+export const IMPACT_CHECK_ROUNDS = 3;
+/** Which answers a check accepts, by the plan's outcome at the time. */
+export const impactCheckAnswersFor = (outcome: PlanOutcome): readonly ImpactCheckAnswer[] =>
+  outcome === 'applied'
+    ? (['not_yet', 'improved'] as const)
+    : outcome === 'impact_demonstrated'
+      ? (['sustained', 'faded'] as const)
+      : [];
+
 export const actionProgressStatuses = [
   'not_started',
   'started',
@@ -176,8 +224,35 @@ export const transferPlanCreateSchema = z.object({
 });
 
 export const transferPlanSubmitSchema = z.object({ version: z.number().int().min(1) });
-/** Marks a submitted plan finished; refused until every action has a result and evidence. */
-export const transferPlanCompleteSchema = z.object({ version: z.number().int().min(1) });
+/**
+ * Marks a submitted plan completed: every written action applied, with evidence. The delegate
+ * says whether a measurable improvement has been seen; "seen" needs a recorded result.
+ */
+export const transferPlanCompleteSchema = z.object({
+  version: z.number().int().min(1),
+  improvement: z.enum(['seen', 'not_yet']),
+  /** What changed, or what has not changed yet, in the delegate's words. */
+  note: z.string().trim().max(2000).default(''),
+});
+export type TransferPlanComplete = z.infer<typeof transferPlanCompleteSchema>;
+
+/** The delegate's answer to one impact check; a claimed improvement needs evidence. */
+export const impactCheckAnswerSchema = z
+  .object({
+    answer: z.enum(impactCheckAnswers),
+    note: z.string().trim().max(2000).default(''),
+    evidence: z.string().trim().max(2000).default(''),
+  })
+  .superRefine((a, ctx) => {
+    if ((a.answer === 'improved' || a.answer === 'sustained') && !a.evidence) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['evidence'],
+        message: 'Say what evidence shows the improvement.',
+      });
+    }
+  });
+export type ImpactCheckAnswerInput = z.infer<typeof impactCheckAnswerSchema>;
 
 export const actionProgressSchema = z
   .object({
@@ -518,6 +593,18 @@ export const reminderViewSchema = z.object({
 });
 export type ReminderView = z.infer<typeof reminderViewSchema>;
 
+export const impactCheckViewSchema = z.object({
+  id: z.uuid(),
+  round: z.number().int(),
+  dueOn: z.string(),
+  notifiedAt: z.string().nullable(),
+  answeredAt: z.string().nullable(),
+  answer: z.enum(impactCheckAnswers).nullable(),
+  note: z.string(),
+  evidence: z.string(),
+});
+export type ImpactCheckView = z.infer<typeof impactCheckViewSchema>;
+
 export const transferPlanViewSchema = z.object({
   id: z.uuid(),
   eventId: z.uuid(),
@@ -529,6 +616,11 @@ export const transferPlanViewSchema = z.object({
   version: z.number().int(),
   submittedAt: z.string().nullable(),
   completedAt: z.string().nullable(),
+  /** What the completed plan has shown so far; "pending" until completion. */
+  outcome: z.enum(planOutcomes),
+  outcomeNote: z.string(),
+  /** The impact checks after completion, in order; empty before completion. */
+  impactChecks: z.array(impactCheckViewSchema),
   updatedAt: z.string(),
   reminder: reminderViewSchema,
   actions: z.array(planActionViewSchema),
@@ -549,6 +641,9 @@ export const transferPlanSummarySchema = z.object({
   priorityAction: z.string().nullable(),
   submittedAt: z.string().nullable(),
   completedAt: z.string().nullable(),
+  outcome: z.enum(planOutcomes),
+  /** An impact check is waiting for the delegate's answer. */
+  checkDue: z.boolean(),
   updatedAt: z.string(),
   reminder: reminderViewSchema,
 });
@@ -588,6 +683,7 @@ export const transferPlanListItemSchema = z.object({
   title: z.string(),
   status: z.enum(transferPlanStatuses),
   completedAt: z.string().nullable(),
+  outcome: z.enum(planOutcomes),
   actions: z.number().int(),
   priorityAction: z.string().nullable(),
   submittedAt: z.string().nullable(),
@@ -776,35 +872,57 @@ export function inFinalReminderWeek(
 
 // ------------------------------------------------------------------ completion
 
-export type CompletionGap = 'result' | 'evidence';
+export type CompletionGap = 'applied' | 'evidence';
+
+/** Statuses that say the action was carried out on the job. */
+export const completionStatuses: readonly ActionProgressStatus[] = [
+  'applied',
+  'applied_consistently',
+  'completed',
+];
 
 /**
- * What a plan still lacks before it can be marked completed (2026-11-06): every action with
- * text needs a result (a measure with an actual value, or a progress record with results) and
- * at least one evidence record. Empty when the plan is ready.
+ * What a plan still lacks before it can be marked completed (2026-11-06): every written action
+ * must have been carried out (applied, applied consistently or completed; one that no longer
+ * applies is left out) and carry at least one evidence record. A result is deliberately not
+ * required: completion shows application, and whether it made a measurable difference is the
+ * delegate's separate report (see planHasResult and the plan outcome).
  */
 export function planCompletionGaps(
   actions: ReadonlyArray<{
     id: string;
     action: string;
-    measures: ReadonlyArray<{ status: MeasureStatus; actualValue: string }>;
+    progressStatus: ActionProgressStatus;
     evidenceRecords: ReadonlyArray<{ description: string }>;
-    progress: ReadonlyArray<{ results: string | null }>;
   }>,
 ): Array<{ actionId: string; action: string; missing: CompletionGap[] }> {
   const gaps: Array<{ actionId: string; action: string; missing: CompletionGap[] }> = [];
   for (const a of actions) {
-    if (!a.action.trim()) continue;
+    if (!a.action.trim() || a.progressStatus === 'no_longer_applicable') continue;
     const missing: CompletionGap[] = [];
-    const hasResult =
-      a.measures.some((m) => m.status === 'identified' && m.actualValue.trim() !== '') ||
-      a.progress.some((p) => (p.results ?? '').trim() !== '');
-    if (!hasResult) missing.push('result');
+    if (!completionStatuses.includes(a.progressStatus)) missing.push('applied');
     if (!a.evidenceRecords.some((e) => e.description.trim() !== '')) missing.push('evidence');
     if (missing.length) gaps.push({ actionId: a.id, action: a.action, missing });
   }
   return gaps;
 }
+
+/** True when some action carries a recorded result: a measure's actual value, or results on a progress record. */
+export function planHasResult(
+  actions: ReadonlyArray<{
+    measures: ReadonlyArray<{ status: MeasureStatus; actualValue: string }>;
+    progress: ReadonlyArray<{ results: string | null }>;
+  }>,
+): boolean {
+  return actions.some(
+    (a) =>
+      a.measures.some((m) => m.status === 'identified' && m.actualValue.trim() !== '') ||
+      a.progress.some((p) => (p.results ?? '').trim() !== ''),
+  );
+}
+
+/** A calendar date some days on from another (YYYY-MM-DD). */
+export const addDaysTo = addDays;
 
 /**
  * Summarises an action's measures. An identified measure with a value outranks one without;

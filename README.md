@@ -531,6 +531,25 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   Migration `20261106200223_transfer_plans_many_and_reminder_window` adds `sequence`, `title`,
   `completed_at`, `reminder_end_on`, `reminder_time`, `reminder_days` and the status
   `completed`, and replaces the one-plan-per-delegate key with (event, delegate, sequence).
+- Impact assessment and sustainability after completion (task of 2026-11-06, second part;
+  replaces the first cut's "result required to complete"): completing a plan proves application,
+  not impact. `POST .../complete` now needs every written action recorded as applied, applied
+  consistently or completed, with evidence (`planCompletionGaps`); an action marked no longer
+  applicable is left out. The delegate says at the same time whether a measurable improvement has
+  been seen (`improvement: seen | not_yet`, plus a note); "seen" is refused with 422
+  `result_missing` unless some action carries a recorded result (`planHasResult`). The plan's
+  `outcome` becomes `applied` (no measurable improvement yet) or `impact_demonstrated`; the
+  platform never promotes a plan on its own. An impact check (`transfer_plan_impact_check`) falls
+  due `IMPACT_CHECK_DAYS` (90) later: the worker emails the delegate once
+  (`renderImpactCheck`, logged with kind `impact_check`), and the delegate answers on the plan
+  page (`POST .../impact-checks/:checkId`): from `applied`, "not yet" or "improved" (evidence
+  required, outcome to `impact_demonstrated`); from `impact_demonstrated`, "sustained" (evidence
+  required, outcome to `sustained_impact`) or "faded". A further check is scheduled while the
+  question is open, up to `IMPACT_CHECK_ROUNDS` (3). The completion email to admins carries the
+  reported outcome; the organisers' list and detail show it; the event report's transfer section
+  aggregates per delegate at the furthest point any of their plans reached (completed, applied
+  with no improvement yet, impact demonstrated, sustained impact) with checks waiting and
+  answered. Migration `20261106210930_transfer_plan_outcome_and_impact_checks`.
 - Business measures and evidence on Transfer Plans (task of 2026-10-31; backlog E14-1 to E14-5,
   E16-6): each planned action of the delegate's existing plan can carry any number of measures
   and any number of evidence records; saving either bumps the plan's `version` like every other

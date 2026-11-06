@@ -760,10 +760,33 @@ export function ReportView({ report, timezone }: { report: EventReport; timezone
                 label="Delegates reporting application"
                 value={report.transfer.application.appliedDelegates}
               />
+              <FigureLine
+                label="Plans completed (applied, with evidence)"
+                value={report.transfer.application.impact.completed}
+              />
+              <FigureLine
+                label="Applied, no measurable improvement yet"
+                value={report.transfer.application.impact.applied}
+              />
+              <FigureLine
+                label="Impact demonstrated"
+                value={report.transfer.application.impact.impactDemonstrated}
+              />
+              <FigureLine
+                label="Sustained impact"
+                value={report.transfer.application.impact.sustainedImpact}
+              />
             </dl>
             <p className="mt-2 text-xs text-corp-muted">
               A started plan, a submitted plan and an acted-upon plan are three different things: a
               submitted plan does not show that its actions happened.
+            </p>
+            <p className="mt-1 text-xs text-corp-muted">
+              Completion shows application, not impact. Impact demonstrated and sustained impact are
+              what delegates reported with evidence at completion and at the later impact checks (
+              {report.transfer.application.impact.checksAnswered} answered,{' '}
+              {report.transfer.application.impact.checksWaiting} waiting); the platform never
+              promotes a plan on its own.
             </p>
           </Panel>
           <Panel>

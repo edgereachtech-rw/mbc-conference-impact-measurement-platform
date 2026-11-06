@@ -401,6 +401,14 @@ export function makeReport(overrides: Partial<EventReport> = {}): EventReport {
           none: 2,
         },
         evidence: { ...zeros(evidenceSupports as readonly EvidenceSupport[]), supported: 1 },
+        impact: {
+          completed: figure(1, 2, 'Delegates with a completed plan, of delegates with a plan.'),
+          applied: figure(0, 1, 'Applied, no measurable improvement yet, of completed.'),
+          impactDemonstrated: figure(1, 1, 'Impact demonstrated, of completed.'),
+          sustainedImpact: figure(0, 1, 'Sustained impact, of completed.'),
+          checksWaiting: 1,
+          checksAnswered: 0,
+        },
       },
     },
     results: {

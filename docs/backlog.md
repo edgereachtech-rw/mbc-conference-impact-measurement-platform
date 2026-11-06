@@ -751,6 +751,14 @@ delegate to complete the plan or extend the reminders. "Once" and the channel (E
 A submitted plan is **completed** only when every written action has a result and evidence;
 completion freezes it, stops its reminders, is audited and emails every active admin. E9-9's
 "completed meaning a submitted plan" is now "submitted or completed"; counts are per delegate.
+Second part of the same day: **completion proves application, not impact.** A plan completes
+when every written action is recorded as applied, with evidence; the delegate then says whether
+a measurable improvement has been seen ("not yet" is a valid answer), which the platform never
+infers. The outcome moves to impact demonstrated only with a recorded result and evidence, and
+to sustained impact only when a later impact check (90 days on, up to three rounds, emailed once
+each) confirms the improvement continued. After the 30- and 60-day plans the delegate is carried
+into impact assessment and sustainability rather than asked for new plans, and the event report
+aggregates the outcomes per delegate for organisers and sponsors.
 
 ---
 

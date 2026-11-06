@@ -5,6 +5,7 @@ import {
   instantOf,
   nextReminderAfter,
   planCompletionGaps,
+  planHasResult,
   reminderPreferenceSchema,
   type ReminderPreference,
 } from './transfer-plans.js';
@@ -110,38 +111,46 @@ describe('nextReminderAfter', () => {
   });
 });
 
-describe('planCompletionGaps', () => {
+describe('planCompletionGaps and planHasResult', () => {
   const action = (over: Partial<Parameters<typeof planCompletionGaps>[0][number]>) => ({
     id: 'a',
     action: 'Run the workshop',
-    measures: [],
+    progressStatus: 'in_progress' as const,
     evidenceRecords: [],
-    progress: [],
     ...over,
   });
 
-  it('wants a result and evidence on every written action, and ignores blank ones', () => {
+  it('wants every written action applied with evidence, leaves out blank and dropped ones', () => {
     expect(planCompletionGaps([action({ action: '   ' })])).toEqual([]);
+    expect(planCompletionGaps([action({ progressStatus: 'no_longer_applicable' })])).toEqual([]);
     expect(planCompletionGaps([action({})])).toEqual([
-      { actionId: 'a', action: 'Run the workshop', missing: ['result', 'evidence'] },
+      { actionId: 'a', action: 'Run the workshop', missing: ['applied', 'evidence'] },
     ]);
     expect(
       planCompletionGaps([
         action({
-          measures: [{ status: 'identified', actualValue: '12' }],
+          progressStatus: 'applied',
           evidenceRecords: [{ description: 'Attendance sheet' }],
         }),
       ]),
     ).toEqual([]);
-    // A progress record with results counts as a result; a placeholder measure does not.
     expect(
       planCompletionGaps([
-        action({
-          measures: [{ status: 'not_yet_known', actualValue: '' }],
-          progress: [{ results: 'Three teams adopted it' }],
-          evidenceRecords: [{ description: '' }],
-        }),
+        action({ progressStatus: 'completed', evidenceRecords: [{ description: '' }] }),
       ]),
     ).toEqual([{ actionId: 'a', action: 'Run the workshop', missing: ['evidence'] }]);
+  });
+
+  it('separates a recorded result from completion: a placeholder measure is not a result', () => {
+    expect(planHasResult([{ measures: [], progress: [] }])).toBe(false);
+    expect(
+      planHasResult([{ measures: [{ status: 'not_yet_known', actualValue: '' }], progress: [] }]),
+    ).toBe(false);
+    expect(
+      planHasResult([{ measures: [{ status: 'identified', actualValue: '12' }], progress: [] }]),
+    ).toBe(true);
+    expect(
+      planHasResult([{ measures: [], progress: [{ results: 'Three teams adopted it' }] }]),
+    ).toBe(true);
   });
 });

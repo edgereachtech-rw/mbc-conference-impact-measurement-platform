@@ -436,6 +436,21 @@ export const transferSectionSchema = z.object({
     changes: z.array(textAnswersSchema),
     measures: z.record(z.enum(measureSummaries), z.number().int()),
     evidence: z.record(z.enum(evidenceSupports), z.number().int()),
+    /**
+     * Impact after completion (2026-11-06), per delegate, each counted once at the furthest
+     * point any of their plans reached: completed with evidence; applied with no measurable
+     * improvement yet; an improvement demonstrated with evidence; that improvement sustained at
+     * a later check. Reported by delegates and never inferred from completion.
+     */
+    impact: z.object({
+      completed: figureSchema,
+      applied: figureSchema,
+      impactDemonstrated: figureSchema,
+      sustainedImpact: figureSchema,
+      /** Impact checks that have fallen due and are still unanswered. */
+      checksWaiting: z.number().int(),
+      checksAnswered: z.number().int(),
+    }),
   }),
 });
 export type TransferSection = z.infer<typeof transferSectionSchema>;

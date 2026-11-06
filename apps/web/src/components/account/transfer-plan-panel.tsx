@@ -7,14 +7,21 @@ import {
   planActionFieldLabels,
   progressDetailPrompt,
   progressNeedsDetail,
+  dateIn,
+  impactCheckAnswerLabels,
+  impactCheckAnswersFor,
   NO_REMINDERS,
   planCompletionGaps,
+  planHasResult,
+  planOutcomeDescriptions,
+  planOutcomeLabels,
   planTitleOf,
   reminderFrequencies,
   reminderFrequencyLabels,
   transferPlanStatusLabels,
   weekdays,
   type ActionProgressStatus,
+  type ImpactCheckAnswer,
   type MyTransferPlan,
   type MyTransferPlans,
   type PlanActionFields,
@@ -222,11 +229,13 @@ export function TransferPlanPanel({ eventId, timezone }: TransferPlanPanelProps)
                     {p.priorityAction ? ` · ${p.priorityAction}` : ''}
                   </span>
                   <span className="text-xs text-corp-muted">
-                    {p.status === 'completed' && p.completedAt
-                      ? `Completed ${formatInstant(p.completedAt, timezone)}`
-                      : p.reminder.nextReminderAt
-                        ? `Next reminder ${formatInstant(p.reminder.nextReminderAt, timezone)}`
-                        : 'No reminders'}
+                    {p.status === 'completed' && p.checkDue
+                      ? 'An impact check is waiting for your answer'
+                      : p.status === 'completed'
+                        ? planOutcomeLabels[p.outcome]
+                        : p.reminder.nextReminderAt
+                          ? `Next reminder ${formatInstant(p.reminder.nextReminderAt, timezone)}`
+                          : 'No reminders'}
                   </span>
                 </button>
               </li>
@@ -346,7 +355,7 @@ export function TransferPlanPanel({ eventId, timezone }: TransferPlanPanelProps)
         >
           <p className="text-sm text-corp-text">
             {done === 'completed'
-              ? 'Thank you. Your plan is completed, with a result and evidence on every action, and the organisers have been told. Its reminders have stopped. Start another plan whenever you take on something new.'
+              ? 'Thank you. Your plan is completed: every action applied, with evidence, and the organisers have been told. Its reminders have stopped. Next comes impact assessment: in about three months we will ask whether the actions have made a measurable difference, and later whether that has lasted. Start another plan only if you take on something new.'
               : 'Thank you. Your plan is submitted. Come back to this page to record progress on each action and to adjust the plan as things change.'}
           </p>
         </Dialog>
@@ -474,6 +483,16 @@ function PlanEditor({
   const hasContent = actions.some((a) => a.action.trim() !== '');
   /** What still stands between a submitted plan and completion, from the saved plan. */
   const gaps = submitted ? planCompletionGaps(plan.actions) : [];
+  /** Completion is application; impact is the delegate's own report, which needs a recorded result. */
+  const hasResult = planHasResult(plan.actions);
+  const [improvement, setImprovement] = useState<'seen' | 'not_yet'>('not_yet');
+  const [outcomeNote, setOutcomeNote] = useState('');
+  /** The impact check waiting for an answer, if any, as of today in the event's timezone. */
+  const today = dateIn(new Date(), timezone);
+  const dueCheck = locked
+    ? (plan.impactChecks.find((c) => !c.answeredAt && c.dueOn <= today) ?? null)
+    : null;
+  const nextCheck = locked ? (plan.impactChecks.find((c) => !c.answeredAt) ?? null) : null;
 
   function setPreference(patch: Partial<ReminderPreference>) {
     setDirty(true);
@@ -585,14 +604,17 @@ function PlanEditor({
     }
   }
 
-  /** Marks the submitted plan completed; the server checks the results and evidence again. */
+  /** Marks the submitted plan completed; the server checks application and evidence again. */
   async function complete() {
     setBusy(true);
     setFailure(null);
     try {
       const result = await apiFetch<MyTransferPlan>(
         `/me/events/${eventId}/transfer-plans/${plan.id}/complete`,
-        { method: 'POST', body: JSON.stringify({ version: plan.version }) },
+        {
+          method: 'POST',
+          body: JSON.stringify({ version: plan.version, improvement, note: outcomeNote.trim() }),
+        },
       );
       setDialog(null);
       onCompleted(result);
@@ -601,12 +623,40 @@ function PlanEditor({
       if (e instanceof ApiError && e.code === 'plan_incomplete') {
         setFailure({
           message:
-            'Every action needs a result and evidence before the plan can be completed. Reload the plan to see what is missing.',
+            'Every action needs to be applied, with evidence, before the plan can be completed. Reload the plan to see what is missing.',
           stale: true,
         });
       } else {
         setFailure(describeError(e, 'Your plan could not be completed.'));
       }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Answers the impact check that is due; the outcome moves only as far as the evidence goes. */
+  const [checkAnswer, setCheckAnswer] = useState<ImpactCheckAnswer | null>(null);
+  const [checkNote, setCheckNote] = useState('');
+  const [checkEvidence, setCheckEvidence] = useState('');
+  async function answerCheck() {
+    if (!dueCheck || !checkAnswer) return;
+    setBusy(true);
+    setFailure(null);
+    try {
+      const result = await apiFetch<MyTransferPlan>(
+        `/me/events/${eventId}/transfer-plans/${plan.id}/impact-checks/${dueCheck.id}`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            answer: checkAnswer,
+            note: checkNote.trim(),
+            evidence: checkEvidence.trim(),
+          }),
+        },
+      );
+      onUpdated(result, 'Thank you. Your answer is recorded.');
+    } catch (e) {
+      setFailure(describeError(e, 'Your answer could not be saved.'));
     } finally {
       setBusy(false);
     }
@@ -861,9 +911,11 @@ function PlanEditor({
             Finishing this plan
           </h3>
           <p className="text-sm text-corp-muted">
-            A plan is completed once every action has a result (a measure with an actual value, or
-            results in a progress record) and at least one piece of evidence. Completing it stops
-            the reminders, freezes the plan and tells the organisers.
+            A plan is completed once every action has been applied on the job (recorded as applied
+            or completed) with at least one piece of evidence. Completing it stops the reminders,
+            freezes the plan and tells the organisers. Whether the actions made a measurable
+            difference is a separate question you answer as you complete it, and again at later
+            impact checks.
           </p>
           {gaps.length > 0 ? (
             <ul aria-label="Still needed before completion" className="space-y-1 text-sm">
@@ -875,7 +927,9 @@ function PlanEditor({
                   />
                   <span>
                     <span className="font-semibold text-corp-ink">{g.action}</span>: needs{' '}
-                    {g.missing.map((m) => (m === 'result' ? 'a result' : 'evidence')).join(' and ')}
+                    {g.missing
+                      .map((m) => (m === 'applied' ? 'to be recorded as applied' : 'evidence'))
+                      .join(' and ')}
                     .
                   </span>
                 </li>
@@ -883,7 +937,7 @@ function PlanEditor({
             </ul>
           ) : (
             <p className="text-sm text-corp-green-text">
-              Every action has a result and evidence. You can complete the plan.
+              Every action is applied, with evidence. You can complete the plan.
             </p>
           )}
           <button
@@ -895,6 +949,129 @@ function PlanEditor({
             Mark this plan completed
           </button>
           {dirty ? <p className="text-xs text-corp-muted">Save your changes first.</p> : null}
+        </section>
+      ) : null}
+
+      {locked ? (
+        <section
+          aria-labelledby={`${id}-impact`}
+          className="space-y-3 border border-corp-line bg-white p-4"
+        >
+          <h3 id={`${id}-impact`} className="font-semibold text-corp-ink">
+            Impact assessment and sustainability
+          </h3>
+          <div className="flex flex-wrap items-center gap-2">
+            <StatusPill tone="positive">{planOutcomeLabels[plan.outcome]}</StatusPill>
+            <p className="text-sm text-corp-muted">{planOutcomeDescriptions[plan.outcome]}</p>
+          </div>
+          {plan.outcomeNote ? (
+            <p className="text-sm text-corp-text">
+              <span className="font-semibold text-corp-ink">In your words:</span> {plan.outcomeNote}
+            </p>
+          ) : null}
+          {plan.impactChecks.filter((c) => c.answeredAt).length > 0 ? (
+            <ol aria-label="Impact checks answered" className="space-y-1 text-sm text-corp-text">
+              {plan.impactChecks
+                .filter((c) => c.answeredAt)
+                .map((c) => (
+                  <li key={c.id}>
+                    <span className="font-semibold text-corp-ink">
+                      Check {c.round}, {formatInstant(c.answeredAt, timezone)}:
+                    </span>{' '}
+                    {c.answer ? impactCheckAnswerLabels[c.answer] : ''}
+                    {c.evidence ? ` (${c.evidence})` : ''}
+                    {c.note ? ` ${c.note}` : ''}
+                  </li>
+                ))}
+            </ol>
+          ) : null}
+          {dueCheck ? (
+            <form
+              aria-label={`Impact check ${dueCheck.round}`}
+              onSubmit={(e) => {
+                e.preventDefault();
+                void answerCheck();
+              }}
+              className="space-y-3 border-l-4 border-corp-accent bg-corp-accent-soft/40 p-3"
+            >
+              <p className="text-sm font-semibold text-corp-ink">
+                {plan.outcome === 'impact_demonstrated'
+                  ? 'Has the improvement you reported continued?'
+                  : 'Has a measurable improvement appeared since you completed the plan?'}
+              </p>
+              <fieldset className="space-y-2">
+                <legend className="sr-only">Your answer</legend>
+                {impactCheckAnswersFor(plan.outcome).map((a) => (
+                  <label key={a} className="flex items-start gap-2 text-sm">
+                    <input
+                      type="radio"
+                      name={`${id}-check`}
+                      checked={checkAnswer === a}
+                      onChange={() => setCheckAnswer(a)}
+                      className="mt-1 size-4"
+                    />
+                    <span>{impactCheckAnswerLabels[a]}</span>
+                  </label>
+                ))}
+              </fieldset>
+              {checkAnswer === 'improved' || checkAnswer === 'sustained' ? (
+                <div className="space-y-1">
+                  <label
+                    htmlFor={`${id}-check-evidence`}
+                    className="text-sm font-semibold text-corp-ink"
+                  >
+                    What evidence shows it? (required)
+                  </label>
+                  <textarea
+                    id={`${id}-check-evidence`}
+                    rows={3}
+                    maxLength={2000}
+                    value={checkEvidence}
+                    onChange={(e) => setCheckEvidence(e.target.value)}
+                    className={textarea}
+                  />
+                </div>
+              ) : null}
+              <div className="space-y-1">
+                <label htmlFor={`${id}-check-note`} className="text-sm font-semibold text-corp-ink">
+                  Anything else? (optional)
+                </label>
+                <textarea
+                  id={`${id}-check-note`}
+                  rows={2}
+                  maxLength={2000}
+                  value={checkNote}
+                  onChange={(e) => setCheckNote(e.target.value)}
+                  className={textarea}
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={
+                  busy ||
+                  !checkAnswer ||
+                  ((checkAnswer === 'improved' || checkAnswer === 'sustained') &&
+                    !checkEvidence.trim())
+                }
+                className={consoleButton({ variant: 'accent' })}
+              >
+                {busy ? <Loader2Icon className="animate-spin" aria-hidden="true" /> : null}
+                Save my answer
+              </button>
+            </form>
+          ) : nextCheck ? (
+            <p className="text-sm text-corp-muted">
+              We will ask you on {formatDateShort(nextCheck.dueOn)} whether
+              {plan.outcome === 'impact_demonstrated'
+                ? ' the improvement has continued.'
+                : ' a measurable improvement has appeared.'}{' '}
+              You will get an email that day.
+            </p>
+          ) : (
+            <p className="text-sm text-corp-muted">
+              No further checks are scheduled. The outcome above stands as you last reported it.
+            </p>
+          )}
         </section>
       ) : null}
 
@@ -993,7 +1170,7 @@ function PlanEditor({
       {dialog?.kind === 'complete' ? (
         <Dialog
           title="Complete this plan?"
-          description="Every action has a result and evidence. Once completed, the plan cannot be changed, its reminders stop, and the organisers are told."
+          description="Every action is applied, with evidence. Once completed, the plan cannot be changed, its reminders stop, and the organisers are told. Impact checks follow later."
           onClose={() => setDialog(null)}
           closeDisabled={busy}
           footer={
@@ -1008,7 +1185,7 @@ function PlanEditor({
               </button>
               <button
                 type="button"
-                disabled={busy}
+                disabled={busy || (improvement === 'seen' && !hasResult)}
                 onClick={() => void complete()}
                 className={consoleButton({ variant: 'primary' })}
               >
@@ -1018,11 +1195,61 @@ function PlanEditor({
             </>
           }
         >
-          <p className="text-sm text-corp-text">
-            {planTitleOf(plan)}: {plan.actions.filter((a) => a.action.trim()).length} action
-            {plan.actions.filter((a) => a.action.trim()).length === 1 ? '' : 's'}, each with a
-            result and evidence.
-          </p>
+          <div className="space-y-4 text-sm text-corp-text">
+            <p>
+              {planTitleOf(plan)}: {plan.actions.filter((a) => a.action.trim()).length} action
+              {plan.actions.filter((a) => a.action.trim()).length === 1 ? '' : 's'}, each applied
+              with evidence.
+            </p>
+            <fieldset className="space-y-2">
+              <legend className="font-semibold text-corp-ink">
+                Have these actions made a measurable difference to performance or results yet?
+              </legend>
+              <p className="text-xs text-corp-muted">
+                Completing the actions is one thing; a measurable improvement is another. Either
+                answer is fine: what counts is what the evidence shows. We will ask again later.
+              </p>
+              <label className="flex items-start gap-2">
+                <input
+                  type="radio"
+                  name={`${id}-improvement`}
+                  checked={improvement === 'not_yet'}
+                  onChange={() => setImprovement('not_yet')}
+                  className="mt-1 size-4"
+                />
+                <span>No measurable improvement yet</span>
+              </label>
+              <label className="flex items-start gap-2">
+                <input
+                  type="radio"
+                  name={`${id}-improvement`}
+                  checked={improvement === 'seen'}
+                  onChange={() => setImprovement('seen')}
+                  className="mt-1 size-4"
+                />
+                <span>Yes, there is a measurable improvement, and the evidence shows it</span>
+              </label>
+              {improvement === 'seen' && !hasResult ? (
+                <p role="alert" className="text-xs text-brand-danger">
+                  Record the result on at least one action first: a measure with an actual value, or
+                  results on a progress record.
+                </p>
+              ) : null}
+            </fieldset>
+            <div className="space-y-1">
+              <label htmlFor={`${id}-outcome-note`} className="font-semibold text-corp-ink">
+                In your words, what changed, or what has not changed yet? (optional)
+              </label>
+              <textarea
+                id={`${id}-outcome-note`}
+                rows={3}
+                maxLength={2000}
+                value={outcomeNote}
+                onChange={(e) => setOutcomeNote(e.target.value)}
+                className={textarea}
+              />
+            </div>
+          </div>
         </Dialog>
       ) : null}
       {dialog?.kind === 'progress' ? (

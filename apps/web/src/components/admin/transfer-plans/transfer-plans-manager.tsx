@@ -9,6 +9,7 @@ import {
   measureSummaries,
   measureSummaryLabels,
   planActionFieldLabels,
+  planOutcomeLabels,
   planTitleOf,
   reminderFrequencyLabels,
   transferPlanStatusLabels,
@@ -359,6 +360,11 @@ export function TransferPlansManager({ event }: TransferPlansManagerProps) {
                       <StatusPill tone={p.status === 'draft' ? 'neutral' : 'positive'}>
                         {transferPlanStatusLabels[p.status]}
                       </StatusPill>
+                      {p.status === 'completed' ? (
+                        <p className="mt-1 text-xs font-semibold text-corp-ink">
+                          {planOutcomeLabels[p.outcome]}
+                        </p>
+                      ) : null}
                       {p.status === 'completed' && p.completedAt ? (
                         <p className="mt-1 text-xs text-corp-muted">
                           {formatInstant(p.completedAt, event.timezone)}
@@ -605,6 +611,9 @@ function PlanDialog({
                   ? `Submitted ${formatInstant(detail.plan.submittedAt, timezone)}`
                   : 'Draft'}
             </StatusPill>
+            {detail.plan.status === 'completed' ? (
+              <StatusPill tone="positive">{planOutcomeLabels[detail.plan.outcome]}</StatusPill>
+            ) : null}
             <span className="text-xs text-corp-muted">
               {planTitleOf(detail.plan)} · last changed{' '}
               {formatInstant(detail.plan.updatedAt, timezone)} · version {detail.plan.version}
