@@ -5,6 +5,7 @@ import { Loader2Icon } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
+import { ActionQrCodes } from '@/components/admin/event-setup/action-qr-codes';
 import { AttendanceManager } from '@/components/admin/attendance/attendance-manager';
 import { EventWorkspace } from '@/components/admin/event-workspace';
 import { OnboardingSender } from '@/components/admin/onboarding-sender';
@@ -35,7 +36,8 @@ type Tab =
   | 'reflections'
   | 'feedback'
   | 'transfer-plans'
-  | 'reports';
+  | 'reports'
+  | 'qr-codes';
 
 const TABS: ReadonlyArray<{ id: Tab; label: string }> = [
   { id: 'profile', label: 'Event profile' },
@@ -49,6 +51,7 @@ const TABS: ReadonlyArray<{ id: Tab; label: string }> = [
   { id: 'feedback', label: 'Session feedback' },
   { id: 'transfer-plans', label: 'Transfer plans' },
   { id: 'reports', label: 'Reports' },
+  { id: 'qr-codes', label: 'QR codes' },
 ];
 
 const TAB_IDS = TABS.map((t) => t.id);
@@ -197,6 +200,7 @@ export function EventSettings({ initialEvent }: EventSettingsProps) {
         {tab === 'reflections' ? <ReflectionsManager event={event} /> : null}
         {tab === 'feedback' ? <FeedbackManager event={event} /> : null}
         {tab === 'transfer-plans' ? <TransferPlansManager event={event} /> : null}
+        {tab === 'qr-codes' ? <ActionQrCodes event={event} /> : null}
         {tab === 'reports' ? (
           <ReportWorkspace
             eventId={event.id}

@@ -550,6 +550,15 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   aggregates per delegate at the furthest point any of their plans reached (completed, applied
   with no improvement yet, impact demonstrated, sustained impact) with checks waiting and
   answered. Migration `20261106210930_transfer_plan_outcome_and_impact_checks`.
+- QR codes for every delegate action (task of 2026-11-06): the admin event page has a "QR codes"
+  tab (`ActionQrCodes`) with one code per action: the daily reflection, each session's feedback
+  (its existing `/feedback/:code` link), the transfer plan, and every enabled assessment with
+  questions (the end-of-conference evaluation among them). Codes are shown on screen, printed
+  ("Print all") or downloaded as PNG. They carry `/go/:eventId/:target` on the web origin
+  (`apps/web/src/lib/deep-links.ts` names the targets); that page signs the delegate in if need
+  be, applies the consent gate, and redirects to `/account/events/:eventId#<tab>`, so a scan
+  lands on the one section with nothing to navigate. The event page still decides what the
+  delegate may see: a code for a closed assessment lands on it in its read-only state.
 - Business measures and evidence on Transfer Plans (task of 2026-10-31; backlog E14-1 to E14-5,
   E16-6): each planned action of the delegate's existing plan can carry any number of measures
   and any number of evidence records; saving either bumps the plan's `version` like every other
