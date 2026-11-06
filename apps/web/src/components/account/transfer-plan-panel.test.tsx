@@ -1,9 +1,29 @@
 import type { MyTransferPlan, PlanActionView, TransferPlanSummary } from '@mbc/shared';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { TransferPlanPanel } from './transfer-plan-panel';
+import { TransferPlanPanel, useMyTransferPlans } from './transfer-plan-panel';
+
+/**
+ * Loads the list as the event page does and shows one plan, as its tab would; starting another
+ * plan opens it, as the page switches tabs.
+ */
+function Harness({ planId: initial }: { planId: string }) {
+  const plans = useMyTransferPlans(EVENT);
+  const [planId, setPlanId] = useState(initial);
+  return (
+    <TransferPlanPanel
+      eventId={EVENT}
+      timezone="Africa/Lagos"
+      planId={planId}
+      plans={plans.state}
+      onPlansChanged={() => void plans.refresh()}
+      onOpenPlan={setPlanId}
+    />
+  );
+}
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -269,17 +289,13 @@ describe('TransferPlanPanel', () => {
   it('shows the pre-event answer, saves a draft with the version seen, reviews and submits', async () => {
     const calls = stub(plan());
     const user = userEvent.setup();
-    render(<TransferPlanPanel eventId={EVENT} timezone="Africa/Lagos" />);
+    render(<Harness planId={PLAN} />);
     expect((await screen.findAllByText('Draft')).length).toBeGreaterThan(0);
     expect(await screen.findByText('How to measure transfer')).toBeTruthy();
     expect(screen.getByText(/final session, submission opens/)).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Submit my plan' }).hasAttribute('disabled')).toBe(
       true,
     );
-    // The plan is listed as "Plan 1" until it is named.
-    expect(
-      within(screen.getByRole('region', { name: 'Your plans' })).getByText('Plan 1'),
-    ).toBeTruthy();
 
     await user.click(screen.getByRole('button', { name: 'Add an action' }));
     const card = screen.getByRole('article', { name: 'Action 1' });
@@ -298,9 +314,6 @@ describe('TransferPlanPanel', () => {
       reminder: { frequency: 'none', startOn: null, endOn: null, time: '09:00', days: [] },
     });
     expect(await screen.findByText('Draft saved.')).toBeTruthy();
-    expect(
-      within(screen.getByRole('region', { name: 'Your plans' })).getByText('Measures first'),
-    ).toBeTruthy();
 
     await user.click(screen.getByRole('button', { name: 'Submit my plan' }));
     const dialog = await screen.findByRole('dialog', { name: 'Submit your plan?' });
@@ -322,7 +335,7 @@ describe('TransferPlanPanel', () => {
       plan({ canSubmit: false, plan: { ...plan().plan, version: 3, actions: [action()] } }),
     );
     const user = userEvent.setup();
-    render(<TransferPlanPanel eventId={EVENT} timezone="Africa/Lagos" />);
+    render(<Harness planId={PLAN} />);
     expect(
       await screen.findByText(
         /You submit from the start of the final Transfer Planning session on 13 Nov 2026 at 14:00/,
@@ -365,7 +378,7 @@ describe('TransferPlanPanel', () => {
       }),
     );
     const user = userEvent.setup();
-    render(<TransferPlanPanel eventId={EVENT} timezone="Africa/Lagos" />);
+    render(<Harness planId={PLAN} />);
     const card = await screen.findByRole('article', { name: 'Brief stakeholders' });
     expect(within(card).getByText('Not yet started')).toBeTruthy();
     // A submitted plan says what completion still needs.
@@ -453,7 +466,7 @@ describe('TransferPlanPanel', () => {
       }),
     );
     const user = userEvent.setup();
-    render(<TransferPlanPanel eventId={EVENT} timezone="Africa/Lagos" />);
+    render(<Harness planId={PLAN} />);
     expect(await screen.findByText(/Every action is applied, with evidence/)).toBeTruthy();
     await user.click(screen.getByRole('button', { name: 'Mark this plan completed' }));
     const confirm = await screen.findByRole('dialog', { name: 'Complete this plan?' });
@@ -490,7 +503,7 @@ describe('TransferPlanPanel', () => {
       plan({ plan: { ...plan().plan, status: 'submitted', version: 2, actions: [action()] } }),
     );
     const user = userEvent.setup();
-    render(<TransferPlanPanel eventId={EVENT} timezone="Africa/Lagos" />);
+    render(<Harness planId={PLAN} />);
     await screen.findByRole('article', { name: 'Brief stakeholders' });
     await user.click(screen.getByRole('button', { name: 'Start another plan' }));
     await user.type(screen.getByLabelText('What is this plan about?'), 'Coaching rollout');
@@ -499,11 +512,12 @@ describe('TransferPlanPanel', () => {
       (c) => c.init?.method === 'POST' && c.url.endsWith('/transfer-plans'),
     );
     expect(created?.body).toEqual({ title: 'Coaching rollout' });
-    // Both plans are listed; the new one is open, named, and empty.
-    const list = await screen.findByRole('region', { name: 'Your plans' });
-    expect(within(list).getByText('Plan 1')).toBeTruthy();
-    expect(within(list).getByText('Coaching rollout')).toBeTruthy();
-    expect((screen.getByLabelText('Plan name') as HTMLInputElement).value).toBe('Coaching rollout');
+    // The new plan opens on its own, named and empty.
+    await vi.waitFor(() =>
+      expect((screen.getByLabelText('Plan name') as HTMLInputElement).value).toBe(
+        'Coaching rollout',
+      ),
+    );
     expect(screen.queryByRole('article', { name: 'Brief stakeholders' })).toBeNull();
 
     // Twice a week: the days appear and exactly two can be chosen; the window and time are saved.

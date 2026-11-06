@@ -31,7 +31,7 @@ describe('HomePage', () => {
     // Exactly one logo, and it is the organiser's.
     expect(screen.getAllByRole('img')).toHaveLength(1);
     expect(screen.getByLabelText(/email/i)).toBeTruthy();
-    expect(screen.getByText(/one-time code to the address you registered with/)).toBeTruthy();
+    expect(screen.getByText(/one-time code to the email address you registered with/)).toBeTruthy();
     // The marketing landing page is gone: no journey steps, no venue, no registration.
     expect(screen.queryByText(/Three moments/)).toBeNull();
     expect(screen.queryByRole('heading', { name: /Transfer Plan/ })).toBeNull();

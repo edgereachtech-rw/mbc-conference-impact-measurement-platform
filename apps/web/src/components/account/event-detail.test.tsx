@@ -171,14 +171,14 @@ describe('EventDetail', () => {
         'Attendance',
         'Day 1 reflection',
         'Session feedback',
-        'Transfer plan',
+        'Plan 1',
         'End-of-conference evaluation',
         '30-day follow-up',
       ]),
     );
-    expect(
-      within(tabs).getByRole('tab', { name: 'Transfer plan' }).getAttribute('aria-selected'),
-    ).toBe('true');
+    expect(within(tabs).getByRole('tab', { name: 'Plan 1' }).getAttribute('aria-selected')).toBe(
+      'true',
+    );
     expect(screen.queryByRole('region', { name: 'Event' })).toBeNull();
     expect(calls).toContain('/api/v1/me/events/e1/transfer-plans');
     expect(calls).toContain('/api/v1/me/events/e1/assessments');
@@ -212,7 +212,9 @@ describe('EventDetail', () => {
                 form('end_of_conference', 1, '', 'open'),
               ],
             }
-          : { reflections: [], sessions: [] };
+          : url.endsWith('/transfer-plans')
+            ? { plans: [] }
+            : { reflections: [], sessions: [] };
         return new Response(JSON.stringify(body), {
           status: 200,
           headers: { 'content-type': 'application/json' },

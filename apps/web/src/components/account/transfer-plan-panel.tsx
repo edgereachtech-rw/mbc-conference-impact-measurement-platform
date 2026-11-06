@@ -49,12 +49,7 @@ import { describeError } from '@/lib/imports';
 
 import { ActionMeasures, EvidenceDialog, MeasuresDialog } from './measures-evidence';
 
-interface TransferPlanPanelProps {
-  eventId: string;
-  timezone: string;
-}
-
-type ListState =
+export type MyTransferPlansState =
   | { kind: 'loading' }
   | { kind: 'ready'; plans: TransferPlanSummary[] }
   | { kind: 'error'; message: string; requestId?: string };
@@ -64,22 +59,77 @@ type PlanState =
   | { kind: 'ready'; data: MyTransferPlan }
   | { kind: 'error'; message: string; requestId?: string };
 
+/** The delegate's plans for one event, loaded once by the event page and shared by the tabs. */
+export function useMyTransferPlans(eventId: string) {
+  const [state, setState] = useState<MyTransferPlansState>({ kind: 'loading' });
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    apiFetch<MyTransferPlans>(`/me/events/${eventId}/transfer-plans`).then(
+      (data) => {
+        if (!cancelled) setState({ kind: 'ready', plans: data.plans });
+      },
+      (e: unknown) => {
+        if (!cancelled) {
+          const failure = describeError(e, 'Your plans could not be loaded.');
+          setState({ kind: 'error', message: failure.message, requestId: failure.requestId });
+        }
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [eventId, attempt]);
+  return {
+    state,
+    retry: () => setAttempt((n) => n + 1),
+    /** After a change the list is read again so every tab's label and status is current. */
+    refresh: () =>
+      apiFetch<MyTransferPlans>(`/me/events/${eventId}/transfer-plans`).then(
+        (data) => setState({ kind: 'ready', plans: data.plans }),
+        () => undefined,
+      ),
+  };
+}
+
+/** The tab id of one plan on the delegate's event page (`#transfer-plan-<id>`). */
+export const transferPlanTabId = (p: Pick<TransferPlanSummary, 'id'>) =>
+  `transfer-plan-${p.id}` as const;
+
 /** The plan a delegate most likely wants on arrival: the first still open, else the latest. */
-function defaultPlan(plans: TransferPlanSummary[]): string | null {
+export function defaultPlan(plans: TransferPlanSummary[]): string | null {
   return plans.find((p) => p.status !== 'completed')?.id ?? plans.at(-1)?.id ?? null;
 }
 
+interface TransferPlanPanelProps {
+  eventId: string;
+  timezone: string;
+  /** The plan this tab shows. */
+  planId: string;
+  plans: MyTransferPlansState;
+  /** The list changed (a save, a submission, a completion): the tabs re-read it. */
+  onPlansChanged: () => void;
+  /** A new plan was started: the page opens its tab. */
+  onOpenPlan: (planId: string) => void;
+}
+
 /**
- * The delegate's Individual Transfer Plans (backlog E9, E10, E12-8 to 12-11): one or more plans
- * per event (2026-11-06), each saved as a draft in any Transfer Planning session, submitted once
- * the final session has started, kept open for changes and progress records, and marked
- * completed once every action has a result and evidence. Every save carries the version last
- * seen so two tabs cannot overwrite each other.
+ * One of the delegate's Individual Transfer Plans, as its own tab (task of 2026-11-07; before,
+ * the plans sat as cards above one editor). Backlog E9, E10, E12-8 to 12-11: a plan is saved as
+ * a draft in any Transfer Planning session, submitted once the final session has started, kept
+ * open for changes and progress records, and marked completed once every action is applied with
+ * evidence. Every save carries the version last seen so two tabs cannot overwrite each other.
+ * "Start another plan" opens a new tab for the next plan.
  */
-export function TransferPlanPanel({ eventId, timezone }: TransferPlanPanelProps) {
-  const [list, setList] = useState<ListState>({ kind: 'loading' });
+export function TransferPlanPanel({
+  eventId,
+  timezone,
+  planId,
+  plans,
+  onPlansChanged,
+  onOpenPlan,
+}: TransferPlanPanelProps) {
   const [attempt, setAttempt] = useState(0);
-  const [chosen, setChosen] = useState<string | null>(null);
   const [plan, setPlan] = useState<{ id: string; state: PlanState } | null>(null);
   // Kept outside the editor, which remounts on every new plan version.
   const [notice, setNotice] = useState<string | null>(null);
@@ -90,39 +140,17 @@ export function TransferPlanPanel({ eventId, timezone }: TransferPlanPanelProps)
 
   useEffect(() => {
     let cancelled = false;
-    apiFetch<MyTransferPlans>(`/me/events/${eventId}/transfer-plans`).then(
-      (data) => {
-        if (!cancelled) setList({ kind: 'ready', plans: data.plans });
-      },
-      (e: unknown) => {
-        if (!cancelled) {
-          const failure = describeError(e, 'Your plans could not be loaded.');
-          setList({ kind: 'error', message: failure.message, requestId: failure.requestId });
-        }
-      },
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, [eventId, attempt]);
-
-  const plans = list.kind === 'ready' ? list.plans : [];
-  const selected = chosen && plans.some((p) => p.id === chosen) ? chosen : defaultPlan(plans);
-
-  useEffect(() => {
-    if (!selected) return;
-    let cancelled = false;
     // No loading state is set here: while the ids differ, `current` below is null and the
     // loading panel shows; a reload of the same plan keeps the old data until the new arrives.
-    apiFetch<MyTransferPlan>(`/me/events/${eventId}/transfer-plans/${selected}`).then(
+    apiFetch<MyTransferPlan>(`/me/events/${eventId}/transfer-plans/${planId}`).then(
       (data) => {
-        if (!cancelled) setPlan({ id: selected, state: { kind: 'ready', data } });
+        if (!cancelled) setPlan({ id: planId, state: { kind: 'ready', data } });
       },
       (e: unknown) => {
         if (!cancelled) {
           const failure = describeError(e, 'Your plan could not be loaded.');
           setPlan({
-            id: selected,
+            id: planId,
             state: { kind: 'error', message: failure.message, requestId: failure.requestId },
           });
         }
@@ -131,20 +159,12 @@ export function TransferPlanPanel({ eventId, timezone }: TransferPlanPanelProps)
     return () => {
       cancelled = true;
     };
-  }, [eventId, selected, attempt]);
-
-  /** The list reflects what the editor just changed: status, title, counts, next reminder. */
-  function refreshList() {
-    apiFetch<MyTransferPlans>(`/me/events/${eventId}/transfer-plans`).then(
-      (data) => setList({ kind: 'ready', plans: data.plans }),
-      () => undefined,
-    );
-  }
+  }, [eventId, planId, attempt]);
 
   function updated(data: MyTransferPlan, message?: string) {
     setPlan({ id: data.plan.id, state: { kind: 'ready', data } });
     setNotice(message ?? null);
-    refreshList();
+    onPlansChanged();
   }
 
   async function startAnother() {
@@ -157,9 +177,8 @@ export function TransferPlanPanel({ eventId, timezone }: TransferPlanPanelProps)
       });
       setStarting(null);
       setNotice(null);
-      setChosen(created.plan.id);
-      setPlan({ id: created.plan.id, state: { kind: 'ready', data: created } });
-      refreshList();
+      onPlansChanged();
+      onOpenPlan(created.plan.id);
     } catch (e) {
       setStarting({
         ...starting,
@@ -169,79 +188,11 @@ export function TransferPlanPanel({ eventId, timezone }: TransferPlanPanelProps)
     }
   }
 
-  if (list.kind === 'loading') return <StatePanel kind="loading" title="Loading your plans…" />;
-  if (list.kind === 'error') {
-    return (
-      <StatePanel
-        kind="error"
-        title="Plans unavailable"
-        description={list.message}
-        requestId={list.requestId}
-        action={
-          <button
-            type="button"
-            onClick={() => setAttempt((n) => n + 1)}
-            className={consoleButton({ variant: 'secondary' })}
-          >
-            Try again
-          </button>
-        }
-      />
-    );
-  }
-
-  const current = plan && plan.id === selected ? plan.state : null;
+  const count = plans.kind === 'ready' ? plans.plans.length : 0;
+  const current = plan && plan.id === planId ? plan.state : null;
   return (
     <div className="space-y-6">
-      <section aria-label="Your plans" className="space-y-3">
-        <ul className="grid gap-3 sm:grid-cols-2">
-          {plans.map((p) => {
-            const open = p.id === selected;
-            return (
-              <li key={p.id}>
-                <button
-                  type="button"
-                  aria-pressed={open}
-                  onClick={() => {
-                    setChosen(p.id);
-                    setNotice(null);
-                  }}
-                  className={`flex w-full min-h-tap flex-col items-start gap-1 border p-3 text-left transition-shadow hover:shadow-elevated ${
-                    open ? 'border-corp-accent border-l-4 bg-white' : 'border-corp-line bg-white'
-                  }`}
-                >
-                  <span className="flex w-full items-center justify-between gap-2">
-                    <span className="font-semibold text-corp-ink">{planTitleOf(p)}</span>
-                    <StatusPill
-                      tone={
-                        p.status === 'completed'
-                          ? 'positive'
-                          : p.status === 'submitted'
-                            ? 'positive'
-                            : 'neutral'
-                      }
-                    >
-                      {transferPlanStatusLabels[p.status]}
-                    </StatusPill>
-                  </span>
-                  <span className="text-xs text-corp-muted">
-                    {p.actions === 1 ? '1 action' : `${p.actions} actions`}
-                    {p.priorityAction ? ` · ${p.priorityAction}` : ''}
-                  </span>
-                  <span className="text-xs text-corp-muted">
-                    {p.status === 'completed' && p.checkDue
-                      ? 'An impact check is waiting for your answer'
-                      : p.status === 'completed'
-                        ? planOutcomeLabels[p.outcome]
-                        : p.reminder.nextReminderAt
-                          ? `Next reminder ${formatInstant(p.reminder.nextReminderAt, timezone)}`
-                          : 'No reminders'}
-                  </span>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
+      <section aria-label="Another plan" className="space-y-3">
         {starting ? (
           <form
             onSubmit={(e) => {
@@ -260,7 +211,7 @@ export function TransferPlanPanel({ eventId, timezone }: TransferPlanPanelProps)
                 maxLength={120}
                 disabled={starting.busy}
                 onChange={(e) => setStarting({ ...starting, title: e.target.value })}
-                placeholder={`Plan ${plans.length + 1}`}
+                placeholder={`Plan ${count + 1}`}
                 className="h-11 w-full rounded-none border border-corp-line bg-white px-3 text-base md:text-sm"
               />
               {starting.error ? (
@@ -289,19 +240,21 @@ export function TransferPlanPanel({ eventId, timezone }: TransferPlanPanelProps)
             </div>
           </form>
         ) : (
-          <button
-            type="button"
-            onClick={() => setStarting({ title: '', busy: false })}
-            className={consoleButton({ variant: 'secondary' })}
-          >
-            <PlusIcon aria-hidden="true" /> Start another plan
-          </button>
+          <p className="flex flex-wrap items-center justify-between gap-2 text-sm text-corp-muted">
+            <span>
+              Each of your plans has its own tab. Start another only for something new you take on.
+            </span>
+            <button
+              type="button"
+              onClick={() => setStarting({ title: '', busy: false })}
+              className={consoleButton({ variant: 'secondary', size: 'sm' })}
+            >
+              <PlusIcon aria-hidden="true" /> Start another plan
+            </button>
+          </p>
         )}
       </section>
-
-      {!selected ? (
-        <p className="text-sm text-corp-muted">No plan yet. Start one above.</p>
-      ) : !current || current.kind === 'loading' ? (
+      {!current || current.kind === 'loading' ? (
         <StatePanel kind="loading" title="Loading your plan…" />
       ) : current.kind === 'error' ? (
         <StatePanel

@@ -53,7 +53,7 @@ export async function resolveSignIn({
 const WHAT_IT_DOES = [
   'Record what you want to get out of the conference, before it starts.',
   'Check in each day, give session feedback and build your transfer plan.',
-  'Follow up at 30, 60,  90 and beyond days on what you have been able to apply.',
+  'Follow up at 30, 60 and 90 days, and later on, on what you have been able to apply.',
 ];
 
 /**

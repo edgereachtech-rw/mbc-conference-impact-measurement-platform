@@ -565,6 +565,12 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   landing place of that day's QR code; `#reflections` remains an alias that lands on the open
   day. The reflections list is loaded once by the page (`useMyReflections`) and each tab shows
   one activity (`ReflectionsPanel` with `activityId`).
+- One tab per transfer plan (task of 2026-11-07): the delegate event page shows each plan as its
+  own tab, named as the delegate named it ("Plan 1", "Coaching rollout"), after Session
+  feedback in journey order; "Start another plan" inside a plan tab creates the next and opens
+  its tab. `#transfer-plan` remains an alias (reminder emails, the dashboard) that lands on the
+  plan to act on: the first not completed, else the latest. The plan list is loaded once by the
+  page (`useMyTransferPlans`) and each tab shows one plan (`TransferPlanPanel` with `planId`).
 - Session feedback questions belong to the event (task of 2026-11-07): one set, recorded once
   under "Feedback questions" on the admin Session feedback tab, that every session's feedback
   form follows. Enabling feedback on a session no longer copies the questions onto it; the

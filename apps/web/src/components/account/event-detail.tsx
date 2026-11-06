@@ -6,6 +6,9 @@ import {
   type MyAssessment,
   type MyEvent,
   type MyReflection,
+  type TransferPlanSummary,
+  planTitleOf,
+  transferPlanStatusLabels,
 } from '@mbc/shared';
 
 import { StatusPill } from '@/components/admin/page-header';
@@ -26,16 +29,29 @@ import { AttendingBadge } from './attending-badge';
 import { JourneyStrip } from './journey-strip';
 import { ReflectionsPanel, reflectionTabId, useMyReflections } from './reflections-panel';
 import { SessionFeedbackList } from './session-feedback-list';
-import { TransferPlanPanel } from './transfer-plan-panel';
+import {
+  defaultPlan,
+  TransferPlanPanel,
+  transferPlanTabId,
+  useMyTransferPlans,
+} from './transfer-plan-panel';
 
-type StaticTab = 'overview' | 'attendance' | 'feedback' | 'transfer-plan';
+type StaticTab = 'overview' | 'attendance' | 'feedback';
 type AssessmentTab = ReturnType<typeof assessmentTabId>;
 type ReflectionTab = ReturnType<typeof reflectionTabId>;
+type PlanTab = ReturnType<typeof transferPlanTabId>;
 /**
  * `assessments` and `reflections` are aliases older links carry: each resolves to the one to
  * act on (the open assessment; today's reflection).
  */
-type Tab = StaticTab | AssessmentTab | ReflectionTab | 'assessments' | 'reflections';
+type Tab =
+  | StaticTab
+  | AssessmentTab
+  | ReflectionTab
+  | PlanTab
+  | 'assessments'
+  | 'reflections'
+  | 'transfer-plan';
 type TabItem = { id: Tab; label: string; hint: string };
 
 const STATIC: Record<StaticTab, TabItem> = {
@@ -45,11 +61,6 @@ const STATIC: Record<StaticTab, TabItem> = {
     id: 'feedback',
     label: 'Session feedback',
     hint: 'Feedback on sessions you attended',
-  },
-  'transfer-plan': {
-    id: 'transfer-plan',
-    label: 'Transfer plan',
-    hint: 'What you will do differently',
   },
 };
 
@@ -62,6 +73,7 @@ const STATIC: Record<StaticTab, TabItem> = {
 function journeyTabs(
   forms: readonly MyAssessment[],
   reflections: readonly MyReflection[],
+  plans: readonly TransferPlanSummary[],
 ): TabItem[] {
   const of = (stage: AssessmentStage): TabItem[] =>
     forms
@@ -86,7 +98,12 @@ function journeyTabs(
         hint: `Reflection for ${formatDay(r.date)}`,
       })),
     STATIC.feedback,
-    STATIC['transfer-plan'],
+    // One tab per transfer plan (2026-11-07): a delegate may keep several.
+    ...plans.map<TabItem>((p) => ({
+      id: transferPlanTabId(p),
+      label: planTitleOf(p),
+      hint: `Transfer plan · ${transferPlanStatusLabels[p.status]}`,
+    })),
     ...of('end_of_conference'),
     ...of('follow_up'),
   ];
@@ -102,10 +119,12 @@ function journeyTabs(
 export function EventDetail({ event, contactEmail }: { event: MyEvent; contactEmail: string }) {
   const assessments = useMyAssessments(event.id);
   const reflections = useMyReflections(event.id);
+  const transferPlans = useMyTransferPlans(event.id);
   const forms = assessments.state.kind === 'ready' ? assessments.state.assessments : [];
   const days = reflections.state.kind === 'ready' ? reflections.state.reflections : [];
-  const tabs = journeyTabs(forms, days);
-  const ids: Tab[] = [...tabs.map((t) => t.id), 'assessments', 'reflections'];
+  const plans = transferPlans.state.kind === 'ready' ? transferPlans.state.plans : [];
+  const tabs = journeyTabs(forms, days, plans);
+  const ids: Tab[] = [...tabs.map((t) => t.id), 'assessments', 'reflections', 'transfer-plan'];
   const [chosen, choose] = useTabState<Tab>(ids, 'overview');
   // The alias: the first assessment still open to answer, else the first assessment there is.
   const actOn =
@@ -121,10 +140,19 @@ export function EventDetail({ event, contactEmail }: { event: MyEvent; contactEm
         ? reflectOn
           ? reflectionTabId(reflectOn)
           : 'overview'
-        : chosen;
+        : chosen === 'transfer-plan'
+          ? // The plan to act on: the first not completed, else the latest.
+            (() => {
+              const id = defaultPlan(plans);
+              return id ? transferPlanTabId({ id }) : 'overview';
+            })()
+          : chosen;
   const current = tabs.find((t) => t.id === tab) ?? STATIC.overview;
   const form = tab.startsWith('assessment-') ? forms.find((a) => assessmentTabId(a) === tab) : null;
   const day = tab.startsWith('reflection-') ? days.find((r) => reflectionTabId(r) === tab) : null;
+  const plan = tab.startsWith('transfer-plan-')
+    ? plans.find((p) => transferPlanTabId(p) === tab)
+    : null;
 
   return (
     <div className="space-y-5">
@@ -190,8 +218,15 @@ export function EventDetail({ event, contactEmail }: { event: MyEvent; contactEm
         {tab === 'feedback' ? (
           <SessionFeedbackList eventId={event.id} timezone={event.timezone} />
         ) : null}
-        {tab === 'transfer-plan' ? (
-          <TransferPlanPanel eventId={event.id} timezone={event.timezone} />
+        {plan ? (
+          <TransferPlanPanel
+            eventId={event.id}
+            timezone={event.timezone}
+            planId={plan.id}
+            plans={transferPlans.state}
+            onPlansChanged={() => void transferPlans.refresh()}
+            onOpenPlan={(id) => choose(transferPlanTabId({ id }))}
+          />
         ) : null}
       </div>
     </div>
