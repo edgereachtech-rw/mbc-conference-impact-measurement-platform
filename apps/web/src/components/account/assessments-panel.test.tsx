@@ -251,7 +251,7 @@ describe('AssessmentsPanel', () => {
     // The review popup lists every answer before anything is sent.
     await user.type(within(card).getByLabelText(/What do you want to learn/), 'Everything');
     await user.click(within(card).getByRole('button', { name: 'Submit answers' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Submit your answers?' });
+    const dialog = await screen.findByRole('dialog', { name: 'Submit your responses?' });
     expect(dialog.textContent).toMatch(/cannot be changed/);
     const summary = within(dialog).getByRole('region', { name: 'Summary: Questions' });
     expect(summary.textContent).toMatch(/How confident are you\?4/);
@@ -365,7 +365,7 @@ describe('AssessmentsPanel', () => {
     expect(within(card).getAllByRole('alert').at(-1)!.textContent).toMatch(/Please specify/);
     await user.type(within(card).getByLabelText('Please specify'), 'A coaching log');
     await user.click(within(card).getByRole('button', { name: 'Submit answers' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Submit your answers?' });
+    const dialog = await screen.findByRole('dialog', { name: 'Submit your responses?' });
     expect(dialog.textContent).toMatch(/Other, please specify: A coaching log/);
     await user.click(within(dialog).getByRole('button', { name: 'Submit now' }));
     expect(puts(calls).at(-1)).toEqual({
@@ -489,7 +489,7 @@ describe('AssessmentsPanel', () => {
     await user.click(within(card).getByLabelText('Prefer not to answer'));
     expect(within(card).queryByText(/To what extent was this expectation met/)).toBeNull();
     await user.click(within(card).getByRole('button', { name: 'Submit answers' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Submit your answers?' });
+    const dialog = await screen.findByRole('dialog', { name: 'Submit your responses?' });
     await user.click(within(dialog).getByRole('button', { name: 'Submit now' }));
     expect(puts(calls).at(-1)).toMatchObject({
       answers: { r: 'Prefer not to answer' },

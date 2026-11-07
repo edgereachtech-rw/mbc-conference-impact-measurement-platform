@@ -19,7 +19,7 @@ import {
 } from '@mbc/shared';
 import { AlertCircleIcon, CheckCircle2Icon, Loader2Icon, XCircleIcon } from 'lucide-react';
 import Link from 'next/link';
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 
 import { Dialog } from '@/components/console/dialog';
 import { consoleButton, StatePanel, StatusPill } from '@/components/console/page';
@@ -351,17 +351,27 @@ function AssessmentCard({
 
   /** Closing the popup after a section is submitted lands on the next one: it is already current. */
   function closeReview() {
+    // After a section is submitted the next one takes its place, and the page is still scrolled
+    // to where the submit button was. Start the delegate at the top of the new section (2026-11-07).
+    const nextSection = review?.done === 'section' && remaining > 0;
     setReview(null);
     setNotice(null);
     setBanner(null);
+    if (nextSection) {
+      requestAnimationFrame(() =>
+        top.current?.scrollIntoView?.({ block: 'start', behavior: 'smooth' }),
+      );
+    }
   }
 
+  const top = useRef<HTMLElement>(null);
   const visibleGroups = canAnswer && stepped && current ? [current] : groups;
   const reviewGroup = review ? groups.find((g) => keyOf(g) === review.key) : null;
   const submitLabel = groups.length > 1 ? 'Submit section' : 'Submit answers';
 
   return (
     <article
+      ref={top}
       aria-label={assessment.waveLabel || stageLabels[assessment.stage]}
       className={`space-y-4 rounded-none border border-corp-line bg-white p-4 shadow-panel md:p-5 ${
         assessment.status === 'open' && !submitted ? 'border-l-4 border-l-corp-accent' : ''
@@ -371,21 +381,25 @@ function AssessmentCard({
         <StatusPill tone="neutral">{stageWhen[assessment.stage]}</StatusPill>
         <StatusPill tone={submitted ? 'positive' : tone}>{statusText}</StatusPill>
       </div>
-      <div>
-        <h3 className="font-corporate text-base font-semibold text-corp-ink md:text-lg">
-          {assessment.waveLabel || stageLabels[assessment.stage]}
-        </h3>
-        {stagePurpose[assessment.stage] ? (
-          <p className="text-sm text-corp-text">{stagePurpose[assessment.stage]}</p>
-        ) : null}
-        {assessment.opensAt || assessment.closesAt ? (
-          <p className="mt-1 text-xs text-corp-muted">
-            {assessment.opensAt ? `Opens ${formatInstant(assessment.opensAt, timezone)}` : ''}
-            {assessment.opensAt && assessment.closesAt ? ' · ' : ''}
-            {assessment.closesAt ? `Closes ${formatInstant(assessment.closesAt, timezone)}` : ''}
-          </p>
-        ) : null}
-      </div>
+      {/* The name and purpose introduce the assessment once, on its first section (2026-11-07):
+          from the second section on, the section's own heading is what the delegate needs. */}
+      {step === 0 ? (
+        <div>
+          <h3 className="font-corporate text-base font-semibold text-corp-ink md:text-lg">
+            {assessment.waveLabel || stageLabels[assessment.stage]}
+          </h3>
+          {stagePurpose[assessment.stage] ? (
+            <p className="text-sm text-corp-text">{stagePurpose[assessment.stage]}</p>
+          ) : null}
+          {assessment.opensAt || assessment.closesAt ? (
+            <p className="mt-1 text-xs text-corp-muted">
+              {assessment.opensAt ? `Opens ${formatInstant(assessment.opensAt, timezone)}` : ''}
+              {assessment.opensAt && assessment.closesAt ? ' · ' : ''}
+              {assessment.closesAt ? `Closes ${formatInstant(assessment.closesAt, timezone)}` : ''}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
 
       {assessment.stage === 'follow_up' && assessment.status !== 'upcoming' ? (
         <FollowUpContext
