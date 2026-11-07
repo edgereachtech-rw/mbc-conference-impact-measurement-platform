@@ -164,64 +164,59 @@ export function ActionMeasures({
   onMeasures,
   onEvidence,
 }: {
-  action: PlanActionView;
+  /** The saved action, or null while it exists only on screen (nothing to attach to yet). */
+  action: PlanActionView | null;
   disabled: boolean;
   /** Unsaved plan edits: the dialogs would reload the plan and lose them. */
   dirty: boolean;
   onMeasures: () => void;
   onEvidence: () => void;
 }) {
-  const measures = action.measures ?? [];
-  const records = action.evidenceRecords ?? [];
+  const measures = action?.measures ?? [];
+  const records = action?.evidenceRecords ?? [];
+  const unsaved = action === null;
   return (
-    <section
-      aria-label="Measures and evidence"
-      className="space-y-3 border-t border-corp-line pt-3"
-    >
+    <section aria-label="Measure and evidence" className="space-y-3 border-t border-corp-line pt-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <p className="text-sm font-semibold text-corp-ink">What changed, and what shows it?</p>
+          <p className="text-sm font-semibold text-corp-ink">Measure and evidence</p>
           <p className="text-xs text-corp-muted">
-            Two questions for later: the measure that moved (a number or a description), and the
-            evidence that the action happened.
+            The measure you will track for this action, with its starting point and target now and
+            its actual result later; and, later, the evidence that the action happened.
           </p>
         </div>
         <div className="flex flex-wrap gap-1">
           <button
             type="button"
-            disabled={disabled || dirty}
+            disabled={disabled || dirty || unsaved}
             onClick={onMeasures}
-            aria-label={
-              measures.length > 0 ? 'What changed? Edit measures' : 'What changed? Add a measure'
-            }
+            aria-label={measures.length > 0 ? 'Measure: edit measures' : 'Measure: add a measure'}
             className={consoleButton({ variant: 'secondary', size: 'sm' })}
           >
-            What changed?
+            Measure
           </button>
           <button
             type="button"
-            disabled={disabled || dirty}
+            disabled={disabled || dirty || unsaved}
             onClick={onEvidence}
-            aria-label={
-              records.length > 0 ? 'What shows it? Edit evidence' : 'What shows it? Add evidence'
-            }
+            aria-label={records.length > 0 ? 'Evidence: edit evidence' : 'Evidence: add evidence'}
             className={consoleButton({ variant: 'secondary', size: 'sm' })}
           >
-            What shows it?
+            Evidence
           </button>
         </div>
       </div>
-      {dirty ? (
+      {unsaved || dirty ? (
         <p className="text-xs text-corp-muted">
-          Save your plan first, then add measures and evidence.
+          Save your plan first, then set the measure and, later, the evidence.
         </p>
       ) : null}
       {measures.length === 0 && records.length === 0 ? (
         <p className="text-xs text-corp-muted">
-          Nothing recorded yet. When the action starts to show, come back here: a measure with its
-          actual value under “What changed?”, and under “What shows it?” an example, a work product
-          or someone&rsquo;s confirmation. Both are needed before the plan can be completed as
-          having made a difference; evidence alone completes it as applied.
+          No measure yet. Set the measure you will track and its starting point while you plan; “Not
+          yet known” and “Not applicable” are fine. Add the actual result and the evidence when the
+          action starts to show. Both are needed before the plan can be completed as having made a
+          difference; evidence alone completes it as applied.
         </p>
       ) : null}
       {measures.length > 0 ? (

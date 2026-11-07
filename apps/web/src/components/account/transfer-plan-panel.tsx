@@ -811,7 +811,7 @@ function PlanEditor({
                               onClick={() => setDialog({ kind: 'evidence', action })}
                               className={consoleButton({ variant: 'ghost', size: 'sm' })}
                             >
-                              What shows it?
+                              Evidence
                             </button>
                           ) : null}
                         </span>
@@ -1118,9 +1118,9 @@ function PlanEditor({
               {improvement === 'seen' && !hasResult ? (
                 <div role="alert" className="space-y-2 text-xs text-brand-danger">
                   <p>
-                    Record the result on at least one action first: open &ldquo;What changed?&rdquo;
-                    on the action and fill in the actual value of its measure, or put the results in
-                    a progress record.
+                    Record the result on at least one action first: open &ldquo;Measure&rdquo; on
+                    the action and fill in the actual value of its measure, or put the results in a
+                    progress record.
                   </p>
                   {plan.actions.find((a) => a.action.trim()) ? (
                     <button
@@ -1412,8 +1412,6 @@ function ActionCard({
         <div className="mt-3 space-y-4">
           {text('expectedResult')}
           {text('evidence')}
-          {text('measure')}
-          {text('baseline')}
         </div>
       </details>
 
@@ -1459,15 +1457,15 @@ function ActionCard({
       ) : (
         <p className="text-xs text-corp-muted">Save the plan to record progress on this action.</p>
       )}
-      {saved ? (
-        <ActionMeasures
-          action={saved}
-          disabled={disabled}
-          dirty={dirty}
-          onMeasures={() => onMeasures(saved)}
-          onEvidence={() => onEvidence(saved)}
-        />
-      ) : null}
+      {/* The measure is part of planning (brief 12.1): on every action from the start, with the
+          buttons waiting for the first save that gives the action its id. */}
+      <ActionMeasures
+        action={saved ?? null}
+        disabled={disabled}
+        dirty={dirty}
+        onMeasures={() => saved && onMeasures(saved)}
+        onEvidence={() => saved && onEvidence(saved)}
+      />
     </article>
   );
 }
