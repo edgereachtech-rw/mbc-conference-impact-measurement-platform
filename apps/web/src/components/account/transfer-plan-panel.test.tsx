@@ -334,7 +334,7 @@ describe('TransferPlanPanel', () => {
     render(<Harness planId={PLAN} />);
     expect(
       await screen.findByText(
-        /You submit from the start of the final Transfer Planning session on 13 Nov 2026 at 14:00/,
+        /You'll submit in the final Transfer Planning session on 13 Nov 2026 at 14:00/,
       ),
     ).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Submit my plan' })).toBeNull();

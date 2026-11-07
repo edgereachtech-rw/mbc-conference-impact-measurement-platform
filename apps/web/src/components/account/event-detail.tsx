@@ -54,7 +54,7 @@ const STATIC: Record<StaticTab, TabItem> = {
   'transfer-plan': {
     id: 'transfer-plan',
     label: 'Transfer plans',
-    hint: 'What you will do differently, one plan per tab',
+    hint: 'What you will do differently',
   },
 };
 

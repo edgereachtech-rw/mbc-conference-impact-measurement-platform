@@ -546,7 +546,7 @@ function PlanEditor({
               : data.canSubmit
                 ? 'Save as often as you like, then submit when your plan is ready.'
                 : finalSession
-                  ? `Keep saving your draft. You submit from the start of the final Transfer Planning session on ${formatDateShort(finalSession.date)} at ${finalSession.startTime}.`
+                  ? `Keep saving your draft. You'll submit in the final Transfer Planning session on ${formatDateShort(finalSession.date)} at ${finalSession.startTime}.`
                   : 'Keep saving your draft until you are ready to submit.'}
         </p>
       </div>
