@@ -1,10 +1,8 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { DelegateDashboard } from '@/components/account/delegate-dashboard';
 import { AdminContent, AdminPageHeader } from '@/components/admin/page-header';
-import { consoleButton } from '@/components/console/page';
 import { platform } from '@/config/platform';
 import { countdownLine } from '@/lib/my-events';
 import { loadMyEvents } from '@/lib/my-events-server';
@@ -31,16 +29,6 @@ export default async function AccountPage() {
           nextEvent
             ? `${countdownLine(nextEvent)} This is your space to record what you take back to work.`
             : 'Your conference journey, in one place: check-ins, your transfer plan and follow-ups.'
-        }
-        actions={
-          nextEvent ? (
-            <Link
-              href={`/account/events/${nextEvent.id}`}
-              className={consoleButton({ variant: 'accent' })}
-            >
-              Open next event
-            </Link>
-          ) : null
         }
       />
       <AdminContent>
