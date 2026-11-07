@@ -740,6 +740,13 @@ function PlanEditor({
         <h3 id={`${id}-reminders`} className="font-semibold text-corp-ink">
           Reminders
         </h3>
+        {!locked ? (
+          <p className="text-sm text-corp-text">
+            Reminders are for after the conference, when the plan meets your working week. You can
+            set them now or come back to this section later; nothing is sent until the start date
+            you choose.
+          </p>
+        ) : null}
         <p className="text-sm text-corp-muted">
           {locked
             ? 'This plan is completed, so its reminders have stopped.'
@@ -878,12 +885,42 @@ function PlanEditor({
                     className="mt-0.5 size-4 shrink-0 text-corp-accent-deep"
                     aria-hidden="true"
                   />
-                  <span>
-                    <span className="font-semibold text-corp-ink">{g.action}</span>: needs{' '}
-                    {g.missing
-                      .map((m) => (m === 'applied' ? 'to be recorded as applied' : 'evidence'))
-                      .join(' and ')}
-                    .
+                  <span className="flex flex-1 flex-wrap items-center gap-2">
+                    <span>
+                      <span className="font-semibold text-corp-ink">{g.action}</span>: needs{' '}
+                      {g.missing
+                        .map((m) => (m === 'applied' ? 'to be recorded as applied' : 'evidence'))
+                        .join(' and ')}
+                      .
+                    </span>
+                    {(() => {
+                      const action = plan.actions.find((a) => a.id === g.actionId);
+                      if (!action) return null;
+                      return (
+                        <span className="flex flex-wrap gap-1">
+                          {g.missing.includes('applied') ? (
+                            <button
+                              type="button"
+                              disabled={busy}
+                              onClick={() => setDialog({ kind: 'progress', action })}
+                              className={consoleButton({ variant: 'ghost', size: 'sm' })}
+                            >
+                              Did it happen?
+                            </button>
+                          ) : null}
+                          {g.missing.includes('evidence') ? (
+                            <button
+                              type="button"
+                              disabled={busy || dirty}
+                              onClick={() => setDialog({ kind: 'evidence', action })}
+                              className={consoleButton({ variant: 'ghost', size: 'sm' })}
+                            >
+                              What shows it?
+                            </button>
+                          ) : null}
+                        </span>
+                      );
+                    })()}
                   </span>
                 </li>
               ))}
@@ -1183,10 +1220,28 @@ function PlanEditor({
                 <span>Yes, there is a measurable improvement, and the evidence shows it</span>
               </label>
               {improvement === 'seen' && !hasResult ? (
-                <p role="alert" className="text-xs text-brand-danger">
-                  Record the result on at least one action first: a measure with an actual value, or
-                  results on a progress record.
-                </p>
+                <div role="alert" className="space-y-2 text-xs text-brand-danger">
+                  <p>
+                    Record the result on at least one action first: open &ldquo;What changed?&rdquo;
+                    on the action and fill in the actual value of its measure, or put the results in
+                    a progress record.
+                  </p>
+                  {plan.actions.find((a) => a.action.trim()) ? (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() =>
+                        setDialog({
+                          kind: 'measures',
+                          action: plan.actions.find((a) => a.action.trim())!,
+                        })
+                      }
+                      className={consoleButton({ variant: 'secondary', size: 'sm' })}
+                    >
+                      Record a result
+                    </button>
+                  ) : null}
+                </div>
               ) : null}
             </fieldset>
             <div className="space-y-1">
@@ -1431,15 +1486,21 @@ function ActionCard({
         This is my first priority
       </label>
 
-      {text('priorityLearning')}
+      {!saved ? (
+        <p className="text-sm text-corp-muted">
+          Write the action and its first step. Everything else can wait: open the groups below when
+          you are ready, or come back to them later.
+        </p>
+      ) : null}
       {text('action')}
-      {text('opportunity')}
       {text('firstStep')}
       <details className="group border-t border-corp-line pt-3">
         <summary className="cursor-pointer text-sm font-semibold text-corp-green-text">
-          Dates, people and support
+          Why, when and who
         </summary>
         <div className="mt-3 grid gap-4 sm:grid-cols-2">
+          <div className="sm:col-span-2">{text('priorityLearning')}</div>
+          <div className="sm:col-span-2">{text('opportunity')}</div>
           {date('startOn')}
           {date('targetOn')}
           <div className="sm:col-span-2">{text('stakeholders')}</div>
@@ -1450,7 +1511,7 @@ function ActionCard({
       </details>
       <details className="border-t border-corp-line pt-3">
         <summary className="cursor-pointer text-sm font-semibold text-corp-green-text">
-          Results, measure and evidence
+          What you expect to change, and how you will know
         </summary>
         <div className="mt-3 space-y-4">
           {text('expectedResult')}
@@ -1463,7 +1524,12 @@ function ActionCard({
       {saved ? (
         <div className="space-y-2 border-t border-corp-line pt-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-sm font-semibold text-corp-ink">Progress</p>
+            <div>
+              <p className="text-sm font-semibold text-corp-ink">Did it happen?</p>
+              <p className="text-xs text-corp-muted">
+                Where this action stands now: not started, started, applied, completed.
+              </p>
+            </div>
             <button
               type="button"
               disabled={disabled}

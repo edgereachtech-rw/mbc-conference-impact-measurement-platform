@@ -574,6 +574,14 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   dashboard, the QR code) lands on the plan to act on: the first not completed, else the latest.
   The plan list is loaded once by the page (`useMyTransferPlans`) and each plan page shows one
   plan (`TransferPlanPanel` with `planId`).
+- Transfer plan page, usability pass (task of 2026-11-07, after a review of whether a delegate
+  could use it unaided): an action card opens with a one-line steer and only the action and its
+  first step; the why, when and who, and the expected change, sit in two folded groups. The
+  three later-stage buttons ask their question, "Did it happen?" (progress), "What changed?"
+  (measures) and "What shows it?" (evidence), with the old verbs as accessible detail. The
+  completion gap list carries a button per gap that opens the right dialog on that action, the
+  "measurable improvement" warning offers "Record a result", and the reminders block says they
+  are for after the conference and send nothing until the start date.
 - Session feedback follows the day's attendance (task of 2026-11-07): a delegate may answer a
   session's feedback when their attendance record for that session's date is attended or
   partial. A per-session check-in is no longer required; session attendance stays a separate

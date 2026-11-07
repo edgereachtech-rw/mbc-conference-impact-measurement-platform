@@ -179,23 +179,35 @@ export function ActionMeasures({
       className="space-y-3 border-t border-corp-line pt-3"
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm font-semibold text-corp-ink">Measures and evidence</p>
+        <div>
+          <p className="text-sm font-semibold text-corp-ink">What changed, and what shows it?</p>
+          <p className="text-xs text-corp-muted">
+            Two questions for later: the measure that moved (a number or a description), and the
+            evidence that the action happened.
+          </p>
+        </div>
         <div className="flex flex-wrap gap-1">
           <button
             type="button"
             disabled={disabled || dirty}
             onClick={onMeasures}
+            aria-label={
+              measures.length > 0 ? 'What changed? Edit measures' : 'What changed? Add a measure'
+            }
             className={consoleButton({ variant: 'secondary', size: 'sm' })}
           >
-            {measures.length > 0 ? 'Edit measures' : 'Add a measure'}
+            What changed?
           </button>
           <button
             type="button"
             disabled={disabled || dirty}
             onClick={onEvidence}
+            aria-label={
+              records.length > 0 ? 'What shows it? Edit evidence' : 'What shows it? Add evidence'
+            }
             className={consoleButton({ variant: 'secondary', size: 'sm' })}
           >
-            {records.length > 0 ? 'Edit evidence' : 'Add evidence'}
+            What shows it?
           </button>
         </div>
       </div>
@@ -206,9 +218,10 @@ export function ActionMeasures({
       ) : null}
       {measures.length === 0 && records.length === 0 ? (
         <p className="text-xs text-corp-muted">
-          Optional. Record the business or workplace measure this action should move, then the
-          result when you have it and the evidence of what you did. Not every action has a number:
-          “Not yet known” and “Not applicable” are fine.
+          Nothing recorded yet. When the action starts to show, come back here: a measure with its
+          actual value under “What changed?”, and under “What shows it?” an example, a work product
+          or someone&rsquo;s confirmation. Both are needed before the plan can be completed as
+          having made a difference; evidence alone completes it as applied.
         </p>
       ) : null}
       {measures.length > 0 ? (
