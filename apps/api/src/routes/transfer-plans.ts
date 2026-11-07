@@ -22,7 +22,6 @@ import {
   transferPlanCompleteSchema,
   transferPlanCreateSchema,
   transferPlanSaveSchema,
-  transferPlanSubmitAllSchema,
   transferPlanSubmitSchema,
   type ActionProgressStatus,
   type EvidenceSupport,
@@ -34,7 +33,6 @@ import {
   type MyTransferPlan,
   type MyTransferPlans,
   type PlanActionView,
-  type PlanCreationReason,
   type PlanOutcome,
   type TransferPlanAdminDetail,
   type TransferPlanListItem,
@@ -98,17 +96,6 @@ const ACTION_INCLUDE = {
   },
   evidenceRecords: { orderBy: [{ order: 'asc' }, { createdAt: 'asc' }] },
 } satisfies Prisma.TransferPlanActionInclude;
-/** The plan's day, with that day's Transfer Planning session (the first, when several). */
-const EVENT_DATE_SELECT = {
-  date: true,
-  sessions: {
-    where: { sessionType: 'transfer_planning' },
-    orderBy: { startTime: 'asc' },
-    select: { id: true, title: true, startTime: true, endTime: true },
-  },
-  // The event's dates, to number the day ("Day 2") without relying on the plan's sequence.
-  event: { select: { dates: { select: { date: true }, orderBy: { date: 'asc' } } } },
-} satisfies Prisma.EventDateSelect;
 const PLAN_INCLUDE = {
   actions: {
     orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
@@ -116,25 +103,7 @@ const PLAN_INCLUDE = {
   },
   reminders: { orderBy: { createdAt: 'desc' }, take: 20 },
   impactChecks: { orderBy: { round: 'asc' } },
-  eventDate: { select: EVENT_DATE_SELECT },
 } satisfies Prisma.TransferPlanInclude;
-
-type DayRow = Prisma.EventDateGetPayload<{ select: typeof EVENT_DATE_SELECT }>;
-
-/**
- * The plan's conference day: its date, its number among the event's dates and its Transfer
- * Planning session, or none of them on a plan from before the rule.
- */
-function dayFields(p: { eventDate: DayRow | null }) {
-  if (!p.eventDate) return { date: null, day: null, session: null };
-  const date = isoDate(p.eventDate.date)!;
-  const index = p.eventDate.event.dates.findIndex((d) => isoDate(d.date) === date);
-  return {
-    date,
-    day: index >= 0 ? index + 1 : null,
-    session: p.eventDate.sessions[0] ?? null,
-  };
-}
 type PlanRow = Prisma.TransferPlanGetPayload<{ include: typeof PLAN_INCLUDE }>;
 export type ActionRow = PlanRow['actions'][number];
 
@@ -259,8 +228,6 @@ export function planViewOf(p: PlanRow): TransferPlanView {
     id: p.id,
     eventId: p.eventId,
     sequence: p.sequence,
-    ...dayFields(p),
-    isPriority: p.isPriority,
     title: p.title,
     status: p.status,
     version: p.version,
@@ -371,105 +338,57 @@ export function transferPlanRouter({
     }));
   }
 
-  /** The event's days in order, numbered from 1, each with its Transfer Planning session. */
-  async function eventDays(eventId: string) {
-    const rows = await prisma().eventDate.findMany({
-      where: { eventId },
-      select: { id: true, ...EVENT_DATE_SELECT },
-      orderBy: { date: 'asc' },
-    });
-    return rows.map((d, i) => ({
-      id: d.id,
-      date: isoDate(d.date)!,
-      day: i + 1,
-      session: d.sessions[0] ?? null,
-    }));
-  }
-
-  /**
-   * The days a plan belongs to (2026-11-07): the conference days with a Transfer Planning
-   * session when the programme schedules any, else every conference day.
-   */
-  async function planDays(eventId: string) {
-    const all = await eventDays(eventId);
-    const withSession = all.filter((d) => d.session);
-    return { all, planDays: withSession.length ? withSession : all };
-  }
-
-  /**
-   * Which days the delegate can create a plan for right now: today's and any earlier one, for as
-   * long as the event runs, as many plans as they need (2026-11-07). Never before the event and
-   * never after it.
-   */
-  async function creationState(eventId: string, delegateId: string, today: string) {
-    const { all, planDays: days } = await planDays(eventId);
-    const plans = await prisma().transferPlan.findMany({
-      where: { eventId, delegateId },
-      select: { id: true, eventDateId: true },
-    });
-    const reason: PlanCreationReason =
-      days.length === 0
-        ? 'no_event_days'
-        : today < days[0]!.date
-          ? 'before_event'
-          : today > all.at(-1)!.date
-            ? 'after_event'
-            : 'ok';
-    const creatable = reason === 'ok' ? days.filter((d) => d.date <= today) : [];
-    return { all, days, plans, creatable, reason };
-  }
-
-  function creationRefusal(
-    state: Awaited<ReturnType<typeof creationState>>,
-    wanted: string | undefined,
-    today: string,
-  ): never {
-    const first = state.days[0]?.date;
-    const last = state.all.at(-1)?.date;
-    // A named day that is not open says why: not a planning day, or not come yet.
-    if (wanted && state.reason !== 'after_event') {
-      const day = state.days.find((d) => d.date === wanted);
-      const message = !day
-        ? `No plan is made for ${wanted}: it is not one of the planning days.`
-        : wanted > today
-          ? `Day ${day.day} has not come yet: you create its plans from that day on, while the event runs.`
-          : null;
-      if (message) throw new HttpError(409, 'not_creatable', message);
-    }
-    if (state.reason === 'ok') {
-      throw new HttpError(409, 'not_creatable', 'No plan can be created for that day.');
-    }
-    const messages: Record<Exclude<PlanCreationReason, 'ok'>, string> = {
-      no_event_days: 'This event has no dates yet, so there is no day to plan for.',
-      before_event: `Transfer plans are created during the event, from Day 1 on ${first}.`,
-      after_event: `The event ended on ${last}: no new transfer plan can be created. Your existing plans stay open for progress.`,
-    };
-    throw new HttpError(409, state.reason, messages[state.reason]);
+  /** Submission opens with the start of the last planning session (any time when none is scheduled). */
+  async function canSubmitAt(eventId: string, timezone: string, at: Date) {
+    const sessions = await planningSessions(eventId);
+    const final = sessions.find((s) => s.isFinal);
+    if (!final) return { sessions, canSubmit: true };
+    // The session's wall-clock start in the event's zone, compared as an instant.
+    const startLocal = new Date(`${final.date}T${final.startTime}:00`);
+    const offsetMinutes = (() => {
+      const parts = new Intl.DateTimeFormat('en-GB', {
+        timeZone: timezone,
+        timeZoneName: 'longOffset',
+      }).formatToParts(startLocal);
+      const name = parts.find((p) => p.type === 'timeZoneName')?.value ?? 'GMT';
+      const m = /GMT([+-])(\d{2}):?(\d{2})?/.exec(name);
+      return m ? (m[1] === '-' ? -1 : 1) * (Number(m[2]) * 60 + Number(m[3] ?? 0)) : 0;
+    })();
+    const start = new Date(
+      Date.UTC(
+        Number(final.date.slice(0, 4)),
+        Number(final.date.slice(5, 7)) - 1,
+        Number(final.date.slice(8, 10)),
+        Number(final.startTime.slice(0, 2)),
+        Number(final.startTime.slice(3, 5)),
+      ) -
+        offsetMinutes * 60_000,
+    );
+    return { sessions, canSubmit: at >= start };
   }
 
   /** The delegate's pre-event answers to the event's reference questions. */
   const referencesFor = (eventId: string, delegateId: string) =>
     referenceAnswersFor(prisma(), eventId, delegateId);
 
-  /** A plan for one conference day (2026-11-07): the next in the delegate's sequence. */
-  async function createPlan(
-    eventId: string,
-    delegateId: string,
-    day: { id: string; day: number },
-    title: string,
-  ) {
+  /**
+   * A delegate may keep several plans for one event (2026-11-06). The first is created on first
+   * access, as before, so the plan page is never empty; further ones are created on request.
+   */
+  async function ensureFirstPlan(eventId: string, delegateId: string) {
+    const count = await prisma().transferPlan.count({ where: { eventId, delegateId } });
+    if (count === 0) {
+      await prisma().transferPlan.create({ data: { eventId, delegateId, sequence: 1 } });
+    }
+  }
+
+  async function createPlan(eventId: string, delegateId: string, title: string) {
     const last = await prisma().transferPlan.aggregate({
       where: { eventId, delegateId },
       _max: { sequence: true },
     });
     return prisma().transferPlan.create({
-      data: {
-        eventId,
-        delegateId,
-        sequence: (last._max.sequence ?? 0) + 1,
-        eventDateId: day.id,
-        title,
-      },
+      data: { eventId, delegateId, sequence: (last._max.sequence ?? 0) + 1, title },
       include: PLAN_INCLUDE,
     });
   }
@@ -500,8 +419,6 @@ export function transferPlanRouter({
     return {
       id: p.id,
       sequence: p.sequence,
-      ...dayFields(p),
-      isPriority: p.isPriority,
       title: p.title,
       status: p.status,
       actions: p.actions.filter((a) => a.action.trim() !== '').length,
@@ -516,6 +433,7 @@ export function transferPlanRouter({
   }
 
   async function myPlans(eventId: string, delegateId: string): Promise<MyTransferPlans> {
+    await ensureFirstPlan(eventId, delegateId);
     const [plans, event] = await Promise.all([
       prisma().transferPlan.findMany({
         where: { eventId, delegateId },
@@ -525,25 +443,7 @@ export function transferPlanRouter({
       prisma().event.findUniqueOrThrow({ where: { id: eventId }, select: { timezone: true } }),
     ]);
     const today = dateIn(clock(), event.timezone);
-    const creation = await creationState(eventId, delegateId, today);
-    const last = creation.all.at(-1)?.date ?? null;
-    const reached = last !== null && today >= last;
-    const dayOut = (d: (typeof creation.days)[number]) => ({
-      date: d.date,
-      day: d.day,
-      session: d.session,
-    });
-    return {
-      plans: plans.map((p) => summaryOf(p, today)),
-      today,
-      days: creation.days.map((d) => ({
-        ...dayOut(d),
-        planIds: plans.filter((p) => p.eventDateId === d.id).map((p) => p.id),
-      })),
-      create: { reason: creation.reason, days: creation.creatable.map(dayOut) },
-      finalDay: { date: last, reached },
-      canSubmitAll: reached && plans.length > 0,
-    };
+    return { plans: plans.map((p) => summaryOf(p, today)) };
   }
 
   async function myView(
@@ -551,16 +451,15 @@ export function transferPlanRouter({
     delegateId: string,
     planId: string,
   ): Promise<MyTransferPlan> {
-    const [plan, sessions] = await Promise.all([
+    const [plan, event] = await Promise.all([
       loadPlan(eventId, delegateId, planId),
-      planningSessions(eventId),
+      prisma().event.findUniqueOrThrow({ where: { id: eventId }, select: { timezone: true } }),
     ]);
+    const { sessions, canSubmit } = await canSubmitAt(eventId, event.timezone, clock());
     return {
       plan: planViewOf(plan),
       sessions,
-      // A draft can be submitted on its own at any time (2026-11-07); the last day's "submit
-      // all" takes care of whatever is still a draft then.
-      canSubmit: plan.status === 'draft',
+      canSubmit: plan.status === 'draft' && canSubmit,
       references: await referencesFor(eventId, delegateId),
       reminders: plan.reminders.map((r) => ({
         scheduledFor: r.scheduledFor.toISOString(),
@@ -633,24 +532,16 @@ export function transferPlanRouter({
     validated(transferPlanCreateSchema),
     async (req, res) => {
       const { principal, delegate } = await myRegistration(res, String(req.params.eventId));
-      const { title, date } = req.body as z.infer<typeof transferPlanCreateSchema>;
-      const event = await prisma().event.findUniqueOrThrow({
-        where: { id: delegate.eventId },
-        select: { timezone: true },
-      });
-      const today = dateIn(clock(), event.timezone);
-      const state = await creationState(delegate.eventId, delegate.id, today);
-      // Today's plan by default; a named day must be one that is open to catch up on.
-      const day = date ? state.creatable.find((d) => d.date === date) : state.creatable.at(-1);
-      if (!day) creationRefusal(state, date, today);
-      const plan = await createPlan(delegate.eventId, delegate.id, day, title);
+      const { title } = req.body as z.infer<typeof transferPlanCreateSchema>;
+      await ensureFirstPlan(delegate.eventId, delegate.id);
+      const plan = await createPlan(delegate.eventId, delegate.id, title);
       await audit(prisma(), {
         action: 'transfer_plan.created',
         entityType: 'transfer_plan',
         entityId: plan.id,
         eventId: delegate.eventId,
         actorUserId: principal.userId,
-        newValue: { sequence: plan.sequence, date: day.date, late: day.date < today },
+        newValue: { sequence: plan.sequence },
         ...clientOf(res),
       });
       res.status(201).json(await myView(delegate.eventId, delegate.id, plan.id));
@@ -804,111 +695,44 @@ export function transferPlanRouter({
       if (!planHasContent(plan.actions)) {
         throw new HttpError(422, 'plan_empty', 'Describe at least one action before submitting.');
       }
-      const at = clock();
-      await prisma().$transaction(async (tx) => {
-        await submitPlan(tx, plan, at, principal.userId, res, false);
+      const event = await prisma().event.findUniqueOrThrow({
+        where: { id: delegate.eventId },
+        select: { timezone: true },
       });
-      res.json(await myView(delegate.eventId, delegate.id, plan.id));
-    },
-  );
-
-  /** Marks one draft submitted, snapshot and audit included; shared by the two submit routes. */
-  async function submitPlan(
-    tx: Prisma.TransactionClient,
-    plan: PlanRow,
-    at: Date,
-    userId: string,
-    res: Response,
-    all: boolean,
-  ) {
-    await tx.transferPlan.update({
-      where: { id: plan.id },
-      data: {
-        status: 'submitted',
-        submittedAt: at,
-        submittedSnapshot: planViewOf({
-          ...plan,
-          submittedAt: at,
-        }) as unknown as Prisma.InputJsonValue,
-        version: plan.version + 1,
-        updatedByUserId: userId,
-      },
-    });
-    await audit(tx, {
-      action: 'transfer_plan.submitted',
-      entityType: 'transfer_plan',
-      entityId: plan.id,
-      eventId: plan.eventId,
-      actorUserId: userId,
-      newValue: { actions: plan.actions.length, version: plan.version + 1, all },
-      ...clientOf(res),
-    });
-  }
-
-  // The last day (2026-11-07): every draft with content is submitted at once and one plan is
-  // named the priority. Allowed from the last conference day on, so a delegate who leaves early
-  // can still do it that evening.
-  router.post(
-    '/me/events/:eventId/transfer-plans/submit-all',
-    middleware.requireAuth,
-    validated(transferPlanSubmitAllSchema),
-    async (req, res) => {
-      const { principal, delegate } = await myRegistration(res, String(req.params.eventId));
-      const { priorityPlanId } = req.body as z.infer<typeof transferPlanSubmitAllSchema>;
-      const [event, plans] = await Promise.all([
-        prisma().event.findUniqueOrThrow({
-          where: { id: delegate.eventId },
-          select: { timezone: true },
-        }),
-        prisma().transferPlan.findMany({
-          where: { eventId: delegate.eventId, delegateId: delegate.id },
-          orderBy: { sequence: 'asc' },
-          include: PLAN_INCLUDE,
-        }),
-      ]);
       const at = clock();
-      const today = dateIn(at, event.timezone);
-      const days = await eventDays(delegate.eventId);
-      const last = days.at(-1)?.date;
-      if (!last || today < last) {
+      const { canSubmit } = await canSubmitAt(delegate.eventId, event.timezone, at);
+      if (!canSubmit) {
         throw new HttpError(
           409,
           'not_yet',
-          `You submit all your plans on the last day of the event${last ? ` (${last})` : ''}. Until then, save each day's plan as a draft or submit it on its own.`,
-        );
-      }
-      if (plans.length === 0) {
-        throw new HttpError(409, 'no_plans', 'You have no transfer plan to submit yet.');
-      }
-      const priority = plans.find((p) => p.id === priorityPlanId);
-      if (!priority) throw new HttpError(404, 'not_found', 'Plan not found.');
-      const drafts = plans.filter((p) => p.status === 'draft');
-      const empty = drafts.filter((p) => !planHasContent(p.actions));
-      if (empty.length) {
-        throw new HttpError(
-          422,
-          'plan_empty',
-          `Describe at least one action in ${empty.map((p) => planTitleOf(p)).join(', ')} before submitting, or leave it out by removing nothing: every plan is submitted together.`,
+          'Plans are submitted during the final Transfer Planning session; keep saving your draft until then.',
         );
       }
       await prisma().$transaction(async (tx) => {
-        for (const plan of drafts) await submitPlan(tx, plan, at, principal.userId, res, true);
-        await tx.transferPlan.updateMany({
-          where: { eventId: delegate.eventId, delegateId: delegate.id, isPriority: true },
-          data: { isPriority: false },
+        await tx.transferPlan.update({
+          where: { id: plan.id },
+          data: {
+            status: 'submitted',
+            submittedAt: at,
+            submittedSnapshot: planViewOf({
+              ...plan,
+              submittedAt: at,
+            }) as unknown as Prisma.InputJsonValue,
+            version: plan.version + 1,
+            updatedByUserId: principal.userId,
+          },
         });
-        await tx.transferPlan.update({ where: { id: priority.id }, data: { isPriority: true } });
         await audit(tx, {
-          action: 'transfer_plan.priority_set',
+          action: 'transfer_plan.submitted',
           entityType: 'transfer_plan',
-          entityId: priority.id,
+          entityId: plan.id,
           eventId: delegate.eventId,
           actorUserId: principal.userId,
-          newValue: { submitted: drafts.length, plans: plans.length },
+          newValue: { actions: plan.actions.length, version: plan.version + 1 },
           ...clientOf(res),
         });
       });
-      res.json(await myPlans(delegate.eventId, delegate.id));
+      res.json(await myView(delegate.eventId, delegate.id, plan.id));
     },
   );
 
@@ -1357,7 +1181,6 @@ export function transferPlanRouter({
       where: { eventId: event.id, delegate: { registrationStatus: { in: [...eligible()] } } },
       include: {
         delegate: { select: DELEGATE_SELECT },
-        eventDate: { select: EVENT_DATE_SELECT },
         actions: {
           orderBy: { order: 'asc' },
           select: {
@@ -1389,8 +1212,6 @@ export function transferPlanRouter({
         delegate: p.delegate,
         planId: p.id,
         sequence: p.sequence,
-        ...dayFields(p),
-        isPriority: p.isPriority,
         title: p.title,
         status: p.status,
         completedAt: iso(p.completedAt),

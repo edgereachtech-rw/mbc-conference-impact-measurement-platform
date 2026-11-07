@@ -519,7 +519,6 @@ model EventDate {
   tokens     AttendanceToken[]
   attendance AttendanceRecord[]
   reflection ReflectionActivity?
-  transferPlans TransferPlan[]
 
   @@unique([eventId, date])
   @@map("event_date")
@@ -808,15 +807,8 @@ model TransferPlan {
   reminderTime      String             @default("09:00") @map("reminder_time")
   /// ISO weekdays (1 = Monday … 7 = Sunday) for the twice-weekly frequency; empty otherwise.
   reminderDays      Int[]              @default([]) @map("reminder_days") @db.SmallInt
-  /// Several plans per delegate (2026-11-06): the n-th plan they made for this event. Since
-  /// 2026-11-07 a plan belongs to one conference day and `sequence` is that day's number.
+  /// Several plans per delegate (2026-11-06): the n-th plan they made for this event.
   sequence          Int                @default(1)
-  /// The conference day the plan belongs to (2026-11-07): created during the event for that day
-  /// (today's, or an earlier one), as many as the delegate needs. Null only on plans from before
-  /// the rule.
-  eventDateId       String?            @map("event_date_id") @db.Uuid
-  /// The plan the delegate chose as their priority when submitting all plans on the last day.
-  isPriority        Boolean            @default(false) @map("is_priority")
   title             String             @default("")
   completedAt       DateTime?          @map("completed_at") @db.Timestamptz(3)
   outcome           PlanOutcome        @default(pending)
@@ -828,13 +820,11 @@ model TransferPlan {
 
   event     Event                     @relation(fields: [eventId], references: [id], onDelete: Cascade)
   delegate  Delegate                  @relation(fields: [delegateId], references: [id], onDelete: Cascade)
-  eventDate EventDate?                @relation(fields: [eventDateId], references: [id], onDelete: SetNull)
   actions   TransferPlanAction[]
   reminders TransferPlanReminderLog[]
   impactChecks TransferPlanImpactCheck[]
 
   @@unique([eventId, delegateId, sequence])
-  @@index([eventDateId])
   @@index([eventId, delegateId])
   @@index([nextReminderAt])
   @@map("transfer_plan")

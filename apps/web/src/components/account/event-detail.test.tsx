@@ -92,10 +92,6 @@ describe('EventDetail', () => {
                 {
                   id: '11111111-1111-4111-8111-111111111111',
                   sequence: 1,
-                  date: '2026-11-12',
-                  day: 1,
-                  session: null,
-                  isPriority: false,
                   title: '',
                   status: 'draft',
                   actions: 0,
@@ -110,10 +106,6 @@ describe('EventDetail', () => {
                 {
                   id: '11111111-1111-4111-8111-222222222222',
                   sequence: 2,
-                  date: '2026-11-13',
-                  day: 2,
-                  session: null,
-                  isPriority: false,
                   title: 'Coaching rollout',
                   status: 'draft',
                   actions: 1,
@@ -126,24 +118,6 @@ describe('EventDetail', () => {
                   reminder,
                 },
               ],
-              today: '2026-11-13',
-              days: [
-                {
-                  date: '2026-11-12',
-                  day: 1,
-                  session: null,
-                  planIds: ['11111111-1111-4111-8111-111111111111'],
-                },
-                {
-                  date: '2026-11-13',
-                  day: 2,
-                  session: null,
-                  planIds: ['11111111-1111-4111-8111-222222222222'],
-                },
-              ],
-              create: { reason: 'ok', days: [{ date: '2026-11-13', day: 2, session: null }] },
-              finalDay: { date: '2026-11-13', reached: true },
-              canSubmitAll: true,
             }
           : url.includes('/transfer-plans/')
             ? {
@@ -221,14 +195,13 @@ describe('EventDetail', () => {
     expect(
       within(tabs).getByRole('tab', { name: 'Transfer plans' }).getAttribute('aria-selected'),
     ).toBe('true');
-    // The plans are tabs inside the tab (2026-11-07): one per day, the latest open one (today's)
-    // is on, the other a tap away.
+    // The plans are tabs inside the tab (2026-11-07): the first open one is on, the other a tap away.
     const planTabs = await screen.findByRole('tablist', { name: 'Your plans' });
     expect(
       within(planTabs)
         .getAllByRole('tab')
         .map((t) => t.getAttribute('aria-selected')),
-    ).toEqual(['false', 'true']);
+    ).toEqual(['true', 'false']);
     expect(within(planTabs).getByRole('tab', { name: /Coaching rollout/ })).toBeTruthy();
     expect(screen.queryByRole('region', { name: 'Event' })).toBeNull();
     expect(calls).toContain('/api/v1/me/events/e1/transfer-plans');
@@ -266,14 +239,6 @@ describe('EventDetail', () => {
           : url.endsWith('/transfer-plans')
             ? {
                 plans: [],
-                today: '2026-11-05',
-                days: [
-                  { date: '2026-11-12', day: 1, session: null, planIds: [] },
-                  { date: '2026-11-13', day: 2, session: null, planIds: [] },
-                ],
-                create: { reason: 'before_event', days: [] },
-                finalDay: { date: '2026-11-13', reached: false },
-                canSubmitAll: false,
               }
             : { reflections: [], sessions: [] };
         return new Response(JSON.stringify(body), {
@@ -309,11 +274,6 @@ describe('EventDetail', () => {
           : url.endsWith('/transfer-plans')
             ? {
                 plans: [],
-                today: '2026-11-05',
-                days: [],
-                create: { reason: 'no_event_days', days: [] },
-                finalDay: { date: null, reached: false },
-                canSubmitAll: false,
               }
             : { reflections: [], sessions: [] };
         return new Response(JSON.stringify(body), {

@@ -417,23 +417,10 @@ describe.skipIf(!hasDatabase)('end-of-conference evaluation', () => {
       answer: 'How to measure transfer',
     });
     expect(dee.context.planStatus).toBe('no');
-    // A started plan is reported as started (prefilled on the readiness block). Plans are made on
-    // conference days (2026-11-07) and this runs before the event, so Day 1's is inserted here.
-    const dayOne = await prisma.eventDate.findFirstOrThrow({
-      where: { eventId },
-      orderBy: { date: 'asc' },
-      select: { id: true },
-    });
-    const deeDelegate = await prisma.delegate.findFirstOrThrow({
-      where: { eventId, email: `dee-eoc-${tag}@example.com` },
-      select: { id: true },
-    });
+    // A started plan is reported as started (prefilled on the readiness block).
     const deePlanId = (
-      await prisma.transferPlan.create({
-        data: { eventId, delegateId: deeDelegate.id, sequence: 1, eventDateId: dayOne.id },
-        select: { id: true },
-      })
-    ).id;
+      await call('get', `/me/events/${eventId}/transfer-plans`, undefined, cookies.dee)
+    ).body.plans[0].id as string;
     await call(
       'put',
       `/me/events/${eventId}/transfer-plans/${deePlanId}`,
