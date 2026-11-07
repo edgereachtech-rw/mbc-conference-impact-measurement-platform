@@ -456,28 +456,28 @@ enum ImportResolution {
 // ------------------------------------------------------------------ event setup (E1)
 
 model Event {
-  id             String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  slug           String      @unique
-  name           String
-  theme          String?
-  startsOn       DateTime    @map("starts_on") @db.Date
-  endsOn         DateTime    @map("ends_on") @db.Date
-  timezone       String      @default("Africa/Lagos")
-  location       String?
-  format         EventFormat @default(hybrid)
-  status         EventStatus @default(draft)
+  id                 String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  slug               String      @unique
+  name               String
+  theme              String?
+  startsOn           DateTime    @map("starts_on") @db.Date
+  endsOn             DateTime    @map("ends_on") @db.Date
+  timezone           String      @default("Africa/Lagos")
+  location           String?
+  format             EventFormat @default(hybrid)
+  status             EventStatus @default(draft)
   /// Whether registrations with status `test` count in this event's reports, dashboards and
   /// summaries. Off by default; never affects whether a test delegate may sign in.
-  countTestDelegates Boolean @default(false) @map("count_test_delegates")
+  countTestDelegates Boolean     @default(false) @map("count_test_delegates")
   /// Structured profile (E1 brief, section 3). The slug is the unique event code.
-  description    String      @default("")
-  eventType      EventType   @default(conference) @map("event_type")
-  organiser      String      @default("")
-  website        String?
-  imageUrl       String?     @map("image_url")
-  additionalInfo String?     @map("additional_info")
-  createdAt      DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt      DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+  description        String      @default("")
+  eventType          EventType   @default(conference) @map("event_type")
+  organiser          String      @default("")
+  website            String?
+  imageUrl           String?     @map("image_url")
+  additionalInfo     String?     @map("additional_info")
+  createdAt          DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   participationCategories ParticipationCategory[]
   delegates               Delegate[]
@@ -499,6 +499,7 @@ model Event {
   transferPlans           TransferPlan[]
   referenceQuestions      EventReferenceQuestion[]
   reportApprovals         EventReportApproval[]
+  supportRequests         SupportRequest[]
 
   @@map("event")
 }
@@ -818,10 +819,10 @@ model TransferPlan {
   createdAt         DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt         DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  event     Event                     @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  delegate  Delegate                  @relation(fields: [delegateId], references: [id], onDelete: Cascade)
-  actions   TransferPlanAction[]
-  reminders TransferPlanReminderLog[]
+  event        Event                     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  delegate     Delegate                  @relation(fields: [delegateId], references: [id], onDelete: Cascade)
+  actions      TransferPlanAction[]
+  reminders    TransferPlanReminderLog[]
   impactChecks TransferPlanImpactCheck[]
 
   @@unique([eventId, delegateId, sequence])
@@ -1052,22 +1053,22 @@ model AssessmentStageConfig {
 
 /// A titled group of questions within one stage; delegates see one section per step.
 model AssessmentSection {
-  id              String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  stageConfigId   String          @map("stage_config_id") @db.Uuid
-  eventId         String          @map("event_id") @db.Uuid
-  title           String
-  description     String?
+  id                   String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  stageConfigId        String          @map("stage_config_id") @db.Uuid
+  eventId              String          @map("event_id") @db.Uuid
+  title                String
+  description          String?
   /// Show the description as a highlighted introduction rather than a plain subtitle: for a
   /// section that opens with a stem or a note the delegate has to read before the questions.
-  highlightDescription Boolean    @default(false) @map("highlight_description")
-  order           Int
-  marking         SectionMarking  @default(none)
-  audience        SectionAudience @default(all)
+  highlightDescription Boolean         @default(false) @map("highlight_description")
+  order                Int
+  marking              SectionMarking  @default(none)
+  audience             SectionAudience @default(all)
   /// Set when the section repeats another stage's section (same wording, options and marking)
   /// so the two stages' answers can be paired per delegate (backlog E11-4 to E11-7).
-  sourceSectionId String?         @map("source_section_id") @db.Uuid
-  createdAt       DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt       DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+  sourceSectionId      String?         @map("source_section_id") @db.Uuid
+  createdAt            DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   stage     AssessmentStageConfig @relation(fields: [stageConfigId], references: [id], onDelete: Cascade)
   event     Event                 @relation(fields: [eventId], references: [id], onDelete: Cascade)
@@ -1084,26 +1085,26 @@ model AssessmentSection {
 /// the same question_key and version + 1 and retires this one; answers keep pointing at the version
 /// they answered (CLAUDE.md: questions are data, versioned; responses store the question version).
 model AssessmentQuestion {
-  id                String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  stageConfigId     String       @map("stage_config_id") @db.Uuid
-  eventId           String       @map("event_id") @db.Uuid
-  questionKey       String       @default(dbgenerated("gen_random_uuid()")) @map("question_key") @db.Uuid
+  id                   String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  stageConfigId        String             @map("stage_config_id") @db.Uuid
+  eventId              String             @map("event_id") @db.Uuid
+  questionKey          String             @default(dbgenerated("gen_random_uuid()")) @map("question_key") @db.Uuid
   /// Optional section the question is shown under; null means the first, untitled group.
-  sectionId         String?      @map("section_id") @db.Uuid
-  version           Int          @default(1)
-  order             Int
-  prompt            String
-  helpText          String?      @map("help_text")
-  type              QuestionType
-  required          Boolean      @default(true)
-  area              String?
-  options           Json?
-  scale             Json?
+  sectionId            String?            @map("section_id") @db.Uuid
+  version              Int                @default(1)
+  order                Int
+  prompt               String
+  helpText             String?            @map("help_text")
+  type                 QuestionType
+  required             Boolean            @default(true)
+  area                 String?
+  options              Json?
+  scale                Json?
   /// The question_key this question repeats from another stage (mirrored sections); answers to
   /// the two are paired per delegate in reports. Wording and options stay locked.
-  sourceQuestionKey String?      @map("source_question_key") @db.Uuid
+  sourceQuestionKey    String?            @map("source_question_key") @db.Uuid
   /// A built-in block question (readiness); see builtinBlocks in @mbc/shared.
-  builtin           String?
+  builtin              String?
   /// An earlier question of this event (its question_key) that this one relates to: the delegate's
   /// own answer to it can be shown here, and can decide whether this question is asked at all
   /// (requirement 10.5). A key, not an id, so it survives the versioning of the earlier question.
@@ -1114,9 +1115,9 @@ model AssessmentQuestion {
   visibleWhen          QuestionVisibility @default(always) @map("visible_when")
   /// Offer "I prefer not to answer" beside the question.
   allowDecline         Boolean            @default(false) @map("allow_decline")
-  retiredAt         DateTime?    @map("retired_at") @db.Timestamptz(3)
-  createdAt         DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt         DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+  retiredAt            DateTime?          @map("retired_at") @db.Timestamptz(3)
+  createdAt            DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   stage   AssessmentStageConfig @relation(fields: [stageConfigId], references: [id], onDelete: Cascade)
   event   Event                 @relation(fields: [eventId], references: [id], onDelete: Cascade)
@@ -1368,6 +1369,7 @@ model Delegate {
   reflectionResponses   ReflectionResponse[]
   sessionFeedback       SessionFeedbackResponse[]
   transferPlans         TransferPlan[]
+  supportRequests       SupportRequest[]
 
   @@index([eventId])
   @@index([email])
@@ -1666,4 +1668,54 @@ model TransferPlanImpactCheck {
   @@unique([planId, round])
   @@index([dueOn])
   @@map("transfer_plan_impact_check")
+}
+
+/// Where a support request came from (brief 11.7).
+enum SupportRequestSource {
+  follow_up
+  delegate
+
+  @@map("support_request_source")
+}
+
+enum SupportRequestStatus {
+  open
+  addressed
+
+  @@map("support_request_status")
+}
+
+/// A delegate's request for support in applying their learning (brief 11.7; backlog E13), raised
+/// from a follow-up answer whose question area names support, or by the delegate from their plan
+/// page, and tracked by the organisers to resolution. One request per follow-up answer.
+model SupportRequest {
+  id                String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventId           String               @map("event_id") @db.Uuid
+  delegateId        String               @map("delegate_id") @db.Uuid
+  source            SupportRequestSource @default(delegate)
+  /// The follow-up answer it was raised from, when it was.
+  responseId        String?              @map("response_id") @db.Uuid
+  questionId        String?              @map("question_id") @db.Uuid
+  /// The planned action it concerns, when the delegate named one.
+  actionId          String?              @map("action_id") @db.Uuid
+  /// In words, for the organisers: the wave ("30-day follow-up") or the plan page.
+  context           String               @default("")
+  request           String
+  /// What stands in the way, in the delegate's words, when they said.
+  barrier           String               @default("")
+  status            SupportRequestStatus @default(open)
+  /// What M.Bryan did in response.
+  actionTaken       String               @default("") @map("action_taken")
+  addressedAt       DateTime?            @map("addressed_at") @db.Timestamptz(3)
+  addressedByUserId String?              @map("addressed_by_user_id") @db.Uuid
+  createdAt         DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime             @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  event    Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  delegate Delegate @relation(fields: [delegateId], references: [id], onDelete: Cascade)
+
+  @@unique([responseId, questionId])
+  @@index([eventId, status])
+  @@index([delegateId])
+  @@map("support_request")
 }

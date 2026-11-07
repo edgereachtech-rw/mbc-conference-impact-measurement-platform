@@ -212,7 +212,12 @@ function AssessmentCard({
     q.showReferenceAnswer && q.referenceQuestionKey
       ? (assessment.context.referenceAnswers?.[q.referenceQuestionKey] ?? null)
       : null;
-  const learnReference = assessment.context.references[0] ?? null;
+  // The follow-ups show what the delegate said they would do differently (brief 11.1), which is
+  // the second ITTEC reference; the first configured reference stands in when that one is not set.
+  const learnReference =
+    assessment.context.references.find((r) => /do differently/i.test(r.prompt)) ??
+    assessment.context.references[0] ??
+    null;
   const groups = groupQuestions(assessment.sections, assessment.questions).filter(
     (g) => g.questions.length > 0,
   );

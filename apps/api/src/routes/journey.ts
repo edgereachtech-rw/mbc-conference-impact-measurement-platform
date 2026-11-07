@@ -87,7 +87,7 @@ export function journeyRouter({ prisma, config, middleware, now }: Deps): Router
     });
     if (!delegate) throw new HttpError(404, 'not_found', 'No event of yours has this id.');
     const at = clock();
-    const [responses, attendance, reflections, feedbackSessions, feedback, plan] =
+    const [responses, attendance, reflections, feedbackSessions, feedback, plan, supportRequests] =
       await Promise.all([
         db.assessmentResponse.findMany({
           where: { delegateId: delegate.id, stage: { eventId } },
@@ -127,6 +127,7 @@ export function journeyRouter({ prisma, config, middleware, now }: Deps): Router
             },
           },
         }),
+        db.supportRequest.count({ where: { eventId, delegateId: delegate.id } }),
       ]);
     const byDate = new Map(attendance.map((a) => [a.eventDateId, a.status]));
     const dates = delegate.event.dates.map((d) => ({
@@ -213,7 +214,8 @@ export function journeyRouter({ prisma, config, middleware, now }: Deps): Router
             updatedAt: plan.updatedAt.toISOString(),
           }
         : null,
-      supportRequests: { state: 'not_collected' },
+      // Support requests exist since 2026-11-07 (brief 11.7): "ok" once the delegate has one.
+      supportRequests: { state: supportRequests > 0 ? 'ok' : 'no_response' },
     };
     res.json({ journey });
   });

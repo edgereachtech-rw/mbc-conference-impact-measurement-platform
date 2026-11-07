@@ -48,6 +48,7 @@ import { formatDateShort, formatInstant } from '@/lib/events';
 import { describeError } from '@/lib/imports';
 
 import { ActionMeasures, EvidenceDialog, MeasuresDialog } from './measures-evidence';
+import { SupportRequestPanel } from './support-request';
 
 export type MyTransferPlansState =
   | { kind: 'loading' }
@@ -203,6 +204,10 @@ export function TransferPlanPanel({
           onReload={() => setAttempt((n) => n + 1)}
         />
       )}
+      {/* Support to apply the plan (brief 11.7): asked from here, answered by the organisers. */}
+      {current?.kind === 'ready' ? (
+        <SupportRequestPanel eventId={eventId} actions={current.data.plan.actions} />
+      ) : null}
       {done ? (
         <Dialog
           title={done === 'completed' ? 'Plan completed' : 'Plan submitted'}
@@ -321,7 +326,6 @@ function PlanEditor({
 }) {
   const { plan } = data;
   const [actions, setActions] = useState<ActionDraft[]>(() => plan.actions.map(draftOf));
-  const [title, setTitle] = useState(plan.title);
   const [reminder, setReminder] = useState<ReminderPreference>({
     frequency: plan.reminder.frequency,
     startOn: plan.reminder.startOn,
@@ -408,7 +412,8 @@ function PlanEditor({
           method: 'PUT',
           body: JSON.stringify({
             version: plan.version,
-            title: title.trim(),
+            // No name is asked for any more (2026-11-07): the one plan is the plan.
+            title: plan.title,
             actions: payloadOf(actions),
             reminder: {
               ...reminder,
@@ -544,27 +549,6 @@ function PlanEditor({
                   ? `Keep saving your draft. You submit from the start of the final Transfer Planning session on ${formatDateShort(finalSession.date)} at ${finalSession.startTime}.`
                   : 'Keep saving your draft until you are ready to submit.'}
         </p>
-      </div>
-
-      <div className="space-y-1">
-        <label htmlFor={`${id}-title`} className="text-sm font-semibold text-corp-ink">
-          Plan name
-        </label>
-        <p className="text-xs text-corp-muted">
-          Optional. A few words on what this plan is about, so you can tell your plans apart.
-        </p>
-        <input
-          id={`${id}-title`}
-          value={title}
-          maxLength={120}
-          disabled={busy || locked}
-          placeholder={`Plan ${plan.sequence}`}
-          onChange={(e) => {
-            setDirty(true);
-            setTitle(e.target.value);
-          }}
-          className={input}
-        />
       </div>
 
       {data.sessions.length > 0 ? (

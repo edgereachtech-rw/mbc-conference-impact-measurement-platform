@@ -875,11 +875,11 @@ That is enough for 10.5 and was not widened further.
 
 | ID | Story | Acceptance criteria | Pri | Inc |
 |---|---|---|---|---|
-| E13-1 | As a delegate, I want to request support | Support request form (what support, related action); available from the account home, the plan and follow-ups | P0 | 3 |
-| E13-2 | As M.Bryan, I want to see who requested support and what | List with delegate, support requested, date, linked action | P1 | 5 |
-| E13-3 | As M.Bryan, I want to record the action taken | Free-text response and who handled it | P1 | 5 |
-| E13-4 | As M.Bryan, I want request status | Open or addressed; filter and counts | P1 | 5 |
-| E13-5 | As M.Bryan, I want common barriers summarised | Count of barriers by category (tagging of free-text barriers by M.Bryan) | P1 | 5 |
+| E13-1 | As a delegate, I want to request support | **Done 2026-11-07.** "Need support to apply your plan?" on the plan page (what support, what is in the way, which action); and every follow-up answer to a question whose area names support raises a request when its section is submitted, with the barrier named in the same section beside it | P0 | 3 |
+| E13-2 | As M.Bryan, I want to see who requested support and what | **Done 2026-11-07.** Event settings → Support: delegate, organisation, where it came from, date, linked action, request, barrier | P1 | 5 |
+| E13-3 | As M.Bryan, I want to record the action taken | **Done 2026-11-07.** Free-text action taken; who addressed it and when are stamped | P1 | 5 |
+| E13-4 | As M.Bryan, I want request status | **Done 2026-11-07.** Open or addressed, reopenable; filter and counts; delegates see the status of their own | P1 | 5 |
+| E13-5 | As M.Bryan, I want common barriers summarised | **Partly 2026-11-07.** Barriers listed as written, grouped where the wording is the same, with counts; tagging by category not yet | P1 | 5 |
 | E13-6 | As a delegate, I want to see my support requests | Part of delegate view (S13.2) | P1 | 5 |
 
 ---

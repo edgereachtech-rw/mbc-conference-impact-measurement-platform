@@ -30,6 +30,7 @@ export * from './schemas/attendance.js';
 export * from './schemas/reflections.js';
 export * from './schemas/feedback.js';
 export * from './schemas/transfer-plans.js';
+export * from './schemas/support.js';
 export * from './schemas/reports.js';
 export * from './schemas/exports.js';
 export * from './schemas/consent.js';

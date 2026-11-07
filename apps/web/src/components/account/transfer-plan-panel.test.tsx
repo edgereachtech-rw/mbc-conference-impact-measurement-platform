@@ -300,13 +300,12 @@ describe('TransferPlanPanel', () => {
       (within(card).getByLabelText('This is my first priority') as HTMLInputElement).checked,
     ).toBe(true);
     await user.type(within(card).getByLabelText('Action'), 'Define measures first');
-    await user.type(screen.getByLabelText('Plan name'), 'Measures first');
     await user.click(screen.getByRole('button', { name: 'Save draft' }));
     const put = calls.find((c) => c.init?.method === 'PUT');
     expect(put?.url).toBe(`/api/v1/me/events/${EVENT}/transfer-plans/${PLAN}`);
     expect(put?.body).toMatchObject({
       version: 1,
-      title: 'Measures first',
+      title: '',
       actions: [{ action: 'Define measures first', isPriority: true, startOn: null }],
       reminder: { frequency: 'none', startOn: null, endOn: null, time: '09:00', days: [] },
     });
@@ -489,7 +488,6 @@ describe('TransferPlanPanel', () => {
     expect(screen.getByText(/This plan is finished and its reminders have stopped/)).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Save changes' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Add an action' })).toBeNull();
-    expect((screen.getByLabelText('Plan name') as HTMLInputElement).disabled).toBe(true);
     // Impact assessment takes over: the reported outcome and the next check's date.
     expect(screen.getAllByText('Impact demonstrated').length).toBeGreaterThan(0);
     expect(screen.getByText(/We will ask you on 21 May 2027 whether/)).toBeTruthy();
@@ -499,7 +497,7 @@ describe('TransferPlanPanel', () => {
     const calls = stub(plan());
     const user = userEvent.setup();
     render(<Harness planId={PLAN} />);
-    await screen.findByLabelText('Plan name');
+    await screen.findByLabelText('How often');
     // One plan per delegate (section 9): nothing here starts another.
     expect(screen.queryByRole('button', { name: /Start another plan/ })).toBeNull();
 

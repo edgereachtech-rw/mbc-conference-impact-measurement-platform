@@ -524,6 +524,20 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   warning with reload) and the event page's "Transfer plans" tab (counts, sessions, reference
   questions, searchable list with status and action-status filters, CSV export, one plan in full
   with "Current" and "As submitted" views and its history).
+- Transfer support (brief 11.7; backlog E13; task of 2026-11-07): table `support_request`
+  (migration `20261107194000_support_requests`): event, delegate, source (`follow_up` or
+  `delegate`), the follow-up answer it came from (unique per answer), the planned action it
+  concerns, the request, the barrier, status `open` or `addressed`, the action taken, who
+  addressed it and when. Requests are raised two ways: a delegate's "Need support to apply your
+  plan?" box on the plan page (`POST /me/events/:id/support-requests`, `GET` lists their own
+  with status), and automatically when a follow-up section is submitted, from every answered
+  question whose area names "support" (the seeded 30/60/90-day sets have one each), with the
+  answer to the section's "barrier" question beside it (`apps/api/src/support/requests.ts`).
+  Organisers: `GET /events/:id/support-requests` (requests, open/addressed counts, barriers as
+  written grouped by wording), `PATCH .../:requestId` `{ status, actionTaken }` (addressing
+  stamps who and when, reopening clears them; audited `support_request.updated`), shown on the
+  event settings "Support" tab. The journey reports `supportRequests.state` as `ok` once the
+  delegate has one.
 - Several Transfer Plans per delegate, reminder windows and completion (task of 2026-11-06;
   backlog E9-2 revised, E10-1 to E10-5, E10-8, E10-9): a delegate may keep more than one plan for
   an event. The first is created on first access; `POST /me/events/:id/transfer-plans`

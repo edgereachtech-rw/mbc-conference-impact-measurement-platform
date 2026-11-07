@@ -12,6 +12,7 @@ import { OnboardingSender } from '@/components/admin/onboarding-sender';
 import { FeedbackManager } from '@/components/admin/feedback/feedback-manager';
 import { ReflectionsManager } from '@/components/admin/reflections/reflections-manager';
 import { ReportWorkspace } from '@/components/admin/reports/report-workspace';
+import { SupportManager } from '@/components/admin/support/support-manager';
 import { TransferPlansManager } from '@/components/admin/transfer-plans/transfer-plans-manager';
 import { consoleButton } from '@/components/console/page';
 import { apiFetch } from '@/lib/api';
@@ -36,6 +37,7 @@ type Tab =
   | 'reflections'
   | 'feedback'
   | 'transfer-plans'
+  | 'support'
   | 'reports'
   | 'qr-codes';
 
@@ -50,6 +52,7 @@ const TABS: ReadonlyArray<{ id: Tab; label: string }> = [
   { id: 'reflections', label: 'Daily reflections' },
   { id: 'feedback', label: 'Session feedback' },
   { id: 'transfer-plans', label: 'Transfer plans' },
+  { id: 'support', label: 'Support' },
   { id: 'reports', label: 'Reports' },
   { id: 'qr-codes', label: 'QR codes' },
 ];
@@ -200,6 +203,7 @@ export function EventSettings({ initialEvent }: EventSettingsProps) {
         {tab === 'reflections' ? <ReflectionsManager event={event} /> : null}
         {tab === 'feedback' ? <FeedbackManager event={event} /> : null}
         {tab === 'transfer-plans' ? <TransferPlansManager event={event} /> : null}
+        {tab === 'support' ? <SupportManager event={event} /> : null}
         {tab === 'qr-codes' ? <ActionQrCodes event={event} /> : null}
         {tab === 'reports' ? (
           <ReportWorkspace

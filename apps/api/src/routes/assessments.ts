@@ -57,6 +57,7 @@ import { organiserName } from '../mail/branding.js';
 import { audit } from '../lib/audit.js';
 import { figureStatuses } from '../lib/eligible.js';
 import { HttpError } from '../lib/errors.js';
+import { raiseFollowUpSupportRequests } from '../support/requests.js';
 
 interface Deps {
   prisma: () => PrismaClient;
@@ -1827,6 +1828,26 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
               sectionKey,
               submittedAt: at,
             })),
+          });
+        }
+        // A follow-up's support answers become support requests for the organisers (brief
+        // 11.7), once the section holding them is submitted.
+        if (config.stage === 'follow_up' && newKeys.length) {
+          await raiseFollowUpSupportRequests(tx, {
+            eventId: delegate.eventId,
+            delegateId: delegate.id,
+            responseId: response.id,
+            context: waveLabel(config.stage, config.wave, config.dueAfterDays),
+            submittedKeys: newKeys,
+            answers: kept.map((k) => {
+              const question = byId.get(k.questionId);
+              return {
+                questionId: k.questionId,
+                sectionKey: sectionKeyOf(question?.sectionId),
+                area: question?.area ?? null,
+                value: k.value,
+              };
+            }),
           });
         }
         await audit(tx, {
