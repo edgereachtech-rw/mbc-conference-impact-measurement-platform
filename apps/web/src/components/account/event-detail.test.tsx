@@ -200,7 +200,7 @@ describe('EventDetail', () => {
     window.location.hash = '#transfer-plan';
     const user = userEvent.setup();
     render(<EventDetail event={lagos} contactEmail="c@x" />);
-    const tabs = screen.getByRole('tablist', { name: 'Your records for this event' });
+    const tabs = await screen.findByRole('tablist', { name: 'Your records for this event' });
     // Each assessment is a tab of its own, in the order the delegate meets it (2026-11-06).
     await vi.waitFor(() =>
       expect(
@@ -284,7 +284,7 @@ describe('EventDetail', () => {
     );
     window.location.hash = '#assessments';
     render(<EventDetail event={lagos} contactEmail="c@x" />);
-    const tabs = screen.getByRole('tablist', { name: 'Your records for this event' });
+    const tabs = await screen.findByRole('tablist', { name: 'Your records for this event' });
     // The open one, not the first: the submitted pre-conference stage is done with.
     await vi.waitFor(() =>
       expect(
@@ -294,6 +294,49 @@ describe('EventDetail', () => {
       ).toBe('true'),
     );
     expect(screen.getByRole('tabpanel', { name: 'End-of-conference evaluation' })).toBeTruthy();
+  });
+
+  it('shows that it is opening, not the Overview, while a linked tab\u2019s records load', async () => {
+    // The records arrive only when the test says so.
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => (release = r));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (url.endsWith('/assessments')) await gate;
+        const body = url.endsWith('/assessments')
+          ? { assessments: [form('pre_conference', 1, '', 'open')] }
+          : url.endsWith('/transfer-plans')
+            ? {
+                plans: [],
+                today: '2026-11-05',
+                days: [],
+                create: { reason: 'no_event_days', days: [] },
+                finalDay: { date: null, reached: false },
+                canSubmitAll: false,
+              }
+            : { reflections: [], sessions: [] };
+        return new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }),
+    );
+    window.location.hash = '#assessment-pre_conference-1';
+    render(<EventDetail event={lagos} contactEmail="c@x" />);
+    expect(screen.getByText('Opening your records…')).toBeTruthy();
+    expect(screen.queryByRole('tab', { name: 'Overview' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Event' })).toBeNull();
+    release();
+    const tabs = await screen.findByRole('tablist', { name: 'Your records for this event' });
+    await vi.waitFor(() =>
+      expect(
+        within(tabs)
+          .getByRole('tab', { name: 'Pre-conference assessment' })
+          .getAttribute('aria-selected'),
+      ).toBe('true'),
+    );
+    expect(screen.queryByText('Opening your records…')).toBeNull();
   });
 
   it('omits the journey for a past event', () => {

@@ -9,7 +9,7 @@ import {
 } from '@mbc/shared';
 
 import { StatusPill } from '@/components/admin/page-header';
-import { consoleButton } from '@/components/console/page';
+import { consoleButton, StatePanel } from '@/components/console/page';
 import { TabStrip, useTabState } from '@/components/console/tabs';
 import { stageLabels, stageWhen } from '@/lib/events';
 import {
@@ -120,7 +120,18 @@ export function EventDetail({ event, contactEmail }: { event: MyEvent; contactEm
     'assessments',
     'reflections',
   ];
-  const [chosen, choose] = useTabState<Tab>(ids, 'overview');
+  const [chosen, choose, pending] = useTabState<Tab>(ids, 'overview');
+  // A link names a tab that only exists once its records have loaded (an assessment, a day's
+  // reflection, a plan), or an alias that resolves from them. Until then the screen shows that it
+  // is opening, not the Overview (2026-11-07: the Overview flashed first on every dashboard link).
+  const stillLoading =
+    assessments.state.kind === 'loading' ||
+    reflections.state.kind === 'loading' ||
+    transferPlans.state.kind === 'loading';
+  const opening =
+    (pending !== null && stillLoading) ||
+    (chosen === 'assessments' && assessments.state.kind === 'loading') ||
+    (chosen === 'reflections' && reflections.state.kind === 'loading');
   // The alias: the first assessment still open to answer, else the first assessment there is.
   const actOn =
     forms.find((a) => a.status === 'open' && !a.response?.submittedAt) ?? forms[0] ?? null;
@@ -145,6 +156,10 @@ export function EventDetail({ event, contactEmail }: { event: MyEvent; contactEm
   const current = tabs.find((t) => t.id === tab) ?? STATIC.overview;
   const form = tab.startsWith('assessment-') ? forms.find((a) => assessmentTabId(a) === tab) : null;
   const day = tab.startsWith('reflection-') ? days.find((r) => reflectionTabId(r) === tab) : null;
+
+  if (opening) {
+    return <StatePanel kind="loading" title="Opening your records…" />;
+  }
 
   return (
     <div className="space-y-5">

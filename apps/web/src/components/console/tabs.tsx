@@ -164,11 +164,14 @@ const readHash = () => window.location.hash.replace(/^#/, '');
 export function useTabState<Id extends string>(
   ids: ReadonlyArray<Id>,
   fallback: Id,
-): [Id, (id: Id) => void] {
+): [Id, (id: Id) => void, string | null] {
   const known = new Set<string>(ids);
   const hash = useSyncExternalStore(subscribeHash, readHash, () => '');
   const [chosen, setChosen] = useState<Id | null>(null);
   const current = chosen ?? (known.has(hash) ? (hash as Id) : fallback);
+  // The address names a tab the screen does not know (yet): the caller can show a loading state
+  // while its tabs are still arriving rather than the fallback (2026-11-07).
+  const pending = chosen === null && hash !== '' && !known.has(hash) ? hash : null;
 
   const choose = (id: Id) => {
     setChosen(id);
@@ -176,5 +179,5 @@ export function useTabState<Id extends string>(
       window.history.replaceState(null, '', id === fallback ? '#' : `#${id}`);
     }
   };
-  return [current, choose];
+  return [current, choose, pending];
 }
