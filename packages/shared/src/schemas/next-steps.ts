@@ -71,7 +71,7 @@ export function nextSteps(journey: Journey): NextStep[] {
   }
 
   if (journey.reflections.available > journey.reflections.submitted) {
-    // const left = journey.reflections.available - journey.reflections.submitted;
+    // One wording whatever the count (2026-11-07): the tab shows which days are still open.
     steps.push({
       key: 'reflections',
       label: 'Add your reflections',

@@ -70,7 +70,8 @@ export function feedbackInvitationRouter({
         endTime: true,
         feedbackEnabled: true,
         feedbackCode: true,
-        feedbackClosesAt: true,
+        feedbackOpenedAt: true,
+        feedbackClosedAt: true,
         eventDateId: true,
         eventDate: { select: { date: true } },
         event: {
@@ -93,18 +94,20 @@ export function feedbackInvitationRouter({
   type Session = Awaited<ReturnType<typeof loadSession>>;
 
   /** Why the form cannot be emailed, or null when it can. */
-  function blocker(session: Session, at: Date): string | null {
+  function blocker(session: Session): string | null {
     if (session.event.status === 'archived') return 'This event is archived.';
     if (!session.feedbackEnabled || !session.feedbackCode) {
       return 'Turn session feedback on for this session first; that is what creates the link.';
     }
-    if (session.feedbackClosesAt && session.feedbackClosesAt <= at) {
-      return 'The feedback form for this session has closed.';
+    // The form opens and closes by hand (2026-11-07): an email only makes sense while it is open.
+    if (session.feedbackClosedAt) return 'The feedback form for this session has closed.';
+    if (!session.feedbackOpenedAt) {
+      return 'Start feedback for this session first; delegates can only answer once it is open.';
     }
     return null;
   }
 
-  async function stateOf(session: Session, at: Date): Promise<FeedbackInvitationState> {
+  async function stateOf(session: Session): Promise<FeedbackInvitationState> {
     const attendee: Prisma.DelegateWhereInput = {
       // Attendees are the delegates checked in on the session's day (2026-11-07).
       attendanceRecords: {
@@ -138,7 +141,7 @@ export function feedbackInvitationRouter({
         select: { sentAt: true },
       }),
     ]);
-    const reason = blocker(session, at);
+    const reason = blocker(session);
     return {
       sendable: reason === null,
       reason,
@@ -165,7 +168,7 @@ export function feedbackInvitationRouter({
     async (req, res) => {
       requireAdmin(res);
       const session = await loadSession(String(req.params.eventId), String(req.params.sessionId));
-      res.json(await stateOf(session, clock()));
+      res.json(await stateOf(session));
     },
   );
 
@@ -177,7 +180,7 @@ export function feedbackInvitationRouter({
       const principal = requireAdmin(res);
       const session = await loadSession(String(req.params.eventId), String(req.params.sessionId));
       const at = clock();
-      const reason = blocker(session, at);
+      const reason = blocker(session);
       if (reason) throw new HttpError(409, 'not_sendable', reason);
 
       const { scope } = req.body;
@@ -201,16 +204,6 @@ export function feedbackInvitationRouter({
 
       const branding = brandingForEvent(mailConfig(), session.event);
       const formUrl = `${config.appUrl.replace(/\/+$/, '')}/feedback/${session.feedbackCode}`;
-      const deadline = session.feedbackClosesAt
-        ? new Intl.DateTimeFormat('en-GB', {
-            day: 'numeric',
-            month: 'long',
-            hour: '2-digit',
-            minute: '2-digit',
-            timeZone: session.event.timezone,
-          }).format(session.feedbackClosesAt)
-        : undefined;
-
       let justSent = 0;
       let justFailed = 0;
       const transport = mailer();
@@ -221,7 +214,6 @@ export function feedbackInvitationRouter({
           whenLine: whenLine(session),
           speaker: session.speaker ?? undefined,
           formUrl,
-          deadline,
         });
         try {
           await transport.send({
@@ -261,7 +253,7 @@ export function feedbackInvitationRouter({
         logger.info({ sent: justSent, failed: justFailed }, 'session feedback invitations');
       }
 
-      res.status(201).json({ ...(await stateOf(session, at)), justSent, justFailed });
+      res.status(201).json({ ...(await stateOf(session)), justSent, justFailed });
     },
   );
 

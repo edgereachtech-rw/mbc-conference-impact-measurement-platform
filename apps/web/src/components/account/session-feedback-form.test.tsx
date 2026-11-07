@@ -40,7 +40,7 @@ const base: MyFeedback = {
   },
   window: 'open',
   openedAt: '2026-11-12T09:02:00.000Z',
-  closesAt: '2026-11-12T22:59:00.000Z',
+  closedAt: null,
   attended: true,
   questions: [
     question(
@@ -150,6 +150,15 @@ describe('SessionFeedbackForm', () => {
     expect(within(card).getByRole('alert').textContent).toMatch(
       /checked in on the day of this session/,
     );
+    expect(within(card).queryByRole('button', { name: /Submit feedback/ })).toBeNull();
+  });
+
+  it('tells a delegate who scans early that feedback has not opened yet', async () => {
+    stub({ ...base, window: 'pending', openedAt: null, canSubmit: false });
+    render(<SessionFeedbackForm code="abc123def456" />);
+    const card = await screen.findByRole('article', { name: 'Feedback: Measuring transfer' });
+    expect(within(card).getByText('Not open yet')).toBeTruthy();
+    expect(card.textContent).toMatch(/has not opened yet/);
     expect(within(card).queryByRole('button', { name: /Submit feedback/ })).toBeNull();
   });
 

@@ -5,6 +5,7 @@ import {
   feedbackQuestionTypeLabels,
   feedbackQuestionTypes,
   feedbackRatingLabels,
+  feedbackWindowLabels,
   type EventDetail,
   type FeedbackDashboard,
   type FeedbackQuestionView,
@@ -20,6 +21,7 @@ import {
   PlayIcon,
   PlusIcon,
   QrCodeIcon,
+  SquareIcon,
   Trash2Icon,
 } from 'lucide-react';
 import QRCode from 'qrcode';
@@ -29,7 +31,7 @@ import { Dialog } from '@/components/console/dialog';
 import { consoleButton, Panel, StatePanel, StatusPill } from '@/components/console/page';
 import { NativeSelect } from '@/components/imports/native-select';
 import { apiFetch, apiUrl } from '@/lib/api';
-import { formatDateShort, formatInstant, isoToZonedLocal, zonedLocalToIso } from '@/lib/events';
+import { formatDateShort, formatInstant } from '@/lib/events';
 import { describeError } from '@/lib/imports';
 
 import { FeedbackInvite } from './feedback-invite';
@@ -44,13 +46,12 @@ type DialogState =
   | { kind: 'dashboard'; session: FeedbackSessionView }
   | null;
 
-const windowLabel = { disabled: 'Disabled', open: 'Open', closed: 'Closed' } as const;
-
 /**
- * Session feedback (task of 2026-10-31): per session, enable the form (the default questionnaire
- * is created), set the deadline, share the link or QR code, start the encouraged five-minute
- * period, edit questions, and read the dashboard (rating distributions with question-specific
- * percentages, written answers, an anonymised view for the speaker) or export it. Admins only.
+ * Session feedback (task of 2026-10-31): per session, enable the form (which creates its link and
+ * QR code), start it when the session ends, close it when the organisers decide (2026-11-07: the
+ * form opens and closes by hand, never on the clock), edit the event's questions, and read the
+ * dashboard (rating distributions with question-specific percentages, written answers, an
+ * anonymised view for the speaker) or export it. Admins only.
  */
 export function FeedbackManager({ event }: FeedbackManagerProps) {
   const [sessions, setSessions] = useState<FeedbackSessionView[] | null>(null);
@@ -123,9 +124,10 @@ export function FeedbackManager({ event }: FeedbackManagerProps) {
     <div className="space-y-6">
       <p className="text-sm text-corp-text">
         The feedback questions are recorded once, below, and every session&rsquo;s form follows
-        them. Each session gets its own link and QR code. Share the link at the end of the session
-        for the {FEEDBACK_ENCOURAGED_MINUTES}-minute feedback period; the form stays open until its
-        deadline. Only delegates checked in on the day of the session can answer, and feedback never
+        them. Enabling a session creates its link and QR code, which you can show or print right
+        away. Delegates can answer only once you press Start, at the end of the session, for the{' '}
+        {FEEDBACK_ENCOURAGED_MINUTES}-minute feedback period; the form then stays open until you
+        close it. Only delegates checked in on the day of the session can answer, and feedback never
         records attendance.
       </p>
       <QuestionsPanel
@@ -340,8 +342,6 @@ function SessionCard({
   onDialog: (d: DialogState) => void;
 }) {
   const [busy, setBusy] = useState(false);
-  const [closesAt, setClosesAt] = useState(isoToZonedLocal(session.closesAt, event.timezone));
-  const id = useId();
   const base = `/events/${event.id}/feedback/sessions/${session.id}`;
 
   async function run(work: () => Promise<unknown>, message: string) {
@@ -356,16 +356,20 @@ function SessionCard({
     }
   }
   function settings(enabled: boolean) {
-    const iso = closesAt ? zonedLocalToIso(closesAt, event.timezone) : null;
-    if (closesAt && !iso) {
-      onError('Enter a complete deadline.');
-      return;
-    }
     void run(
-      () => apiFetch(base, { method: 'PATCH', body: JSON.stringify({ enabled, closesAt: iso }) }),
-      enabled ? 'Feedback enabled.' : 'Feedback disabled.',
+      () => apiFetch(base, { method: 'PATCH', body: JSON.stringify({ enabled }) }),
+      enabled ? 'Feedback enabled. Press Start when the session ends.' : 'Feedback disabled.',
     );
   }
+  const open = () =>
+    void run(
+      () => apiFetch(`${base}/open`, { method: 'POST', body: '{}' }),
+      session.window === 'closed'
+        ? 'Feedback reopened.'
+        : `Feedback open: the ${FEEDBACK_ENCOURAGED_MINUTES}-minute period has started.`,
+    );
+  const close = () =>
+    void run(() => apiFetch(`${base}/close`, { method: 'POST', body: '{}' }), 'Feedback closed.');
 
   return (
     <Panel>
@@ -389,60 +393,79 @@ function SessionCard({
                   : 'neutral'
             }
           >
-            {windowLabel[session.window]}
+            {feedbackWindowLabels[session.window]}
           </StatusPill>
         </div>
         <p className="text-sm text-corp-text">
           {session.attended} checked in that day · {session.submitted} submitted
-          {session.openedAt
-            ? ` · period started ${formatInstant(session.openedAt, event.timezone)}`
+          {session.openedAt && session.window !== 'disabled'
+            ? ` · opened ${formatInstant(session.openedAt, event.timezone)}`
+            : ''}
+          {session.closedAt && session.window === 'closed'
+            ? ` · closed ${formatInstant(session.closedAt, event.timezone)}`
             : ''}
         </p>
 
-        <form
-          noValidate
-          aria-label={`Settings: ${session.title}`}
-          onSubmit={(e) => {
-            e.preventDefault();
-            settings(true);
-          }}
-          className="flex flex-col gap-2 sm:flex-row sm:items-end"
-        >
-          <div className="flex-1 space-y-1">
-            <label htmlFor={`${id}-closes`} className="text-sm font-semibold text-corp-ink">
-              Deadline ({event.timezone})
-            </label>
-            <input
-              id={`${id}-closes`}
-              type="datetime-local"
-              value={closesAt}
-              disabled={readOnly || busy}
-              onChange={(e) => setClosesAt(e.target.value)}
-              className="h-11 w-full rounded-none border border-corp-line bg-white px-3 text-base md:text-sm"
-            />
-          </div>
-          {!readOnly ? (
-            <div className="flex flex-wrap gap-2">
+        {!readOnly ? (
+          <div className="flex flex-wrap gap-2">
+            {!session.enabled ? (
               <button
-                type="submit"
+                type="button"
                 disabled={busy}
-                className={consoleButton({ variant: session.enabled ? 'secondary' : 'accent' })}
+                onClick={() => settings(true)}
+                className={consoleButton({ variant: 'accent' })}
               >
-                {session.enabled ? 'Save deadline' : 'Enable feedback'}
+                Enable feedback
               </button>
-              {session.enabled ? (
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => settings(false)}
-                  className={consoleButton({ variant: 'ghost' })}
-                >
-                  Disable
-                </button>
-              ) : null}
-            </div>
-          ) : null}
-        </form>
+            ) : null}
+            {session.window === 'pending' ? (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={open}
+                className={consoleButton({ variant: 'accent' })}
+              >
+                <PlayIcon aria-hidden="true" /> Start feedback
+              </button>
+            ) : null}
+            {session.window === 'open' ? (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={close}
+                className={consoleButton({ variant: 'secondary' })}
+              >
+                <SquareIcon aria-hidden="true" /> Close feedback
+              </button>
+            ) : null}
+            {session.window === 'closed' ? (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={open}
+                className={consoleButton({ variant: 'secondary' })}
+              >
+                <PlayIcon aria-hidden="true" /> Reopen feedback
+              </button>
+            ) : null}
+            {session.enabled ? (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => settings(false)}
+                className={consoleButton({ variant: 'ghost' })}
+              >
+                Disable
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+        {session.window === 'pending' ? (
+          <p className="text-sm text-corp-muted">
+            The link and QR code are ready to show. Delegates can answer once you press Start, at
+            the end of the session.
+          </p>
+        ) : null}
 
         {session.enabled ? (
           <>
@@ -454,22 +477,6 @@ function SessionCard({
               >
                 <QrCodeIcon aria-hidden="true" /> Link and QR code
               </button>
-              {!readOnly ? (
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() =>
-                    void run(
-                      () => apiFetch(`${base}/open`, { method: 'POST', body: '{}' }),
-                      `${FEEDBACK_ENCOURAGED_MINUTES}-minute feedback period started.`,
-                    )
-                  }
-                  className={consoleButton({ variant: 'accent', size: 'sm' })}
-                >
-                  <PlayIcon aria-hidden="true" /> Start the {FEEDBACK_ENCOURAGED_MINUTES}-minute
-                  period
-                </button>
-              ) : null}
               <button
                 type="button"
                 onClick={() => onDialog({ kind: 'dashboard', session })}

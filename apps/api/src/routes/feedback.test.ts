@@ -171,7 +171,7 @@ describe.skipIf(!hasDatabase)('session feedback', () => {
     await prisma.$disconnect();
   });
 
-  it('enables feedback per session with the default questionnaire, a code and a deadline', async () => {
+  it('enables feedback per session with a code, opens it by hand, keeps it open, and closes it by hand', async () => {
     const base = `/events/${eventId}/feedback`;
     expect((await call('get', base, undefined, cookies.dee)).status).toBe(403);
     const before = await call('get', base);
@@ -185,17 +185,16 @@ describe.skipIf(!hasDatabase)('session feedback', () => {
       [false, null],
       [false, null],
     ]);
-    const enabled = await call('patch', `${base}/sessions/${sessionId}`, {
-      enabled: true,
-      closesAt: '2026-11-06T23:59:00+01:00',
-    });
+    const enabled = await call('patch', `${base}/sessions/${sessionId}`, { enabled: true });
     expect(enabled.status, enabled.text).toBe(200);
+    // Enabling creates the link and QR code; delegates wait for the organisers to start.
     expect(enabled.body.session).toMatchObject({
       title: 'Measuring transfer',
       speaker: 'Dr A. Speaker',
       enabled: true,
-      window: 'open',
-      closesAt: '2026-11-06T22:59:00.000Z',
+      window: 'pending',
+      openedAt: null,
+      closedAt: null,
       attended: 1,
       submitted: 0,
     });
@@ -221,8 +220,44 @@ describe.skipIf(!hasDatabase)('session feedback', () => {
     const again = await call('patch', `${base}/sessions/${sessionId}`, { enabled: true });
     expect(again.body.session.code).toBe(enabled.body.session.code);
     expect(again.body.session.questions).toHaveLength(5);
+
+    // Pending: the delegate sees the session but cannot answer, and closing is refused.
+    const pending = await call(
+      'get',
+      `/me/feedback/${enabled.body.session.code}`,
+      undefined,
+      cookies.dee,
+    );
+    expect(pending.body.feedback).toMatchObject({ window: 'pending', canSubmit: false });
+    const early = await call(
+      'put',
+      `/me/feedback/${enabled.body.session.code}`,
+      { answers: {} },
+      cookies.dee,
+    );
+    expect(early.status).toBe(409);
+    expect(early.body.error.code).toBe('feedback_not_open');
+    expect((await call('post', `${base}/sessions/${sessionId}/close`, {})).status).toBe(409);
+
+    // Start: open from now on, for as long as the organisers leave it (well past five minutes).
     const opened = await call('post', `${base}/sessions/${sessionId}/open`, {});
-    expect(opened.body.session.openedAt).toBe(now.toISOString());
+    expect(opened.body.session).toMatchObject({ window: 'open', openedAt: now.toISOString() });
+    now = new Date('2026-11-05T12:00:00.000Z');
+    expect(
+      (await call('get', base)).body.sessions.find((s: { id: string }) => s.id === sessionId),
+    ).toMatchObject({ window: 'open', closedAt: null });
+
+    // Close, then reopen: the closing time is recorded and cleared again.
+    const closed = await call('post', `${base}/sessions/${sessionId}/close`, {});
+    expect(closed.body.session).toMatchObject({ window: 'closed', closedAt: now.toISOString() });
+    const reopened = await call('post', `${base}/sessions/${sessionId}/open`, {});
+    expect(reopened.body.session).toMatchObject({ window: 'open', closedAt: null });
+    expect(
+      await prisma.auditLog.count({
+        where: { eventId, action: { in: ['feedback.opened', 'feedback.closed'] } },
+      }),
+    ).toBe(3);
+    now = new Date('2026-11-05T10:00:00.000Z');
   });
 
   it('resolves the link to the right session, requires recorded attendance, validates ratings, updates in place and never records attendance', async () => {
@@ -336,8 +371,8 @@ describe.skipIf(!hasDatabase)('session feedback', () => {
       }),
     ]);
 
-    // Past the deadline the form closes; answers stay.
-    now = new Date('2026-11-07T00:00:00.000Z'); // past the deadline, inside the session idle window
+    // Once the organisers close it the form refuses answers; the ones given stay.
+    await call('post', `/events/${eventId}/feedback/sessions/${sessionId}/close`, {});
     expect(
       (
         await call(
@@ -351,6 +386,7 @@ describe.skipIf(!hasDatabase)('session feedback', () => {
     expect(
       (await call('get', `/me/feedback/${code}`, undefined, cookies.dee)).body.feedback,
     ).toMatchObject({ window: 'closed', canSubmit: false, response: { revision: 2 } });
+    await call('post', `/events/${eventId}/feedback/sessions/${sessionId}/open`, {});
     now = new Date('2026-11-05T11:00:00.000Z');
   });
 

@@ -173,7 +173,11 @@ function Form({
         </p>
         <div className="flex flex-wrap items-center gap-2">
           <StatusPill tone={feedback.window === 'open' ? 'positive' : 'neutral'}>
-            {feedback.window === 'open' ? 'Open' : 'Closed'}
+            {feedback.window === 'open'
+              ? 'Open'
+              : feedback.window === 'pending'
+                ? 'Not open yet'
+                : 'Closed'}
           </StatusPill>
           {feedback.response ? (
             <StatusPill tone="positive">
@@ -182,12 +186,13 @@ function Form({
           ) : null}
         </div>
         <p className="text-xs text-corp-muted">
-          {feedback.openedAt
-            ? `Feedback opened ${formatInstant(feedback.openedAt, tz)}; please take about ${FEEDBACK_ENCOURAGED_MINUTES} minutes now. `
-            : ''}
-          {feedback.closesAt
-            ? `Open until ${formatInstant(feedback.closesAt, tz)}.`
-            : 'Open until the organisers close it.'}
+          {feedback.window === 'open' && feedback.openedAt
+            ? `Feedback opened ${formatInstant(feedback.openedAt, tz)}; please take about ${FEEDBACK_ENCOURAGED_MINUTES} minutes now. It stays open until the organisers close it.`
+            : feedback.window === 'closed' && feedback.closedAt
+              ? `Closed ${formatInstant(feedback.closedAt, tz)}.`
+              : feedback.window === 'pending'
+                ? 'The organisers open feedback at the end of the session.'
+                : ''}
         </p>
       </div>
 
@@ -199,6 +204,11 @@ function Form({
           Feedback is open to delegates checked in on the day of this session. If you were there,
           ask the organisers to record it, then come back to this link.
         </div>
+      ) : feedback.window === 'pending' ? (
+        <p role="status" className="text-sm text-corp-text">
+          Feedback for this session has not opened yet. The organisers open it at the end of the
+          session; keep this page and refresh it when they say so.
+        </p>
       ) : feedback.window !== 'open' ? (
         <p className="text-sm text-corp-muted">
           This feedback form is closed.{feedback.response ? ' Your answers are shown below.' : ''}

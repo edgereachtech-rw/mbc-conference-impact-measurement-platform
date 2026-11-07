@@ -53,7 +53,7 @@ const disabled: FeedbackSessionView = {
   code: null,
   path: null,
   openedAt: null,
-  closesAt: null,
+  closedAt: null,
   window: 'disabled',
   questions: [],
   attended: 2,
@@ -64,8 +64,8 @@ const enabled: FeedbackSessionView = {
   enabled: true,
   code: 'abc123def456',
   path: '/feedback/abc123def456',
-  closesAt: '2026-11-12T22:59:00.000Z',
-  window: 'open',
+  openedAt: null,
+  window: 'pending',
   questions: [
     {
       id: Q1,
@@ -124,7 +124,7 @@ const dashboard: FeedbackDashboard = {
 };
 
 describe('FeedbackManager', () => {
-  it('enables a session with the default questionnaire, shows the link, starts the period and opens the dashboard with percentages', async () => {
+  it('enables a session, shows the link, starts, closes and reopens feedback by hand, and opens the dashboard with percentages', async () => {
     const calls: Array<{ url: string; init?: RequestInit }> = [];
     let session = disabled;
     vi.stubGlobal(
@@ -138,7 +138,16 @@ describe('FeedbackManager', () => {
           return json({ session });
         }
         if (url.endsWith('/open')) {
-          session = { ...enabled, openedAt: '2026-11-12T09:02:00.000Z' };
+          session = { ...enabled, openedAt: '2026-11-12T09:02:00.000Z', window: 'open' };
+          return json({ session });
+        }
+        if (url.endsWith('/close')) {
+          session = {
+            ...enabled,
+            openedAt: '2026-11-12T09:02:00.000Z',
+            closedAt: '2026-11-12T18:00:00.000Z',
+            window: 'closed',
+          };
           return json({ session });
         }
         if (url.includes('/dashboard')) {
@@ -166,18 +175,18 @@ describe('FeedbackManager', () => {
     expect(card.textContent).toMatch(/12 Nov 2026 09:00-10:00 · Dr A\. Speaker/);
     expect(within(card).getByText('Disabled')).toBeTruthy();
 
-    await user.type(within(card).getByLabelText(/Deadline/), '2026-11-12T23:59');
+    expect(within(card).queryByLabelText(/Deadline/)).toBeNull();
     await user.click(within(card).getByRole('button', { name: 'Enable feedback' }));
     const patch = calls.find((c) => c.init?.method === 'PATCH');
-    expect(JSON.parse(String(patch?.init?.body))).toEqual({
-      enabled: true,
-      closesAt: '2026-11-12T22:59:00.000Z',
-    });
+    expect(JSON.parse(String(patch?.init?.body))).toEqual({ enabled: true });
     expect((await screen.findByRole('status')).textContent).toMatch(/Feedback enabled/);
+    // Enabled is not open: the link and code exist, delegates wait for Start.
     const enabledCard = await screen.findByRole('article', {
       name: 'Feedback: Measuring transfer',
     });
-    expect(within(enabledCard).getByText('Open')).toBeTruthy();
+    expect(within(enabledCard).getByText('Not started')).toBeTruthy();
+    expect(enabledCard.textContent).toMatch(/Delegates can answer once you press Start/);
+    expect(within(enabledCard).queryByRole('button', { name: /Close feedback/ })).toBeNull();
     // The questions are the event's, listed once above the sessions (2026-11-07).
     expect(within(enabledCard).queryByRole('list', { name: /Questions/ })).toBeNull();
     expect(screen.getByRole('list', { name: 'Feedback questions' }).textContent).toMatch(
@@ -192,13 +201,26 @@ describe('FeedbackManager', () => {
     ).toBeTruthy();
     await user.click(within(link).getByRole('button', { name: 'Close' }));
 
-    await user.click(
-      within(enabledCard).getByRole('button', { name: 'Start the 5-minute period' }),
-    );
+    await user.click(within(enabledCard).getByRole('button', { name: 'Start feedback' }));
     expect(calls.some((c) => c.url.endsWith('/open') && c.init?.method === 'POST')).toBe(true);
     expect((await screen.findByRole('status')).textContent).toMatch(
-      /5-minute feedback period started/,
+      /Feedback open: the 5-minute period has started/,
     );
+    const openCard = await screen.findByRole('article', { name: 'Feedback: Measuring transfer' });
+    expect(within(openCard).getByText('Open')).toBeTruthy();
+    expect(openCard.textContent).toMatch(/opened 12 Nov 2026/);
+    expect(within(openCard).queryByRole('button', { name: /Start feedback/ })).toBeNull();
+
+    // Nothing closes on the clock: only the Close button does, and Reopen undoes it.
+    await user.click(within(openCard).getByRole('button', { name: 'Close feedback' }));
+    expect(calls.some((c) => c.url.endsWith('/close') && c.init?.method === 'POST')).toBe(true);
+    expect((await screen.findByRole('status')).textContent).toMatch(/Feedback closed/);
+    const closedCard = await screen.findByRole('article', {
+      name: 'Feedback: Measuring transfer',
+    });
+    expect(within(closedCard).getByText('Closed')).toBeTruthy();
+    expect(closedCard.textContent).toMatch(/closed 12 Nov 2026/);
+    expect(within(closedCard).getByRole('button', { name: 'Reopen feedback' })).toBeTruthy();
 
     await user.click(screen.getByRole('button', { name: 'Dashboard (2)' }));
     const dash = await screen.findByRole('dialog', { name: 'Feedback: Measuring transfer' });

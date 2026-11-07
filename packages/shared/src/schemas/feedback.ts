@@ -53,14 +53,24 @@ export const DEFAULT_FEEDBACK_QUESTIONS: ReadonlyArray<{
 /** The encouraged completion window after a session, in minutes; never a hard deadline. */
 export const FEEDBACK_ENCOURAGED_MINUTES = 5;
 
-// ------------------------------------------------------------------ commands
+/**
+ * What delegates see of a session's feedback (decision 2026-11-07). Enabling creates the link
+ * and QR code and nothing more: the organisers open the form when the session ends ("Start"),
+ * it stays open after the five minutes, and it closes only when they close it.
+ */
+export const feedbackWindows = ['disabled', 'pending', 'open', 'closed'] as const;
+export type FeedbackWindow = (typeof feedbackWindows)[number];
+export const feedbackWindowLabels: Record<FeedbackWindow, string> = {
+  disabled: 'Disabled',
+  pending: 'Not started',
+  open: 'Open',
+  closed: 'Closed',
+};
 
-const isoInstant = z.iso.datetime({ offset: true });
+// ------------------------------------------------------------------ commands
 
 export const feedbackSettingsSchema = z.object({
   enabled: z.boolean(),
-  /** The configured deadline; null keeps the form open until the organisers close it. */
-  closesAt: isoInstant.nullable().optional(),
 });
 export type FeedbackSettings = z.infer<typeof feedbackSettingsSchema>;
 
@@ -108,10 +118,12 @@ export const feedbackSessionViewSchema = z.object({
   code: z.string().nullable(),
   /** The delegate-facing path, /feedback/{code}; null until enabled. */
   path: z.string().nullable(),
+  /** When the organisers last opened the form (started the period); null while pending. */
   openedAt: z.string().nullable(),
-  closesAt: z.string().nullable(),
+  /** When the organisers closed it; null while pending or open. */
+  closedAt: z.string().nullable(),
   /** What delegates see right now. */
-  window: z.enum(['disabled', 'open', 'closed']),
+  window: z.enum(feedbackWindows),
   questions: z.array(feedbackQuestionViewSchema),
   /** Delegates recorded as attending the session. */
   attended: z.number().int(),
@@ -172,9 +184,9 @@ export const myFeedbackSchema = z.object({
     endTime: z.string(),
     timezone: z.string(),
   }),
-  window: z.enum(['open', 'closed']),
+  window: z.enum(['pending', 'open', 'closed']),
   openedAt: z.string().nullable(),
-  closesAt: z.string().nullable(),
+  closedAt: z.string().nullable(),
   /** Recorded as attending this session; required to submit. */
   attended: z.boolean(),
   questions: z.array(feedbackQuestionViewSchema.omit({ responseCount: true })),
@@ -198,7 +210,7 @@ export const myFeedbackListItemSchema = z.object({
   date: z.string(),
   title: z.string(),
   speaker: z.string().nullable(),
-  window: z.enum(['open', 'closed']),
+  window: z.enum(['pending', 'open', 'closed']),
   attended: z.boolean(),
   submittedAt: z.string().nullable(),
 });
@@ -224,12 +236,17 @@ export function ratingDistribution(values: readonly string[]): {
   };
 }
 
-/** Open while enabled and before the deadline; the five minutes are encouragement only. */
-export function feedbackWindowState(
-  session: { enabled: boolean; closesAt: string | Date | null },
-  at: Date,
-): 'disabled' | 'open' | 'closed' {
+/**
+ * Pending until the organisers start the period, open from then on (the five minutes are
+ * encouragement only), closed once they close it. Nothing here depends on the clock.
+ */
+export function feedbackWindowState(session: {
+  enabled: boolean;
+  openedAt: string | Date | null;
+  closedAt: string | Date | null;
+}): FeedbackWindow {
   if (!session.enabled) return 'disabled';
-  if (session.closesAt && at > new Date(session.closesAt)) return 'closed';
+  if (session.closedAt) return 'closed';
+  if (!session.openedAt) return 'pending';
   return 'open';
 }

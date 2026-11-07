@@ -411,26 +411,31 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   session's link or QR code, answered after the session by delegates recorded as attending it
   (session attendance, E6), one logical response per delegate, updatable. Tables:
   `event_session.feedback_code` (the link/QR code, kept across disable/enable),
-  `feedback_opened_at` (when the organisers started the encouraged five-minute period, never a
-  gate) and `feedback_closes_at` (the deadline; the form stays open until then);
+  `feedback_opened_at` (when the organisers opened the form by pressing Start, which since
+  2026-11-07 is the gate: delegates answer from then on) and `feedback_closed_at` (when they
+  closed it; migration `20261107105000_session_feedback_open_close` renamed the old deadline
+  column, keeping a past deadline as the closing time and clearing a future one). The window
+  is `disabled`, `pending` (enabled, link and QR code ready, not started), `open` or `closed`;
+  nothing closes on the clock, the five minutes are encouragement only;
   `session_feedback_question` (rating Excellent/Good/Fair/Poor or written answer, required
   flag, versioned after answers); `session_feedback_response` (unique per delegate and session,
   revision, first submitted and last updated); `session_feedback_answer`;
   `session_feedback_revision` (earlier answers kept on every update). Migration
   `20261031240000_session_feedback`. Admin routes under `/api/v1/events/:id/feedback`: list;
-  `sessions/:sid` PATCH `{ enabled, closesAt }` (enabling creates the code and, for a session
-  without questions, the standard five questions); `sessions/:sid/open` (starts the five-minute
-  period); questions POST/PATCH/DELETE and `questions/order`; `sessions/:sid/dashboard`
+  `sessions/:sid` PATCH `{ enabled }` (enabling creates the code and, for an event without
+  questions, the standard five); `sessions/:sid/open` (opens the form, or reopens a closed one;
+  audited `feedback.opened`); `sessions/:sid/close` (409 `feedback_not_open` unless open; audited
+  `feedback.closed`); questions POST/PATCH/DELETE and `questions/order`; `sessions/:sid/dashboard`
   (submission count = latest per delegate, rating distribution per question with percentages
   over that question's valid answers, written answers; `?anonymised=true` leaves delegate names
   out, which is how results are shared with a speaker now that the speaker role is gone; viewing
   audited); `sessions/:sid/export.csv` (same figures, same
   `anonymised` switch, audited). Delegate routes: `GET /me/feedback/:code` (the session,
   speaker, questions, own response, attendance eligibility), `PUT /me/feedback/:code` (create
-  or update; 403 `not_attended`, 409 `feedback_closed`, 422 `answers_invalid`; never touches
+  or update; 403 `not_attended`, 409 `feedback_not_open` while pending, 409 `feedback_closed`,
+  422 `answers_invalid`; never touches
   attendance), `GET /me/events/:id/feedback` (the delegate's sessions with feedback). Screens:
-  the event page's "Session feedback" tab (enable, deadline, link and QR code, start the
-  period, questions, dashboard with the anonymised view, export) and the page `/feedback/:code`
+  the event page's "Session feedback" tab (enable, link and QR code, Start, Close, Reopen, questions, dashboard with the anonymised view, export) and the page `/feedback/:code`
   (sign-in first, then the form; the delegate's event page lists their sessions too).
 - End-of-conference evaluation (task of 2026-10-31; backlog E11): a fourth assessment stage,
   `end_of_conference`, between the during-conference stage and the follow-ups (migrations

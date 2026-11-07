@@ -84,7 +84,13 @@ export function SessionFeedbackList({ eventId, timezone }: { eventId: string; ti
             <StatusPill
               tone={s.submittedAt ? 'positive' : s.window === 'open' ? 'attention' : 'neutral'}
             >
-              {s.submittedAt ? 'Submitted' : s.window === 'open' ? 'Open' : 'Closed'}
+              {s.submittedAt
+                ? 'Submitted'
+                : s.window === 'open'
+                  ? 'Open'
+                  : s.window === 'pending'
+                    ? 'Not open yet'
+                    : 'Closed'}
             </StatusPill>
             {!s.attended ? <StatusPill tone="neutral">Attendance not recorded</StatusPill> : null}
             <Link
@@ -94,7 +100,7 @@ export function SessionFeedbackList({ eventId, timezone }: { eventId: string; ti
                 size: 'sm',
               })}
             >
-              {s.submittedAt ? 'View or update' : 'Give feedback'}
+              {s.submittedAt ? 'View or update' : s.window === 'open' ? 'Give feedback' : 'View'}
             </Link>
           </div>
         </li>

@@ -98,7 +98,11 @@ export function journeyRouter({ prisma, config, middleware, now }: Deps): Router
             _count: { select: { responses: { where: { delegateId: delegate.id } } } },
           },
         }),
-        db.eventSession.count({ where: { eventId, feedbackEnabled: true } }),
+        // Sessions whose feedback the organisers have opened (2026-11-07): a pending one is not
+        // something the delegate can do yet.
+        db.eventSession.count({
+          where: { eventId, feedbackEnabled: true, feedbackOpenedAt: { not: null } },
+        }),
         db.sessionFeedbackResponse.count({ where: { eventId, delegateId: delegate.id } }),
         // The latest of the delegate's plans (2026-11-06): the one they are working on now.
         db.transferPlan.findFirst({

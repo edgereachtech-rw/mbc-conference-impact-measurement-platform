@@ -28,13 +28,19 @@ describe('session feedback helpers', () => {
     expect(d.ratings.every((r) => r.count === 0 && r.percent === 0)).toBe(true);
   });
 
-  it('keeps the form open until the configured deadline, never closing after five minutes', () => {
-    const opened = new Date('2026-11-12T10:00:00.000Z');
-    const session = { enabled: true, closesAt: '2026-11-12T23:59:00.000Z' };
-    expect(feedbackWindowState(session, opened)).toBe('open');
-    expect(feedbackWindowState(session, new Date('2026-11-12T10:06:00.000Z'))).toBe('open');
-    expect(feedbackWindowState(session, new Date('2026-11-13T00:00:00.000Z'))).toBe('closed');
-    expect(feedbackWindowState({ enabled: true, closesAt: null }, opened)).toBe('open');
-    expect(feedbackWindowState({ enabled: false, closesAt: null }, opened)).toBe('disabled');
+  it('is pending until started, open until closed, and never closes on the clock', () => {
+    const opened = '2026-11-12T10:00:00.000Z';
+    expect(feedbackWindowState({ enabled: true, openedAt: null, closedAt: null })).toBe('pending');
+    expect(feedbackWindowState({ enabled: true, openedAt: opened, closedAt: null })).toBe('open');
+    expect(
+      feedbackWindowState({
+        enabled: true,
+        openedAt: opened,
+        closedAt: '2026-11-12T18:00:00.000Z',
+      }),
+    ).toBe('closed');
+    expect(feedbackWindowState({ enabled: false, openedAt: opened, closedAt: null })).toBe(
+      'disabled',
+    );
   });
 });

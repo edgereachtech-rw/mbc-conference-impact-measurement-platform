@@ -89,7 +89,7 @@ export function ActionQrCodes({ event }: { event: EventDetail }) {
         key: `session:${s.id}`,
         group: 'Session feedback',
         title: s.title,
-        hint: `${formatDateShort(s.date)}, ${s.startTime}–${s.endTime}. Lands on this session's feedback form.`,
+        hint: `${formatDateShort(s.date)}, ${s.startTime}–${s.endTime}. Lands on this session's feedback form${s.window === 'open' ? ', open now' : s.window === 'closed' ? ', closed' : '; it answers once you press Start on the Session feedback tab'}.`,
         path: s.path!,
       })),
     {

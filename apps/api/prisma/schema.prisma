@@ -687,10 +687,11 @@ model EventSession {
   feedbackEnabled  Boolean     @default(false) @map("feedback_enabled")
   /// Short code in the session's feedback link and QR code; set when feedback is enabled.
   feedbackCode     String?     @unique @map("feedback_code")
-  /// When the organisers started the encouraged five-minute period; informational, not a gate.
+  /// When the organisers opened the form (started the five-minute period). Since 2026-11-07 it
+  /// is the gate: delegates answer from then on, for as long as the organisers leave it open.
   feedbackOpenedAt DateTime?   @map("feedback_opened_at") @db.Timestamptz(3)
-  /// The configured deadline; the form stays open until then (never closed after five minutes).
-  feedbackClosesAt DateTime?   @map("feedback_closes_at") @db.Timestamptz(3)
+  /// When the organisers closed the form; null while pending or open. Reopening clears it.
+  feedbackClosedAt DateTime?   @map("feedback_closed_at") @db.Timestamptz(3)
   createdAt        DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt        DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
 

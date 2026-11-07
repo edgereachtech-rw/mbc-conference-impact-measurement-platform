@@ -150,14 +150,14 @@ describe('nextSteps', () => {
     expect(closed.some((s) => s.tab === 'attendance')).toBe(false);
   });
 
-  it('counts what is left for reflections and feedback, and reads as singular for one', () => {
+  it('counts the sessions left for feedback, singular for one, and keeps one wording for reflections', () => {
     const steps = nextSteps(
       journey({
         reflections: { available: 2, submitted: 1 },
         feedback: { sessions: 4, submitted: 1 },
       }),
     );
-    expect(steps.map((s) => s.label)).toContain('Add your reflection');
+    expect(steps.map((s) => s.label)).toContain('Add your reflections');
     expect(steps.map((s) => s.label)).toContain('Give feedback on 3 sessions');
 
     const several = nextSteps(journey({ reflections: { available: 3, submitted: 0 } }));

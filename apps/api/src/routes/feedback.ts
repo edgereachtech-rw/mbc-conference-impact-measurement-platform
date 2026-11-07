@@ -100,6 +100,19 @@ export function newFeedbackCode(): string {
   return randomBytes(9).toString('base64url');
 }
 
+/** What delegates see of the session's feedback right now; see `feedbackWindowState`. */
+function windowOf(s: {
+  feedbackEnabled: boolean;
+  feedbackOpenedAt: Date | null;
+  feedbackClosedAt: Date | null;
+}) {
+  return feedbackWindowState({
+    enabled: s.feedbackEnabled,
+    openedAt: s.feedbackOpenedAt,
+    closedAt: s.feedbackClosedAt,
+  });
+}
+
 /**
  * Session feedback: enabled per session by admins, reached by the session's link or QR code,
  * answered after the session by delegates checked in on its day (2026-11-07; before, a per-session check-in). One response per delegate,
@@ -119,7 +132,7 @@ export function feedbackRouter({ prisma, config, middleware, now }: Deps): Route
     return principal;
   }
 
-  function sessionViewOf(s: SessionRow, at: Date): FeedbackSessionView {
+  function sessionViewOf(s: SessionRow): FeedbackSessionView {
     return {
       id: s.id,
       eventDateId: s.eventDateId,
@@ -133,8 +146,8 @@ export function feedbackRouter({ prisma, config, middleware, now }: Deps): Route
       code: s.feedbackEnabled ? s.feedbackCode : null,
       path: s.feedbackEnabled && s.feedbackCode ? `/feedback/${s.feedbackCode}` : null,
       openedAt: iso(s.feedbackOpenedAt),
-      closesAt: iso(s.feedbackClosesAt),
-      window: feedbackWindowState({ enabled: s.feedbackEnabled, closesAt: s.feedbackClosesAt }, at),
+      closedAt: iso(s.feedbackClosedAt),
+      window: windowOf(s),
       questions: s.feedbackQuestions.map(questionViewOf),
       attended: s.eventDate._count.attendance,
       submitted: s._count.feedbackResponses,
@@ -202,10 +215,9 @@ export function feedbackRouter({ prisma, config, middleware, now }: Deps): Route
       }),
       eventQuestions(event.id),
     ]);
-    const at = clock();
     res.json({
       questions: questions.map(questionViewOf),
-      sessions: rows.map((s) => sessionViewOf(withQuestions(s, questions), at)),
+      sessions: rows.map((s) => sessionViewOf(withQuestions(s, questions))),
     });
   });
 
@@ -223,15 +235,10 @@ export function feedbackRouter({ prisma, config, middleware, now }: Deps): Route
       const updated = await prisma().$transaction(async (tx) => {
         const row = await tx.eventSession.update({
           where: { id: session.id },
+          // The open and closed timestamps survive a disable/enable cycle, like the code.
           data: {
             feedbackEnabled: input.enabled,
             feedbackCode: session.feedbackCode ?? (input.enabled ? newFeedbackCode() : null),
-            feedbackClosesAt:
-              input.closesAt === undefined
-                ? session.feedbackClosesAt
-                : input.closesAt
-                  ? new Date(input.closesAt)
-                  : null,
           },
           include: SESSION_INCLUDE,
         });
@@ -244,7 +251,7 @@ export function feedbackRouter({ prisma, config, middleware, now }: Deps): Route
           actorUserId: principal.userId,
           newValue: {
             title: row.title,
-            closesAt: iso(row.feedbackClosesAt),
+            window: windowOf(row),
             seeded,
             at: at.toISOString(),
           },
@@ -252,11 +259,12 @@ export function feedbackRouter({ prisma, config, middleware, now }: Deps): Route
         });
         return withQuestions(row, await eventQuestions(event.id, tx));
       });
-      res.json({ session: sessionViewOf(updated, at) });
+      res.json({ session: sessionViewOf(updated) });
     },
   );
 
-  // Starts the encouraged five-minute period: a timestamp for delegates and the dashboard.
+  // Opens the form (starts the five-minute period): delegates answer from now until it is
+  // closed (2026-11-07). Opening a closed form again reopens it.
   router.post('/events/:eventId/feedback/sessions/:sessionId/open', guard, async (req, res) => {
     const principal = requireAdmin(res);
     const event = await loadEvent(String(req.params.eventId));
@@ -265,11 +273,12 @@ export function feedbackRouter({ prisma, config, middleware, now }: Deps): Route
       throw new HttpError(409, 'feedback_disabled', 'Enable feedback for this session first.');
     }
     const at = clock();
+    const reopened = windowOf(session) === 'closed';
     const updated = await prisma().$transaction(async (tx) => {
       const row = withQuestions(
         await tx.eventSession.update({
           where: { id: session.id },
-          data: { feedbackOpenedAt: at },
+          data: { feedbackOpenedAt: at, feedbackClosedAt: null },
           include: SESSION_INCLUDE,
         }),
         session.feedbackQuestions,
@@ -280,12 +289,44 @@ export function feedbackRouter({ prisma, config, middleware, now }: Deps): Route
         entityId: row.id,
         eventId: event.id,
         actorUserId: principal.userId,
-        newValue: { title: row.title, openedAt: at.toISOString() },
+        newValue: { title: row.title, openedAt: at.toISOString(), reopened },
         ...clientOf(res),
       });
       return row;
     });
-    res.json({ session: sessionViewOf(updated, at) });
+    res.json({ session: sessionViewOf(updated) });
+  });
+
+  // Closes the form: late scans see a closed message and answers stay as they are.
+  router.post('/events/:eventId/feedback/sessions/:sessionId/close', guard, async (req, res) => {
+    const principal = requireAdmin(res);
+    const event = await loadEvent(String(req.params.eventId));
+    const session = await loadSession(event.id, String(req.params.sessionId));
+    if (windowOf(session) !== 'open') {
+      throw new HttpError(409, 'feedback_not_open', 'Feedback for this session is not open.');
+    }
+    const at = clock();
+    const updated = await prisma().$transaction(async (tx) => {
+      const row = withQuestions(
+        await tx.eventSession.update({
+          where: { id: session.id },
+          data: { feedbackClosedAt: at },
+          include: SESSION_INCLUDE,
+        }),
+        session.feedbackQuestions,
+      );
+      await audit(tx, {
+        action: 'feedback.closed',
+        entityType: 'event_session',
+        entityId: row.id,
+        eventId: event.id,
+        actorUserId: principal.userId,
+        newValue: { title: row.title, closedAt: at.toISOString() },
+        ...clientOf(res),
+      });
+      return row;
+    });
+    res.json({ session: sessionViewOf(updated) });
   });
 
   // ---------------------------------------------------------------- admin: questions
@@ -498,7 +539,7 @@ export function feedbackRouter({ prisma, config, middleware, now }: Deps): Route
   ): Promise<FeedbackDashboard> {
     const rows = await latestAnswers(session);
     const at = clock();
-    const view = sessionViewOf(session, at);
+    const view = sessionViewOf(session);
     return {
       event: { id: event.id, name: event.name },
       session: view,
@@ -678,11 +719,8 @@ export function feedbackRouter({ prisma, config, middleware, now }: Deps): Route
     return { principal, session, delegate, attended: Boolean(attendance), response };
   }
 
-  function myFeedbackOf(s: Awaited<ReturnType<typeof sessionForDelegate>>, at: Date): MyFeedback {
-    const window = feedbackWindowState(
-      { enabled: s.session.feedbackEnabled, closesAt: s.session.feedbackClosesAt },
-      at,
-    );
+  function myFeedbackOf(s: Awaited<ReturnType<typeof sessionForDelegate>>): MyFeedback {
+    const window = windowOf(s.session);
     return {
       session: {
         id: s.session.id,
@@ -695,9 +733,10 @@ export function feedbackRouter({ prisma, config, middleware, now }: Deps): Route
         endTime: s.session.endTime,
         timezone: s.session.event.timezone,
       },
-      window: window === 'open' ? 'open' : 'closed',
+      // A disabled session has no reachable code, so the delegate only ever sees three states.
+      window: window === 'disabled' ? 'closed' : window,
       openedAt: iso(s.session.feedbackOpenedAt),
-      closesAt: iso(s.session.feedbackClosesAt),
+      closedAt: iso(s.session.feedbackClosedAt),
       attended: s.attended,
       questions: s.session.feedbackQuestions.map((q) => {
         const { responseCount: _n, ...view } = questionViewOf(q);
@@ -717,7 +756,7 @@ export function feedbackRouter({ prisma, config, middleware, now }: Deps): Route
 
   router.get('/me/feedback/:code', middleware.requireAuth, async (req, res) => {
     const s = await sessionForDelegate(res, String(req.params.code));
-    res.json({ feedback: myFeedbackOf(s, clock()) });
+    res.json({ feedback: myFeedbackOf(s) });
   });
 
   router.put(
@@ -727,10 +766,14 @@ export function feedbackRouter({ prisma, config, middleware, now }: Deps): Route
     async (req, res) => {
       const s = await sessionForDelegate(res, String(req.params.code));
       const at = clock();
-      const window = feedbackWindowState(
-        { enabled: s.session.feedbackEnabled, closesAt: s.session.feedbackClosesAt },
-        at,
-      );
+      const window = windowOf(s.session);
+      if (window === 'pending') {
+        throw new HttpError(
+          409,
+          'feedback_not_open',
+          'Feedback for this session has not opened yet. The organisers open it at the end of the session.',
+        );
+      }
       if (window !== 'open') {
         throw new HttpError(409, 'feedback_closed', 'Feedback for this session is closed.');
       }
@@ -835,7 +878,7 @@ export function feedbackRouter({ prisma, config, middleware, now }: Deps): Route
       // Feedback never records attendance; the count is unchanged by construction.
       void attendanceBefore;
       const fresh = await sessionForDelegate(res, String(req.params.code));
-      res.status(updated ? 200 : 201).json({ feedback: myFeedbackOf(fresh, at) });
+      res.status(updated ? 200 : 201).json({ feedback: myFeedbackOf(fresh) });
     },
   );
 
@@ -861,7 +904,9 @@ export function feedbackRouter({ prisma, config, middleware, now }: Deps): Route
         select: {
           id: true,
           feedbackCode: true,
-          feedbackClosesAt: true,
+          feedbackEnabled: true,
+          feedbackOpenedAt: true,
+          feedbackClosedAt: true,
           title: true,
           speaker: true,
           eventDateId: true,
@@ -878,7 +923,6 @@ export function feedbackRouter({ prisma, config, middleware, now }: Deps): Route
         select: { sessionId: true, updatedAt: true },
       }),
     ]);
-    const at = clock();
     // Attendance is by day (2026-11-07): every session of a day the delegate was checked in for.
     const attendedDays = new Set(attended.map((a) => a.eventDateId));
     const submitted = new Map(responses.map((r) => [r.sessionId, r.updatedAt]));
@@ -889,10 +933,7 @@ export function feedbackRouter({ prisma, config, middleware, now }: Deps): Route
       date: isoDate(s.eventDate.date),
       title: s.title,
       speaker: s.speaker,
-      window:
-        feedbackWindowState({ enabled: true, closesAt: s.feedbackClosesAt }, at) === 'open'
-          ? 'open'
-          : 'closed',
+      window: windowOf(s) === 'open' ? 'open' : windowOf(s) === 'pending' ? 'pending' : 'closed',
       attended: attendedDays.has(s.eventDateId),
       submittedAt: submitted.get(s.id)?.toISOString() ?? null,
     }));

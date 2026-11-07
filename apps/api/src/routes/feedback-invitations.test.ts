@@ -109,6 +109,7 @@ describe.skipIf(!hasDatabase)('emailing the session feedback form', () => {
         speaker: 'Dr A. Speaker',
         feedbackEnabled: true,
         feedbackCode: `fb-${tag}`,
+        feedbackOpenedAt: new Date('2026-11-12T15:30:00.000Z'),
       },
     });
     sessionId = session.id;
@@ -219,9 +220,22 @@ describe.skipIf(!hasDatabase)('emailing the session feedback form', () => {
   });
 
   it('refuses to send when the form is not open', async () => {
+    // Not started yet: the link would land on a form that refuses answers.
     await prisma.eventSession.update({
       where: { id: sessionId },
-      data: { feedbackClosesAt: new Date('2026-11-12T10:00:00.000Z') },
+      data: { feedbackOpenedAt: null },
+    });
+    const notStarted = await call('get', base());
+    expect(notStarted.body).toMatchObject({ sendable: false });
+    expect(notStarted.body.reason).toMatch(/Start feedback/);
+    expect((await call('post', `${base()}/send`, { scope: 'not_sent' })).status).toBe(409);
+
+    await prisma.eventSession.update({
+      where: { id: sessionId },
+      data: {
+        feedbackOpenedAt: new Date('2026-11-12T15:30:00.000Z'),
+        feedbackClosedAt: new Date('2026-11-12T18:00:00.000Z'),
+      },
     });
     const state = await call('get', base());
     expect(state.body).toMatchObject({ sendable: false });
@@ -233,7 +247,7 @@ describe.skipIf(!hasDatabase)('emailing the session feedback form', () => {
     // And when feedback is off there is no link to send at all.
     await prisma.eventSession.update({
       where: { id: sessionId },
-      data: { feedbackClosesAt: null, feedbackEnabled: false },
+      data: { feedbackClosedAt: null, feedbackEnabled: false },
     });
     const off = await call('get', base());
     expect(off.body.reason).toMatch(/Turn session feedback on/);

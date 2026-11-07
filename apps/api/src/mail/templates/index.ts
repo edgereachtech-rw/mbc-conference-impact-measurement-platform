@@ -285,8 +285,6 @@ export interface SessionFeedbackInput {
   speaker?: string;
   /** Absolute link to /feedback/:code. */
   formUrl: string;
-  /** The deadline in words, when the form has one. */
-  deadline?: string;
 }
 
 /**
@@ -302,7 +300,7 @@ export function renderSessionFeedback(
     `You were at ${input.sessionTitle}${input.speaker ? ` with ${input.speaker}` : ''} (${input.whenLine}). Tell us how it went — three quick ratings and two optional comments, about five minutes.`,
     'It shapes what runs next year, and the speaker sees it without your name attached.',
   ];
-  if (input.deadline) paragraphs.push(`The form closes ${input.deadline}.`);
+  paragraphs.push('The form stays open until the organisers close it.');
   return renderLayout(branding, {
     subject: `How was ${input.sessionTitle}?`,
     preheader: 'Five minutes on the session you attended.',
