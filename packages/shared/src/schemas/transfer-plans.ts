@@ -1,12 +1,13 @@
 import { z } from 'zod';
 
 /**
- * Individual Transfer Plan (task of 2026-10-31): one continuous plan per delegate per event,
- * begun in the first Transfer Planning session, continued in any later one, submitted at the
- * designated final session and kept alive after the event for progress and changes. Several
- * planned actions, one of them the first priority; progress recorded per action; reminder
- * preferences; the original submission kept as a snapshot. Separate from attendance, session
- * feedback and the assessments. Nothing here assumes a number of days or sessions.
+ * Individual Transfer Plan (task of 2026-10-31). Since 2026-11-07 a delegate makes one plan per
+ * conference day: created on the day itself (never before the event, never after it, never two
+ * on one day), saved as a draft or submitted at will, and on the last day they submit every plan
+ * and name one as their priority. Each plan is kept alive after the event for progress and
+ * changes. Several planned actions per plan, one of them the first priority; progress recorded
+ * per action; reminder preferences; the original submission kept as a snapshot. Separate from
+ * attendance, session feedback and the assessments. The number of days comes from the event.
  */
 
 export const transferPlanStatuses = ['draft', 'submitted', 'completed'] as const;
@@ -218,12 +219,54 @@ export const transferPlanSaveSchema = z.object({
 });
 export type TransferPlanSave = z.infer<typeof transferPlanSaveSchema>;
 
-/** A further plan for the same event (2026-11-06): a delegate may keep several. */
+/**
+ * A day's plan (2026-11-07): today's by default, or a missed earlier day's while the event is
+ * still running. The server offers the days that can be created (`create.days` on the list).
+ */
 export const transferPlanCreateSchema = z.object({
   title: z.string().trim().max(120).default(''),
+  /** The conference day to plan for (YYYY-MM-DD); the latest creatable day when left out. */
+  date: z.iso.date().optional(),
 });
 
 export const transferPlanSubmitSchema = z.object({ version: z.number().int().min(1) });
+
+/**
+ * The last day's act (2026-11-07): every draft plan with content is submitted at once, and the
+ * named plan becomes the delegate's priority.
+ */
+export const transferPlanSubmitAllSchema = z.object({ priorityPlanId: z.uuid() });
+export type TransferPlanSubmitAll = z.infer<typeof transferPlanSubmitAllSchema>;
+
+/** Why no plan can be created right now; 'ok' when at least one day is open for it. */
+export const planCreationReasons = [
+  'ok',
+  'no_event_days',
+  'before_event',
+  'after_event',
+  'all_created',
+] as const;
+export type PlanCreationReason = (typeof planCreationReasons)[number];
+
+/** The Transfer Planning session a plan day is matched with, when the programme has one. */
+export const planDaySessionSchema = z.object({
+  id: z.uuid(),
+  title: z.string(),
+  startTime: z.string(),
+  endTime: z.string(),
+});
+export type PlanDaySession = z.infer<typeof planDaySessionSchema>;
+
+/**
+ * One day a plan belongs to: a conference day with a Transfer Planning session when the
+ * programme schedules any, else every conference day. `day` is the day's number in the event.
+ */
+export const planDaySchema = z.object({
+  date: z.string(),
+  day: z.number().int(),
+  session: planDaySessionSchema.nullable(),
+});
+export type PlanDay = z.infer<typeof planDaySchema>;
 /**
  * Marks a submitted plan completed: every written action applied, with evidence. The delegate
  * says whether a measurable improvement has been seen; "seen" needs a recorded result.
@@ -608,9 +651,16 @@ export type ImpactCheckView = z.infer<typeof impactCheckViewSchema>;
 export const transferPlanViewSchema = z.object({
   id: z.uuid(),
   eventId: z.uuid(),
-  /** The n-th plan the delegate made for this event, from 1. */
+  /** The n-th plan the delegate made for this event, from 1; the day's number since 2026-11-07. */
   sequence: z.number().int(),
-  /** The delegate's own name for the plan; empty means "Plan n". */
+  /** The conference day the plan belongs to (YYYY-MM-DD) and its number; null on older plans. */
+  date: z.string().nullable(),
+  day: z.number().int().nullable(),
+  /** That day's Transfer Planning session, when the programme has one. */
+  session: planDaySessionSchema.nullable(),
+  /** Named the priority when the delegate submitted all plans on the last day. */
+  isPriority: z.boolean(),
+  /** The delegate's own name for the plan; empty means "Day n plan". */
   title: z.string(),
   status: z.enum(transferPlanStatuses),
   version: z.number().int(),
@@ -627,14 +677,18 @@ export const transferPlanViewSchema = z.object({
 });
 export type TransferPlanView = z.infer<typeof transferPlanViewSchema>;
 
-/** The name a plan is shown under: its title, else "Plan n". */
-export const planTitleOf = (p: { sequence: number; title: string }) =>
-  p.title.trim() || `Plan ${p.sequence}`;
+/** The name a plan is shown under: its title, else "Day n plan" (or "Plan n" without a day). */
+export const planTitleOf = (p: { sequence: number; title: string; day?: number | null }) =>
+  p.title.trim() || (p.day ? `Day ${p.day} plan` : `Plan ${p.sequence}`);
 
 /** One of the delegate's plans in the list, without its actions. */
 export const transferPlanSummarySchema = z.object({
   id: z.uuid(),
   sequence: z.number().int(),
+  date: z.string().nullable(),
+  day: z.number().int().nullable(),
+  session: planDaySessionSchema.nullable(),
+  isPriority: z.boolean(),
   title: z.string(),
   status: z.enum(transferPlanStatuses),
   actions: z.number().int(),
@@ -651,6 +705,22 @@ export type TransferPlanSummary = z.infer<typeof transferPlanSummarySchema>;
 
 export const myTransferPlansSchema = z.object({
   plans: z.array(transferPlanSummarySchema),
+  /** Today in the event's time zone (YYYY-MM-DD). */
+  today: z.string(),
+  /** The plan days in order, each with the delegate's plan for it when there is one. */
+  days: z.array(planDaySchema.extend({ planId: z.uuid().nullable() })),
+  /**
+   * The days a plan can be created for right now: today's, and any earlier day still without a
+   * plan while the event runs (2026-11-07). Empty with the reason when none can.
+   */
+  create: z.object({
+    reason: z.enum(planCreationReasons),
+    days: z.array(planDaySchema),
+  }),
+  /** The last conference day, and whether it has arrived: submitting all plans waits for it. */
+  finalDay: z.object({ date: z.string().nullable(), reached: z.boolean() }),
+  /** The last day has arrived and there is at least one plan to submit or name as priority. */
+  canSubmitAll: z.boolean(),
 });
 export type MyTransferPlans = z.infer<typeof myTransferPlansSchema>;
 
@@ -658,7 +728,7 @@ export const myTransferPlanSchema = z.object({
   plan: transferPlanViewSchema,
   /** The event's Transfer Planning sessions in order; empty when none is scheduled. */
   sessions: z.array(transferPlanningSessionSchema),
-  /** Submission is possible once the designated final session has started (or at any time when no session is scheduled). */
+  /** The plan is a draft: it can be submitted on its own at any time (2026-11-07). */
   canSubmit: z.boolean(),
   /** The delegate's pre-event answers to the event's reference questions, in the admin's order. */
   references: z.array(referenceAnswerSchema),
@@ -680,6 +750,10 @@ export const transferPlanListItemSchema = z.object({
   /** One row per plan: a delegate with three plans has three rows (2026-11-06). */
   planId: z.uuid(),
   sequence: z.number().int(),
+  date: z.string().nullable(),
+  day: z.number().int().nullable(),
+  session: planDaySessionSchema.nullable(),
+  isPriority: z.boolean(),
   title: z.string(),
   status: z.enum(transferPlanStatuses),
   completedAt: z.string().nullable(),

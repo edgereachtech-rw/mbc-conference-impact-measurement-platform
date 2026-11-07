@@ -25,6 +25,7 @@ import {
   type MyTransferPlan,
   type MyTransferPlans,
   type PlanActionFields,
+  type PlanDaySession,
   type PlanActionView,
   type ReminderFrequency,
   type ReminderPreference,
@@ -34,6 +35,7 @@ import {
   AlertCircleIcon,
   ArrowDownIcon,
   ArrowUpIcon,
+  CheckCircle2Icon,
   Loader2Icon,
   PlusIcon,
   Trash2Icon,
@@ -51,7 +53,7 @@ import { ActionMeasures, EvidenceDialog, MeasuresDialog } from './measures-evide
 
 export type MyTransferPlansState =
   | { kind: 'loading' }
-  | { kind: 'ready'; plans: TransferPlanSummary[] }
+  | { kind: 'ready'; plans: TransferPlanSummary[]; info: MyTransferPlans }
   | { kind: 'error'; message: string; requestId?: string };
 
 type PlanState =
@@ -67,7 +69,7 @@ export function useMyTransferPlans(eventId: string) {
     let cancelled = false;
     apiFetch<MyTransferPlans>(`/me/events/${eventId}/transfer-plans`).then(
       (data) => {
-        if (!cancelled) setState({ kind: 'ready', plans: data.plans });
+        if (!cancelled) setState({ kind: 'ready', plans: data.plans, info: data });
       },
       (e: unknown) => {
         if (!cancelled) {
@@ -86,7 +88,7 @@ export function useMyTransferPlans(eventId: string) {
     /** After a change the list is read again so every tab's label and status is current. */
     refresh: () =>
       apiFetch<MyTransferPlans>(`/me/events/${eventId}/transfer-plans`).then(
-        (data) => setState({ kind: 'ready', plans: data.plans }),
+        (data) => setState({ kind: 'ready', plans: data.plans, info: data }),
         () => undefined,
       ),
   };
@@ -96,9 +98,10 @@ export function useMyTransferPlans(eventId: string) {
 export const transferPlanTabId = (p: Pick<TransferPlanSummary, 'id'>) =>
   `transfer-plan-${p.id}` as const;
 
-/** The plan a delegate most likely wants on arrival: the first still open, else the latest. */
+/** The plan a delegate most likely wants on arrival: the latest still open, else the latest. */
 export function defaultPlan(plans: TransferPlanSummary[]): string | null {
-  return plans.find((p) => p.status !== 'completed')?.id ?? plans.at(-1)?.id ?? null;
+  const open = plans.filter((p) => p.status !== 'completed');
+  return open.at(-1)?.id ?? plans.at(-1)?.id ?? null;
 }
 
 interface TransferPlanPanelProps {
@@ -109,17 +112,15 @@ interface TransferPlanPanelProps {
   plans: MyTransferPlansState;
   /** The list changed (a save, a submission, a completion): the tabs re-read it. */
   onPlansChanged: () => void;
-  /** A new plan was started: the page opens its tab. */
-  onOpenPlan: (planId: string) => void;
 }
 
 /**
  * One of the delegate's Individual Transfer Plans, as its own tab (task of 2026-11-07; before,
- * the plans sat as cards above one editor). Backlog E9, E10, E12-8 to 12-11: a plan is saved as
- * a draft in any Transfer Planning session, submitted once the final session has started, kept
- * open for changes and progress records, and marked completed once every action is applied with
- * evidence. Every save carries the version last seen so two tabs cannot overwrite each other.
- * "Start another plan" opens a new tab for the next plan.
+ * the plans sat as cards above one editor). Backlog E9, E10, E12-8 to 12-11: one plan per
+ * conference day, created on the day from the tabs above, saved as a draft or submitted on its
+ * own, submitted together with the others on the last day, kept open for changes and progress
+ * records, and marked completed once every action is applied with evidence. Every save carries
+ * the version last seen so two tabs cannot overwrite each other.
  */
 export function TransferPlanPanel({
   eventId,
@@ -127,16 +128,12 @@ export function TransferPlanPanel({
   planId,
   plans,
   onPlansChanged,
-  onOpenPlan,
 }: TransferPlanPanelProps) {
   const [attempt, setAttempt] = useState(0);
   const [plan, setPlan] = useState<{ id: string; state: PlanState } | null>(null);
   // Kept outside the editor, which remounts on every new plan version.
   const [notice, setNotice] = useState<string | null>(null);
   const [done, setDone] = useState<'submitted' | 'completed' | null>(null);
-  const [starting, setStarting] = useState<{ title: string; busy: boolean; error?: string } | null>(
-    null,
-  );
 
   useEffect(() => {
     let cancelled = false;
@@ -167,93 +164,10 @@ export function TransferPlanPanel({
     onPlansChanged();
   }
 
-  async function startAnother() {
-    if (!starting) return;
-    setStarting({ ...starting, busy: true, error: undefined });
-    try {
-      const created = await apiFetch<MyTransferPlan>(`/me/events/${eventId}/transfer-plans`, {
-        method: 'POST',
-        body: JSON.stringify({ title: starting.title.trim() }),
-      });
-      setStarting(null);
-      setNotice(null);
-      onPlansChanged();
-      onOpenPlan(created.plan.id);
-    } catch (e) {
-      setStarting({
-        ...starting,
-        busy: false,
-        error: describeError(e, 'The plan could not be started.').message,
-      });
-    }
-  }
-
-  const count = plans.kind === 'ready' ? plans.plans.length : 0;
+  void plans;
   const current = plan && plan.id === planId ? plan.state : null;
   return (
     <div className="space-y-6">
-      <section aria-label="Another plan" className="space-y-3">
-        {starting ? (
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              void startAnother();
-            }}
-            className="flex flex-col gap-2 border border-corp-line bg-white p-3 sm:flex-row sm:items-end"
-          >
-            <div className="flex-1 space-y-1">
-              <label htmlFor="new-plan-title" className="text-sm font-semibold text-corp-ink">
-                What is this plan about?
-              </label>
-              <input
-                id="new-plan-title"
-                value={starting.title}
-                maxLength={120}
-                disabled={starting.busy}
-                onChange={(e) => setStarting({ ...starting, title: e.target.value })}
-                placeholder={`Plan ${count + 1}`}
-                className="h-11 w-full rounded-none border border-corp-line bg-white px-3 text-base md:text-sm"
-              />
-              {starting.error ? (
-                <p role="alert" className="text-xs text-brand-danger">
-                  {starting.error}
-                </p>
-              ) : null}
-            </div>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                disabled={starting.busy}
-                onClick={() => setStarting(null)}
-                className={consoleButton({ variant: 'ghost' })}
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={starting.busy}
-                className={consoleButton({ variant: 'accent' })}
-              >
-                {starting.busy ? <Loader2Icon className="animate-spin" aria-hidden="true" /> : null}
-                Start this plan
-              </button>
-            </div>
-          </form>
-        ) : (
-          <p className="flex flex-wrap items-center justify-between gap-2 text-sm text-corp-muted">
-            <span>
-              Each of your plans has its own tab. Start another only for something new you take on.
-            </span>
-            <button
-              type="button"
-              onClick={() => setStarting({ title: '', busy: false })}
-              className={consoleButton({ variant: 'secondary', size: 'sm' })}
-            >
-              <PlusIcon aria-hidden="true" /> Start another plan
-            </button>
-          </p>
-        )}
-      </section>
       {!current || current.kind === 'loading' ? (
         <StatePanel kind="loading" title="Loading your plan…" />
       ) : current.kind === 'error' ? (
@@ -309,7 +223,7 @@ export function TransferPlanPanel({
           <p className="text-sm text-corp-text">
             {done === 'completed'
               ? 'Thank you. Your plan is completed: every action applied, with evidence, and the organisers have been told. Its reminders have stopped. Next comes impact assessment: in about three months we will ask whether the actions have made a measurable difference, and later whether that has lasted. Start another plan only if you take on something new.'
-              : 'Thank you. Your plan is submitted. Come back to this page to record progress on each action and to adjust the plan as things change.'}
+              : 'Thank you. This plan is submitted. On the last day of the event you submit all your plans together and name your priority; after the event, come back here to record progress on each action.'}
           </p>
         </Dialog>
       ) : null}
@@ -432,7 +346,6 @@ function PlanEditor({
   const submitted = plan.status === 'submitted';
   /** Completed plans are finished: read-only, reminders stopped (2026-11-06). */
   const locked = plan.status === 'completed';
-  const finalSession = data.sessions.find((s) => s.isFinal);
   const hasContent = actions.some((a) => a.action.trim() !== '');
   /** What still stands between a submitted plan and completion, from the saved plan. */
   const gaps = submitted ? planCompletionGaps(plan.actions) : [];
@@ -621,16 +534,21 @@ function PlanEditor({
         <StatusPill tone={submitted || locked ? 'positive' : 'neutral'}>
           {transferPlanStatusLabels[plan.status]}
         </StatusPill>
+        {plan.date ? (
+          <span className="text-sm font-semibold text-corp-ink">
+            Day {plan.day}, {formatDateShort(plan.date)}
+            {plan.session
+              ? ` · ${plan.session.title}, ${plan.session.startTime}–${plan.session.endTime}`
+              : ''}
+            {plan.isPriority ? ' · Priority' : ''}
+          </span>
+        ) : null}
         <p className="text-sm text-corp-muted">
           {locked
             ? `Completed ${formatInstant(plan.completedAt, timezone)}. This plan is finished and its reminders have stopped; it stays here to read. Start another plan for anything new.`
             : submitted
               ? `Submitted ${formatInstant(plan.submittedAt, timezone)}. You can keep updating it; the organisers keep your original submission.`
-              : data.canSubmit
-                ? 'Save as often as you like, then submit when your plan is ready.'
-                : finalSession
-                  ? `Keep saving your draft. You submit from the start of the final Transfer Planning session on ${formatDateShort(finalSession.date)} at ${finalSession.startTime}.`
-                  : 'Keep saving your draft until you are ready to submit.'}
+              : 'Save as often as you like, then submit when this plan is ready. On the last day of the event you submit all your plans together and name your priority.'}
         </p>
       </div>
 
@@ -662,7 +580,7 @@ function PlanEditor({
             {data.sessions.map((s) => (
               <li key={s.id}>
                 {formatDateShort(s.date)}, {s.startTime}–{s.endTime}: {s.title}
-                {s.isFinal ? ' (final session, submission opens)' : ''}
+                {s.isFinal ? ' (final session: submit all your plans)' : ''}
               </li>
             ))}
           </ul>
@@ -1786,6 +1704,15 @@ export function TransferPlansTabs({
   onPlansChanged: () => void;
   onRetry: () => void;
 }) {
+  const [creating, setCreating] = useState<{ date: string; busy: boolean; error?: string } | null>(
+    null,
+  );
+  const [submitAll, setSubmitAll] = useState<{
+    priorityPlanId: string;
+    busy: boolean;
+    error?: string;
+  } | null>(null);
+  const [allDone, setAllDone] = useState(false);
   if (plans.kind === 'loading') return <StatePanel kind="loading" title="Loading your plans…" />;
   if (plans.kind === 'error') {
     return (
@@ -1807,10 +1734,158 @@ export function TransferPlansTabs({
     );
   }
   const list = plans.plans;
+  const { info } = plans;
   const selected =
     list.find((p) => p.id === selectedPlanId) ?? list.find((p) => p.id === defaultPlan(list));
+
+  async function createFor(date: string) {
+    setCreating({ date, busy: true });
+    try {
+      const created = await apiFetch<MyTransferPlan>(`/me/events/${eventId}/transfer-plans`, {
+        method: 'POST',
+        body: JSON.stringify({ title: '', date }),
+      });
+      setCreating(null);
+      onPlansChanged();
+      onSelectPlan(created.plan.id);
+    } catch (e) {
+      setCreating({
+        date,
+        busy: false,
+        error: describeError(e, 'The plan could not be created.').message,
+      });
+    }
+  }
+
+  async function submitAllPlans() {
+    if (!submitAll) return;
+    setSubmitAll({ ...submitAll, busy: true, error: undefined });
+    try {
+      await apiFetch<MyTransferPlans>(`/me/events/${eventId}/transfer-plans/submit-all`, {
+        method: 'POST',
+        body: JSON.stringify({ priorityPlanId: submitAll.priorityPlanId }),
+      });
+      setSubmitAll(null);
+      setAllDone(true);
+      onPlansChanged();
+    } catch (e) {
+      setSubmitAll({
+        ...submitAll,
+        busy: false,
+        error: describeError(e, 'Your plans could not be submitted.').message,
+      });
+    }
+  }
+
+  const drafts = list.filter((p) => p.status === 'draft');
+  const priority = list.find((p) => p.isPriority) ?? null;
+  // What the "create" line says when no plan can be created now.
+  const nextDay = info.days.find((d) => d.date > info.today) ?? null;
+  const createNote: string | null =
+    info.create.reason === 'ok'
+      ? null
+      : info.create.reason === 'before_event'
+        ? `Your first plan opens on Day ${info.days[0]?.day ?? 1} of the event, ${info.days[0] ? formatDateShort(info.days[0].date) : ''}. You create one plan on each planning day.`
+        : info.create.reason === 'after_event'
+          ? 'The event has ended: no new plan can be created. Your plans below stay open for progress.'
+          : info.create.reason === 'all_created'
+            ? nextDay
+              ? `Your plans for the days so far are made. The next one opens on Day ${nextDay.day}, ${formatDateShort(nextDay.date)}.`
+              : 'Your plans for every planning day are made.'
+            : 'This event has no dates yet, so there is no day to plan for.';
+  /** "Transfer Planning 2, 14:00–15:30" for a day matched with a session. */
+  const sessionLine = (d: { session: PlanDaySession | null }) =>
+    d.session ? `${d.session.title}, ${d.session.startTime}–${d.session.endTime}` : null;
+
   return (
     <div className="space-y-4">
+      <section aria-label="Plans to create" className="space-y-2">
+        {info.create.reason === 'ok' ? (
+          <ul className="space-y-2">
+            {info.create.days.map((d) => {
+              const missed = d.date < info.today;
+              const line = sessionLine(d);
+              return (
+                <li
+                  key={d.date}
+                  className={`flex flex-wrap items-center justify-between gap-3 border-2 bg-white p-4 ${missed ? 'border-corp-line' : 'border-corp-accent'}`}
+                >
+                  <div>
+                    <p className="font-semibold text-corp-ink">
+                      Day {d.day}, {formatDateShort(d.date)}:{' '}
+                      {missed
+                        ? 'plan not made yet'
+                        : list.length === 0
+                          ? 'start your first plan'
+                          : 'start today\u2019s plan'}
+                    </p>
+                    <p className="text-sm text-corp-muted">
+                      {line ? `${line}. ` : ''}
+                      {missed
+                        ? 'You can still make this day\u2019s plan while the event runs.'
+                        : 'Save it as a draft or submit it; on the last day you submit all your plans together and name your priority.'}
+                    </p>
+                    {creating?.error && creating.date === d.date ? (
+                      <p role="alert" className="mt-1 text-xs text-brand-danger">
+                        {creating.error}
+                      </p>
+                    ) : null}
+                  </div>
+                  <button
+                    type="button"
+                    disabled={creating?.busy}
+                    onClick={() => void createFor(d.date)}
+                    className={consoleButton({ variant: missed ? 'secondary' : 'accent' })}
+                  >
+                    {creating?.busy && creating.date === d.date ? (
+                      <Loader2Icon className="animate-spin" aria-hidden="true" />
+                    ) : null}
+                    <PlusIcon aria-hidden="true" /> Create my Day {d.day} plan
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        ) : list.length === 0 ? (
+          <StatePanel kind="empty" title="No plan yet" description={createNote ?? undefined} />
+        ) : (
+          <p className="text-sm text-corp-muted">{createNote}</p>
+        )}
+      </section>
+
+      {info.canSubmitAll ? (
+        <section
+          aria-label="Submit all plans"
+          className="flex flex-wrap items-center justify-between gap-3 border border-corp-line bg-white p-4"
+        >
+          <div>
+            <p className="font-semibold text-corp-ink">
+              {drafts.length > 0
+                ? `Last day: submit all your plans (${drafts.length} still in draft)`
+                : priority
+                  ? `All plans submitted. Your priority: ${planTitleOf(priority)}.`
+                  : 'All plans submitted. Name your priority plan.'}
+            </p>
+            <p className="text-sm text-corp-muted">
+              Every plan is submitted together and you choose the one you will give priority to back
+              at work.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() =>
+              setSubmitAll({
+                priorityPlanId: priority?.id ?? selected?.id ?? list[0]!.id,
+                busy: false,
+              })
+            }
+            className={consoleButton({ variant: drafts.length > 0 ? 'accent' : 'secondary' })}
+          >
+            {drafts.length > 0 ? 'Submit all plans' : 'Change my priority'}
+          </button>
+        </section>
+      ) : null}
+
       {list.length > 1 ? (
         <div
           role="tablist"
@@ -1834,7 +1909,10 @@ export function TransferPlansTabs({
                     : 'flex min-h-tap shrink-0 flex-col items-start justify-center border-b-2 border-transparent px-3 py-2 text-left text-sm font-medium whitespace-nowrap text-corp-muted hover:text-corp-ink'
                 }
               >
-                <span>{planTitleOf(p)}</span>
+                <span>
+                  {planTitleOf(p)}
+                  {p.isPriority ? ' · Priority' : ''}
+                </span>
                 <span className="text-xs font-normal">
                   {p.checkDue ? 'Impact check waiting' : transferPlanStatusLabels[p.status]}
                 </span>
@@ -1856,12 +1934,98 @@ export function TransferPlansTabs({
             planId={selected.id}
             plans={plans}
             onPlansChanged={onPlansChanged}
-            onOpenPlan={onSelectPlan}
           />
         </div>
-      ) : (
-        <p className="text-sm text-corp-muted">No plan yet.</p>
-      )}
+      ) : null}
+
+      {submitAll ? (
+        <Dialog
+          title="Submit all your plans?"
+          description="Every plan still in draft is submitted now. Choose the plan you will give priority to back at work; the organisers see it first."
+          onClose={() => setSubmitAll(null)}
+          closeDisabled={submitAll.busy}
+          footer={
+            <>
+              <button
+                type="button"
+                disabled={submitAll.busy}
+                onClick={() => setSubmitAll(null)}
+                className={consoleButton({ variant: 'ghost' })}
+              >
+                Not yet
+              </button>
+              <button
+                type="button"
+                disabled={submitAll.busy}
+                onClick={() => void submitAllPlans()}
+                className={consoleButton({ variant: 'accent' })}
+              >
+                {submitAll.busy ? (
+                  <Loader2Icon className="animate-spin" aria-hidden="true" />
+                ) : null}
+                Submit all now
+              </button>
+            </>
+          }
+        >
+          <fieldset className="space-y-2">
+            <legend className="text-sm font-semibold text-corp-ink">My priority plan</legend>
+            {list.map((p) => (
+              <label
+                key={p.id}
+                className="flex min-h-tap items-center gap-3 text-sm text-corp-text"
+              >
+                <input
+                  type="radio"
+                  name="priority-plan"
+                  value={p.id}
+                  checked={submitAll.priorityPlanId === p.id}
+                  disabled={submitAll.busy}
+                  onChange={() => setSubmitAll({ ...submitAll, priorityPlanId: p.id })}
+                  className="size-5 accent-corp-accent"
+                />
+                <span>
+                  <span className="font-semibold text-corp-ink">{planTitleOf(p)}</span>
+                  {' · '}
+                  {p.actions} action{p.actions === 1 ? '' : 's'} ·{' '}
+                  {transferPlanStatusLabels[p.status]}
+                  {p.priorityAction ? ` · ${p.priorityAction}` : ''}
+                </span>
+              </label>
+            ))}
+          </fieldset>
+          {submitAll.error ? (
+            <p role="alert" className="mt-3 text-sm font-semibold text-brand-danger">
+              {submitAll.error}
+            </p>
+          ) : null}
+        </Dialog>
+      ) : null}
+      {allDone ? (
+        <Dialog
+          title="All plans submitted"
+          onClose={() => setAllDone(false)}
+          size="md"
+          footer={
+            <button
+              type="button"
+              onClick={() => setAllDone(false)}
+              className={consoleButton({ variant: 'primary' })}
+            >
+              Close
+            </button>
+          }
+        >
+          <div className="flex flex-col items-center gap-3 py-2 text-center">
+            <CheckCircle2Icon className="size-14 text-corp-green-text" aria-hidden="true" />
+            <p className="text-sm text-corp-text">
+              Thank you. Your plans are submitted and your priority is recorded. After the event,
+              come back here to record progress on each action; your reminders follow the
+              preferences you set on each plan.
+            </p>
+          </div>
+        </Dialog>
+      ) : null}
     </div>
   );
 }

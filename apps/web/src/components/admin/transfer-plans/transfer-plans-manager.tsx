@@ -354,7 +354,10 @@ export function TransferPlansManager({ event }: TransferPlansManagerProps) {
                       <p className="text-xs text-corp-muted">
                         {p.delegate.organisation ?? p.delegate.email}
                       </p>
-                      <p className="text-xs text-corp-text">{planTitleOf(p)}</p>
+                      <p className="text-xs text-corp-text">
+                        {planTitleOf(p)}
+                        {p.isPriority ? ' · Priority' : ''}
+                      </p>
                     </td>
                     <td className="px-4 py-2">
                       <StatusPill tone={p.status === 'draft' ? 'neutral' : 'positive'}>

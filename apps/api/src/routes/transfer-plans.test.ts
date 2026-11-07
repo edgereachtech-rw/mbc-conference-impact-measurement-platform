@@ -95,6 +95,7 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
     await signedIn('admin', 'admin', `admin-tp-${tag}@example.com`);
     const dee = await signedIn('dee', 'delegate', `dee-tp-${tag}@example.com`);
     const ada = await signedIn('ada', 'delegate', `ada-tp-${tag}@example.com`);
+    const cal = await signedIn('cal', 'delegate', `cal-tp-${tag}@example.com`);
     const created = await call('post', '/events', {
       name: `TP ${tag}`,
       description: 'd',
@@ -115,7 +116,11 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
       name: 'Ada Other',
       userAccountId: ada.id,
     });
-    identityIds.push(a.identity.id, b.identity.id);
+    const c = await createRegisteredIdentity(prisma, eventId, `cal-tp-${tag}@example.com`, {
+      name: 'Cal Late',
+      userAccountId: cal.id,
+    });
+    identityIds.push(a.identity.id, b.identity.id, c.identity.id);
     deeId = a.delegate.id;
     // A pre-conference question Dee answered, to come back as a reference.
     const stage = await prisma.assessmentStageConfig.findUniqueOrThrow({
@@ -147,43 +152,96 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
     await prisma.$disconnect();
   });
 
-  it('creates one draft per delegate on first access, visible only to that delegate', async () => {
-    const list = await call('get', `/me/events/${eventId}/transfer-plans`, undefined, cookies.dee);
-    expect(list.status, list.text).toBe(200);
-    expect(list.body.plans).toHaveLength(1);
-    expect(list.body.plans[0]).toMatchObject({
-      sequence: 1,
-      title: '',
-      status: 'draft',
-      actions: 0,
+  it('creates one plan per conference day, on the day itself, visible only to that delegate', async () => {
+    // Before the event: no plan, and none can be created yet.
+    const early = await call('get', `/me/events/${eventId}/transfer-plans`, undefined, cookies.dee);
+    expect(early.status, early.text).toBe(200);
+    expect(early.body).toMatchObject({
+      plans: [],
+      today: '2026-11-05',
+      create: { reason: 'before_event', days: [] },
+      finalDay: { date: '2026-11-13', reached: false },
+      canSubmitAll: false,
     });
-    planId = list.body.plans[0].id;
-    const mine = await call(
-      'get',
-      `/me/events/${eventId}/transfer-plans/${planId}`,
-      undefined,
+    // No Transfer Planning session is scheduled yet, so every conference day is a plan day.
+    expect(early.body.days).toEqual([
+      { date: '2026-11-12', day: 1, session: null, planId: null },
+      { date: '2026-11-13', day: 2, session: null, planId: null },
+    ]);
+    const tooEarly = await call(
+      'post',
+      `/me/events/${eventId}/transfer-plans`,
+      { title: '' },
       cookies.dee,
     );
-    expect(mine.status, mine.text).toBe(200);
-    expect(mine.body.plan).toMatchObject({ status: 'draft', version: 1, actions: [], sequence: 1 });
-    expect(mine.body.sessions).toEqual([]);
-    expect(mine.body.canSubmit).toBe(true); // no planning session scheduled yet
-    expect(mine.body.references).toEqual([]);
+    expect(tooEarly.status).toBe(409);
+    expect(tooEarly.body.error.code).toBe('before_event');
+
+    // Day 1 (09:00 UTC is 10:00 in Lagos): today's plan, and only one.
+    await tick('2026-11-12T09:00:00.000Z');
+    const list = await call('get', `/me/events/${eventId}/transfer-plans`, undefined, cookies.dee);
+    expect(list.body.create).toEqual({
+      reason: 'ok',
+      days: [{ date: '2026-11-12', day: 1, session: null }],
+    });
+    const created = await call(
+      'post',
+      `/me/events/${eventId}/transfer-plans`,
+      { title: '' },
+      cookies.dee,
+    );
+    expect(created.status, created.text).toBe(201);
+    expect(created.body.plan).toMatchObject({
+      sequence: 1,
+      day: 1,
+      date: '2026-11-12',
+      isPriority: false,
+      title: '',
+      status: 'draft',
+      version: 1,
+      actions: [],
+    });
+    planId = created.body.plan.id;
+    expect(created.body.sessions).toEqual([]);
+    expect(created.body.canSubmit).toBe(true);
+    expect(created.body.references).toEqual([]);
+    const twice = await call(
+      'post',
+      `/me/events/${eventId}/transfer-plans`,
+      { title: 'Again' },
+      cookies.dee,
+    );
+    expect(twice.status).toBe(409);
+    expect(twice.body.error.code).toBe('all_created');
+    // Tomorrow's plan cannot be made today.
+    const tomorrow = await call(
+      'post',
+      `/me/events/${eventId}/transfer-plans`,
+      { title: '', date: '2026-11-13' },
+      cookies.dee,
+    );
+    expect(tomorrow.status).toBe(409);
+    expect(tomorrow.body.error.code).toBe('not_creatable');
     const again = await call('get', `/me/events/${eventId}/transfer-plans`, undefined, cookies.dee);
-    expect(again.body.plans[0].id).toBe(planId);
+    expect(again.body.plans.map((p: { id: string; day: number }) => [p.id, p.day])).toEqual([
+      [planId, 1],
+    ]);
+    expect(again.body.days[0].planId).toBe(planId);
+    expect(again.body.create).toEqual({ reason: 'all_created', days: [] });
     expect((await call('get', `/me/events/${eventId}/transfer-plans`)).status).toBe(403);
     expect(
       (await call('get', `/me/events/${randomUUID()}/transfer-plans`, undefined, cookies.dee))
         .status,
     ).toBe(404);
-    // Another delegate's plan id is simply not found.
-    const adaList = await call(
-      'get',
+    // Another delegate's plan id is simply not found; Ada makes her own Day 1 plan, Cal none.
+    const adaCreated = await call(
+      'post',
       `/me/events/${eventId}/transfer-plans`,
-      undefined,
+      { title: '' },
       cookies.ada,
     );
-    adaPlanId = adaList.body.plans[0].id;
+    expect(adaCreated.status, adaCreated.text).toBe(201);
+    adaPlanId = adaCreated.body.plan.id;
     expect(
       (await call('get', `/me/events/${eventId}/transfer-plans/${planId}`, undefined, cookies.ada))
         .status,
@@ -306,7 +364,7 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
     expect(foreign.status).toBe(422);
   });
 
-  it('opens submission with the last planning session, snapshots it and stays editable', async () => {
+  it('submits a draft on its own any day, submits all with a priority on the last day, snapshots and stays editable', async () => {
     const s1 = await call('post', `/events/${eventId}/sessions`, {
       title: 'Transfer Planning 1',
       date: '2026-11-12',
@@ -332,32 +390,80 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
     // No setting chooses the closing session: the later one in the schedule is it.
     expect(firstId).not.toBe(secondId);
 
-    await tick('2026-11-10T10:00:00.000Z');
-    const early = await call(
-      'get',
-      `/me/events/${eventId}/transfer-plans/${planId}`,
-      undefined,
-      cookies.dee,
-    );
-    expect(early.body.sessions.map((s: { isFinal: boolean }) => s.isFinal)).toEqual([false, true]);
-    expect(early.body.canSubmit).toBe(false);
-    const refused = await call(
-      'post',
-      `/me/events/${eventId}/transfer-plans/${planId}/submit`,
-      { version: early.body.plan.version },
-      cookies.dee,
-    );
-    expect(refused.status).toBe(409);
-    expect(refused.body.error.code).toBe('not_yet');
-
-    await tick('2026-11-13T13:30:00.000Z'); // 14:30 in Lagos, the final session has begun
+    // Still Day 1: a draft can be submitted on its own; submitting all waits for the last day.
     const open = await call(
       'get',
       `/me/events/${eventId}/transfer-plans/${planId}`,
       undefined,
       cookies.dee,
     );
+    expect(open.body.sessions.map((s: { isFinal: boolean }) => s.isFinal)).toEqual([false, true]);
     expect(open.body.canSubmit).toBe(true);
+    const tooEarly = await call(
+      'post',
+      `/me/events/${eventId}/transfer-plans/submit-all`,
+      { priorityPlanId: planId },
+      cookies.dee,
+    );
+    expect(tooEarly.status).toBe(409);
+    expect(tooEarly.body.error.code).toBe('not_yet');
+
+    await tick('2026-11-13T13:30:00.000Z'); // Day 2, the last day
+
+    // The plan days are now the two Transfer Planning sessions' days. Cal missed Day 1: he can
+    // still make that day's plan today, and only that one and today's.
+    const calList = await call(
+      'get',
+      `/me/events/${eventId}/transfer-plans`,
+      undefined,
+      cookies.cal,
+    );
+    expect(
+      calList.body.days.map((d: { day: number; session: { title: string } }) => [
+        d.day,
+        d.session.title,
+      ]),
+    ).toEqual([
+      [1, 'Transfer Planning 1'],
+      [2, 'Transfer Planning 2'],
+    ]);
+    expect(calList.body.create.days.map((d: { date: string }) => d.date)).toEqual([
+      '2026-11-12',
+      '2026-11-13',
+    ]);
+    const calCreated = await call(
+      'post',
+      `/me/events/${eventId}/transfer-plans`,
+      { title: '', date: '2026-11-12' },
+      cookies.cal,
+    );
+    expect(calCreated.status, calCreated.text).toBe(201);
+    expect(calCreated.body.plan).toMatchObject({
+      sequence: 1,
+      day: 1,
+      date: '2026-11-12',
+      session: { title: 'Transfer Planning 1', startTime: '16:00' },
+    });
+    // Ada, who has Day 1, cannot make it again; her open day is today.
+    const adaAgain = await call(
+      'post',
+      `/me/events/${eventId}/transfer-plans`,
+      { title: '', date: '2026-11-12' },
+      cookies.ada,
+    );
+    expect(adaAgain.status).toBe(409);
+    expect(adaAgain.body.error.code).toBe('not_creatable');
+    // Dee's remaining day is today only.
+    expect(
+      (await call('get', `/me/events/${eventId}/transfer-plans`, undefined, cookies.dee)).body
+        .create.days,
+    ).toEqual([
+      {
+        date: '2026-11-13',
+        day: 2,
+        session: expect.objectContaining({ title: 'Transfer Planning 2' }),
+      },
+    ]);
     const empty = await call(
       'post',
       `/me/events/${eventId}/transfer-plans/${adaPlanId}/submit`,
@@ -386,8 +492,68 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
     );
     expect(twice.body.error.code).toBe('already_submitted');
 
-    // After the event the plan stays open for changes; the snapshot does not move.
+    // The last day: Ada's empty draft cannot go in; Dee's plans go in together and Day 1 is
+    // named her priority. A plan that is not hers cannot be the priority.
+    const adaAll = await call(
+      'post',
+      `/me/events/${eventId}/transfer-plans/submit-all`,
+      { priorityPlanId: adaPlanId },
+      cookies.ada,
+    );
+    expect(adaAll.status).toBe(422);
+    expect(adaAll.body.error.code).toBe('plan_empty');
+    expect(
+      (
+        await call(
+          'post',
+          `/me/events/${eventId}/transfer-plans/submit-all`,
+          { priorityPlanId: adaPlanId },
+          cookies.dee,
+        )
+      ).status,
+    ).toBe(404);
+    const all = await call(
+      'post',
+      `/me/events/${eventId}/transfer-plans/submit-all`,
+      { priorityPlanId: planId },
+      cookies.dee,
+    );
+    expect(all.status, all.text).toBe(200);
+    expect(
+      all.body.plans.map((p: { isPriority: boolean; status: string }) => [p.isPriority, p.status]),
+    ).toEqual([[true, 'submitted']]);
+    expect(all.body).toMatchObject({ canSubmitAll: true, create: { reason: 'ok' } });
+    expect(
+      await prisma.auditLog.count({ where: { eventId, action: 'transfer_plan.priority_set' } }),
+    ).toBe(1);
+
+    // Day 2's plan is made on Day 2, named by the delegate.
+    const second = await call(
+      'post',
+      `/me/events/${eventId}/transfer-plans`,
+      { title: 'Coaching rollout' },
+      cookies.dee,
+    );
+    expect(second.status, second.text).toBe(201);
+    expect(second.body.plan).toMatchObject({
+      sequence: 2,
+      day: 2,
+      date: '2026-11-13',
+      title: 'Coaching rollout',
+      status: 'draft',
+    });
+
+    // After the event the plan stays open for changes, the snapshot does not move, and no new
+    // plan can be made.
     await tick('2026-11-18T09:00:00.000Z');
+    const late = await call(
+      'post',
+      `/me/events/${eventId}/transfer-plans`,
+      { title: 'x' },
+      cookies.dee,
+    );
+    expect(late.status).toBe(409);
+    expect(late.body.error.code).toBe('after_event');
     const edited = await call(
       'put',
       `/me/events/${eventId}/transfer-plans/${planId}`,
@@ -407,10 +573,17 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
     expect(edited.body.plan.actions[0].action).toMatch(/\(revised\)$/);
     const detail = await call('get', `/events/${eventId}/transfer-plans/${deeId}`);
     expect(detail.status, detail.text).toBe(200);
-    expect(detail.body.plan.snapshot.actions[0].action).toBe('Brief stakeholders');
-    expect(detail.body.plan.plan.actions[0].action).toBe('Brief stakeholders (revised)');
-    expect(detail.body.plan.references[0].answer).toBe('How to measure transfer');
-    expect(detail.body.plan.history.map((h: { action: string }) => h.action)).toContain(
+    // Without `?plan=`, the organisers get the latest plan: Day 2's, still a draft.
+    expect(detail.body.plan.plan).toMatchObject({ sequence: 2, title: 'Coaching rollout' });
+    const detailOne = await call(
+      'get',
+      `/events/${eventId}/transfer-plans/${deeId}?plan=${planId}`,
+    );
+    expect(detailOne.body.plan.snapshot.actions[0].action).toBe('Brief stakeholders');
+    expect(detailOne.body.plan.plan.actions[0].action).toBe('Brief stakeholders (revised)');
+    expect(detailOne.body.plan.plan.isPriority).toBe(true);
+    expect(detailOne.body.plan.references[0].answer).toBe('How to measure transfer');
+    expect(detailOne.body.plan.history.map((h: { action: string }) => h.action)).toContain(
       'transfer_plan.submitted',
     );
   });
@@ -446,7 +619,7 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
 
     const list = await call('get', `/events/${eventId}/transfer-plans`);
     expect(list.status, list.text).toBe(200);
-    const dee = list.body.plans.find((p: { delegate: { id: string } }) => p.delegate.id === deeId);
+    const dee = list.body.plans.find((p: { planId: string }) => p.planId === planId);
     expect(dee).toMatchObject({
       status: 'submitted',
       actions: 2,
@@ -664,9 +837,10 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
         .status,
     ).toBe(404);
 
-    // One plan throughout; the snapshot taken at submission is untouched; the history shows both saves.
-    expect(await prisma.transferPlan.count({ where: { eventId, delegateId: deeId } })).toBe(1);
-    const detail = await call('get', `/events/${eventId}/transfer-plans/${deeId}`);
+    // One plan per day, two days: the Day 1 plan's snapshot taken at submission is untouched;
+    // the history shows both saves.
+    expect(await prisma.transferPlan.count({ where: { eventId, delegateId: deeId } })).toBe(2);
+    const detail = await call('get', `/events/${eventId}/transfer-plans/${deeId}?plan=${planId}`);
     expect(detail.status, detail.text).toBe(200);
     expect(detail.body.plan.snapshot.actions[0].measures).toEqual([]);
     expect(actionOf(detail.body.plan, first!.id).measures[0]!.readings).toHaveLength(1);
@@ -749,24 +923,19 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
     expect(mine.body.reminders[0]).toMatchObject({ status: 'sent' });
   });
 
-  it('keeps several plans per delegate, each with its own reminder window, and refuses bad preferences', async () => {
+  it('keeps one plan per day, each with its own reminder window, and refuses bad preferences', async () => {
     await tick('2026-12-03T10:00:00.000Z');
-    const created = await call(
-      'post',
-      `/me/events/${eventId}/transfer-plans`,
-      { title: 'Coaching rollout' },
-      cookies.dee,
-    );
-    expect(created.status, created.text).toBe(201);
-    expect(created.body.plan).toMatchObject({
-      sequence: 2,
-      title: 'Coaching rollout',
-      status: 'draft',
-    });
-    const second = created.body.plan.id as string;
     const list = await call('get', `/me/events/${eventId}/transfer-plans`, undefined, cookies.dee);
-    expect(list.body.plans.map((p: { sequence: number }) => p.sequence)).toEqual([1, 2]);
-    expect(list.body.plans[0].status).toBe('submitted');
+    expect(
+      list.body.plans.map((p: { sequence: number; day: number }) => [p.sequence, p.day]),
+    ).toEqual([
+      [1, 1],
+      [2, 2],
+    ]);
+    expect(list.body.plans[0]).toMatchObject({ status: 'submitted', isPriority: true });
+    expect(list.body.plans[1]).toMatchObject({ title: 'Coaching rollout', status: 'draft' });
+    expect(list.body.create).toEqual({ reason: 'after_event', days: [] });
+    const second = list.body.plans[1].id as string;
 
     // Twice a week needs two different days; the window cannot end before it starts.
     const oneDay = await call(

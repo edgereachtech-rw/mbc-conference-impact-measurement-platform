@@ -113,7 +113,7 @@ export function nextSteps(journey: Journey): NextStep[] {
       label: started ? 'Finish your transfer plan' : 'Start your transfer plan',
       hint: started
         ? 'Saved as a draft. You submit it in the last Transfer Planning session.'
-        : 'What you will do differently when you are back at work.',
+        : 'What you will do differently back at work. One plan per conference day, created on the day; on the last day you submit them all and name your priority.',
       tab: 'transfer-plan',
       started,
     });

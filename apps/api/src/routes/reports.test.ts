@@ -450,14 +450,14 @@ describe.skipIf(!hasDatabase)('event dashboards and reports', () => {
     );
     expect(adaEnd.status, adaEnd.text).toBe(200);
 
-    // Transfer plans: Dee submitted, Ada draft with content. Each delegate's first plan is
-    // created by the list (2026-11-06); the saves address it by id.
+    // Transfer plans: Dee submitted, Ada draft with content. A plan is created on a conference
+    // day (2026-11-07): it is Day 2, so each delegate makes today's plan; the saves address it.
     const deePlanId = (
-      await call('get', `/me/events/${eventId}/transfer-plans`, undefined, cookies.dee)
-    ).body.plans[0].id as string;
+      await call('post', `/me/events/${eventId}/transfer-plans`, { title: '' }, cookies.dee)
+    ).body.plan.id as string;
     const adaPlanId = (
-      await call('get', `/me/events/${eventId}/transfer-plans`, undefined, cookies.ada)
-    ).body.plans[0].id as string;
+      await call('post', `/me/events/${eventId}/transfer-plans`, { title: '' }, cookies.ada)
+    ).body.plan.id as string;
     const deePlan = await call(
       'put',
       `/me/events/${eventId}/transfer-plans/${deePlanId}`,
