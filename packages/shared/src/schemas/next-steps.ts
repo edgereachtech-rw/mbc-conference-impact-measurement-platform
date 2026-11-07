@@ -75,7 +75,7 @@ export function nextSteps(journey: Journey): NextStep[] {
     steps.push({
       key: 'reflections',
       label: 'Add your reflections',
-      hint: 'A few lines on what stood out and what you will use.',
+      hint: 'A few lines on what stood out for you and what you could start doing.',
       tab: 'reflections',
       started: journey.reflections.submitted > 0,
     });
