@@ -144,7 +144,15 @@ export function TabStrip<Id extends string>({
 
 const subscribeHash = (onChange: () => void) => {
   window.addEventListener('hashchange', onChange);
-  return () => window.removeEventListener('hashchange', onChange);
+  window.addEventListener('popstate', onChange);
+  // The address can change without a hashchange event: Next.js writes the new page's URL in an
+  // insertion effect on a client-side navigation, and Back/Forward fire popstate. Reading again
+  // when the subscription starts, and on popstate, keeps the tab in step with the address.
+  onChange();
+  return () => {
+    window.removeEventListener('hashchange', onChange);
+    window.removeEventListener('popstate', onChange);
+  };
 };
 const readHash = () => window.location.hash.replace(/^#/, '');
 
