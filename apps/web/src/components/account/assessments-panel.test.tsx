@@ -174,6 +174,8 @@ function stub(assessments: MyAssessment[]) {
               updatedAt: 'x',
               answers: body.answers,
               submittedSections: [...keys],
+              // The stub marks the scored section s2 as the API would: 3 of 4 points.
+              sectionMarks: keys.has('s2') ? { s2: { scored: 3, max: 4, percent: 75 } } : {},
             },
             // The stub scores the knowledge question "k" (correct answer "b") like the API.
             feedback:
@@ -333,6 +335,8 @@ describe('AssessmentsPanel', () => {
     expect(within(all).getByRole('status').textContent).toMatch(
       /Every section is submitted.*email you when the next step opens/,
     );
+    // The scored section's mark, as a percentage, shown at once.
+    expect(within(all).getByLabelText('Your mark').textContent).toMatch(/75%.*3 of 4 points/);
     expect(within(all).getByRole('link', { name: 'Back to my dashboard' })).toBeTruthy();
     expect(within(all).queryByRole('button', { name: 'Close' })).toBeNull();
     await user.keyboard('{Escape}');

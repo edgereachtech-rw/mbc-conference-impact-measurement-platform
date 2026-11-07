@@ -174,6 +174,8 @@ function AssessmentCard({
   );
   const submitted = Boolean(assessment.response?.submittedAt);
   const submittedKeys = new Set(assessment.response?.submittedSections ?? []);
+  // The mark of each submitted marked section, by section key (2026-11-07).
+  const sectionMarks = assessment.response?.sectionMarks ?? {};
   const feedback = assessment.feedback ?? {};
   const tone =
     assessment.status === 'open'
@@ -469,7 +471,12 @@ function AssessmentCard({
                       ) : null}
                     </div>
                     {canAnswer && locked ? (
-                      <StatusPill tone="positive">Submitted</StatusPill>
+                      <StatusPill tone="positive">
+                        Submitted
+                        {sectionMarks[keyOf(group)]
+                          ? ` · ${sectionMarks[keyOf(group)]!.percent}%`
+                          : ''}
+                      </StatusPill>
                     ) : null}
                   </div>
                 ) : null}
@@ -667,6 +674,18 @@ function AssessmentCard({
                   ? 'Thank you. Every section is submitted and your responses are recorded.'
                   : `Thank you. “${reviewGroup.section?.title ?? 'Your responses'}” is recorded.`}
               </p>
+              {sectionMarks[review.key] ? (
+                // A marked section tells the delegate how they did, at once (2026-11-07).
+                <p
+                  aria-label="Your mark"
+                  className="rounded-none border-2 border-corp-accent px-4 py-2 font-corporate text-2xl font-bold text-corp-ink"
+                >
+                  {sectionMarks[review.key]!.percent}%
+                  <span className="ml-2 text-sm font-normal text-corp-muted">
+                    {sectionMarks[review.key]!.scored} of {sectionMarks[review.key]!.max} points
+                  </span>
+                </p>
+              ) : null}
               <p className="max-w-prose text-sm text-corp-text">
                 {review.done === 'all'
                   ? 'Nothing more to do here. We will email you when the next step opens.'

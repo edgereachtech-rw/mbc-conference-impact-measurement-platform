@@ -569,6 +569,46 @@ export function answerScore(
   return { score: chosen.score ?? null, correct: null };
 }
 
+/**
+ * A delegate's mark on a marked section (2026-11-07): points scored over the points available
+ * (one per knowledge question, the highest option score per scored question), as a percentage.
+ */
+export const sectionMarkSchema = z.object({
+  scored: z.number(),
+  max: z.number(),
+  percent: z.number().int().min(0).max(100),
+});
+export type SectionMark = z.infer<typeof sectionMarkSchema>;
+
+/**
+ * The mark of one section from the delegate's stored answers: knowledge questions count one
+ * point for a right answer; scored questions count their option's score against the highest
+ * score on offer. Null when the section is unmarked or has nothing to score.
+ */
+export function sectionMarkOf(
+  marking: SectionMarking,
+  questions: ReadonlyArray<Pick<AssessmentQuestionView, 'id' | 'type' | 'options' | 'isKnowledge'>>,
+  scoreOf: (questionId: string) => number | null | undefined,
+): SectionMark | null {
+  if (marking === 'none') return null;
+  let scored = 0;
+  let max = 0;
+  for (const q of questions) {
+    if (q.type !== 'single_choice') continue;
+    const top =
+      marking === 'knowledge'
+        ? q.isKnowledge
+          ? 1
+          : 0
+        : Math.max(0, ...(q.options ?? []).map((o) => o.score ?? 0));
+    if (top <= 0) continue;
+    max += top;
+    scored += scoreOf(q.id) ?? 0;
+  }
+  if (max <= 0) return null;
+  return { scored, max, percent: Math.round((scored / max) * 100) };
+}
+
 /** Key of the untitled first group (questions outside any section) in section submissions. */
 export const GENERAL_SECTION = 'general';
 /** The submission key of a question's section: its id, or the general group. */
@@ -672,6 +712,12 @@ export const myAssessmentSchema = z.object({
       answers: z.record(z.uuid(), z.unknown()),
       /** Section keys already submitted (locked); see sectionKeyOf. */
       submittedSections: z.array(z.string()),
+      /**
+       * The delegate's mark on each submitted section that is marked (scored or knowledge), by
+       * section key (2026-11-07): shown on submission, as a percentage. Unmarked sections, and
+       * marked ones with nothing to score, have no entry.
+       */
+      sectionMarks: z.record(z.string(), sectionMarkSchema),
     })
     .nullable(),
   /** Right or wrong for every knowledge question the delegate has answered, by question id. */

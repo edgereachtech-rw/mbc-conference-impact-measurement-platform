@@ -13,6 +13,7 @@ import {
   sectionMirrorSchema,
   isBlankAnswer,
   isKnowledgeQuestion,
+  sectionMarkOf,
   markedOptions,
   questionCreateSchema,
   questionFieldsSchema,
@@ -1592,6 +1593,19 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
                 updatedAt: response.updatedAt.toISOString(),
                 answers,
                 submittedSections: response.sections.map((x) => x.sectionKey),
+                // The mark of each submitted marked section (2026-11-07), from the stored scores.
+                sectionMarks: Object.fromEntries(
+                  sections.flatMap((sec) => {
+                    if (!response.sections.some((x) => x.sectionKey === sec.id)) return [];
+                    const mark = sectionMarkOf(
+                      sec.marking,
+                      views.filter((q) => q.sectionId === sec.id),
+                      (questionId) =>
+                        response.answers.find((a) => a.questionId === questionId)?.score,
+                    );
+                    return mark ? [[sec.id, mark]] : [];
+                  }),
+                ),
               }
             : null,
           feedback,
