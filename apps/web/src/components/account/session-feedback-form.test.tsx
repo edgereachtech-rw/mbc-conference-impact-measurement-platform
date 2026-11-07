@@ -72,13 +72,17 @@ function stub(feedback: MyFeedback) {
       calls.push({ url, init });
       if (init?.method === 'PUT') {
         const body = JSON.parse(String(init.body)) as { answers: Record<string, string> };
+        // The server records once: the answers are not served back and the questions go.
+        void body;
         current = {
           ...current,
+          questions: [],
+          canSubmit: false,
           response: {
-            submittedAt: current.response?.submittedAt ?? '2026-11-12T09:05:00.000Z',
+            submittedAt: '2026-11-12T09:05:00.000Z',
             updatedAt: '2026-11-12T09:05:00.000Z',
-            revision: (current.response?.revision ?? 0) + 1,
-            answers: body.answers,
+            revision: 1,
+            answers: {},
           },
         };
         return new Response(JSON.stringify({ feedback: current }), {
@@ -96,7 +100,7 @@ function stub(feedback: MyFeedback) {
 }
 
 describe('SessionFeedbackForm', () => {
-  it('shows the session automatically, requires the three ratings, accepts blank written answers, and submits after a review', async () => {
+  it('shows the session automatically, requires the three ratings, accepts blank written answers, submits once after a review and confirms with a popup', async () => {
     const calls = stub(base);
     const user = userEvent.setup();
     render(<SessionFeedbackForm code="abc123def456" />);
@@ -135,12 +139,37 @@ describe('SessionFeedbackForm', () => {
     expect(JSON.parse(String(put?.init?.body))).toEqual({
       answers: { [Q[0]]: 'excellent', [Q[1]]: 'good', [Q[2]]: 'fair' },
     });
-    expect((await screen.findByRole('dialog', { name: 'Feedback submitted' })).textContent).toMatch(
-      /can update it/,
+    const done = await screen.findByRole('dialog', { name: 'Feedback submitted' });
+    expect(done.textContent).toMatch(/recorded once and cannot be changed/);
+    expect(done.textContent).toMatch(/What next/);
+    expect(within(done).getByRole('link', { name: 'Back to my event' }).getAttribute('href')).toBe(
+      `/account/events/${EVENT}#feedback`,
     );
-    await user.click(screen.getByRole('button', { name: 'Close' }));
+    await user.click(within(done).getByRole('button', { name: 'Close' }));
+    // No second go: the form is gone, the session is marked done.
     expect(within(card).getByText(/Submitted 12 Nov 2026/)).toBeTruthy();
-    expect(within(card).getByRole('button', { name: 'Update feedback' })).toBeTruthy();
+    expect(within(card).getByRole('status').textContent).toMatch(/already given feedback/);
+    expect(within(card).queryByRole('button', { name: /feedback/ })).toBeNull();
+    expect(within(card).queryByRole('radio')).toBeNull();
+  });
+
+  it('shows a session already answered as done, with no form, when its code is scanned again', async () => {
+    stub({
+      ...base,
+      questions: [],
+      canSubmit: false,
+      response: {
+        submittedAt: '2026-11-12T09:05:00.000Z',
+        updatedAt: '2026-11-12T09:05:00.000Z',
+        revision: 1,
+        answers: {},
+      },
+    });
+    render(<SessionFeedbackForm code="abc123def456" />);
+    const card = await screen.findByRole('article', { name: 'Feedback: Measuring transfer' });
+    expect(within(card).getByRole('status').textContent).toMatch(/already given feedback/);
+    expect(within(card).getByRole('link', { name: 'Back to my event' })).toBeTruthy();
+    expect(within(card).queryByRole('button', { name: /feedback/ })).toBeNull();
   });
 
   it('explains when attendance is not recorded and offers no submission', async () => {

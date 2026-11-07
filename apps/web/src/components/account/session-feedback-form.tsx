@@ -6,7 +6,8 @@ import {
   feedbackRatings,
   type MyFeedback,
 } from '@mbc/shared';
-import { AlertCircleIcon, Loader2Icon } from 'lucide-react';
+import { AlertCircleIcon, CheckCircle2Icon, Loader2Icon } from 'lucide-react';
+import Link from 'next/link';
 import { useEffect, useId, useState } from 'react';
 
 import { Dialog } from '@/components/console/dialog';
@@ -23,8 +24,9 @@ type State =
 /**
  * One session's feedback form, reached through the session's link or QR code: the session and
  * speaker are shown automatically, three ratings are required, the written answers optional.
- * Only delegates checked in on the session's day can submit; a response can be updated while the form is
- * open. Submitting never records attendance.
+ * Only delegates checked in on the session's day can submit, and only once (2026-11-07): the
+ * popup confirms it, and the session is then no longer shown to them. Submitting never records
+ * attendance.
  */
 export function SessionFeedbackForm({ code }: { code: string }) {
   const [state, setState] = useState<State>({ kind: 'loading' });
@@ -86,7 +88,7 @@ function Form({
   feedback: MyFeedback;
   onUpdated: (feedback: MyFeedback) => void;
 }) {
-  const [answers, setAnswers] = useState<Record<string, string>>(feedback.response?.answers ?? {});
+  const [answers, setAnswers] = useState<Record<string, string>>({});
   const [problems, setProblems] = useState<Record<string, string>>({});
   const [banner, setBanner] = useState<string | null>(null);
   const [review, setReview] = useState<'review' | 'done' | null>(null);
@@ -181,7 +183,7 @@ function Form({
           </StatusPill>
           {feedback.response ? (
             <StatusPill tone="positive">
-              Submitted {formatInstant(feedback.response.updatedAt, tz)}
+              Submitted {formatInstant(feedback.response.submittedAt, tz)}
             </StatusPill>
           ) : null}
         </div>
@@ -201,6 +203,19 @@ function Form({
           Feedback for this session is closed. Thank you if you answered; the organisers have your
           answers.
         </p>
+      ) : feedback.response ? (
+        <div className="space-y-3">
+          <p role="status" className="text-sm text-corp-text">
+            You have already given feedback on this session. Thank you: it is recorded once and
+            cannot be changed, and the session no longer appears in your list.
+          </p>
+          <Link
+            href={`/account/events/${session.eventId}#feedback`}
+            className={consoleButton({ variant: 'secondary', size: 'sm' })}
+          >
+            Back to my event
+          </Link>
+        </div>
       ) : !feedback.attended ? (
         <div
           role="alert"
@@ -216,7 +231,7 @@ function Form({
         </p>
       ) : null}
 
-      {feedback.attended && feedback.window === 'open' ? (
+      {feedback.attended && feedback.window === 'open' && !feedback.response ? (
         <form
           noValidate
           aria-label={`${session.title} feedback questions`}
@@ -311,7 +326,7 @@ function Form({
                 disabled={busy}
                 className={consoleButton({ variant: 'accent' })}
               >
-                {feedback.response ? 'Update feedback' : 'Submit feedback'}
+                Submit feedback
               </button>
             </div>
           ) : null}
@@ -320,30 +335,32 @@ function Form({
 
       {review ? (
         <Dialog
-          title={
-            review === 'done'
-              ? 'Feedback submitted'
-              : feedback.response
-                ? 'Update your feedback?'
-                : 'Submit your feedback?'
-          }
+          title={review === 'done' ? 'Feedback submitted' : 'Submit your feedback?'}
           description={
             review === 'done'
-              ? 'Thank you. Your feedback is recorded and you can update it while the form is open.'
-              : 'Check your answers below.'
+              ? 'Thank you. Your feedback is recorded once and cannot be changed; this session no longer appears in your list.'
+              : 'Check your answers below. Once submitted, your feedback cannot be changed.'
           }
           onClose={() => setReview(null)}
           closeDisabled={busy}
           size="md"
           footer={
             review === 'done' ? (
-              <button
-                type="button"
-                onClick={() => setReview(null)}
-                className={consoleButton({ variant: 'accent' })}
-              >
-                Close
-              </button>
+              <>
+                <Link
+                  href={`/account/events/${session.eventId}#feedback`}
+                  className={consoleButton({ variant: 'accent' })}
+                >
+                  Back to my event
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => setReview(null)}
+                  className={consoleButton({ variant: 'ghost' })}
+                >
+                  Close
+                </button>
+              </>
             ) : (
               <>
                 <button
@@ -367,29 +384,40 @@ function Form({
             )
           }
         >
-          <section aria-label={`Summary: ${session.title}`}>
-            <dl className="space-y-2">
-              {feedback.questions.map((q) => {
-                const raw = (answers[q.id] ?? '').trim();
-                const value =
-                  q.type === 'rating' && raw
-                    ? (feedbackRatingLabels[raw as keyof typeof feedbackRatingLabels] ?? raw)
-                    : raw;
-                return (
-                  <div key={q.id}>
-                    <dt className="text-sm text-corp-text">{q.prompt}</dt>
-                    <dd
-                      className={
-                        value ? 'text-sm font-semibold text-corp-ink' : 'text-sm text-corp-muted'
-                      }
-                    >
-                      {value || 'No answer'}
-                    </dd>
-                  </div>
-                );
-              })}
-            </dl>
-          </section>
+          {review === 'done' ? (
+            <div className="flex flex-col items-center gap-3 py-2 text-center">
+              <CheckCircle2Icon className="size-14 text-corp-green-text" aria-hidden="true" />
+              <p className="font-semibold text-corp-ink">{session.title}</p>
+              <p className="text-sm text-corp-text">
+                Your feedback has been received. What next: the next session&rsquo;s feedback opens
+                when it ends, and your daily reflection is waiting on your event page.
+              </p>
+            </div>
+          ) : (
+            <section aria-label={`Summary: ${session.title}`}>
+              <dl className="space-y-2">
+                {feedback.questions.map((q) => {
+                  const raw = (answers[q.id] ?? '').trim();
+                  const value =
+                    q.type === 'rating' && raw
+                      ? (feedbackRatingLabels[raw as keyof typeof feedbackRatingLabels] ?? raw)
+                      : raw;
+                  return (
+                    <div key={q.id}>
+                      <dt className="text-sm text-corp-text">{q.prompt}</dt>
+                      <dd
+                        className={
+                          value ? 'text-sm font-semibold text-corp-ink' : 'text-sm text-corp-muted'
+                        }
+                      >
+                        {value || 'No answer'}
+                      </dd>
+                    </div>
+                  );
+                })}
+              </dl>
+            </section>
+          )}
         </Dialog>
       ) : null}
     </article>

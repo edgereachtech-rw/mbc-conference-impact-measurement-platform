@@ -208,9 +208,7 @@ export function EventDetail({ event, contactEmail }: { event: MyEvent; contactEm
             onRetry={reflections.retry}
           />
         ) : null}
-        {tab === 'feedback' ? (
-          <SessionFeedbackList eventId={event.id} timezone={event.timezone} />
-        ) : null}
+        {tab === 'feedback' ? <SessionFeedbackList eventId={event.id} /> : null}
         {tab === 'transfer-plan' ? (
           <TransferPlansTabs
             eventId={event.id}

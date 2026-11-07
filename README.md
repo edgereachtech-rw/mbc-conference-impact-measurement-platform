@@ -409,7 +409,9 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   with a "View" popup per delegate. The CSV export prefixes each column with its section title.
 - Session feedback (task of 2026-10-31; backlog E8): a questionnaire per session, reached by the
   session's link or QR code, answered after the session by delegates recorded as attending it
-  (session attendance, E6), one logical response per delegate, updatable. Tables:
+  (session attendance, E6), one response per delegate, recorded once (2026-11-07: no updating;
+  the popup confirms the submission and the session is then no longer shown to the delegate,
+  whose answers are not served back). Tables:
   `event_session.feedback_code` (the link/QR code, kept across disable/enable),
   `feedback_opened_at` (when the organisers opened the form by pressing Start, which since
   2026-11-07 is the gate: delegates answer from then on) and `feedback_closed_at` (when they
@@ -434,10 +436,11 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   out, which is how results are shared with a speaker now that the speaker role is gone; viewing
   audited); `sessions/:sid/export.csv` (same figures, same
   `anonymised` switch, audited). Delegate routes: `GET /me/feedback/:code` (the session,
-  speaker, questions, own response, attendance eligibility), `PUT /me/feedback/:code` (create
-  or update; 403 `not_attended`, 409 `feedback_not_open` while pending, 409 `feedback_closed`,
-  422 `answers_invalid`; never touches
-  attendance), `GET /me/events/:id/feedback` (the delegate's sessions with feedback). Screens:
+  speaker, questions, own submission without its answers, attendance eligibility),
+  `PUT /me/feedback/:code` (create, once; 403 `not_attended`, 409 `feedback_not_open` while
+  pending, 409 `feedback_closed`, 409 `already_submitted`, 422 `answers_invalid`; never
+  touches attendance), `GET /me/events/:id/feedback` (the delegate's sessions still waiting for
+  feedback: open or pending, not yet answered). Screens:
   the event page's "Session feedback" tab (enable, link and QR code, Start, Close, Reopen, questions, dashboard with the anonymised view, export) and the page `/feedback/:code`
   (sign-in first, then the form; the delegate's event page lists their sessions too).
 - End-of-conference evaluation (task of 2026-10-31; backlog E11): a fourth assessment stage,

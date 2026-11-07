@@ -5,7 +5,8 @@ import { sessionTypes } from './events.js';
 /**
  * Session feedback (task of 2026-10-31): a questionnaire per session, reached by the session's
  * link or QR code, answered after the session by delegates recorded as attending it. One
- * response per delegate, updatable; the dashboard counts the latest. Separate from the daily
+ * response per delegate, recorded once (2026-11-07: no updating; a submitted session is no
+ * longer shown to the delegate). Separate from the daily
  * reflections, the Transfer Plan, the assessment stages and attendance (which it never creates).
  */
 
@@ -189,7 +190,9 @@ export const myFeedbackSchema = z.object({
   closedAt: z.string().nullable(),
   /** Recorded as attending this session; required to submit. */
   attended: z.boolean(),
+  /** Empty once the delegate has submitted, or the session is closed: nothing to show. */
   questions: z.array(feedbackQuestionViewSchema.omit({ responseCount: true })),
+  /** The delegate's submission; its answers are not served back (recorded once, not shown again). */
   response: z
     .object({
       submittedAt: z.string(),
@@ -210,10 +213,9 @@ export const myFeedbackListItemSchema = z.object({
   date: z.string(),
   title: z.string(),
   speaker: z.string().nullable(),
-  /** Closed sessions are not listed at all (2026-11-07). */
+  /** Closed sessions, and sessions already answered, are not listed at all (2026-11-07). */
   window: z.enum(['pending', 'open']),
   attended: z.boolean(),
-  submittedAt: z.string().nullable(),
 });
 export type MyFeedbackListItem = z.infer<typeof myFeedbackListItemSchema>;
 

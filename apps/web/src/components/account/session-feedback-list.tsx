@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react';
 
 import { consoleButton, StatePanel, StatusPill } from '@/components/console/page';
 import { apiFetch } from '@/lib/api';
-import { formatDateShort, formatInstant } from '@/lib/events';
+import { formatDateShort } from '@/lib/events';
 import { describeError } from '@/lib/imports';
 
 type State =
@@ -14,8 +14,11 @@ type State =
   | { kind: 'ready'; sessions: MyFeedbackListItem[] }
   | { kind: 'error'; message: string; requestId?: string };
 
-/** The delegate's sessions with feedback, each a link to its form; the QR code opens the same page. */
-export function SessionFeedbackList({ eventId, timezone }: { eventId: string; timezone: string }) {
+/**
+ * The delegate's sessions still waiting for their feedback, each a link to its form; the QR code
+ * opens the same page. A session answered or closed is not listed (2026-11-07).
+ */
+export function SessionFeedbackList({ eventId }: { eventId: string }) {
   const [state, setState] = useState<State>({ kind: 'loading' });
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
@@ -77,30 +80,21 @@ export function SessionFeedbackList({ eventId, timezone }: { eventId: string; ti
             <p className="text-xs text-corp-muted">
               {formatDateShort(s.date)}
               {s.speaker ? ` · ${s.speaker}` : ''}
-              {s.submittedAt ? ` · submitted ${formatInstant(s.submittedAt, timezone)}` : ''}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <StatusPill
-              tone={s.submittedAt ? 'positive' : s.window === 'open' ? 'attention' : 'neutral'}
-            >
-              {s.submittedAt
-                ? 'Submitted'
-                : s.window === 'open'
-                  ? 'Open'
-                  : s.window === 'pending'
-                    ? 'Not open yet'
-                    : 'Closed'}
+            <StatusPill tone={s.window === 'open' ? 'attention' : 'neutral'}>
+              {s.window === 'open' ? 'Open' : 'Not open yet'}
             </StatusPill>
             {!s.attended ? <StatusPill tone="neutral">Attendance not recorded</StatusPill> : null}
             <Link
               href={s.path}
               className={consoleButton({
-                variant: s.submittedAt ? 'secondary' : 'accent',
+                variant: s.window === 'open' ? 'accent' : 'secondary',
                 size: 'sm',
               })}
             >
-              {s.submittedAt ? 'View or update' : s.window === 'open' ? 'Give feedback' : 'View'}
+              {s.window === 'open' ? 'Give feedback' : 'View'}
             </Link>
           </div>
         </li>

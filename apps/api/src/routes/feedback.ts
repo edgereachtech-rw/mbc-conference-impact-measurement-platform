@@ -738,10 +738,10 @@ export function feedbackRouter({ prisma, config, middleware, now }: Deps): Route
       openedAt: iso(s.session.feedbackOpenedAt),
       closedAt: iso(s.session.feedbackClosedAt),
       attended: s.attended,
-      // Once closed, the delegate sees only that it is closed (2026-11-07): no questions, and
-      // not the answers they gave, which the organisers keep.
+      // Once closed, or once the delegate has submitted (2026-11-07), they see only that: no
+      // questions, and not the answers they gave, which the organisers keep.
       questions:
-        window === 'closed'
+        window === 'closed' || s.response
           ? []
           : s.session.feedbackQuestions.map((q) => {
               const { responseCount: _n, ...view } = questionViewOf(q);
@@ -753,10 +753,10 @@ export function feedbackRouter({ prisma, config, middleware, now }: Deps): Route
               submittedAt: s.response.submittedAt.toISOString(),
               updatedAt: s.response.updatedAt.toISOString(),
               revision: s.response.revision,
-              answers: Object.fromEntries(s.response.answers.map((a) => [a.questionId, a.value])),
+              answers: {},
             }
           : null,
-      canSubmit: window === 'open' && s.attended,
+      canSubmit: window === 'open' && s.attended && !s.response,
     };
   }
 
@@ -788,6 +788,14 @@ export function feedbackRouter({ prisma, config, middleware, now }: Deps): Route
           403,
           'not_attended',
           'Feedback is open to delegates checked in on the day of this session. If you were there, ask the organisers to record your attendance.',
+        );
+      }
+      // Recorded once (2026-11-07): a second submission is refused rather than replacing the first.
+      if (s.response) {
+        throw new HttpError(
+          409,
+          'already_submitted',
+          'You have already given feedback on this session. It is recorded once and cannot be changed.',
         );
       }
       const { answers } = req.body as z.infer<typeof feedbackSubmitSchema>;
@@ -830,44 +838,24 @@ export function feedbackRouter({ prisma, config, middleware, now }: Deps): Route
       const attendanceBefore = await prisma().attendanceRecord.count({
         where: { delegateId: s.delegate.id },
       });
-      const updated = Boolean(s.response);
       await prisma().$transaction(async (tx) => {
-        let responseId: string;
-        if (s.response) {
-          // Keep the previous revision, then replace the answers.
-          await tx.sessionFeedbackRevision.create({
-            data: {
-              responseId: s.response.id,
-              revision: s.response.revision,
-              answers: Object.fromEntries(s.response.answers.map((a) => [a.questionId, a.value])),
-              submittedAt: s.response.updatedAt,
-            },
-          });
-          await tx.sessionFeedbackAnswer.deleteMany({ where: { responseId: s.response.id } });
-          await tx.sessionFeedbackResponse.update({
-            where: { id: s.response.id },
-            data: { revision: s.response.revision + 1, updatedAt: at },
-          });
-          responseId = s.response.id;
-        } else {
-          const created = await tx.sessionFeedbackResponse.create({
-            data: {
-              sessionId: s.session.id,
-              eventId: s.session.eventId,
-              delegateId: s.delegate.id,
-              submittedAt: at,
-              updatedAt: at,
-            },
-          });
-          responseId = created.id;
-        }
+        const created = await tx.sessionFeedbackResponse.create({
+          data: {
+            sessionId: s.session.id,
+            eventId: s.session.eventId,
+            delegateId: s.delegate.id,
+            submittedAt: at,
+            updatedAt: at,
+          },
+        });
+        const responseId = created.id;
         if (kept.length) {
           await tx.sessionFeedbackAnswer.createMany({
             data: kept.map((k) => ({ responseId, questionId: k.questionId, value: k.value })),
           });
         }
         await audit(tx, {
-          action: updated ? 'feedback.updated' : 'feedback.submitted',
+          action: 'feedback.submitted',
           entityType: 'session_feedback_response',
           entityId: responseId,
           eventId: s.session.eventId,
@@ -876,7 +864,7 @@ export function feedbackRouter({ prisma, config, middleware, now }: Deps): Route
             sessionId: s.session.id,
             delegateId: s.delegate.id,
             answered: kept.length,
-            revision: (s.response?.revision ?? 0) + 1,
+            revision: 1,
           },
           ...clientOf(res),
         });
@@ -884,7 +872,7 @@ export function feedbackRouter({ prisma, config, middleware, now }: Deps): Route
       // Feedback never records attendance; the count is unchanged by construction.
       void attendanceBefore;
       const fresh = await sessionForDelegate(res, String(req.params.code));
-      res.status(updated ? 200 : 201).json({ feedback: myFeedbackOf(fresh) });
+      res.status(201).json({ feedback: myFeedbackOf(fresh) });
     },
   );
 
@@ -932,23 +920,25 @@ export function feedbackRouter({ prisma, config, middleware, now }: Deps): Route
       }),
       prisma().sessionFeedbackResponse.findMany({
         where: { delegateId: delegate.id },
-        select: { sessionId: true, updatedAt: true },
+        select: { sessionId: true },
       }),
     ]);
     // Attendance is by day (2026-11-07): every session of a day the delegate was checked in for.
     const attendedDays = new Set(attended.map((a) => a.eventDateId));
-    const submitted = new Map(responses.map((r) => [r.sessionId, r.updatedAt]));
-    const items: MyFeedbackListItem[] = sessions.map((s) => ({
-      sessionId: s.id,
-      code: s.feedbackCode!,
-      path: `/feedback/${s.feedbackCode}`,
-      date: isoDate(s.eventDate.date),
-      title: s.title,
-      speaker: s.speaker,
-      window: windowOf(s) === 'open' ? 'open' : 'pending',
-      attended: attendedDays.has(s.eventDateId),
-      submittedAt: submitted.get(s.id)?.toISOString() ?? null,
-    }));
+    // A session the delegate has answered is done with (2026-11-07): it is not listed again.
+    const submitted = new Set(responses.map((r) => r.sessionId));
+    const items: MyFeedbackListItem[] = sessions
+      .filter((s) => !submitted.has(s.id))
+      .map((s) => ({
+        sessionId: s.id,
+        code: s.feedbackCode!,
+        path: `/feedback/${s.feedbackCode}`,
+        date: isoDate(s.eventDate.date),
+        title: s.title,
+        speaker: s.speaker,
+        window: windowOf(s) === 'open' ? 'open' : 'pending',
+        attended: attendedDays.has(s.eventDateId),
+      }));
     res.json({ sessions: items });
   });
 

@@ -260,7 +260,7 @@ describe.skipIf(!hasDatabase)('session feedback', () => {
     now = new Date('2026-11-05T10:00:00.000Z');
   });
 
-  it('resolves the link to the right session, requires recorded attendance, validates ratings, updates in place and never records attendance', async () => {
+  it('resolves the link to the right session, requires recorded attendance, validates ratings, records once and never records attendance', async () => {
     const code = (await call('get', `/events/${eventId}/feedback`)).body.sessions.find(
       (s: { id: string }) => s.id === sessionId,
     ).code as string;
@@ -321,55 +321,59 @@ describe.skipIf(!hasDatabase)('session feedback', () => {
       cookies.dee,
     );
     expect(first.status, first.text).toBe(201);
-    expect(first.body.feedback.response).toMatchObject({
-      revision: 1,
-      submittedAt: now.toISOString(),
-      answers: { [q1!.id]: 'excellent', [q4!.id]: 'Measure before you train.' },
+    // Recorded once (2026-11-07): the answers are kept for the organisers, not served back, and
+    // the delegate is done with the session.
+    expect(first.body.feedback).toMatchObject({
+      response: { revision: 1, submittedAt: now.toISOString(), answers: {} },
+      questions: [],
+      canSubmit: false,
     });
-    expect(first.body.feedback.canSubmit).toBe(true); // may update
+    const stored = await prisma.sessionFeedbackAnswer.findMany({
+      where: { response: { sessionId, delegateId: delegates.dee! } },
+      select: { questionId: true, value: true },
+    });
+    expect(stored).toEqual(
+      expect.arrayContaining([
+        { questionId: q1!.id, value: 'excellent' },
+        { questionId: q4!.id, value: 'Measure before you train.' },
+      ]),
+    );
+    expect(stored).toHaveLength(4);
 
-    // Update: same logical response, revision 2, previous answers kept, count unchanged.
+    // A second submission is refused; nothing changes.
     now = new Date('2026-11-05T10:20:00.000Z');
     const second = await call(
       'put',
       `/me/feedback/${code}`,
-      {
-        answers: { [q1!.id]: 'good', [q2!.id]: 'good', [q3!.id]: 'good' },
-      },
+      { answers: { [q1!.id]: 'good', [q2!.id]: 'good', [q3!.id]: 'good' } },
       cookies.dee,
     );
-    expect(second.status, second.text).toBe(200);
-    expect(second.body.feedback.response).toMatchObject({
-      revision: 2,
-      submittedAt: '2026-11-05T10:00:00.000Z',
-      updatedAt: now.toISOString(),
-    });
-    expect(second.body.feedback.response.answers).not.toHaveProperty(q4!.id);
+    expect(second.status, second.text).toBe(409);
+    expect(second.body.error.code).toBe('already_submitted');
     expect(await prisma.sessionFeedbackResponse.count({ where: { sessionId } })).toBe(1);
-    const revision = await prisma.sessionFeedbackRevision.findFirstOrThrow({
-      where: { response: { sessionId } },
-    });
-    expect(revision).toMatchObject({
-      revision: 1,
-      answers: expect.objectContaining({ [q1!.id]: 'excellent' }),
-    });
+    expect(await prisma.sessionFeedbackRevision.count({ where: { response: { sessionId } } })).toBe(
+      0,
+    );
+    expect(
+      await prisma.sessionFeedbackAnswer.count({
+        where: { response: { sessionId, delegateId: delegates.dee! }, value: 'excellent' },
+      }),
+    ).toBe(1);
     expect(await prisma.attendanceRecord.count({ where: { eventId } })).toBe(attendanceBefore);
     const auditRow = await prisma.auditLog.findFirstOrThrow({
       where: { eventId, action: 'feedback.submitted' },
     });
     expect(JSON.stringify(auditRow.newValue)).not.toContain('Measure before');
 
-    // The delegate's list for the event.
+    // The delegate's list for the event no longer carries the session they answered; Vee, who
+    // has not answered, still sees it.
     const mine = await call('get', `/me/events/${eventId}/feedback`, undefined, cookies.dee);
-    expect(mine.body.sessions).toEqual([
-      expect.objectContaining({
-        sessionId,
-        code,
-        attended: true,
-        submittedAt: now.toISOString(),
-        window: 'open',
-      }),
+    expect(mine.body.sessions).toEqual([]);
+    const vees = await call('get', `/me/events/${eventId}/feedback`, undefined, cookies.vee);
+    expect(vees.body.sessions).toEqual([
+      expect.objectContaining({ sessionId, code, attended: false, window: 'open' }),
     ]);
+    expect(vees.body.sessions[0]).not.toHaveProperty('submittedAt');
 
     // Once the organisers close it the form refuses answers; the ones given stay.
     await call('post', `/events/${eventId}/feedback/sessions/${sessionId}/close`, {});
@@ -389,7 +393,7 @@ describe.skipIf(!hasDatabase)('session feedback', () => {
       (await call('get', `/me/feedback/${code}`, undefined, cookies.dee)).body.feedback,
     ).toMatchObject({ window: 'closed', canSubmit: false, response: null, questions: [] });
     expect(
-      (await call('get', `/me/events/${eventId}/feedback`, undefined, cookies.dee)).body.sessions,
+      (await call('get', `/me/events/${eventId}/feedback`, undefined, cookies.vee)).body.sessions,
     ).toEqual([]);
     expect(await prisma.sessionFeedbackResponse.count({ where: { sessionId } })).toBe(1);
     await call('post', `/events/${eventId}/feedback/sessions/${sessionId}/open`, {});
@@ -451,11 +455,12 @@ describe.skipIf(!hasDatabase)('session feedback', () => {
     const q1Dist = dash.body.dashboard.distributions.find(
       (d: { questionId: string }) => d.questionId === q1!.id,
     );
+    // Dee's one submission stands as given (excellent, good, fair); Vee's is good, excellent, poor.
     expect(q1Dist).toMatchObject({
       total: 2,
       ratings: [
-        { rating: 'excellent', count: 0, percent: 0 },
-        { rating: 'good', count: 2, percent: 100 },
+        { rating: 'excellent', count: 1, percent: 50 },
+        { rating: 'good', count: 1, percent: 50 },
         { rating: 'fair', count: 0, percent: 0 },
         { rating: 'poor', count: 0, percent: 0 },
       ],
@@ -471,15 +476,17 @@ describe.skipIf(!hasDatabase)('session feedback', () => {
       ]),
     ).toEqual([
       ['excellent', 0, 0],
-      ['good', 1, 50],
-      ['fair', 0, 0],
+      ['good', 0, 0],
+      ['fair', 1, 50],
       ['poor', 1, 50],
     ]);
     const written = dash.body.dashboard.written as Array<{
       questionId: string;
       responses: Array<{ delegate: { name: string } | null; value: string }>;
     }>;
-    expect(written.find((w) => w.questionId === q4!.id)!.responses).toEqual([]); // Dee removed hers in the update
+    expect(written.find((w) => w.questionId === q4!.id)!.responses).toEqual([
+      expect.objectContaining({ value: 'Measure before you train.' }),
+    ]);
     expect(written.find((w) => w.questionId === q5!.id)!.responses).toEqual([
       expect.objectContaining({
         delegate: expect.objectContaining({ name: 'Vee Virtual' }),
@@ -499,8 +506,9 @@ describe.skipIf(!hasDatabase)('session feedback', () => {
     expect(text).toContain('Session,Measuring transfer');
     expect(text).toContain('Speaker or facilitator,Dr A. Speaker');
     expect(text).toContain('Feedback submissions (latest per delegate),2');
-    expect(text).toContain('Good,2,100%');
+    expect(text).toContain('Excellent,1,50%');
     expect(text).toContain('Poor,1,50%');
+    expect(text).toContain('Measure before you train.');
     expect(text).toContain('Shorter slides.');
     expect(text).not.toContain('Vee Virtual');
     const named = await call('get', `${base}/export.csv`);
