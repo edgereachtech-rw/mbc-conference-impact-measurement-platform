@@ -175,8 +175,6 @@ function QrCard({ code }: { code: Code }) {
       aria-label={code.title}
       className="flex h-full flex-col items-center gap-2 border border-corp-line bg-white p-4 text-center break-inside-avoid"
     >
-      <h4 className="font-semibold text-corp-ink">{code.title}</h4>
-      <p className="text-xs text-corp-muted">{code.hint}</p>
       {image ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
@@ -189,6 +187,10 @@ function QrCard({ code }: { code: Code }) {
       ) : (
         <div className="h-72 w-72 max-w-full animate-pulse bg-corp-surface" aria-hidden="true" />
       )}
+      {/* The name sits under the code, as a caption: once printed and cut out, the sheet still says
+          what each square is for (2026-11-07). */}
+      <h4 className="font-corporate text-lg font-bold text-corp-ink">{code.title}</h4>
+      <p className="text-xs text-corp-muted">{code.hint}</p>
       <p className="font-mono text-[0.7rem] break-all text-corp-muted">{url}</p>
       <div className="mt-auto flex flex-wrap justify-center gap-2 print:hidden">
         <a

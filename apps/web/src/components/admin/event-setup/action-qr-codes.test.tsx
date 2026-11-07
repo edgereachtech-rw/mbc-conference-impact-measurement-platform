@@ -156,6 +156,9 @@ describe('ActionQrCodes', () => {
     // Each card renders its code as an image once generated, with a download of it.
     const image = await within(cards[0]!).findByRole('img', { name: 'QR code: Day 1 reflection' });
     expect(image.getAttribute('src')).toMatch(/^data:image\/png/);
+    // The name of the code is its caption: it follows the image inside the card.
+    const caption = within(cards[0]!).getByRole('heading', { name: 'Day 1 reflection' });
+    expect(image.compareDocumentPosition(caption) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(
       within(cards[0]!)
         .getByRole('link', { name: /Download PNG/ })
