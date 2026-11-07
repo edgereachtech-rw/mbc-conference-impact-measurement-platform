@@ -82,11 +82,11 @@ export function SignInPanel({ safeNext, initialEmail, invite }: SignInState & { 
           <MbryanLogoOnDark priority className="h-12 w-auto md:h-14" />
         </a>
 
-        <div className="mt-6 max-w-md lg:mt-0">
-          <p className="font-display text-base font-semibold tracking-[0.14em] text-brand-accent uppercase md:text-lg xl:text-xl">
+        <div className="mt-6 max-w-xl lg:mt-0">
+          <p className="font-display text-3xl leading-tight font-bold tracking-[0.04em] text-brand-accent uppercase md:text-4xl xl:text-5xl">
             {platform.shortName}
           </p>
-          <h2 className="mt-3 font-display text-2xl leading-tight font-semibold text-white md:text-3xl xl:text-4xl">
+          <h2 className="mt-4 font-display text-xl leading-snug font-semibold text-white md:text-2xl xl:text-3xl">
             The true value of learning is what changes afterwards.
           </h2>
           {/* Hidden below `lg`: with it, the band pushed the form off a 360px screen, and the
