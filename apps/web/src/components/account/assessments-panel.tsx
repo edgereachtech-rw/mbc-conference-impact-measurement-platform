@@ -306,7 +306,7 @@ function AssessmentCard({
         setReview(null);
         setNotice({
           ok: false,
-          text: describeError(e, 'Your answers could not be saved.').message,
+          text: describeError(e, 'Your aresponse could not be saved.').message,
         });
       }
       return false;
@@ -575,7 +575,7 @@ function AssessmentCard({
               {assessment.response?.submittedAt
                 ? formatInstant(assessment.response.submittedAt, timezone)
                 : ''}
-              . Your answers are shown above.
+              . Your responses are shown above.
             </p>
           ) : null}
         </form>
@@ -590,12 +590,12 @@ function AssessmentCard({
                 ? 'Section submitted'
                 : groups.length > 1
                   ? 'Submit this section?'
-                  : 'Submit your answers?'
+                  : 'Submit your responses?'
           }
           description={
             review.done
               ? undefined
-              : 'Check your answers below. Once submitted they cannot be changed.'
+              : 'Check your responses below. Once submitted they cannot be changed.'
           }
           onClose={closeReview}
           closeDisabled={busy === 'submit'}
@@ -643,14 +643,14 @@ function AssessmentCard({
               <CheckCircle2Icon className="size-14 text-corp-green-text" aria-hidden="true" />
               <p className="text-base font-semibold text-corp-ink">
                 {review.done === 'all'
-                  ? 'Thank you. Every section is submitted and your answers are recorded.'
-                  : `Thank you. “${reviewGroup.section?.title ?? 'Your answers'}” is recorded.`}
+                  ? 'Thank you. Every section is submitted and your responses are recorded.'
+                  : `Thank you. “${reviewGroup.section?.title ?? 'Your responses'}” is recorded.`}
               </p>
               <p className="max-w-prose text-sm text-corp-text">
                 {review.done === 'all'
                   ? 'Nothing more to do here. We will email you when the next step opens.'
                   : current && remaining > 0
-                    ? `Next: “${current.section?.title ?? 'the remaining questions'}”. ${remaining} section${remaining === 1 ? '' : 's'} left; your answers save as you go.`
+                    ? `Next: “${current.section?.title ?? 'the remaining questions'}”. ${remaining} section${remaining === 1 ? '' : 's'} left; your responses save as you go.`
                     : 'Nothing more to do here.'}
               </p>
             </div>
