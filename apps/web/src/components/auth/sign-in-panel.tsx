@@ -138,8 +138,8 @@ export function SignInPanel({ safeNext, initialEmail, invite }: SignInState & { 
 
           <div className="space-y-2 text-xs text-brand-muted">
             <p>
-              expectations, knowledge, confidence, and learning needs to help us tailor your
-              conference experience and measure your progress afterwards
+              Expectations, knowledge, confidence, and learning needs to help us tailor your
+              conference experience and measure your progress afterwards.
             </p>
             <p className="flex flex-col gap-1 sm:flex-row sm:flex-wrap sm:gap-x-4">
               <Link href="/privacy" className="font-semibold text-corp-green-text hover:underline">
