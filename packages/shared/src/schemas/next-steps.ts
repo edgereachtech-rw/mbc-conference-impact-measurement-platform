@@ -74,7 +74,7 @@ export function nextSteps(journey: Journey): NextStep[] {
     const left = journey.reflections.available - journey.reflections.submitted;
     steps.push({
       key: 'reflections',
-      label: left === 1 ? 'Add your daily reflection' : `Add ${left} daily reflections`,
+      label: left === 1 ? 'Add your reflection' : 'Add your reflections',
       hint: 'A few lines on what stood out and what you will use.',
       tab: 'reflections',
       started: journey.reflections.submitted > 0,

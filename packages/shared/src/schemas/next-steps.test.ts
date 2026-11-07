@@ -157,11 +157,11 @@ describe('nextSteps', () => {
         feedback: { sessions: 4, submitted: 1 },
       }),
     );
-    expect(steps.map((s) => s.label)).toContain('Add your daily reflection');
+    expect(steps.map((s) => s.label)).toContain('Add your reflection');
     expect(steps.map((s) => s.label)).toContain('Give feedback on 3 sessions');
 
     const several = nextSteps(journey({ reflections: { available: 3, submitted: 0 } }));
-    expect(several.map((s) => s.label)).toContain('Add 3 daily reflections');
+    expect(several.map((s) => s.label)).toContain('Add your reflections');
     const one = nextSteps(journey({ feedback: { sessions: 1, submitted: 0 } }));
     expect(one.map((s) => s.label)).toContain('Give feedback on 1 session');
   });
