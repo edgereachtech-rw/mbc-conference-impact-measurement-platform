@@ -130,7 +130,13 @@ describe('nextSteps', () => {
         },
       }),
     );
-    expect(open[0]).toMatchObject({ key: 'attendance:2026-11-13', tab: 'attendance' });
+    // The second date of the event is Day 2, whatever today is.
+    expect(open[0]).toMatchObject({
+      key: 'attendance:2026-11-13',
+      label: 'Check in for Day 2',
+      tab: 'attendance',
+    });
+    expect(open[0]!.hint).toMatch(/Show your attendance QR code/);
 
     const closed = nextSteps(
       journey({

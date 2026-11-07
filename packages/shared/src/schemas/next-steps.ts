@@ -56,12 +56,15 @@ export function nextSteps(journey: Journey): NextStep[] {
   }
 
   // A date open for check-in and nothing recorded yet: the one thing only the delegate can do.
-  const openDate = journey.attendance.dates.find((d) => !d.closed && d.status === 'not_checked_in');
+  const dates = [...journey.attendance.dates].sort((a, b) => a.date.localeCompare(b.date));
+  const openDate = dates.find((d) => !d.closed && d.status === 'not_checked_in');
   if (openDate) {
+    // Named by its day of the event ("Day 1"), not "today": the step is read ahead of the day too.
+    const day = dates.findIndex((d) => d.date === openDate.date) + 1;
     steps.push({
       key: `attendance:${openDate.date}`,
-      label: 'Check in for today',
-      hint: 'Use the code shown at the venue or in the virtual session.',
+      label: `Check in for Day ${day}`,
+      hint: 'Show your attendance QR code at the entrance. Joining online? The organisers record you.',
       tab: 'attendance',
       started: false,
     });
