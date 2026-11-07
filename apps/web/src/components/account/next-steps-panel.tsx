@@ -103,7 +103,7 @@ export function NextStepsPanel({ event }: { event: MyEvent }) {
             aria-labelledby="start-here-title"
             className="border-2 border-corp-accent bg-white p-5 shadow-elevated md:p-6"
           >
-            <p className="text-xs font-semibold tracking-[0.08em] text-corp-accent-deep uppercase">
+            <p className="inline-flex max-w-full items-center rounded-none bg-corp-accent px-2.5 py-1 text-sm font-bold tracking-[0.08em] text-corp-ink uppercase shadow-button">
               {first.started ? 'Continue where you left off' : 'Start here'} · {eventName}
             </p>
             <h3 id="start-here-title" className="mt-2 font-corporate text-h2 text-corp-ink">
