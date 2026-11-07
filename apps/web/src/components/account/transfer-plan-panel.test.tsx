@@ -1,6 +1,7 @@
 import type { MyTransferPlan, PlanActionView, TransferPlanSummary } from '@mbc/shared';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { TransferPlanPanel, useMyTransferPlans } from './transfer-plan-panel';
@@ -9,8 +10,9 @@ import { TransferPlanPanel, useMyTransferPlans } from './transfer-plan-panel';
  * Loads the list as the event page does and shows one plan, as its tab would; starting another
  * plan opens it, as the page switches tabs.
  */
-function Harness({ planId }: { planId: string }) {
+function Harness({ planId: initial }: { planId: string }) {
   const plans = useMyTransferPlans(EVENT);
+  const [planId, setPlanId] = useState(initial);
   return (
     <TransferPlanPanel
       eventId={EVENT}
@@ -18,6 +20,7 @@ function Harness({ planId }: { planId: string }) {
       planId={planId}
       plans={plans.state}
       onPlansChanged={() => void plans.refresh()}
+      onOpenPlan={setPlanId}
     />
   );
 }
@@ -493,16 +496,27 @@ describe('TransferPlanPanel', () => {
     expect(screen.getByText(/We will ask you on 21 May 2027 whether/)).toBeTruthy();
   });
 
-  it('offers no second plan, and lets the delegate choose twice-weekly reminders with a window', async () => {
-    const calls = stub(plan());
+  it('lets the delegate start another plan and choose twice-weekly reminders with a window', async () => {
+    const calls = stub(
+      plan({ plan: { ...plan().plan, status: 'submitted', version: 2, actions: [action()] } }),
+    );
     const user = userEvent.setup();
     render(<Harness planId={PLAN} />);
-    await screen.findByLabelText('How often');
-    // One plan per delegate (section 9): nothing here starts another.
-    expect(screen.queryByRole('button', { name: /Start another plan/ })).toBeNull();
+    await screen.findByRole('article', { name: 'Brief stakeholders' });
+    await user.click(screen.getByRole('button', { name: 'Start another plan' }));
+    await user.type(screen.getByLabelText('What is this plan about?'), 'Coaching rollout');
+    await user.click(screen.getByRole('button', { name: 'Start this plan' }));
+    const created = calls.find(
+      (c) => c.init?.method === 'POST' && c.url.endsWith('/transfer-plans'),
+    );
+    expect(created?.body).toEqual({ title: 'Coaching rollout' });
+    // The new plan opens on its own, empty.
+    await vi.waitFor(() =>
+      expect(screen.queryByRole('article', { name: 'Brief stakeholders' })).toBeNull(),
+    );
 
     // Twice a week: the days appear and exactly two can be chosen; the window and time are saved.
-    await user.selectOptions(screen.getByLabelText('How often'), 'twice_weekly');
+    await user.selectOptions(await screen.findByLabelText('How often'), 'twice_weekly');
     const days = screen.getByRole('group', { name: 'Which two days' });
     expect(within(days).getByText('Choose two days.')).toBeTruthy();
     await user.click(within(days).getByLabelText('Tuesday'));
@@ -520,7 +534,7 @@ describe('TransferPlanPanel', () => {
     );
     await user.click(screen.getByRole('button', { name: 'Save draft' }));
     const put = calls.find((c) => c.init?.method === 'PUT');
-    expect(put?.url).toBe(`/api/v1/me/events/${EVENT}/transfer-plans/${PLAN}`);
+    expect(put?.url).toBe(`/api/v1/me/events/${EVENT}/transfer-plans/${PLAN2}`);
     expect(put?.body).toMatchObject({
       reminder: {
         frequency: 'twice_weekly',

@@ -161,15 +161,14 @@ describe('ActionMeasures', () => {
         action={action()}
         disabled={false}
         dirty
-        onProgress={() => {}}
         onMeasures={() => {}}
         onEvidence={() => {}}
       />,
     );
-    expect(screen.getByRole('button', { name: /What changed?/ }).hasAttribute('disabled')).toBe(
+    expect(screen.getByRole('button', { name: 'Add a measure' }).hasAttribute('disabled')).toBe(
       true,
     );
-    expect(screen.getByRole('button', { name: /What shows it?/ }).hasAttribute('disabled')).toBe(
+    expect(screen.getByRole('button', { name: 'Add evidence' }).hasAttribute('disabled')).toBe(
       true,
     );
     expect(screen.getByText(/Save your plan first/)).toBeTruthy();

@@ -1,7 +1,6 @@
 'use client';
 
 import {
-  actionProgressLabels,
   compareMeasure,
   confidentialityNotice,
   evidenceSupportHints,
@@ -158,134 +157,58 @@ export function EvidenceLine({ record }: { record: EvidenceView }) {
 
 // ------------------------------------------------------------------ block inside an action card
 
-/**
- * The three questions a delegate answers about an action after the conference, as one checklist
- * (2026-11-07): "Did it happen?" (progress), "What changed?" (a measure with its result) and
- * "What shows it?" (evidence), in that order, each with where it stands and the one button that
- * answers it. A tick marks a question answered well enough for the plan to count it.
- */
 export function ActionMeasures({
   action,
   disabled,
   dirty,
-  onProgress,
   onMeasures,
   onEvidence,
 }: {
   action: PlanActionView;
   disabled: boolean;
-  /** Unsaved plan edits: the measure and evidence dialogs would reload the plan and lose them. */
+  /** Unsaved plan edits: the dialogs would reload the plan and lose them. */
   dirty: boolean;
-  onProgress: () => void;
   onMeasures: () => void;
   onEvidence: () => void;
 }) {
   const measures = action.measures ?? [];
   const records = action.evidenceRecords ?? [];
-  const applied =
-    action.progressStatus === 'applied' ||
-    action.progressStatus === 'applied_consistently' ||
-    action.progressStatus === 'completed';
-  const withResult = measures.filter((m) => m.status === 'identified' && m.actualValue.trim());
-  const steps: Array<{
-    question: string;
-    state: string;
-    done: boolean;
-    button: string;
-    label: string;
-    onClick: () => void;
-    waitsForSave: boolean;
-  }> = [
-    {
-      question: 'Did it happen?',
-      state: `Now: ${actionProgressLabels[action.progressStatus]}`,
-      done: applied,
-      button: 'Record progress',
-      label: 'Record progress',
-      onClick: onProgress,
-      waitsForSave: false,
-    },
-    {
-      question: 'What changed?',
-      state:
-        measures.length === 0
-          ? 'No measure yet'
-          : withResult.length > 0
-            ? `${measures.length} measure${measures.length === 1 ? '' : 's'}, ${withResult.length} with a result`
-            : `${measures.length} measure${measures.length === 1 ? '' : 's'}, no result yet`,
-      done: withResult.length > 0,
-      button: 'What changed?',
-      label: measures.length > 0 ? 'What changed? Edit measures' : 'What changed? Add a measure',
-      onClick: onMeasures,
-      waitsForSave: true,
-    },
-    {
-      question: 'What shows it?',
-      state:
-        records.length === 0
-          ? 'No evidence yet'
-          : `${records.length} evidence record${records.length === 1 ? '' : 's'}`,
-      done: records.length > 0,
-      button: 'What shows it?',
-      label: records.length > 0 ? 'What shows it? Edit evidence' : 'What shows it? Add evidence',
-      onClick: onEvidence,
-      waitsForSave: true,
-    },
-  ];
   return (
-    <section aria-label="Record what happened" className="space-y-3 border-t border-corp-line pt-3">
-      <div>
-        <p className="text-sm font-semibold text-corp-ink">Record what happened</p>
-        <p className="text-xs text-corp-muted">
-          Three short questions, in order, whenever something moves. Answer the first as soon as you
-          start; the other two when there is something to show.
-        </p>
-      </div>
-      <ol
-        aria-label="Three questions"
-        className="divide-y divide-corp-line border border-corp-line bg-white"
-      >
-        {steps.map((step, i) => (
-          <li
-            key={step.question}
-            className="flex flex-wrap items-center justify-between gap-2 px-3 py-2"
+    <section
+      aria-label="Measures and evidence"
+      className="space-y-3 border-t border-corp-line pt-3"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-semibold text-corp-ink">Measures and evidence</p>
+        <div className="flex flex-wrap gap-1">
+          <button
+            type="button"
+            disabled={disabled || dirty}
+            onClick={onMeasures}
+            className={consoleButton({ variant: 'secondary', size: 'sm' })}
           >
-            <div className="flex min-w-0 items-start gap-2">
-              <span
-                aria-hidden="true"
-                className={`mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-bold ${step.done ? 'bg-corp-green-text text-white' : 'bg-corp-surface text-corp-ink'}`}
-              >
-                {step.done ? '✓' : i + 1}
-              </span>
-              <span className="min-w-0">
-                <span className="block text-sm font-semibold text-corp-ink">{step.question}</span>
-                <span className="block text-xs text-corp-muted">
-                  {step.done ? 'Done · ' : ''}
-                  {step.state}
-                </span>
-              </span>
-            </div>
-            <button
-              type="button"
-              disabled={disabled || (step.waitsForSave && dirty)}
-              onClick={step.onClick}
-              aria-label={step.label}
-              className={consoleButton({ variant: step.done ? 'ghost' : 'secondary', size: 'sm' })}
-            >
-              {step.button}
-            </button>
-          </li>
-        ))}
-      </ol>
+            {measures.length > 0 ? 'Edit measures' : 'Add a measure'}
+          </button>
+          <button
+            type="button"
+            disabled={disabled || dirty}
+            onClick={onEvidence}
+            className={consoleButton({ variant: 'secondary', size: 'sm' })}
+          >
+            {records.length > 0 ? 'Edit evidence' : 'Add evidence'}
+          </button>
+        </div>
+      </div>
       {dirty ? (
         <p className="text-xs text-corp-muted">
-          Save your plan first, then answer “What changed?” and “What shows it?”.
+          Save your plan first, then add measures and evidence.
         </p>
       ) : null}
       {measures.length === 0 && records.length === 0 ? (
         <p className="text-xs text-corp-muted">
-          A measure with its actual value and at least one piece of evidence are needed before the
-          plan can be completed as having made a difference; evidence alone completes it as applied.
+          Optional. Record the business or workplace measure this action should move, then the
+          result when you have it and the evidence of what you did. Not every action has a number:
+          “Not yet known” and “Not applicable” are fine.
         </p>
       ) : null}
       {measures.length > 0 ? (
