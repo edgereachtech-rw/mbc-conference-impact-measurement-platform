@@ -65,10 +65,11 @@ describe('nextSteps', () => {
         ],
       }),
     );
+    // The follow-ups come last, after the transfer plan, as on the event page (2026-11-07).
     expect(steps.map((x) => x.label)).toEqual([
+      'Start your transfer plan',
       'Finish your 30-day follow-up',
       'Complete your 60-day follow-up',
-      'Start your transfer plan',
     ]);
     // Distinct keys: two open waves are two things to do, not one row drawn twice.
     expect(new Set(steps.map((x) => x.key)).size).toBe(steps.length);
@@ -190,26 +191,41 @@ describe('nextSteps', () => {
     });
   });
 
-  it('runs in journey order: assessments, attendance, reflections, feedback, plan', () => {
+  it('runs in the order of the event page: pre-conference, each check-in day, during, reflections, feedback, plan, end of conference, follow-ups', () => {
     const steps = nextSteps(
       journey({
+        // Listed out of order on purpose: the list follows the journey, not the input.
         assessments: [
-          { stage: 'pre_conference', wave: 1, waveLabel: '', state: 'open', submittedAt: null },
+          { stage: 'follow_up', wave: 1, waveLabel: '30-day', state: 'open', submittedAt: null },
+          { stage: 'end_of_conference', wave: 1, waveLabel: '', state: 'open', submittedAt: null },
+          { stage: 'during_conference', wave: 1, waveLabel: '', state: 'open', submittedAt: null },
+          { stage: 'pre_conference', wave: 1, waveLabel: '', state: 'draft', submittedAt: null },
         ],
         attendance: {
           status: 'pending',
-          dates: [{ date: '2026-11-12', status: 'not_checked_in', closed: false }],
+          dates: [
+            { date: '2026-11-13', status: 'not_checked_in', closed: false },
+            { date: '2026-11-12', status: 'not_checked_in', closed: false },
+          ],
         },
         reflections: { available: 1, submitted: 0 },
         feedback: { sessions: 1, submitted: 0 },
       }),
     );
-    expect(steps.map((s) => s.tab)).toEqual([
-      'assessment-pre_conference-1',
-      'attendance',
-      'reflections',
-      'feedback',
-      'transfer-plan',
+    expect(steps.map((s) => s.label)).toEqual([
+      'Finish your pre-conference assessment',
+      'Check in for Day 1',
+      'Check in for Day 2',
+      'Complete your during-conference assessment',
+      'Add your reflections',
+      'Give feedback on 1 session',
+      'Start your transfer plan',
+      'Complete your end-of-conference evaluation',
+      'Complete your 30-day',
+    ]);
+    expect(steps.map((s) => s.key).slice(1, 3)).toEqual([
+      'attendance:2026-11-12',
+      'attendance:2026-11-13',
     ]);
   });
 });
