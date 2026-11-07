@@ -617,12 +617,12 @@ Every enabled assessment stage carries questions that delegates answer (decided 
 - Transfer plan page, usability pass (task of 2026-11-07, after a review of whether a delegate
   could use it unaided): an action card opens with a one-line steer and only the action and its
   first step; the why, when and who, and the expected change, sit in two folded groups. The
-  progress button asks "Did it happen?". Since the evening of 2026-11-07 the structured measure of
-  brief 12.1 is part of planning: the two free-text boxes "Measure" and "Baseline" are gone
-  from the action card, and a "Measure and evidence" block sits on every action from the start
-  (its "Measure" and "Evidence" buttons wait for the first save, which gives the action its
-  id), so the measure, why it matters, baseline, target and dates are recorded while planning
-  and the actual result, source, influences and evidence later. The
+  three later-stage questions, "Did it happen?" (progress), "What changed?" (measures) and
+  "What shows it?" (evidence), sit in one "Record what happened" checklist on every saved action
+  (evening of 2026-11-07): numbered in order, each with where it stands ("Now: Started", "2
+  measures, 1 with a result", "No evidence yet"), a tick once answered well enough to count,
+  and the one button that answers it; the progress history, measures and evidence are listed
+  beneath. The
   completion gap list carries a button per gap that opens the right dialog on that action, the
   "measurable improvement" warning offers "Record a result", and the reminders block says they
   are for after the conference and send nothing until the start date.

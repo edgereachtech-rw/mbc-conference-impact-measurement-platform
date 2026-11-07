@@ -204,6 +204,7 @@ export function EventSettings({ initialEvent }: EventSettingsProps) {
         {tab === 'feedback' ? <FeedbackManager event={event} /> : null}
         {tab === 'transfer-plans' ? <TransferPlansManager event={event} /> : null}
         {tab === 'support' ? <SupportManager event={event} /> : null}
+        {tab === 'support' ? <SupportManager event={event} /> : null}
         {tab === 'qr-codes' ? <ActionQrCodes event={event} /> : null}
         {tab === 'reports' ? (
           <ReportWorkspace

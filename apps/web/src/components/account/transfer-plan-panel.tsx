@@ -811,7 +811,7 @@ function PlanEditor({
                               onClick={() => setDialog({ kind: 'evidence', action })}
                               className={consoleButton({ variant: 'ghost', size: 'sm' })}
                             >
-                              Evidence
+                              What shows it?
                             </button>
                           ) : null}
                         </span>
@@ -1118,9 +1118,9 @@ function PlanEditor({
               {improvement === 'seen' && !hasResult ? (
                 <div role="alert" className="space-y-2 text-xs text-brand-danger">
                   <p>
-                    Record the result on at least one action first: open &ldquo;Measure&rdquo; on
-                    the action and fill in the actual value of its measure, or put the results in a
-                    progress record.
+                    Record the result on at least one action first: open &ldquo;What changed?&rdquo;
+                    on the action and fill in the actual value of its measure, or put the results in
+                    a progress record.
                   </p>
                   {plan.actions.find((a) => a.action.trim()) ? (
                     <button
@@ -1412,27 +1412,31 @@ function ActionCard({
         <div className="mt-3 space-y-4">
           {text('expectedResult')}
           {text('evidence')}
+          {text('measure')}
+          {text('baseline')}
         </div>
       </details>
 
       {saved ? (
-        <div className="space-y-2 border-t border-corp-line pt-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <p className="text-sm font-semibold text-corp-ink">Did it happen?</p>
-              <p className="text-xs text-corp-muted">
-                Where this action stands now: not started, started, applied, completed.
-              </p>
-            </div>
-            <button
-              type="button"
-              disabled={disabled}
-              onClick={() => onProgress(saved)}
-              className={consoleButton({ variant: 'secondary', size: 'sm' })}
-            >
-              Record progress
-            </button>
-          </div>
+        <ActionMeasures
+          action={saved}
+          disabled={disabled}
+          dirty={dirty}
+          onProgress={() => onProgress(saved)}
+          onMeasures={() => onMeasures(saved)}
+          onEvidence={() => onEvidence(saved)}
+        />
+      ) : (
+        <p className="text-xs text-corp-muted">
+          Save the plan, then this action gets its three questions: did it happen, what changed,
+          what shows it.
+        </p>
+      )}
+      {saved && saved.progress.length > 0 ? (
+        <div className="space-y-2">
+          <p className="text-xs font-semibold tracking-[0.08em] text-corp-muted uppercase">
+            Progress history
+          </p>
           {saved.progress.length > 0 ? (
             <ul className="space-y-2 text-sm text-corp-text">
               {saved.progress.map((p) => (
@@ -1450,22 +1454,9 @@ function ActionCard({
                 </li>
               ))}
             </ul>
-          ) : (
-            <p className="text-xs text-corp-muted">No progress recorded yet.</p>
-          )}
+          ) : null}
         </div>
-      ) : (
-        <p className="text-xs text-corp-muted">Save the plan to record progress on this action.</p>
-      )}
-      {/* The measure is part of planning (brief 12.1): on every action from the start, with the
-          buttons waiting for the first save that gives the action its id. */}
-      <ActionMeasures
-        action={saved ?? null}
-        disabled={disabled}
-        dirty={dirty}
-        onMeasures={() => saved && onMeasures(saved)}
-        onEvidence={() => saved && onEvidence(saved)}
-      />
+      ) : null}
     </article>
   );
 }
