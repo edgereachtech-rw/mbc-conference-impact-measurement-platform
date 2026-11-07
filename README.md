@@ -440,7 +440,8 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   `PUT /me/feedback/:code` (create, once; 403 `not_attended`, 409 `feedback_not_open` while
   pending, 409 `feedback_closed`, 409 `already_submitted`, 422 `answers_invalid`; never
   touches attendance), `GET /me/events/:id/feedback` (the delegate's sessions still waiting for
-  feedback: open or pending, not yet answered). Screens:
+  feedback: open right now and not yet answered; a session not started, closed or answered is
+  not listed, and its link shows no questions). Screens:
   the event page's "Session feedback" tab (enable, link and QR code, Start, Close, Reopen, questions, dashboard with the anonymised view, export) and the page `/feedback/:code`
   (sign-in first, then the form; the delegate's event page lists their sessions too).
 - End-of-conference evaluation (task of 2026-10-31; backlog E11): a fourth assessment stage,

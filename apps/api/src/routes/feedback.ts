@@ -738,10 +738,11 @@ export function feedbackRouter({ prisma, config, middleware, now }: Deps): Route
       openedAt: iso(s.session.feedbackOpenedAt),
       closedAt: iso(s.session.feedbackClosedAt),
       attended: s.attended,
-      // Once closed, or once the delegate has submitted (2026-11-07), they see only that: no
-      // questions, and not the answers they gave, which the organisers keep.
+      // Only an open form shows its questions (2026-11-07): not before the organisers start it,
+      // not once closed, and not once the delegate has submitted (their answers stay with the
+      // organisers).
       questions:
-        window === 'closed' || s.response
+        window !== 'open' || s.response
           ? []
           : s.session.feedbackQuestions.map((q) => {
               const { responseCount: _n, ...view } = questionViewOf(q);
@@ -895,10 +896,12 @@ export function feedbackRouter({ prisma, config, middleware, now }: Deps): Route
     const [sessions, attended, responses] = await Promise.all([
       prisma().eventSession.findMany({
         // A closed session is no longer the delegate's business (2026-11-07): it is left out.
+        // Only sessions open right now (2026-11-07): neither pending nor closed is shown.
         where: {
           eventId,
           feedbackEnabled: true,
           feedbackCode: { not: null },
+          feedbackOpenedAt: { not: null },
           feedbackClosedAt: null,
         },
         select: {
@@ -936,7 +939,6 @@ export function feedbackRouter({ prisma, config, middleware, now }: Deps): Route
         date: isoDate(s.eventDate.date),
         title: s.title,
         speaker: s.speaker,
-        window: windowOf(s) === 'open' ? 'open' : 'pending',
         attended: attendedDays.has(s.eventDateId),
       }));
     res.json({ sessions: items });

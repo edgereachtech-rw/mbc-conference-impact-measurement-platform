@@ -16,7 +16,8 @@ type State =
 
 /**
  * The delegate's sessions still waiting for their feedback, each a link to its form; the QR code
- * opens the same page. A session answered or closed is not listed (2026-11-07).
+ * opens the same page. Only open sessions appear: one not started, answered or closed is not
+ * listed (2026-11-07).
  */
 export function SessionFeedbackList({ eventId }: { eventId: string }) {
   const [state, setState] = useState<State>({ kind: 'loading' });
@@ -83,18 +84,10 @@ export function SessionFeedbackList({ eventId }: { eventId: string }) {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <StatusPill tone={s.window === 'open' ? 'attention' : 'neutral'}>
-              {s.window === 'open' ? 'Open' : 'Not open yet'}
-            </StatusPill>
+            <StatusPill tone="attention">Open</StatusPill>
             {!s.attended ? <StatusPill tone="neutral">Attendance not recorded</StatusPill> : null}
-            <Link
-              href={s.path}
-              className={consoleButton({
-                variant: s.window === 'open' ? 'accent' : 'secondary',
-                size: 'sm',
-              })}
-            >
-              {s.window === 'open' ? 'Give feedback' : 'View'}
+            <Link href={s.path} className={consoleButton({ variant: 'accent', size: 'sm' })}>
+              Give feedback
             </Link>
           </div>
         </li>

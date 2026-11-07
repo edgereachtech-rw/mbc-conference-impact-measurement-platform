@@ -228,7 +228,15 @@ describe.skipIf(!hasDatabase)('session feedback', () => {
       undefined,
       cookies.dee,
     );
-    expect(pending.body.feedback).toMatchObject({ window: 'pending', canSubmit: false });
+    expect(pending.body.feedback).toMatchObject({
+      window: 'pending',
+      canSubmit: false,
+      questions: [],
+    });
+    // Not started means not listed either.
+    expect(
+      (await call('get', `/me/events/${eventId}/feedback`, undefined, cookies.dee)).body.sessions,
+    ).toEqual([]);
     const early = await call(
       'put',
       `/me/feedback/${enabled.body.session.code}`,
@@ -371,7 +379,7 @@ describe.skipIf(!hasDatabase)('session feedback', () => {
     expect(mine.body.sessions).toEqual([]);
     const vees = await call('get', `/me/events/${eventId}/feedback`, undefined, cookies.vee);
     expect(vees.body.sessions).toEqual([
-      expect.objectContaining({ sessionId, code, attended: false, window: 'open' }),
+      expect.objectContaining({ sessionId, code, attended: false }),
     ]);
     expect(vees.body.sessions[0]).not.toHaveProperty('submittedAt');
 
