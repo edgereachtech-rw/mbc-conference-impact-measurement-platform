@@ -74,8 +74,8 @@ export const stagePurpose: Record<AssessmentStage, string> = {
     'Measure learning, engagement and experience while the event is taking place. Session-specific feedback is linked to each session separately.',
   end_of_conference:
     'Evaluate the experience, repeat the knowledge and confidence questions for paired results, and record learning gained, readiness to apply and how far expectations were met.',
-  follow_up:
-    'Find out whether participants retained and applied what they learned after attending.',
+  // Said by the wave's own name and window instead (2026-11-07): no purpose line.
+  follow_up: '',
 };
 
 export const stageAreas: Record<AssessmentStage, string[]> = {

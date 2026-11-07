@@ -218,7 +218,9 @@ function StageCard({
           <h3 className="font-corporate text-base font-semibold text-corp-ink">
             {stage.waveLabel || stageLabels[stage.stage]}
           </h3>
-          <p className="text-sm text-corp-text">{stagePurpose[stage.stage]}</p>
+          {stagePurpose[stage.stage] ? (
+            <p className="text-sm text-corp-text">{stagePurpose[stage.stage]}</p>
+          ) : null}
           {stage.enabled && seenText ? (
             <p
               className={`text-xs font-semibold ${seen === 'open' ? 'text-corp-green-text' : 'text-corp-muted'}`}

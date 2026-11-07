@@ -375,13 +375,16 @@ function AssessmentCard({
         <h3 className="font-corporate text-base font-semibold text-corp-ink md:text-lg">
           {assessment.waveLabel || stageLabels[assessment.stage]}
         </h3>
-        <p className="text-sm text-corp-text">{stagePurpose[assessment.stage]}</p>
-        <p className="mt-1 text-xs text-corp-muted">
-          {assessment.opensAt
-            ? `Opens ${formatInstant(assessment.opensAt, timezone)}`
-            : 'Opens when the organisers say'}
-          {assessment.closesAt ? ` · closes ${formatInstant(assessment.closesAt, timezone)}` : ''}
-        </p>
+        {stagePurpose[assessment.stage] ? (
+          <p className="text-sm text-corp-text">{stagePurpose[assessment.stage]}</p>
+        ) : null}
+        {assessment.opensAt || assessment.closesAt ? (
+          <p className="mt-1 text-xs text-corp-muted">
+            {assessment.opensAt ? `Opens ${formatInstant(assessment.opensAt, timezone)}` : ''}
+            {assessment.opensAt && assessment.closesAt ? ' · ' : ''}
+            {assessment.closesAt ? `Closes ${formatInstant(assessment.closesAt, timezone)}` : ''}
+          </p>
+        ) : null}
       </div>
 
       {assessment.stage === 'follow_up' && assessment.status !== 'upcoming' ? (

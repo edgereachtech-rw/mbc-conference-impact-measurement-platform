@@ -39,7 +39,7 @@ export default async function StagePage({
         ]}
         eyebrow={event ? `${event.name} · ${event.code}` : undefined}
         title={stageLabels[stageKey]}
-        description={stagePurpose[stageKey]}
+        description={stagePurpose[stageKey] || undefined}
         meta={
           event && view ? (
             <>
