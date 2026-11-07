@@ -2,9 +2,14 @@ import type { EventDetail, FeedbackSessionView } from '@mbc/shared';
 import { render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { fakeCanvas } from '@/lib/fake-canvas';
+
 import { ActionQrCodes } from './action-qr-codes';
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -95,6 +100,7 @@ const session = (over: Partial<FeedbackSessionView>): FeedbackSessionView => ({
 
 describe('ActionQrCodes', () => {
   it('issues one code per action, each carrying a deep link on this origin', async () => {
+    const { drawn } = fakeCanvas();
     vi.stubGlobal(
       'fetch',
       vi.fn(async (url: string) => {
@@ -156,6 +162,13 @@ describe('ActionQrCodes', () => {
     // Each card renders its code as an image once generated, with a download of it.
     const image = await within(cards[0]!).findByRole('img', { name: 'QR code: Day 1 reflection' });
     expect(image.getAttribute('src')).toMatch(/^data:image\/png/);
+    // The file is not the bare code: it has the name drawn under it (fake canvas marker).
+    expect(
+      within(cards[0]!)
+        .getByRole('link', { name: /Download PNG/ })
+        .getAttribute('href'),
+    ).toBe('data:image/png;base64,labelled');
+    expect(drawn).toContain('Day 1 reflection');
     // The name of the code is its caption: it follows the image inside the card.
     const caption = within(cards[0]!).getByRole('heading', { name: 'Day 1 reflection' });
     expect(image.compareDocumentPosition(caption) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();

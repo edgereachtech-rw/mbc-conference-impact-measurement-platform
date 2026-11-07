@@ -559,8 +559,10 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   tab (`ActionQrCodes`) with one code per action: each day's reflection (its own tab and code per
   day since 2026-11-07, target `reflection-<activity id>`), each session's feedback
   (its existing `/feedback/:code` link), the transfer plan, and every enabled assessment with
-  questions (the end-of-conference evaluation among them). Codes are shown on screen, printed
-  ("Print all") or downloaded as PNG. They carry `/go/:eventId/:target` on the web origin
+  questions (the end-of-conference evaluation among them). Codes are shown on screen with their
+  name under each, printed ("Print all") or downloaded as PNG; the downloaded file has the name
+  drawn under the code (`apps/web/src/lib/qr-image.ts`, also used by the session feedback link
+  dialog), so a saved or cut-out square still says what it is for. They carry `/go/:eventId/:target` on the web origin
   (`apps/web/src/lib/deep-links.ts` names the targets); that page signs the delegate in if need
   be, applies the consent gate, and redirects to `/account/events/:eventId#<tab>`, so a scan
   lands on the one section with nothing to navigate. The event page still decides what the

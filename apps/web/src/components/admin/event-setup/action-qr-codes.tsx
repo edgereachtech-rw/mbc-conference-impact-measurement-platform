@@ -2,11 +2,11 @@
 
 import type { EventDetail, FeedbackSessionView, ReflectionDateView } from '@mbc/shared';
 import { DownloadIcon, PrinterIcon } from 'lucide-react';
-import QRCode from 'qrcode';
 import { useEffect, useState } from 'react';
 
 import { consoleButton, Panel, StatePanel } from '@/components/console/page';
 import { apiFetch } from '@/lib/api';
+import { qrImages, type QrImages } from '@/lib/qr-image';
 import { assessmentTarget, deepLinkPath, reflectionTarget } from '@/lib/deep-links';
 import { formatDateShort, stageLabels } from '@/lib/events';
 import { describeError } from '@/lib/imports';
@@ -158,17 +158,19 @@ export function ActionQrCodes({ event }: { event: EventDetail }) {
 }
 
 function QrCard({ code }: { code: Code }) {
-  const [image, setImage] = useState<string | null>(null);
+  const [images, setImages] = useState<QrImages | null>(null);
   const url = typeof window === 'undefined' ? code.path : `${window.location.origin}${code.path}`;
+  // The page shows the bare code with a caption; the file has the name drawn under the code.
   useEffect(() => {
     let cancelled = false;
-    QRCode.toDataURL(url, { margin: 1, width: 360 }).then((data) => {
-      if (!cancelled) setImage(data);
+    qrImages(url, code.title, 360).then((data) => {
+      if (!cancelled) setImages(data);
     });
     return () => {
       cancelled = true;
     };
-  }, [url]);
+  }, [url, code.title]);
+  const image = images?.plain ?? null;
   const fileName = `${code.title.replace(/[^A-Za-z0-9]+/g, '-').toLowerCase()}-qr.png`;
   return (
     <article
@@ -194,9 +196,9 @@ function QrCard({ code }: { code: Code }) {
       <p className="font-mono text-[0.7rem] break-all text-corp-muted">{url}</p>
       <div className="mt-auto flex flex-wrap justify-center gap-2 print:hidden">
         <a
-          href={image ?? '#'}
+          href={images?.labelled ?? '#'}
           download={fileName}
-          aria-disabled={!image}
+          aria-disabled={!images}
           className={consoleButton({ variant: 'ghost', size: 'sm' })}
         >
           <DownloadIcon aria-hidden="true" /> Download PNG

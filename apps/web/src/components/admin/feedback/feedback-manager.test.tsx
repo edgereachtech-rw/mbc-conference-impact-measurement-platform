@@ -3,9 +3,14 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { fakeCanvas } from '@/lib/fake-canvas';
+
 import { FeedbackManager } from './feedback-manager';
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -125,6 +130,7 @@ const dashboard: FeedbackDashboard = {
 
 describe('FeedbackManager', () => {
   it('enables a session, shows the link, starts, closes and reopens feedback by hand, and opens the dashboard with percentages', async () => {
+    const { drawn } = fakeCanvas();
     const calls: Array<{ url: string; init?: RequestInit }> = [];
     let session = disabled;
     vi.stubGlobal(
@@ -199,6 +205,11 @@ describe('FeedbackManager', () => {
     expect(
       await within(link).findByRole('img', { name: 'QR code for Measuring transfer feedback' }),
     ).toBeTruthy();
+    // The downloaded file has the session's name under the code.
+    const download = within(link).getByRole('link', { name: /Download PNG/ });
+    expect(download.getAttribute('download')).toBe('measuring-transfer-feedback-qr.png');
+    expect(download.getAttribute('href')).toBe('data:image/png;base64,labelled');
+    expect(drawn).toContain('Measuring transfer feedback');
     await user.click(within(link).getByRole('button', { name: 'Close' }));
 
     await user.click(within(enabledCard).getByRole('button', { name: 'Start feedback' }));

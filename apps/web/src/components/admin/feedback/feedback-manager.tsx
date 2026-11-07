@@ -24,7 +24,6 @@ import {
   SquareIcon,
   Trash2Icon,
 } from 'lucide-react';
-import QRCode from 'qrcode';
 import { useCallback, useEffect, useId, useState } from 'react';
 
 import { Dialog } from '@/components/console/dialog';
@@ -32,6 +31,7 @@ import { consoleButton, Panel, StatePanel, StatusPill } from '@/components/conso
 import { NativeSelect } from '@/components/imports/native-select';
 import { apiFetch, apiUrl } from '@/lib/api';
 import { formatDateShort, formatInstant } from '@/lib/events';
+import { qrImages, type QrImages } from '@/lib/qr-image';
 import { describeError } from '@/lib/imports';
 
 import { FeedbackInvite } from './feedback-invite';
@@ -509,21 +509,24 @@ function SessionCard({
 }
 
 function LinkDialog({ session, onClose }: { session: FeedbackSessionView; onClose: () => void }) {
-  const [image, setImage] = useState<string | null>(null);
+  const [images, setImages] = useState<QrImages | null>(null);
   const url =
     typeof window === 'undefined' || !session.path
       ? (session.path ?? '')
       : `${window.location.origin}${session.path}`;
+  // The downloaded file carries the session's name under the code (2026-11-07).
   useEffect(() => {
     let cancelled = false;
     if (!url) return undefined;
-    QRCode.toDataURL(url, { margin: 1, width: 320 }).then((data) => {
-      if (!cancelled) setImage(data);
+    qrImages(url, `${session.title} feedback`, 320).then((data) => {
+      if (!cancelled) setImages(data);
     });
     return () => {
       cancelled = true;
     };
-  }, [url]);
+  }, [url, session.title]);
+  const image = images?.plain ?? null;
+  const fileName = `${session.title.replace(/[^A-Za-z0-9]+/g, '-').toLowerCase()}-feedback-qr.png`;
   return (
     <Dialog
       title={`Feedback link: ${session.title}`}
@@ -547,14 +550,25 @@ function LinkDialog({ session, onClose }: { session: FeedbackSessionView; onClos
             className="max-w-full"
           />
         ) : null}
+        <p className="font-semibold text-corp-ink">{session.title}</p>
         <p className="font-mono text-sm break-all text-corp-ink">{url}</p>
-        <button
-          type="button"
-          onClick={() => void navigator.clipboard?.writeText(url)}
-          className={consoleButton({ variant: 'ghost', size: 'sm' })}
-        >
-          Copy link
-        </button>
+        <div className="flex flex-wrap justify-center gap-2">
+          <a
+            href={images?.labelled ?? '#'}
+            download={fileName}
+            aria-disabled={!images}
+            className={consoleButton({ variant: 'ghost', size: 'sm' })}
+          >
+            <DownloadIcon aria-hidden="true" /> Download PNG
+          </a>
+          <button
+            type="button"
+            onClick={() => void navigator.clipboard?.writeText(url)}
+            className={consoleButton({ variant: 'ghost', size: 'sm' })}
+          >
+            Copy link
+          </button>
+        </div>
       </div>
     </Dialog>
   );
