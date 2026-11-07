@@ -22,7 +22,6 @@ import {
 
 import { AssessmentsPanel, assessmentTabId, useMyAssessments } from './assessments-panel';
 import { AttendanceCodes } from './attendance-codes';
-import { AttendingBadge } from './attending-badge';
 import { JourneyStrip } from './journey-strip';
 import { ReflectionsPanel, reflectionTabId, useMyReflections } from './reflections-panel';
 import { SessionFeedbackList } from './session-feedback-list';
@@ -237,12 +236,9 @@ function Overview({ event, contactEmail }: { event: MyEvent; contactEmail: strin
     <>
       {/* Where the delegate is in the journey comes before the event facts: the open step (the
           pre-conference assessment, before the conference) is what they came to do. */}
-      {event.period === 'upcoming' ? (
-        <>
-          <JourneyStrip event={event} />
-          <AttendingBadge eventId={event.id} eventName={event.name} />
-        </>
-      ) : null}
+      {/* The "I will attend" card and its download left this page on 2026-11-07; the card still
+          travels in the welcome pack email. */}
+      {event.period === 'upcoming' ? <JourneyStrip event={event} /> : null}
 
       <section aria-labelledby="event-facts-title" className="space-y-3">
         <h2 id="event-facts-title" className="font-corporate text-h3 text-corp-ink">

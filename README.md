@@ -757,9 +757,9 @@ measures | evidence }`, the list replaced with ids kept; own actions only, 404 o
   - **The card** ("I WILL BE ATTENDING") is drawn as SVG at `GET /me/events/:id/badge.svg`, from
     the delegate's own registration: the event logo, the dates and venue, their name, and
     `nominatingOrganisation` as the sponsor line — omitted when there is none. A delegate can only
-    fetch their own, for an event they are registered for. The delegate's event page shows it with
-    a **Download the card** button; the browser rasterises it to a PNG at 2x, because a social
-    network will not take an SVG and converting here keeps an image library out of the API image.
+    fetch their own, for an event they are registered for. The delegate's event page showed it with
+    a download button until 2026-11-07, when the card and its download were removed from the page
+    by decision; the route stays for the welcome pack.
   - **The event logo is fetched and inlined as a data URI**, not linked: a linked image taints the
     canvas (so the PNG export fails), does not render in mail, and tells the logo's host whenever
     anyone opens the card. That URL is admin-supplied, so the fetch is treated as hostile input —
