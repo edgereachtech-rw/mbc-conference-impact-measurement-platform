@@ -8,7 +8,7 @@ import type { Journey } from './reports.js';
  * inside an event, behind the right tab, and nothing on the way in said it was waiting. These are
  * the same records the journey already reports, read as a to-do list and in the order of the
  * event page's tabs (2026-11-07): pre-conference assessment, attendance day by day, the
- * during-conference assessment, reflections, session feedback, the transfer plan, the
+ * session feedback, the during-conference assessment, reflections, the transfer plan, the
  * end-of-conference evaluation, then the follow-up waves. So the first thing a delegate sees
  * after signing in is the thing to do next, and the rest reads like the journey.
  *
@@ -82,6 +82,19 @@ export function nextSteps(journey: Journey): NextStep[] {
     });
   });
 
+  // Session feedback comes straight after the check-ins (2026-11-07): it is asked for on the
+  // day, as the sessions end.
+  if (journey.feedback.sessions > journey.feedback.submitted) {
+    const left = journey.feedback.sessions - journey.feedback.submitted;
+    steps.push({
+      key: 'feedback',
+      label: left === 1 ? 'Give feedback on 1 session' : `Give feedback on ${left} sessions`,
+      hint: 'About five minutes each, and it shapes the next conference.',
+      tab: 'feedback',
+      started: journey.feedback.submitted > 0,
+    });
+  }
+
   assessments('during_conference');
 
   if (journey.reflections.available > journey.reflections.submitted) {
@@ -92,17 +105,6 @@ export function nextSteps(journey: Journey): NextStep[] {
       hint: 'A few lines on what stood out for you and what you could start doing.',
       tab: 'reflections',
       started: journey.reflections.submitted > 0,
-    });
-  }
-
-  if (journey.feedback.sessions > journey.feedback.submitted) {
-    const left = journey.feedback.sessions - journey.feedback.submitted;
-    steps.push({
-      key: 'feedback',
-      label: left === 1 ? 'Give feedback on 1 session' : `Give feedback on ${left} sessions`,
-      hint: 'About five minutes each, and it shapes the next conference.',
-      tab: 'feedback',
-      started: journey.feedback.submitted > 0,
     });
   }
 

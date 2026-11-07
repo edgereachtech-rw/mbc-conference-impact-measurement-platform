@@ -191,7 +191,7 @@ describe('nextSteps', () => {
     });
   });
 
-  it('runs in the order of the event page: pre-conference, each check-in day, during, reflections, feedback, plan, end of conference, follow-ups', () => {
+  it('runs in the dashboard order: pre-conference, each check-in day, feedback, during, reflections, plan, end of conference, follow-ups', () => {
     const steps = nextSteps(
       journey({
         // Listed out of order on purpose: the list follows the journey, not the input.
@@ -216,9 +216,9 @@ describe('nextSteps', () => {
       'Finish your pre-conference assessment',
       'Check in for Day 1',
       'Check in for Day 2',
+      'Give feedback on 1 session',
       'Complete your during-conference assessment',
       'Add your reflections',
-      'Give feedback on 1 session',
       'Start your transfer plan',
       'Complete your end-of-conference evaluation',
       'Complete your 30-day',
