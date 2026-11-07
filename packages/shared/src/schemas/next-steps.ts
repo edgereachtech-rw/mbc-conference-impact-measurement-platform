@@ -71,10 +71,10 @@ export function nextSteps(journey: Journey): NextStep[] {
   }
 
   if (journey.reflections.available > journey.reflections.submitted) {
-    const left = journey.reflections.available - journey.reflections.submitted;
+    // const left = journey.reflections.available - journey.reflections.submitted;
     steps.push({
       key: 'reflections',
-      label: left === 1 ? 'Add your reflections' : 'Add your reflections',
+      label: 'Add your reflections',
       hint: 'A few lines on what stood out and what you will use.',
       tab: 'reflections',
       started: journey.reflections.submitted > 0,
