@@ -1780,19 +1780,16 @@ export function TransferPlansTabs({
   const drafts = list.filter((p) => p.status === 'draft');
   const priority = list.find((p) => p.isPriority) ?? null;
   // What the "create" line says when no plan can be created now.
-  const nextDay = info.days.find((d) => d.date > info.today) ?? null;
   const createNote: string | null =
     info.create.reason === 'ok'
       ? null
       : info.create.reason === 'before_event'
-        ? `Your first plan opens on Day ${info.days[0]?.day ?? 1} of the event, ${info.days[0] ? formatDateShort(info.days[0].date) : ''}. You create one plan on each planning day.`
+        ? `Your first plan opens on Day ${info.days[0]?.day ?? 1} of the event, ${info.days[0] ? formatDateShort(info.days[0].date) : ''}. You create your plans during the event, as many as you need.`
         : info.create.reason === 'after_event'
           ? 'The event has ended: no new plan can be created. Your plans below stay open for progress.'
-          : info.create.reason === 'all_created'
-            ? nextDay
-              ? `Your plans for the days so far are made. The next one opens on Day ${nextDay.day}, ${formatDateShort(nextDay.date)}.`
-              : 'Your plans for every planning day are made.'
-            : 'This event has no dates yet, so there is no day to plan for.';
+          : 'This event has no dates yet, so there is no day to plan for.';
+  /** How many plans the delegate already has for a day. */
+  const plansOn = (date: string) => info.days.find((d) => d.date === date)?.planIds.length ?? 0;
   /** "Transfer Planning 2, 14:00–15:30" for a day matched with a session. */
   const sessionLine = (d: { session: PlanDaySession | null }) =>
     d.session ? `${d.session.title}, ${d.session.startTime}–${d.session.endTime}` : null;
@@ -1803,27 +1800,26 @@ export function TransferPlansTabs({
         {info.create.reason === 'ok' ? (
           <ul className="space-y-2">
             {info.create.days.map((d) => {
-              const missed = d.date < info.today;
+              const today = d.date === info.today;
+              const count = plansOn(d.date);
               const line = sessionLine(d);
               return (
                 <li
                   key={d.date}
-                  className={`flex flex-wrap items-center justify-between gap-3 border-2 bg-white p-4 ${missed ? 'border-corp-line' : 'border-corp-accent'}`}
+                  className={`flex flex-wrap items-center justify-between gap-3 border-2 bg-white p-4 ${today ? 'border-corp-accent' : 'border-corp-line'}`}
                 >
                   <div>
                     <p className="font-semibold text-corp-ink">
-                      Day {d.day}, {formatDateShort(d.date)}:{' '}
-                      {missed
-                        ? 'plan not made yet'
-                        : list.length === 0
-                          ? 'start your first plan'
-                          : 'start today\u2019s plan'}
+                      Day {d.day}, {formatDateShort(d.date)}
+                      {today ? ' (today)' : ''}:{' '}
+                      {count === 0
+                        ? 'no plan yet'
+                        : `${count} plan${count === 1 ? '' : 's'} so far`}
                     </p>
                     <p className="text-sm text-corp-muted">
                       {line ? `${line}. ` : ''}
-                      {missed
-                        ? 'You can still make this day\u2019s plan while the event runs.'
-                        : 'Save it as a draft or submit it; on the last day you submit all your plans together and name your priority.'}
+                      Add as many plans as you need. Save each as a draft or submit it; on the last
+                      day you submit all your plans together and name your priority.
                     </p>
                     {creating?.error && creating.date === d.date ? (
                       <p role="alert" className="mt-1 text-xs text-brand-danger">
@@ -1835,12 +1831,12 @@ export function TransferPlansTabs({
                     type="button"
                     disabled={creating?.busy}
                     onClick={() => void createFor(d.date)}
-                    className={consoleButton({ variant: missed ? 'secondary' : 'accent' })}
+                    className={consoleButton({ variant: today ? 'accent' : 'secondary' })}
                   >
                     {creating?.busy && creating.date === d.date ? (
                       <Loader2Icon className="animate-spin" aria-hidden="true" />
                     ) : null}
-                    <PlusIcon aria-hidden="true" /> Create my Day {d.day} plan
+                    <PlusIcon aria-hidden="true" /> Add a plan for Day {d.day}
                   </button>
                 </li>
               );
@@ -1914,6 +1910,7 @@ export function TransferPlansTabs({
                   {p.isPriority ? ' · Priority' : ''}
                 </span>
                 <span className="text-xs font-normal">
+                  {p.day ? `Day ${p.day} · ` : ''}
                   {p.checkDue ? 'Impact check waiting' : transferPlanStatusLabels[p.status]}
                 </span>
               </button>
@@ -1986,6 +1983,7 @@ export function TransferPlansTabs({
                 />
                 <span>
                   <span className="font-semibold text-corp-ink">{planTitleOf(p)}</span>
+                  {p.day ? ` · Day ${p.day}` : ''}
                   {' · '}
                   {p.actions} action{p.actions === 1 ? '' : 's'} ·{' '}
                   {transferPlanStatusLabels[p.status]}

@@ -106,6 +106,8 @@ const EVENT_DATE_SELECT = {
     orderBy: { startTime: 'asc' },
     select: { id: true, title: true, startTime: true, endTime: true },
   },
+  // The event's dates, to number the day ("Day 2") without relying on the plan's sequence.
+  event: { select: { dates: { select: { date: true }, orderBy: { date: 'asc' } } } },
 } satisfies Prisma.EventDateSelect;
 const PLAN_INCLUDE = {
   actions: {
@@ -120,13 +122,18 @@ const PLAN_INCLUDE = {
 type DayRow = Prisma.EventDateGetPayload<{ select: typeof EVENT_DATE_SELECT }>;
 
 /**
- * The plan's conference day: its date, its number (the sequence, since 2026-11-07) and its
- * Transfer Planning session, or none of them on a plan from before the rule.
+ * The plan's conference day: its date, its number among the event's dates and its Transfer
+ * Planning session, or none of them on a plan from before the rule.
  */
-function dayFields(p: { sequence: number; eventDate: DayRow | null }) {
-  return p.eventDate
-    ? { date: isoDate(p.eventDate.date), day: p.sequence, session: p.eventDate.sessions[0] ?? null }
-    : { date: null, day: null, session: null };
+function dayFields(p: { eventDate: DayRow | null }) {
+  if (!p.eventDate) return { date: null, day: null, session: null };
+  const date = isoDate(p.eventDate.date)!;
+  const index = p.eventDate.event.dates.findIndex((d) => isoDate(d.date) === date);
+  return {
+    date,
+    day: index >= 0 ? index + 1 : null,
+    session: p.eventDate.sessions[0] ?? null,
+  };
 }
 type PlanRow = Prisma.TransferPlanGetPayload<{ include: typeof PLAN_INCLUDE }>;
 export type ActionRow = PlanRow['actions'][number];
@@ -390,9 +397,9 @@ export function transferPlanRouter({
   }
 
   /**
-   * Which days the delegate can create a plan for right now: today's, and any earlier day still
-   * without a plan, for as long as the event runs (a missed day is caught up later). Never
-   * before the event, never after it, never two for one day.
+   * Which days the delegate can create a plan for right now: today's and any earlier one, for as
+   * long as the event runs, as many plans as they need (2026-11-07). Never before the event and
+   * never after it.
    */
   async function creationState(eventId: string, delegateId: string, today: string) {
     const { all, planDays: days } = await planDays(eventId);
@@ -400,9 +407,6 @@ export function transferPlanRouter({
       where: { eventId, delegateId },
       select: { id: true, eventDateId: true },
     });
-    const creatable = days.filter(
-      (d) => d.date <= today && !plans.some((p) => p.eventDateId === d.id),
-    );
     const reason: PlanCreationReason =
       days.length === 0
         ? 'no_event_days'
@@ -410,10 +414,9 @@ export function transferPlanRouter({
           ? 'before_event'
           : today > all.at(-1)!.date
             ? 'after_event'
-            : creatable.length === 0
-              ? 'all_created'
-              : 'ok';
-    return { all, days, plans, creatable: reason === 'ok' ? creatable : [], reason };
+            : 'ok';
+    const creatable = reason === 'ok' ? days.filter((d) => d.date <= today) : [];
+    return { all, days, plans, creatable, reason };
   }
 
   function creationRefusal(
@@ -423,17 +426,14 @@ export function transferPlanRouter({
   ): never {
     const first = state.days[0]?.date;
     const last = state.all.at(-1)?.date;
-    const next = state.days.find((d) => d.date > today);
-    // A named day that is not open says why: not yet, already made, or not a planning day.
+    // A named day that is not open says why: not a planning day, or not come yet.
     if (wanted && state.reason !== 'after_event') {
       const day = state.days.find((d) => d.date === wanted);
       const message = !day
         ? `No plan is made for ${wanted}: it is not one of the planning days.`
         : wanted > today
-          ? `Day ${day.day} has not come yet: you create its plan on the day, or later while the event runs.`
-          : state.plans.some((p) => p.eventDateId === day.id)
-            ? `You already have a plan for Day ${day.day}: one plan per day.`
-            : null;
+          ? `Day ${day.day} has not come yet: you create its plans from that day on, while the event runs.`
+          : null;
       if (message) throw new HttpError(409, 'not_creatable', message);
     }
     if (state.reason === 'ok') {
@@ -441,11 +441,8 @@ export function transferPlanRouter({
     }
     const messages: Record<Exclude<PlanCreationReason, 'ok'>, string> = {
       no_event_days: 'This event has no dates yet, so there is no day to plan for.',
-      before_event: `Transfer plans are created during the event, one per day, from Day 1 on ${first}.`,
+      before_event: `Transfer plans are created during the event, from Day 1 on ${first}.`,
       after_event: `The event ended on ${last}: no new transfer plan can be created. Your existing plans stay open for progress.`,
-      all_created: next
-        ? `Your plans for the days so far are made; the next one opens on Day ${next.day}, ${next.date}.`
-        : 'Your plans for every day are made.',
     };
     throw new HttpError(409, state.reason, messages[state.reason]);
   }
@@ -454,15 +451,25 @@ export function transferPlanRouter({
   const referencesFor = (eventId: string, delegateId: string) =>
     referenceAnswersFor(prisma(), eventId, delegateId);
 
-  /** Today's plan (2026-11-07): the day's number is its sequence, so "Day 2 plan" is plan 2. */
+  /** A plan for one conference day (2026-11-07): the next in the delegate's sequence. */
   async function createPlan(
     eventId: string,
     delegateId: string,
     day: { id: string; day: number },
     title: string,
   ) {
+    const last = await prisma().transferPlan.aggregate({
+      where: { eventId, delegateId },
+      _max: { sequence: true },
+    });
     return prisma().transferPlan.create({
-      data: { eventId, delegateId, sequence: day.day, eventDateId: day.id, title },
+      data: {
+        eventId,
+        delegateId,
+        sequence: (last._max.sequence ?? 0) + 1,
+        eventDateId: day.id,
+        title,
+      },
       include: PLAN_INCLUDE,
     });
   }
@@ -531,7 +538,7 @@ export function transferPlanRouter({
       today,
       days: creation.days.map((d) => ({
         ...dayOut(d),
-        planId: plans.find((p) => p.eventDateId === d.id)?.id ?? null,
+        planIds: plans.filter((p) => p.eventDateId === d.id).map((p) => p.id),
       })),
       create: { reason: creation.reason, days: creation.creatable.map(dayOut) },
       finalDay: { date: last, reached },
@@ -881,7 +888,7 @@ export function transferPlanRouter({
         throw new HttpError(
           422,
           'plan_empty',
-          `Describe at least one action in ${empty.map((p) => planTitleOf({ ...p, ...dayFields(p) })).join(', ')} before submitting, or leave it out by removing nothing: every plan is submitted together.`,
+          `Describe at least one action in ${empty.map((p) => planTitleOf(p)).join(', ')} before submitting, or leave it out by removing nothing: every plan is submitted together.`,
         );
       }
       await prisma().$transaction(async (tx) => {

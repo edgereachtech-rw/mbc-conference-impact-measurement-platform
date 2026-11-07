@@ -711,7 +711,7 @@ Required changes when Increment 1b is implemented (impact only, not done here):
 
 ## E9. Individual Transfer Plan (S9)
 
-**Decision 2026-11-07 (product owner): one plan per conference day.** A delegate creates a plan on each day of the event (on the day itself: not before the event, not after it, and never two on one day), saves it as a draft or submits it on its own, and on the last day submits every plan together and names one as their priority. This replaces the "one continuous plan" of E9-2 and the final-session gate of E9-7; plans stay open after the event for progress and changes (E9-8, E9-11).
+**Decision 2026-11-07 (product owner): plans belong to conference days, as many as needed.** A delegate creates plans during the event for today or an earlier day (not before the event, not after it; the one-per-day limit of the same morning was lifted the same day), saves each as a draft or submits it on its own, and on the last day submits every plan together and names one as their priority. This replaces the "one continuous plan" of E9-2 and the final-session gate of E9-7; plans stay open after the event for progress and changes (E9-8, E9-11).
 
 | ID | Story | Acceptance criteria | Pri | Inc |
 |---|---|---|---|---|

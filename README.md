@@ -522,17 +522,19 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   with "Current" and "As submitted" views and its history).
 - Several Transfer Plans per delegate, reminder windows and completion (task of 2026-11-06;
   backlog E9-2 revised, E10-1 to E10-5, E10-8, E10-9): a delegate may keep more than one plan for
-  an event. **Since 2026-11-07 it is one plan per conference day** (migration
-  `20261107133000_transfer_plan_per_event_day`: `transfer_plan.event_date_id`, unique per
-  delegate and day, and `is_priority`; `sequence` is the day's number). Nothing is created on
+  an event. **Since 2026-11-07 every plan belongs to a conference day** (migration
+  `20261107133000_transfer_plan_per_event_day`: `transfer_plan.event_date_id` and
+  `is_priority`; migration `20261107165000_transfer_plans_unlimited_per_day` lifted the
+  one-per-day limit the same day: a delegate makes as many plans for a day as they need, and
+  `sequence` is again the n-th plan). Nothing is created on
   first access any more: `POST /me/events/:id/transfer-plans` (optional title, optional
-  `date`) makes a day's plan: today's by default, or an earlier day still without a plan while
-  the event runs (a missed day is caught up later; 409 `before_event`, `after_event`,
-  `all_created`, `no_event_days` when no day is open, `not_creatable` for a day that is not).
+  `date`) makes a plan for a day: today's by default, or any earlier day, while the event runs
+  (409 `before_event`, `after_event` or `no_event_days` when no day is open, `not_creatable`
+  for a day that is not).
   The plan days are matched with the programme's Transfer Planning sessions: the days with such
   a session, when any is scheduled, else every conference day; each plan carries its day's
   `session`. `GET /me/events/:id/transfer-plans` returns the plans with `today`, the `days`
-  (each with its session and plan id), `create` (reason and the days open for creation),
+  (each with its session and plan ids), `create` (reason and the days open for creation),
   `finalDay` and `canSubmitAll`. A draft is submitted on its own at any time (`POST
 .../:planId/submit`, no longer gated by the final Transfer Planning session). On the last
   conference day, or later, `POST /me/events/:id/transfer-plans/submit-all`
@@ -541,8 +543,8 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   (audited `transfer_plan.priority_set`); the admin list carries `date`, `day` and
   `isPriority` per row. Every delegate route takes the plan id
   (`/me/events/:id/transfer-plans/:planId...`). The delegate's "Transfer plans" tab offers
-  "Create my Day N plan" for each open day, with its session (or says why none is), one inner
-  tab per day, and on the last day
+  "Add a plan for Day N" for each open day, with its session and how many plans it has (or says
+  why none can be made), one inner tab per plan, and on the last day
   a "Submit all plans" box with the priority choice. Reminders are
   set per plan: frequency none / daily / every other day / twice a week (two chosen weekdays) /
   weekly / every two weeks / monthly, a time of day in the event's timezone, a start date and an

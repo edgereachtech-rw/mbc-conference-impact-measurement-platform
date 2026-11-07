@@ -152,7 +152,7 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
     await prisma.$disconnect();
   });
 
-  it('creates one plan per conference day, on the day itself, visible only to that delegate', async () => {
+  it('creates plans for a conference day during the event, as many as needed, visible only to that delegate', async () => {
     // Before the event: no plan, and none can be created yet.
     const early = await call('get', `/me/events/${eventId}/transfer-plans`, undefined, cookies.dee);
     expect(early.status, early.text).toBe(200);
@@ -165,8 +165,8 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
     });
     // No Transfer Planning session is scheduled yet, so every conference day is a plan day.
     expect(early.body.days).toEqual([
-      { date: '2026-11-12', day: 1, session: null, planId: null },
-      { date: '2026-11-13', day: 2, session: null, planId: null },
+      { date: '2026-11-12', day: 1, session: null, planIds: [] },
+      { date: '2026-11-13', day: 2, session: null, planIds: [] },
     ]);
     const tooEarly = await call(
       'post',
@@ -205,14 +205,6 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
     expect(created.body.sessions).toEqual([]);
     expect(created.body.canSubmit).toBe(true);
     expect(created.body.references).toEqual([]);
-    const twice = await call(
-      'post',
-      `/me/events/${eventId}/transfer-plans`,
-      { title: 'Again' },
-      cookies.dee,
-    );
-    expect(twice.status).toBe(409);
-    expect(twice.body.error.code).toBe('all_created');
     // Tomorrow's plan cannot be made today.
     const tomorrow = await call(
       'post',
@@ -226,14 +218,18 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
     expect(again.body.plans.map((p: { id: string; day: number }) => [p.id, p.day])).toEqual([
       [planId, 1],
     ]);
-    expect(again.body.days[0].planId).toBe(planId);
-    expect(again.body.create).toEqual({ reason: 'all_created', days: [] });
+    expect(again.body.days[0].planIds).toEqual([planId]);
+    // Today stays open: there is no limit to the plans of a day.
+    expect(again.body.create).toEqual({
+      reason: 'ok',
+      days: [{ date: '2026-11-12', day: 1, session: null }],
+    });
     expect((await call('get', `/me/events/${eventId}/transfer-plans`)).status).toBe(403);
     expect(
       (await call('get', `/me/events/${randomUUID()}/transfer-plans`, undefined, cookies.dee))
         .status,
     ).toBe(404);
-    // Another delegate's plan id is simply not found; Ada makes her own Day 1 plan, Cal none.
+    // Another delegate's plan id is simply not found; Ada makes two Day 1 plans, Cal none.
     const adaCreated = await call(
       'post',
       `/me/events/${eventId}/transfer-plans`,
@@ -242,6 +238,14 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
     );
     expect(adaCreated.status, adaCreated.text).toBe(201);
     adaPlanId = adaCreated.body.plan.id;
+    const adaSecond = await call(
+      'post',
+      `/me/events/${eventId}/transfer-plans`,
+      { title: 'Second idea' },
+      cookies.ada,
+    );
+    expect(adaSecond.status, adaSecond.text).toBe(201);
+    expect(adaSecond.body.plan).toMatchObject({ sequence: 2, day: 1, title: 'Second idea' });
     expect(
       (await call('get', `/me/events/${eventId}/transfer-plans/${planId}`, undefined, cookies.ada))
         .status,
@@ -444,26 +448,21 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
       date: '2026-11-12',
       session: { title: 'Transfer Planning 1', startTime: '16:00' },
     });
-    // Ada, who has Day 1, cannot make it again; her open day is today.
+    // Ada can still add a Day 1 plan on Day 2: there is no limit while the event runs.
     const adaAgain = await call(
       'post',
       `/me/events/${eventId}/transfer-plans`,
-      { title: '', date: '2026-11-12' },
+      { title: 'Third idea', date: '2026-11-12' },
       cookies.ada,
     );
-    expect(adaAgain.status).toBe(409);
-    expect(adaAgain.body.error.code).toBe('not_creatable');
-    // Dee's remaining day is today only.
+    expect(adaAgain.status, adaAgain.text).toBe(201);
+    expect(adaAgain.body.plan).toMatchObject({ sequence: 3, day: 1 });
+    // Both days stay open to Dee as well.
     expect(
-      (await call('get', `/me/events/${eventId}/transfer-plans`, undefined, cookies.dee)).body
-        .create.days,
-    ).toEqual([
-      {
-        date: '2026-11-13',
-        day: 2,
-        session: expect.objectContaining({ title: 'Transfer Planning 2' }),
-      },
-    ]);
+      (
+        await call('get', `/me/events/${eventId}/transfer-plans`, undefined, cookies.dee)
+      ).body.create.days.map((d: { day: number }) => d.day),
+    ).toEqual([1, 2]);
     const empty = await call(
       'post',
       `/me/events/${eventId}/transfer-plans/${adaPlanId}/submit`,
@@ -923,7 +922,7 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
     expect(mine.body.reminders[0]).toMatchObject({ status: 'sent' });
   });
 
-  it('keeps one plan per day, each with its own reminder window, and refuses bad preferences', async () => {
+  it('keeps the plans by day, each with its own reminder window, and refuses bad preferences', async () => {
     await tick('2026-12-03T10:00:00.000Z');
     const list = await call('get', `/me/events/${eventId}/transfer-plans`, undefined, cookies.dee);
     expect(

@@ -72,9 +72,8 @@ export const stagePurpose: Record<AssessmentStage, string> = {
     'This is to establish your expectations, baseline knowledge, confidence, and learning needs before you attend.',
   during_conference:
     'Measure learning, engagement and experience while the event is taking place. Session-specific feedback is linked to each session separately.',
-  end_of_conference:
-    'Evaluate the experience, repeat the knowledge and confidence questions for paired results, and record learning gained, readiness to apply and how far expectations were met.',
-  // Said by the wave's own name and window instead (2026-11-07): no purpose line.
+  // No purpose line for the evaluation or the follow-ups (2026-11-07): their names say enough.
+  end_of_conference: '',
   follow_up: '',
 };
 

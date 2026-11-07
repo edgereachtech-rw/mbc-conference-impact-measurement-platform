@@ -62,10 +62,16 @@ const DAY2_SESSION = {
 let listInfo: Omit<MyTransferPlans, 'plans'> = {
   today: '2026-11-13',
   days: [
-    { date: '2026-11-12', day: 1, session: null, planId: PLAN },
-    { date: '2026-11-13', day: 2, session: DAY2_SESSION, planId: null },
+    { date: '2026-11-12', day: 1, session: null, planIds: [PLAN] },
+    { date: '2026-11-13', day: 2, session: DAY2_SESSION, planIds: [] },
   ],
-  create: { reason: 'ok', days: [{ date: '2026-11-13', day: 2, session: DAY2_SESSION }] },
+  create: {
+    reason: 'ok',
+    days: [
+      { date: '2026-11-12', day: 1, session: null },
+      { date: '2026-11-13', day: 2, session: DAY2_SESSION },
+    ],
+  },
   finalDay: { date: '2026-11-13', reached: true },
   canSubmitAll: true,
 };
@@ -209,8 +215,7 @@ function stub(initial: MyTransferPlan) {
         plans.set(PLAN2, created);
         listInfo = {
           ...listInfo,
-          days: listInfo.days.map((d) => (d.day === 2 ? { ...d, planId: PLAN2 } : d)),
-          create: { reason: 'all_created', days: [] },
+          days: listInfo.days.map((d) => (d.day === 2 ? { ...d, planIds: [PLAN2] } : d)),
         };
         return json(created, 201);
       }
@@ -572,7 +577,7 @@ describe('TransferPlanPanel', () => {
     expect(section.textContent).toMatch(/1 still in draft/);
     await user.click(within(section).getByRole('button', { name: 'Submit all plans' }));
     const dialog = await screen.findByRole('dialog', { name: 'Submit all your plans?' });
-    await user.click(within(dialog).getByRole('radio', { name: /Day 1 plan/ }));
+    await user.click(within(dialog).getByRole('radio', { name: /Plan 1/ }));
     await user.click(within(dialog).getByRole('button', { name: 'Submit all now' }));
     const post = calls.find((c) => c.url.endsWith('/transfer-plans/submit-all'));
     expect(post?.body).toEqual({ priorityPlanId: PLAN });
@@ -580,27 +585,29 @@ describe('TransferPlanPanel', () => {
     await user.click(within(done).getByRole('button', { name: 'Close' }));
     await vi.waitFor(() =>
       expect(screen.getByRole('region', { name: 'Submit all plans' }).textContent).toMatch(
-        /Your priority: Day 1 plan/,
+        /Your priority: Plan 1/,
       ),
     );
     expect(screen.getByRole('button', { name: 'Change my priority' })).toBeTruthy();
   });
 
-  it('creates today\u2019s plan from the tabs, one per day, and chooses twice-weekly reminders with a window', async () => {
+  it('adds a plan for today from the tabs, keeps the day open for more, and chooses twice-weekly reminders with a window', async () => {
     const calls = stub(
       plan({ plan: { ...plan().plan, status: 'submitted', version: 2, actions: [action()] } }),
     );
     const user = userEvent.setup();
     render(<Tabs />);
     await screen.findByRole('article', { name: 'Brief stakeholders' });
-    // Day 1's plan exists; today is Day 2, so today's plan can be created, once.
-    await user.click(screen.getByRole('button', { name: /Create my Day 2 plan/ }));
+    // Day 1 has a plan; today is Day 2, with none yet. Both days are open for more.
+    expect(screen.getByText(/Day 1, 12 Nov 2026: 1 plan so far/)).toBeTruthy();
+    expect(screen.getByText(/Day 2, 13 Nov 2026 \(today\): no plan yet/)).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: /Add a plan for Day 2/ }));
     const created = calls.find(
       (c) => c.init?.method === 'POST' && c.url.endsWith('/transfer-plans'),
     );
     expect(created?.body).toEqual({ title: '', date: '2026-11-13' });
     // The new plan opens on its own tab, named by its day and empty.
-    expect(await screen.findByRole('tab', { name: /Day 2 plan/ })).toBeTruthy();
+    expect(await screen.findByRole('tab', { name: /Plan 2.*Day 2/ })).toBeTruthy();
     // The plan's header names its day and the Transfer Planning session it is matched with.
     expect((await screen.findAllByText(/Transfer Planning 2, 14:00–15:30/)).length).toBeGreaterThan(
       0,
@@ -608,8 +615,9 @@ describe('TransferPlanPanel', () => {
     await vi.waitFor(() =>
       expect(screen.queryByRole('article', { name: 'Brief stakeholders' })).toBeNull(),
     );
-    expect(screen.queryByRole('button', { name: /Create my Day 2 plan/ })).toBeNull();
-    expect(screen.getByText(/Your plans for every planning day are made/)).toBeTruthy();
+    // No limit: the day stays open for another plan, and says how many it has.
+    expect(screen.getByRole('button', { name: /Add a plan for Day 2/ })).toBeTruthy();
+    expect(screen.getByText(/Day 2, 13 Nov 2026 \(today\): 1 plan so far/)).toBeTruthy();
 
     // Twice a week: the days appear and exactly two can be chosen; the window and time are saved.
     await user.selectOptions(screen.getByLabelText('How often'), 'twice_weekly');
