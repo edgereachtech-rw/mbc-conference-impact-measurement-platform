@@ -340,8 +340,8 @@ function ReflectionCard({
           title={review === 'done' ? 'Reflection submitted' : 'Submit your reflection?'}
           description={
             review === 'done'
-              ? 'Thank you. Your answers are recorded.'
-              : 'Check your answers below. Once submitted they cannot be changed.'
+              ? 'Thank you. Your responses are recorded.'
+              : 'Check your responses below. Once submitted they cannot be changed.'
           }
           onClose={() => setReview(null)}
           closeDisabled={busy}
