@@ -383,9 +383,15 @@ describe.skipIf(!hasDatabase)('session feedback', () => {
         )
       ).body.error.code,
     ).toBe('feedback_closed');
+    // Closed means gone for the delegate: no questions or answers on the form, not in the list,
+    // not in the journey count; the organisers keep the answers.
     expect(
       (await call('get', `/me/feedback/${code}`, undefined, cookies.dee)).body.feedback,
-    ).toMatchObject({ window: 'closed', canSubmit: false, response: { revision: 2 } });
+    ).toMatchObject({ window: 'closed', canSubmit: false, response: null, questions: [] });
+    expect(
+      (await call('get', `/me/events/${eventId}/feedback`, undefined, cookies.dee)).body.sessions,
+    ).toEqual([]);
+    expect(await prisma.sessionFeedbackResponse.count({ where: { sessionId } })).toBe(1);
     await call('post', `/events/${eventId}/feedback/sessions/${sessionId}/open`, {});
     now = new Date('2026-11-05T11:00:00.000Z');
   });

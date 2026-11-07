@@ -210,7 +210,8 @@ export const myFeedbackListItemSchema = z.object({
   date: z.string(),
   title: z.string(),
   speaker: z.string().nullable(),
-  window: z.enum(['pending', 'open', 'closed']),
+  /** Closed sessions are not listed at all (2026-11-07). */
+  window: z.enum(['pending', 'open']),
   attended: z.boolean(),
   submittedAt: z.string().nullable(),
 });

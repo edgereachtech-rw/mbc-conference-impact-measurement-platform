@@ -196,7 +196,12 @@ function Form({
         </p>
       </div>
 
-      {!feedback.attended ? (
+      {feedback.window === 'closed' ? (
+        <p className="text-sm text-corp-muted">
+          Feedback for this session is closed. Thank you if you answered; the organisers have your
+          answers.
+        </p>
+      ) : !feedback.attended ? (
         <div
           role="alert"
           className="rounded-none border-2 border-danger bg-danger/10 px-4 py-3 text-sm font-semibold text-danger"
@@ -209,13 +214,9 @@ function Form({
           Feedback for this session has not opened yet. The organisers open it at the end of the
           session; keep this page and refresh it when they say so.
         </p>
-      ) : feedback.window !== 'open' ? (
-        <p className="text-sm text-corp-muted">
-          This feedback form is closed.{feedback.response ? ' Your answers are shown below.' : ''}
-        </p>
       ) : null}
 
-      {feedback.attended && (feedback.window === 'open' || feedback.response) ? (
+      {feedback.attended && feedback.window === 'open' ? (
         <form
           noValidate
           aria-label={`${session.title} feedback questions`}

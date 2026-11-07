@@ -738,18 +738,24 @@ export function feedbackRouter({ prisma, config, middleware, now }: Deps): Route
       openedAt: iso(s.session.feedbackOpenedAt),
       closedAt: iso(s.session.feedbackClosedAt),
       attended: s.attended,
-      questions: s.session.feedbackQuestions.map((q) => {
-        const { responseCount: _n, ...view } = questionViewOf(q);
-        return view;
-      }),
-      response: s.response
-        ? {
-            submittedAt: s.response.submittedAt.toISOString(),
-            updatedAt: s.response.updatedAt.toISOString(),
-            revision: s.response.revision,
-            answers: Object.fromEntries(s.response.answers.map((a) => [a.questionId, a.value])),
-          }
-        : null,
+      // Once closed, the delegate sees only that it is closed (2026-11-07): no questions, and
+      // not the answers they gave, which the organisers keep.
+      questions:
+        window === 'closed'
+          ? []
+          : s.session.feedbackQuestions.map((q) => {
+              const { responseCount: _n, ...view } = questionViewOf(q);
+              return view;
+            }),
+      response:
+        s.response && window !== 'closed'
+          ? {
+              submittedAt: s.response.submittedAt.toISOString(),
+              updatedAt: s.response.updatedAt.toISOString(),
+              revision: s.response.revision,
+              answers: Object.fromEntries(s.response.answers.map((a) => [a.questionId, a.value])),
+            }
+          : null,
       canSubmit: window === 'open' && s.attended,
     };
   }
@@ -900,7 +906,13 @@ export function feedbackRouter({ prisma, config, middleware, now }: Deps): Route
     if (!delegate) throw new HttpError(404, 'not_found', 'No event of yours has this id.');
     const [sessions, attended, responses] = await Promise.all([
       prisma().eventSession.findMany({
-        where: { eventId, feedbackEnabled: true, feedbackCode: { not: null } },
+        // A closed session is no longer the delegate's business (2026-11-07): it is left out.
+        where: {
+          eventId,
+          feedbackEnabled: true,
+          feedbackCode: { not: null },
+          feedbackClosedAt: null,
+        },
         select: {
           id: true,
           feedbackCode: true,
@@ -933,7 +945,7 @@ export function feedbackRouter({ prisma, config, middleware, now }: Deps): Route
       date: isoDate(s.eventDate.date),
       title: s.title,
       speaker: s.speaker,
-      window: windowOf(s) === 'open' ? 'open' : windowOf(s) === 'pending' ? 'pending' : 'closed',
+      window: windowOf(s) === 'open' ? 'open' : 'pending',
       attended: attendedDays.has(s.eventDateId),
       submittedAt: submitted.get(s.id)?.toISOString() ?? null,
     }));

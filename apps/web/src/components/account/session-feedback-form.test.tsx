@@ -162,26 +162,23 @@ describe('SessionFeedbackForm', () => {
     expect(within(card).queryByRole('button', { name: /Submit feedback/ })).toBeNull();
   });
 
-  it('shows a closed form read-only with the recorded answers', async () => {
+  it('shows a closed session as closed only: no questions, no answers, whoever scans it', async () => {
     stub({
       ...base,
       window: 'closed',
+      closedAt: '2026-11-12T18:00:00.000Z',
+      attended: false,
       canSubmit: false,
-      response: {
-        submittedAt: 'x',
-        updatedAt: '2026-11-12T09:05:00.000Z',
-        revision: 1,
-        answers: { [Q[0]]: 'good', [Q[1]]: 'good', [Q[2]]: 'good' },
-      },
+      questions: [],
+      response: null,
     });
     render(<SessionFeedbackForm code="abc123def456" />);
     const card = await screen.findByRole('article', { name: 'Feedback: Measuring transfer' });
-    expect(card.textContent).toMatch(
-      /This feedback form is closed\. Your answers are shown below\./,
-    );
-    expect(
-      within(card).getByLabelText('Good', { selector: `input[name$="${Q[0]}"]` }),
-    ).toHaveProperty('disabled', true);
+    expect(within(card).getByText('Closed')).toBeTruthy();
+    expect(card.textContent).toMatch(/Feedback for this session is closed/);
+    expect(card.textContent).toMatch(/Closed 12 Nov 2026/);
+    expect(within(card).queryByRole('alert')).toBeNull();
+    expect(within(card).queryByRole('radio')).toBeNull();
     expect(within(card).queryByRole('button', { name: /feedback/ })).toBeNull();
   });
 });

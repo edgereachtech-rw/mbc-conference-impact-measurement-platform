@@ -21,6 +21,12 @@ interface Deps {
 
 const UUID = /^[0-9a-f-]{36}$/i;
 const isoDate = (d: Date) => d.toISOString().slice(0, 10);
+/** Session feedback the organisers have started and not yet closed. */
+const OPEN_FEEDBACK = {
+  feedbackEnabled: true,
+  feedbackOpenedAt: { not: null },
+  feedbackClosedAt: null,
+} as const;
 
 /**
  * The delegate's own journey through one event (task of 2026-10-31, §3): attendance by date,
@@ -98,12 +104,12 @@ export function journeyRouter({ prisma, config, middleware, now }: Deps): Router
             _count: { select: { responses: { where: { delegateId: delegate.id } } } },
           },
         }),
-        // Sessions whose feedback the organisers have opened (2026-11-07): a pending one is not
-        // something the delegate can do yet.
-        db.eventSession.count({
-          where: { eventId, feedbackEnabled: true, feedbackOpenedAt: { not: null } },
+        // Sessions whose feedback is open right now (2026-11-07): a pending one is not something
+        // the delegate can do yet, and a closed one is no longer shown to them at all.
+        db.eventSession.count({ where: { eventId, ...OPEN_FEEDBACK } }),
+        db.sessionFeedbackResponse.count({
+          where: { eventId, delegateId: delegate.id, session: OPEN_FEEDBACK },
         }),
-        db.sessionFeedbackResponse.count({ where: { eventId, delegateId: delegate.id } }),
         // The latest of the delegate's plans (2026-11-06): the one they are working on now.
         db.transferPlan.findFirst({
           where: { eventId, delegateId: delegate.id },

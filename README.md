@@ -416,7 +416,10 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   closed it; migration `20261107105000_session_feedback_open_close` renamed the old deadline
   column, keeping a past deadline as the closing time and clearing a future one). The window
   is `disabled`, `pending` (enabled, link and QR code ready, not started), `open` or `closed`;
-  nothing closes on the clock, the five minutes are encouragement only;
+  nothing closes on the clock, the five minutes are encouragement only. A closed session is
+  gone for the delegate: left out of their list and of the dashboard count, and its link shows
+  only that it is closed, without the questions or the answers they gave (the organisers keep
+  those);
   `session_feedback_question` (rating Excellent/Good/Fair/Poor or written answer, required
   flag, versioned after answers); `session_feedback_response` (unique per delegate and session,
   revision, first submitted and last updated); `session_feedback_answer`;
