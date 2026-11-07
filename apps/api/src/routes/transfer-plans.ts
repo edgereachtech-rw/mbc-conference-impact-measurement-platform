@@ -1,6 +1,7 @@
 import {
   actionProgressSchema,
   actionProgressStatuses,
+  actionSubmissionGaps,
   evidenceSaveSchema,
   evidenceSupports,
   measureSummaries,
@@ -175,6 +176,7 @@ function actionViewOf(a: ActionRow): PlanActionView {
     id: a.id,
     order: a.order,
     isPriority: a.isPriority,
+    title: a.title,
     priorityLearning: a.priorityLearning,
     action: a.action,
     opportunity: a.opportunity,
@@ -614,6 +616,7 @@ export function transferPlanRouter({
           const data = {
             order: index + 1,
             isPriority: a.isPriority,
+            title: a.title,
             priorityLearning: a.priorityLearning,
             action: a.action,
             opportunity: a.opportunity,
@@ -692,8 +695,24 @@ export function transferPlanRouter({
           'Your plan changed since you opened it. Reload it first.',
         );
       }
-      if (!planHasContent(plan.actions)) {
+      if (plan.actions.length === 0 || !planHasContent(plan.actions)) {
         throw new HttpError(422, 'plan_empty', 'Describe at least one action before submitting.');
+      }
+      // Every action needs its title, priority learning and workplace action (spec 2026-11-08);
+      // the gaps go back by action so the form can point at them.
+      const gaps = actionSubmissionGaps(plan.actions);
+      if (gaps.length > 0) {
+        res.status(422).json({
+          error: {
+            code: 'plan_incomplete',
+            message: `Complete every action before submitting: ${gaps
+              .map((g) => `action ${g.index + 1} needs ${g.missing.join(', ')}`)
+              .join('; ')}.`,
+            requestId: String(res.getHeader('x-request-id') ?? ''),
+          },
+          gaps,
+        });
+        return;
       }
       const event = await prisma().event.findUniqueOrThrow({
         where: { id: delegate.eventId },
@@ -1185,6 +1204,7 @@ export function transferPlanRouter({
           orderBy: { order: 'asc' },
           select: {
             action: true,
+            title: true,
             isPriority: true,
             progressStatus: true,
             measures: { select: { status: true, baselineValue: true, actualValue: true } },
@@ -1217,7 +1237,10 @@ export function transferPlanRouter({
         completedAt: iso(p.completedAt),
         outcome: p.outcome,
         actions: p.actions.length,
-        priorityAction: (p.actions.find((a) => a.isPriority) ?? p.actions[0])?.action || null,
+        priorityAction: (() => {
+          const first = p.actions.find((a) => a.isPriority) ?? p.actions[0];
+          return first ? first.title.trim() || first.action || null : null;
+        })(),
         submittedAt: iso(p.submittedAt),
         updatedAt: p.updatedAt.toISOString(),
         progress,

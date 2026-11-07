@@ -465,12 +465,19 @@ describe.skipIf(!hasDatabase)('event dashboards and reports', () => {
         version: 1,
         actions: [
           {
+            title: 'Stakeholder briefing',
+            priorityLearning: 'Stakeholder engagement',
             action: 'Brief stakeholders',
             isPriority: true,
             support: 'Time from my manager',
             targetOn: '2026-11-20',
           },
-          { action: 'Baseline the error rate', barriers: 'Data access' },
+          {
+            title: 'Error-rate baseline',
+            priorityLearning: 'Measurement before training',
+            action: 'Baseline the error rate',
+            barriers: 'Data access',
+          },
         ],
         reminder: { frequency: 'weekly' },
       },
@@ -537,7 +544,14 @@ describe.skipIf(!hasDatabase)('event dashboards and reports', () => {
       `/me/events/${eventId}/transfer-plans/${adaPlanId}`,
       {
         version: 1,
-        actions: [{ action: 'Try the checklist', isPriority: true }],
+        actions: [
+          {
+            title: 'Checklist trial',
+            priorityLearning: 'Checklists',
+            action: 'Try the checklist',
+            isPriority: true,
+          },
+        ],
         reminder: { frequency: 'none' },
       },
       cookies.ada,
@@ -907,7 +921,7 @@ describe.skipIf(!hasDatabase)('event dashboards and reports', () => {
         evidence: 1,
         reminder: 'weekly',
       },
-      supportRequests: { state: 'not_collected' },
+      supportRequests: { state: 'no_response' },
     });
     expect(dee.body.journey.attendance.dates.map((d: { status: string }) => d.status)).toEqual([
       'attended',

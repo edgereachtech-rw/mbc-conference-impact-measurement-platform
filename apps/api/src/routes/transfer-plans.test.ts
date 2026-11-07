@@ -245,8 +245,19 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
       {
         version: 1,
         actions: [
-          { action: 'Define measures before training', isPriority: true, startOn: '2026-11-20' },
-          { action: 'Brief stakeholders', isPriority: true },
+          {
+            title: 'Measures first',
+            priorityLearning: 'Measurement before training',
+            action: 'Define measures before training',
+            isPriority: true,
+            startOn: '2026-11-20',
+          },
+          {
+            title: 'Stakeholder briefing',
+            priorityLearning: 'Stakeholder engagement',
+            action: 'Brief stakeholders',
+            isPriority: true,
+          },
           { priorityLearning: 'only a learning, no action yet' },
         ],
         reminder: { frequency: 'fortnightly', startOn: '2026-11-20' },
@@ -286,8 +297,20 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
       {
         version: 2,
         actions: [
-          { id: ids[1], action: 'Brief stakeholders', isPriority: true, targetOn: '2026-12-15' },
-          { id: ids[0], action: 'Define measures before training' },
+          {
+            id: ids[1],
+            title: 'Stakeholder briefing',
+            priorityLearning: 'Stakeholder engagement',
+            action: 'Brief stakeholders',
+            isPriority: true,
+            targetOn: '2026-12-15',
+          },
+          {
+            id: ids[0],
+            title: 'Measures first',
+            priorityLearning: 'Measurement before training',
+            action: 'Define measures before training',
+          },
         ],
         reminder: { frequency: 'none' },
       },
@@ -366,10 +389,65 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
     );
     expect(empty.status).toBe(422);
     expect(empty.body.error.code).toBe('plan_empty');
+    // A third action with only a learning blocks submission until it is complete or removed.
+    type Saved = {
+      id: string;
+      title: string;
+      priorityLearning: string;
+      action: string;
+      isPriority: boolean;
+      startOn: string | null;
+      targetOn: string | null;
+    };
+    const pick = (a: Saved) => ({
+      id: a.id,
+      title: a.title,
+      priorityLearning: a.priorityLearning,
+      action: a.action,
+      isPriority: a.isPriority,
+      startOn: a.startOn,
+      targetOn: a.targetOn,
+    });
+    const withGap = await call(
+      'put',
+      `/me/events/${eventId}/transfer-plans/${planId}`,
+      {
+        version: open.body.plan.version,
+        actions: [
+          ...open.body.plan.actions.map(pick),
+          { priorityLearning: 'only a learning, no action yet' },
+        ],
+        reminder: open.body.plan.reminder,
+      },
+      cookies.dee,
+    );
+    expect(withGap.status, withGap.text).toBe(200);
+    const incomplete = await call(
+      'post',
+      `/me/events/${eventId}/transfer-plans/${planId}/submit`,
+      { version: withGap.body.plan.version },
+      cookies.dee,
+    );
+    expect(incomplete.status).toBe(422);
+    expect(incomplete.body.error.code).toBe('plan_incomplete');
+    expect(incomplete.body.gaps).toEqual([
+      { index: 2, id: expect.any(String), missing: ['title', 'action'] },
+    ]);
+    const trimmed = await call(
+      'put',
+      `/me/events/${eventId}/transfer-plans/${planId}`,
+      {
+        version: withGap.body.plan.version,
+        actions: withGap.body.plan.actions.slice(0, 2).map(pick),
+        reminder: withGap.body.plan.reminder,
+      },
+      cookies.dee,
+    );
+    expect(trimmed.status, trimmed.text).toBe(200);
     const submitted = await call(
       'post',
       `/me/events/${eventId}/transfer-plans/${planId}/submit`,
-      { version: open.body.plan.version },
+      { version: trimmed.body.plan.version },
       cookies.dee,
     );
     expect(submitted.status, submitted.text).toBe(200);
@@ -793,7 +871,14 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
       `/me/events/${eventId}/transfer-plans/${second}`,
       {
         version: 1,
-        actions: [{ action: 'Coach two team leads', isPriority: true }],
+        actions: [
+          {
+            title: 'Coaching rollout',
+            priorityLearning: 'Coaching conversations',
+            action: 'Coach two team leads',
+            isPriority: true,
+          },
+        ],
         reminder: {
           frequency: 'twice_weekly',
           days: [5, 2],
@@ -988,7 +1073,14 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
       `/me/events/${eventId}/transfer-plans/${second.id}`,
       {
         version: current.body.plan.version,
-        actions: [{ action: 'Coach two team leads', isPriority: true }],
+        actions: [
+          {
+            title: 'Coaching rollout',
+            priorityLearning: 'Coaching conversations',
+            action: 'Coach two team leads',
+            isPriority: true,
+          },
+        ],
         reminder: { frequency: 'daily', startOn: '2026-12-27', endOn: '2026-12-29' },
       },
       cookies.dee,

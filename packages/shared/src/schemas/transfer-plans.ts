@@ -146,9 +146,12 @@ const isoDay = z.iso.date();
 const text = (max: number) => z.string().trim().max(max).default('');
 const optionalDay = isoDay.nullable().optional();
 
-export const planActionFieldsSchema = z.object({
+/** The fields of a planned action, before the date rule (views derive from this shape). */
+export const planActionFieldsBase = z.object({
   id: z.uuid().optional(),
   isPriority: z.boolean().default(false),
+  /** A short name for the action, shown in the plan, the dashboards and the reports. */
+  title: z.string().trim().max(120).default(''),
   priorityLearning: text(2_000),
   action: text(2_000),
   opportunity: text(2_000),
@@ -164,7 +167,38 @@ export const planActionFieldsSchema = z.object({
   baseline: text(2_000),
   reviewOn: optionalDay,
 });
+export const planActionFieldsSchema = planActionFieldsBase.superRefine((a, ctx) => {
+  // When both dates are given, the target comes no earlier than the start.
+  if (a.startOn && a.targetOn && a.targetOn < a.startOn) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['targetOn'],
+      message: 'The target date cannot be earlier than the start date.',
+    });
+  }
+});
 export type PlanActionFields = z.infer<typeof planActionFieldsSchema>;
+
+/** The fields every planned action needs before the plan can be submitted (spec 2026-11-08). */
+export const actionRequiredFields = ['title', 'priorityLearning', 'action'] as const;
+export type ActionRequiredField = (typeof actionRequiredFields)[number];
+
+/**
+ * What still stands between a plan and submission: for each action, the required fields left
+ * blank. Drafts save with anything missing; submission waits for every action to carry a title,
+ * its priority learning and the specific workplace action.
+ */
+export function actionSubmissionGaps(
+  actions: ReadonlyArray<{ id?: string; title: string; priorityLearning: string; action: string }>,
+): Array<{ index: number; id: string | null; missing: ActionRequiredField[] }> {
+  return actions
+    .map((a, index) => ({
+      index,
+      id: a.id ?? null,
+      missing: actionRequiredFields.filter((f) => a[f].trim() === ''),
+    }))
+    .filter((g) => g.missing.length > 0);
+}
 
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 
@@ -279,31 +313,47 @@ export const planActionFieldLabels: Record<
   Exclude<keyof PlanActionFields, 'id' | 'isPriority'>,
   { label: string; prompt: string }
 > = {
+  title: { label: 'Action title', prompt: 'A brief name for the planned action.' },
   priorityLearning: {
     label: 'Priority learning',
-    prompt: 'What knowledge, skill, tool or practice from the conference will you apply?',
+    prompt: 'The knowledge, skill, tool, practice or idea you want to apply.',
   },
-  action: { label: 'Action', prompt: 'What specifically will you do differently?' },
+  action: {
+    label: 'What specifically will you do differently?',
+    prompt: 'The actual workplace action you intend to take.',
+  },
   opportunity: {
-    label: 'Workplace opportunity',
-    prompt: 'Where or on which initiative will you apply it?',
+    label: 'Where or in which workplace opportunity will you apply this?',
+    prompt: 'The department, process, project or situation.',
   },
-  firstStep: { label: 'First step', prompt: 'What is the first action you will take?' },
-  startOn: { label: 'Start date', prompt: 'When will you begin?' },
-  targetOn: { label: 'Target date', prompt: 'When do you expect to complete the action?' },
+  firstStep: {
+    label: 'What is the first step you will take?',
+    prompt: 'The first practical activity.',
+  },
+  startOn: { label: 'When do you plan to start?', prompt: 'Your intended start date.' },
+  targetOn: {
+    label: 'When do you expect to achieve this?',
+    prompt: 'Your intended completion or target date.',
+  },
   stakeholders: {
-    label: 'Stakeholders',
-    prompt: 'Who needs to be involved, informed or consulted?',
+    label: 'Who needs to be involved or consulted?',
+    prompt: 'The stakeholders for this action.',
   },
-  support: { label: 'Support', prompt: 'What support, resources or approval do you need?' },
-  barriers: { label: 'Potential barriers', prompt: 'What might prevent or delay your action?' },
+  support: {
+    label: 'What support, resources or approval will you need?',
+    prompt: 'The assistance this action depends on.',
+  },
+  barriers: {
+    label: 'What challenges or barriers might prevent you from doing this?',
+    prompt: 'The obstacles you can see.',
+  },
   evidence: {
     label: 'Evidence of application',
     prompt: 'What will show that you have applied your learning?',
   },
   expectedResult: {
-    label: 'Expected result',
-    prompt: 'What improvement do you expect your action to contribute to?',
+    label: 'What result do you expect from this action?',
+    prompt: 'The workplace outcome you expect.',
   },
   measure: {
     label: 'Measure',
@@ -556,7 +606,7 @@ export const evidenceViewSchema = evidenceFieldsBase.omit({ id: true, evidenceOn
 });
 export type EvidenceView = z.infer<typeof evidenceViewSchema>;
 
-export const planActionViewSchema = planActionFieldsSchema
+export const planActionViewSchema = planActionFieldsBase
   .omit({ id: true, startOn: true, targetOn: true, reviewOn: true })
   .extend({
     id: z.uuid(),

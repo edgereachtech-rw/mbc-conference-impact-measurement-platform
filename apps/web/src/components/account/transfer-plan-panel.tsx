@@ -3,6 +3,7 @@
 import {
   actionProgressLabels,
   actionProgressStatuses,
+  actionSubmissionGaps,
   measurePlaceholders,
   planActionFieldLabels,
   progressDetailPrompt,
@@ -338,6 +339,7 @@ function emptyAction(): ActionDraft {
   return {
     key: nextKey(),
     isPriority: false,
+    title: '',
     priorityLearning: '',
     action: '',
     opportunity: '',
@@ -360,6 +362,7 @@ function draftOf(a: PlanActionView): ActionDraft {
     key: a.id,
     id: a.id,
     isPriority: a.isPriority,
+    title: a.title,
     priorityLearning: a.priorityLearning,
     action: a.action,
     opportunity: a.opportunity,
@@ -438,6 +441,10 @@ function PlanEditor({
   const locked = plan.status === 'completed';
   const finalSession = data.sessions.find((s) => s.isFinal);
   const hasContent = actions.some((a) => a.action.trim() !== '');
+  // Submission waits for a title, the priority learning and the action on every card
+  // (spec 2026-11-08); drafts save with anything missing.
+  const submissionGaps = actionSubmissionGaps(actions);
+  const [removing, setRemoving] = useState<string | null>(null);
   /** What still stands between a submitted plan and completion, from the saved plan. */
   const gaps = submitted ? planCompletionGaps(plan.actions) : [];
   /** Completion is application; impact is the delegate's own report, which needs a recorded result. */
@@ -483,6 +490,7 @@ function PlanEditor({
   }
   function remove(key: string) {
     setDirty(true);
+    setRemoving(null);
     setActions((list) => list.filter((a) => a.key !== key));
   }
   function add() {
@@ -697,7 +705,7 @@ function PlanEditor({
             onChange={(patch) => update(a.key, patch)}
             onPriority={() => setPriority(a.key)}
             onMove={(delta) => move(a.key, delta)}
-            onRemove={() => remove(a.key)}
+            onRemove={() => setRemoving(a.key)}
             onProgress={(action) => setDialog({ kind: 'progress', action })}
             dirty={dirty}
             onMeasures={(action) => setDialog({ kind: 'measures', action })}
@@ -1027,7 +1035,7 @@ function PlanEditor({
           {!submitted && data.canSubmit ? (
             <button
               type="button"
-              disabled={busy || !hasContent}
+              disabled={busy || !hasContent || submissionGaps.length > 0}
               onClick={() => setDialog({ kind: 'review' })}
               className={consoleButton({ variant: 'accent' })}
             >
@@ -1037,6 +1045,53 @@ function PlanEditor({
         </div>
       )}
 
+      {!submitted && !locked && hasContent && submissionGaps.length > 0 ? (
+        <p role="status" className="text-sm text-corp-muted">
+          Before you can submit, complete{' '}
+          {submissionGaps
+            .map(
+              (g) =>
+                `action ${g.index + 1} (${g.missing
+                  .map((f) => planActionFieldLabels[f].label.toLowerCase())
+                  .join(', ')})`,
+            )
+            .join('; ')}
+          . Everything else can wait.
+        </p>
+      ) : null}
+      {removing ? (
+        <Dialog
+          title="Remove this action?"
+          description="Its details leave the plan when you next save. Progress, measures and evidence already recorded on it go with it."
+          onClose={() => setRemoving(null)}
+          size="md"
+          footer={
+            <>
+              <button
+                type="button"
+                onClick={() => setRemoving(null)}
+                className={consoleButton({ variant: 'ghost' })}
+              >
+                Keep it
+              </button>
+              <button
+                type="button"
+                onClick={() => remove(removing)}
+                className={consoleButton({ variant: 'danger' })}
+              >
+                Remove action
+              </button>
+            </>
+          }
+        >
+          <p className="text-sm text-corp-text">
+            {(() => {
+              const a = actions.find((x) => x.key === removing);
+              return a?.title.trim() || a?.action.trim() || 'This action has nothing written yet.';
+            })()}
+          </p>
+        </Dialog>
+      ) : null}
       {dialog?.kind === 'review' ? (
         <Dialog
           title="Submit your plan?"
@@ -1295,13 +1350,22 @@ function ActionCard({
   timezone: string;
 }) {
   const id = useId();
-  const title = draft.action.trim() ? draft.action.trim() : `Action ${index + 1}`;
+  const title = draft.title.trim() || draft.action.trim() || `Action ${index + 1}`;
+  const required = (field: 'title' | 'priorityLearning' | 'action') =>
+    draft[field].trim() === '' ? (
+      <span className="ml-1 text-xs font-normal text-corp-muted">(required to submit)</span>
+    ) : null;
+  const dateProblem =
+    draft.startOn && draft.targetOn && draft.targetOn < draft.startOn
+      ? 'The target date cannot be earlier than the start date.'
+      : null;
   const text = (field: keyof ActionDraft, rows = 2) => {
     const meta = planActionFieldLabels[field as keyof typeof planActionFieldLabels];
     return (
       <div className="space-y-1">
         <label htmlFor={`${id}-${field}`} className="text-sm font-semibold text-corp-ink">
           {meta.label}
+          {field === 'priorityLearning' || field === 'action' ? required(field) : null}
         </label>
         <p className="text-xs text-corp-muted">{meta.prompt}</p>
         <textarea
@@ -1357,9 +1421,11 @@ function ActionCard({
     >
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className="font-semibold text-corp-ink">
+          <p className="flex flex-wrap items-center gap-2 font-semibold text-corp-ink">
             Action {index + 1} of {count}
+            {draft.isPriority ? <StatusPill tone="attention">First priority</StatusPill> : null}
           </p>
+          <p className="text-sm text-corp-text">{draft.title.trim() || 'No title yet'}</p>
           {saved ? (
             <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-corp-muted">
               <StatusPill tone={saved.progressStatus === 'not_started' ? 'neutral' : 'positive'}>
@@ -1402,46 +1468,73 @@ function ActionCard({
         </div>
       </div>
 
-      <label className="flex min-h-tap items-center gap-2 text-sm text-corp-ink">
-        <input
-          type="radio"
-          name={`${id}-priority`}
-          checked={draft.isPriority}
-          disabled={disabled}
-          onChange={onPriority}
-          className="size-5 accent-corp-green"
-        />
-        This is my first priority
-      </label>
+      <section aria-label="Action identification" className="space-y-4">
+        <h5 className="text-xs font-semibold tracking-[0.08em] text-corp-muted uppercase">
+          Action identification
+        </h5>
+        <div className="space-y-1">
+          <label htmlFor={`${id}-title`} className="text-sm font-semibold text-corp-ink">
+            {planActionFieldLabels.title.label}
+            {required('title')}
+          </label>
+          <p className="text-xs text-corp-muted">{planActionFieldLabels.title.prompt}</p>
+          <input
+            id={`${id}-title`}
+            value={draft.title}
+            maxLength={120}
+            disabled={disabled}
+            placeholder="e.g. Improve customer response time"
+            onChange={(e) => onChange({ title: e.target.value })}
+            className={input}
+          />
+        </div>
+        {text('priorityLearning')}
+        {text('action')}
+        <div className="space-y-1">
+          <label htmlFor={`${id}-priority`} className="text-sm font-semibold text-corp-ink">
+            Is this your first priority action?
+          </label>
+          <p className="text-xs text-corp-muted">
+            One action is the first priority; choosing another one moves it.
+          </p>
+          <NativeSelect
+            id={`${id}-priority`}
+            value={draft.isPriority ? 'first' : 'other'}
+            disabled={disabled}
+            onChange={(e) => {
+              if (e.target.value === 'first') onPriority();
+              else onChange({ isPriority: false });
+            }}
+          >
+            <option value="first">First priority</option>
+            <option value="other">Other priority</option>
+          </NativeSelect>
+        </div>
+      </section>
 
-      {text('priorityLearning')}
-      {text('action')}
-      {text('opportunity')}
-      {text('firstStep')}
-      <details className="group border-t border-corp-line pt-3">
-        <summary className="cursor-pointer text-sm font-semibold text-corp-green-text">
-          Dates, people and support
-        </summary>
-        <div className="mt-3 grid gap-4 sm:grid-cols-2">
+      <section
+        aria-label="Workplace application"
+        className="space-y-4 border-t border-corp-line pt-3"
+      >
+        <h5 className="text-xs font-semibold tracking-[0.08em] text-corp-muted uppercase">
+          Workplace application
+        </h5>
+        {text('opportunity')}
+        {text('firstStep')}
+        <div className="grid gap-4 sm:grid-cols-2">
           {date('startOn')}
           {date('targetOn')}
-          <div className="sm:col-span-2">{text('stakeholders')}</div>
-          <div className="sm:col-span-2">{text('support')}</div>
-          <div className="sm:col-span-2">{text('barriers')}</div>
-          {date('reviewOn')}
         </div>
-      </details>
-      <details className="border-t border-corp-line pt-3">
-        <summary className="cursor-pointer text-sm font-semibold text-corp-green-text">
-          Results, measure and evidence
-        </summary>
-        <div className="mt-3 space-y-4">
-          {text('expectedResult')}
-          {text('evidence')}
-          {text('measure')}
-          {text('baseline')}
-        </div>
-      </details>
+        {dateProblem ? (
+          <p role="alert" className="text-xs text-brand-danger">
+            {dateProblem}
+          </p>
+        ) : null}
+        {text('stakeholders')}
+        {text('support')}
+        {text('barriers')}
+        {text('expectedResult')}
+      </section>
 
       {saved ? (
         <div className="space-y-2 border-t border-corp-line pt-3">

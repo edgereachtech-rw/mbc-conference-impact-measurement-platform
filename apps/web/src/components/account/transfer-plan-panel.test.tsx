@@ -41,6 +41,7 @@ function action(partial: Partial<PlanActionView> = {}): PlanActionView {
     id: ACTION,
     order: 1,
     isPriority: true,
+    title: '',
     priorityLearning: '',
     action: 'Brief stakeholders',
     opportunity: '',
@@ -170,7 +171,12 @@ function stub(initial: MyTransferPlan) {
         const input = body as {
           version: number;
           title: string;
-          actions: Array<{ action: string; isPriority: boolean }>;
+          actions: Array<{
+            title?: string;
+            priorityLearning?: string;
+            action: string;
+            isPriority: boolean;
+          }>;
           reminder: MyTransferPlan['plan']['reminder'];
         };
         if (input.version !== current.plan.version) {
@@ -195,6 +201,8 @@ function stub(initial: MyTransferPlan) {
             actions: input.actions.map((a, i) =>
               action({
                 id: `${ACTION.slice(0, -1)}${i}`,
+                title: a.title ?? '',
+                priorityLearning: a.priorityLearning ?? '',
                 action: a.action,
                 isPriority: a.isPriority,
                 startOn: null,
@@ -300,16 +308,31 @@ describe('TransferPlanPanel', () => {
     await user.click(screen.getByRole('button', { name: 'Add an action' }));
     const card = screen.getByRole('article', { name: 'Action 1' });
     expect(
-      (within(card).getByLabelText('This is my first priority') as HTMLInputElement).checked,
-    ).toBe(true);
-    await user.type(within(card).getByLabelText('Action'), 'Define measures first');
+      (within(card).getByLabelText('Is this your first priority action?') as HTMLSelectElement)
+        .value,
+    ).toBe('first');
+    // Submission waits for the three required fields of every action (spec 2026-11-08).
+    await user.type(within(card).getByLabelText(/^Action title/), 'Measures first');
+    await user.type(within(card).getByLabelText(/^Priority learning/), 'Measure before you train');
+    await user.type(
+      within(card).getByLabelText(/^What specifically will you do differently?/),
+      'Define measures first',
+    );
     await user.click(screen.getByRole('button', { name: 'Save draft' }));
     const put = calls.find((c) => c.init?.method === 'PUT');
     expect(put?.url).toBe(`/api/v1/me/events/${EVENT}/transfer-plans/${PLAN}`);
     expect(put?.body).toMatchObject({
       version: 1,
       title: '',
-      actions: [{ action: 'Define measures first', isPriority: true, startOn: null }],
+      actions: [
+        {
+          title: 'Measures first',
+          priorityLearning: 'Measure before you train',
+          action: 'Define measures first',
+          isPriority: true,
+          startOn: null,
+        },
+      ],
       reminder: { frequency: 'none', startOn: null, endOn: null, time: '09:00', days: [] },
     });
     expect(await screen.findByText('Draft saved.')).toBeTruthy();
@@ -356,7 +379,7 @@ describe('TransferPlanPanel', () => {
       ),
     );
     const card = screen.getByRole('article', { name: 'Brief stakeholders' });
-    await user.type(within(card).getByLabelText('First step'), ' today');
+    await user.type(within(card).getByLabelText(/^What is the first step/), ' today');
     await user.click(screen.getByRole('button', { name: 'Save draft' }));
     const alert = await screen.findByRole('alert');
     expect(alert.textContent).toMatch(/changed since you opened it/);
@@ -529,7 +552,9 @@ describe('TransferPlanPanel', () => {
     await user.type(screen.getByLabelText('Until'), '2027-01-31');
     await user.click(screen.getByRole('button', { name: 'Add an action' }));
     await user.type(
-      within(screen.getByRole('article', { name: 'Action 1' })).getByLabelText('Action'),
+      within(screen.getByRole('article', { name: 'Action 1' })).getByLabelText(
+        /^What specifically will you do differently?/,
+      ),
       'Coach two team leads',
     );
     await user.click(screen.getByRole('button', { name: 'Save draft' }));

@@ -836,6 +836,8 @@ model TransferPlanAction {
   planId           String               @map("plan_id") @db.Uuid
   order            Int
   isPriority       Boolean              @default(false) @map("is_priority")
+  /// A short name for the action (2026-11-08), used in the plan, dashboards and reports.
+  title            String               @default("")
   priorityLearning String               @default("") @map("priority_learning")
   action           String               @default("")
   opportunity      String               @default("")

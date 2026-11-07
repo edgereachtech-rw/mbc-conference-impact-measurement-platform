@@ -44,6 +44,7 @@ function action(partial: Partial<PlanActionView> = {}): PlanActionView {
     id: ACTION,
     order: 1,
     isPriority: true,
+    title: '',
     priorityLearning: '',
     action: 'Brief stakeholders',
     opportunity: '',

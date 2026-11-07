@@ -538,6 +538,18 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   stamps who and when, reopening clears them; audited `support_request.updated`), shown on the
   event settings "Support" tab. The journey reports `supportRequests.state` as `ok` once the
   delegate has one.
+- Planned action form (spec of 2026-11-08): each action has a short **title**
+  (`transfer_plan_action.title`, migration `20261107230000_transfer_plan_action_title`) and the
+  card is laid out as the spec has it: "Action identification" (title, priority learning, "What
+  specifically will you do differently?", and "Is this your first priority action?" as a
+  first/other choice that moves the first priority) and "Workplace application" (opportunity,
+  first step, start and target dates, stakeholders, support, barriers, expected result), with the
+  spec's labels in `planActionFieldLabels`. The target date cannot be earlier than the start
+  date (shared refinement, server-validated). Removing an action asks first. Drafts save with
+  anything missing; submission waits for every action's title, priority learning and action
+  (`actionSubmissionGaps`; 422 `plan_incomplete` with the gaps by action; the form lists them
+  under the submit button). The measure, baseline, evidence description and review date columns
+  stay in the data but left the card: measures and evidence have their own records.
 - Several Transfer Plans per delegate, reminder windows and completion (task of 2026-11-06;
   backlog E9-2 revised, E10-1 to E10-5, E10-8, E10-9): a delegate may keep more than one plan for
   an event. The first is created on first access; `POST /me/events/:id/transfer-plans`

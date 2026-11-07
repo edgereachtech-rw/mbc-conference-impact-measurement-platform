@@ -138,6 +138,7 @@ const detail: TransferPlanAdminDetail = {
         id: ACTION,
         order: 1,
         isPriority: true,
+        title: '',
         priorityLearning: 'Measurement before training',
         action: 'Brief stakeholders (revised)',
         opportunity: '',
