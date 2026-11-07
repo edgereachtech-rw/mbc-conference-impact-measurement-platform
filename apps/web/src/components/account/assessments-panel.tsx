@@ -607,7 +607,10 @@ function AssessmentCard({
                   : 'Submit your responses?'
           }
           description={
-            review.done
+            // A marked section (scored or knowledge) gets no "check your responses" line
+            // (2026-11-07): the answers are what they are, and the line read as an invitation to
+            // second-guess them.
+            review.done || (reviewGroup.section && reviewGroup.section.marking !== 'none')
               ? undefined
               : 'Check your responses below. Once submitted they cannot be changed.'
           }
@@ -615,15 +618,19 @@ function AssessmentCard({
           closeDisabled={busy === 'submit'}
           size="md"
           footer={
-            review.done ? (
+            review.done === 'all' ? (
+              // Every section is in: the delegate goes back to the dashboard, where the next
+              // thing to do is waiting (2026-11-07).
+              <Link href="/account" className={consoleButton({ variant: 'accent' })}>
+                Back to my dashboard
+              </Link>
+            ) : review.done ? (
               <button
                 type="button"
                 onClick={closeReview}
                 className={consoleButton({ variant: 'accent' })}
               >
-                {review.done === 'section' && remaining > 0
-                  ? 'Continue to the next section'
-                  : 'Close'}
+                {remaining > 0 ? 'Continue to the next section' : 'Close'}
               </button>
             ) : (
               <>

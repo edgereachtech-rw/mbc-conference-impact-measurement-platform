@@ -127,7 +127,7 @@ const sectioned: MyAssessment = {
       description: null,
       highlightDescription: false,
       order: 2,
-      marking: 'none',
+      marking: 'scored',
       audience: 'all',
       sourceSectionId: null,
       sourceLabel: null,
@@ -263,10 +263,12 @@ describe('AssessmentsPanel', () => {
       answers: { r: 4, c: 'hr', t: 'Everything' },
       submitSection: 'general',
     });
+    const finished = await screen.findByRole('dialog', { name: 'All sections submitted' });
+    expect(finished.textContent).toMatch(/Thank you/);
     expect(
-      (await screen.findByRole('dialog', { name: 'All sections submitted' })).textContent,
-    ).toMatch(/Thank you/);
-    await user.click(screen.getByRole('button', { name: 'Close' }));
+      within(finished).getByRole('link', { name: 'Back to my dashboard' }).getAttribute('href'),
+    ).toBe('/account');
+    await user.keyboard('{Escape}');
     expect(within(card).getByText('Submitted')).toBeTruthy();
     expect(within(card).queryByRole('button', { name: 'Submit answers' })).toBeNull();
   });
@@ -305,6 +307,8 @@ describe('AssessmentsPanel', () => {
       within(review).getByRole('region', { name: 'Summary: About the sessions' }).textContent,
     ).toMatch(/Did you attend the keynote\?Yes/);
     expect(within(review).queryByRole('region', { name: 'Summary: About you' })).toBeNull();
+    // An unmarked section asks the delegate to check their responses.
+    expect(review.textContent).toMatch(/Check your responses below/);
     await user.click(within(review).getByRole('button', { name: 'Submit now' }));
     expect(puts(calls)[0]).toEqual({ answers: { a: true }, submitSection: 's1' });
     const done = await screen.findByRole('dialog', { name: 'Section submitted' });
@@ -320,18 +324,18 @@ describe('AssessmentsPanel', () => {
     expect(within(card).queryByRole('button', { name: /Previous section/ })).toBeNull();
     await user.click(within(card).getByLabelText('Yes'));
     await user.click(within(card).getByRole('button', { name: 'Submit section' }));
-    await user.click(
-      within(await screen.findByRole('dialog', { name: 'Submit this section?' })).getByRole(
-        'button',
-        { name: 'Submit now' },
-      ),
-    );
+    // A marked (scored) section gets no "check your responses" line.
+    const reviewTwo = await screen.findByRole('dialog', { name: 'Submit this section?' });
+    expect(reviewTwo.textContent).not.toMatch(/Check your responses below/);
+    await user.click(within(reviewTwo).getByRole('button', { name: 'Submit now' }));
     expect(puts(calls)[1]).toEqual({ answers: { a: true, d: true }, submitSection: 's2' });
     const all = await screen.findByRole('dialog', { name: 'All sections submitted' });
     expect(within(all).getByRole('status').textContent).toMatch(
       /Every section is submitted.*email you when the next step opens/,
     );
-    await user.click(within(all).getByRole('button', { name: 'Close' }));
+    expect(within(all).getByRole('link', { name: 'Back to my dashboard' })).toBeTruthy();
+    expect(within(all).queryByRole('button', { name: 'Close' })).toBeNull();
+    await user.keyboard('{Escape}');
     expect(within(card).getByText('Submitted')).toBeTruthy();
     // Read-only afterwards, every section shown together.
     expect(within(card).getByRole('region', { name: 'About the sessions' })).toBeTruthy();
