@@ -435,7 +435,7 @@ export function renderMarkdown(report: EventReport): string {
             row.measures.map((m) => [
               row.delegate?.name ?? '',
               row.action,
-              m.status === 'identified' ? m.name : `${m.name} (${m.status.replace('_', ' ')})`,
+              m.name,
               improvementDirectionLabels[m.direction],
               withUnit(m.baselineValue, m.unit),
               withUnit(m.targetValue, m.unit),

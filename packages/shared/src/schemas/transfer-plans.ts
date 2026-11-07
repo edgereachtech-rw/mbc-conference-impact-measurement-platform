@@ -383,10 +383,15 @@ export const referenceQuestionsSaveSchema = z.object({
  * self-reported or supported by another source; neither wording means independently verified.
  */
 
+/**
+ * The delegate's answer, per planned action, to "can you identify a business measure?" (spec
+ * 2026-11-08, section 5). "identified" needs at least one measure record; the other two stand
+ * on their own and are never counted as missing or as zero.
+ */
 export const measureStatuses = ['identified', 'not_yet_known', 'not_applicable'] as const;
 export type MeasureStatus = (typeof measureStatuses)[number];
 export const measureStatusLabels: Record<MeasureStatus, string> = {
-  identified: 'Measure identified',
+  identified: 'Yes, I can identify a measure',
   not_yet_known: 'Not yet known',
   not_applicable: 'Not applicable',
 };
@@ -394,8 +399,8 @@ export const measureStatusLabels: Record<MeasureStatus, string> = {
 export const measureKinds = ['quantitative', 'qualitative'] as const;
 export type MeasureKind = (typeof measureKinds)[number];
 export const measureKindLabels: Record<MeasureKind, string> = {
-  quantitative: 'Quantitative: a number with a unit',
-  qualitative: 'Qualitative: described in words',
+  quantitative: 'Quantitative: a result expressed numerically',
+  qualitative: 'Qualitative: a result described through observations, feedback or examples',
 };
 
 /** Which way the measure improves. A lower error rate or a shorter turnaround time is better. */
@@ -408,6 +413,44 @@ export const improvementDirectionLabels: Record<ImprovementDirection, string> = 
   unspecified: 'Not stated',
 };
 
+/** Whether the starting value is known (section B). */
+export const baselineStates = ['known', 'not_yet_known'] as const;
+export type BaselineState = (typeof baselineStates)[number];
+export const baselineStateLabels: Record<BaselineState, string> = {
+  known: 'Yes, I know the current value',
+  not_yet_known: 'Not yet known',
+};
+
+/** Whether a target is set (section B). */
+export const targetStates = ['set', 'not_yet_known', 'not_applicable'] as const;
+export type TargetState = (typeof targetStates)[number];
+export const targetStateLabels: Record<TargetState, string> = {
+  set: 'Yes, I have a target',
+  not_yet_known: 'Not yet known',
+  not_applicable: 'Not applicable',
+};
+
+/** Where an actual result came from (section D). */
+export const resultSources = [
+  'personal_observation',
+  'workplace_records',
+  'organisational_data',
+  'customer_feedback',
+  'manager_feedback',
+  'colleague_feedback',
+  'other',
+] as const;
+export type ResultSource = (typeof resultSources)[number];
+export const resultSourceLabels: Record<ResultSource, string> = {
+  personal_observation: 'Personal observation',
+  workplace_records: 'Workplace records or reports',
+  organisational_data: 'Organisational performance data',
+  customer_feedback: 'Customer or client feedback',
+  manager_feedback: 'Manager or supervisor feedback',
+  colleague_feedback: 'Colleague or team feedback',
+  other: 'Other',
+};
+
 export const evidenceSupports = ['self_reported', 'supported'] as const;
 export type EvidenceSupport = (typeof evidenceSupports)[number];
 export const evidenceSupportLabels: Record<EvidenceSupport, string> = {
@@ -415,37 +458,41 @@ export const evidenceSupportLabels: Record<EvidenceSupport, string> = {
   supported: 'Supported by another source',
 };
 export const evidenceSupportHints: Record<EvidenceSupport, string> = {
-  self_reported: 'Your own account of what you did or what you believe happened.',
+  self_reported: 'You describe your own application or result.',
   supported:
-    'Backed by a work product, an organisational measure, a manager’s or stakeholder’s confirmation, a case example or another source.',
+    'You identify information or confirmation from another source. An attachment or a name does not make it independently verified.',
 };
 
 export const evidenceTypes = [
-  'example',
   'work_product',
+  'process',
   'confirmation',
   'organisational_measure',
+  'customer_feedback',
   'case_example',
+  'example',
   'other',
 ] as const;
 export type EvidenceType = (typeof evidenceTypes)[number];
 export const evidenceTypeLabels: Record<EvidenceType, string> = {
-  example: 'Example of what I did differently',
-  work_product: 'Completed work product or process',
-  confirmation: 'Manager’s or stakeholder’s confirmation',
-  organisational_measure: 'Relevant organisational measure',
+  work_product: 'Example of work completed',
+  process: 'New or improved workplace process',
+  confirmation: 'Manager or stakeholder confirmation',
+  organisational_measure: 'Organisational performance information',
+  customer_feedback: 'Customer or client feedback',
   case_example: 'Case example',
+  example: 'Example of what I did differently',
   other: 'Other',
 };
 
 /** Shown as suggestions only; the measure itself is free text (backlog E14-1). */
 export const measureExamples = [
+  'Average response time',
+  'Number of production errors',
+  'Team feedback on collaboration',
+  'Time required to prepare reports',
   'Application rate',
-  'Turnaround time',
   'Error rate',
-  'Productivity',
-  'Cost or resource use',
-  'Quality',
 ] as const;
 
 /** What an action's measures amount to, for the organisers (backlog E14, S13.3). */
@@ -459,7 +506,7 @@ export const measureSummaries = [
 ] as const;
 export type MeasureSummary = (typeof measureSummaries)[number];
 export const measureSummaryLabels: Record<MeasureSummary, string> = {
-  none: 'No measure recorded',
+  none: 'No measure choice yet',
   not_yet_known: 'Measure not yet known',
   not_applicable: 'Measure not applicable',
   identified: 'Measure identified, no values yet',
@@ -475,47 +522,111 @@ const NUMERIC = /^-?\d+(\.\d+)?$/;
 /** A value a quantitative measure accepts: a plain number; the unit lives in its own field. */
 export const isNumericValue = (value: string) => NUMERIC.test(value.trim());
 
-const measureFieldsBase = z.object({
+const required = (max: number, message: string) => z.string().trim().min(1, message).max(max);
+
+/**
+ * A measure's definition (sections A and B of the spec). The name, why it matters and how it is
+ * measured are required; the unit when the measure is quantitative; a baseline or target value
+ * when the delegate says it is known or set. Actual results are separate records.
+ */
+export const measureFieldsBase = z.object({
   id: z.uuid().optional(),
-  status: z.enum(measureStatuses).default('identified'),
   kind: z.enum(measureKinds).default('quantitative'),
-  name: text(500),
-  importance: text(2_000),
+  name: required(500, 'Say what you would like to measure.'),
+  importance: required(2_000, 'Say why this measure is important.'),
+  method: required(2_000, 'Say how you will measure it.'),
   unit: text(50),
   direction: z.enum(improvementDirections).default('unspecified'),
-  baselineValue: text(200),
+  baselineState: z.enum(baselineStates).default('not_yet_known'),
+  baselineValue: text(2_000),
   baselineOn: optionalDay,
-  targetValue: text(200),
+  targetState: z.enum(targetStates).default('not_yet_known'),
+  targetValue: text(2_000),
   targetOn: optionalDay,
-  actualValue: text(200),
-  actualOn: optionalDay,
-  source: text(1_000),
-  influences: text(2_000),
-  support: z.enum(evidenceSupports).default('self_reported'),
 });
 export const measureFieldsSchema = measureFieldsBase.superRefine((m, ctx) => {
-  if (m.kind !== 'quantitative') return;
-  for (const field of ['baselineValue', 'targetValue', 'actualValue'] as const) {
-    if (m[field] !== '' && !isNumericValue(m[field])) {
-      ctx.addIssue({
-        code: 'custom',
-        path: [field],
-        message:
+  const issue = (path: string, message: string) =>
+    ctx.addIssue({ code: 'custom', path: [path], message });
+  if (m.kind === 'quantitative') {
+    if (!m.unit) issue('unit', 'Give the unit, for example hours, % or number of errors.');
+    for (const field of ['baselineValue', 'targetValue'] as const) {
+      if (m[field] !== '' && !isNumericValue(m[field])) {
+        issue(
+          field,
           'Enter a number such as 12 or 3.5 and put the unit in its own field, or make the measure qualitative.',
-      });
+        );
+      }
     }
+  }
+  if (m.baselineState === 'known' && !m.baselineValue) {
+    issue('baselineValue', 'Give the current value, or say it is not yet known.');
+  }
+  if (m.targetState === 'set' && !m.targetValue) {
+    issue('targetValue', 'Give the target, or say it is not yet known or not applicable.');
   }
 });
 export type MeasureFields = z.infer<typeof measureFieldsSchema>;
 
-export const measuresSaveSchema = z.object({
-  version: z.number().int().min(1),
-  measures: z.array(measureFieldsSchema).max(20),
-});
+export const measuresSaveSchema = z
+  .object({
+    version: z.number().int().min(1),
+    /** The action's answer: a measure can be identified, or is not yet known or not applicable. */
+    measureStatus: z.enum(measureStatuses),
+    measures: z.array(measureFieldsSchema).max(20),
+  })
+  .superRefine((input, ctx) => {
+    if (input.measureStatus === 'identified' && input.measures.length === 0) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['measures'],
+        message: 'Add at least one measure, or say the measure is not yet known or not applicable.',
+      });
+    }
+  });
 export type MeasuresSave = z.infer<typeof measuresSaveSchema>;
+
+/**
+ * One actual result of a measure (sections C and D). A value, its date and how it was obtained
+ * are required; the source is named, and other influencing factors are described when there
+ * are any. Results are kept as dated records; a new one never overwrites an earlier one.
+ */
+export const measureResultFieldsBase = z.object({
+  id: z.uuid().optional(),
+  value: required(2_000, 'Record the actual result.'),
+  resultOn: isoDay,
+  method: required(2_000, 'Say how this result was obtained.'),
+  meaning: text(2_000),
+  isFinal: z.boolean().default(false),
+  sourceType: z.enum(resultSources),
+  source: text(1_000),
+  hasInfluences: z.boolean().default(false),
+  influences: text(2_000),
+  support: z.enum(evidenceSupports).default('self_reported'),
+});
+export const measureResultFieldsSchema = measureResultFieldsBase.superRefine((r, ctx) => {
+  if (r.sourceType === 'other' && !r.source) {
+    ctx.addIssue({ code: 'custom', path: ['source'], message: 'Please specify the source.' });
+  }
+  if (r.hasInfluences && !r.influences) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['influences'],
+      message: 'Describe the other factors that may have contributed to or affected this result.',
+    });
+  }
+});
+export type MeasureResultFields = z.infer<typeof measureResultFieldsSchema>;
+
+export const measureResultsSaveSchema = z.object({
+  version: z.number().int().min(1),
+  results: z.array(measureResultFieldsSchema).max(50),
+});
+export type MeasureResultsSave = z.infer<typeof measureResultsSaveSchema>;
 
 const evidenceFieldsBase = z.object({
   id: z.uuid().optional(),
+  /** The measure this evidence supports; null when it is about the action as a whole. */
+  measureId: z.uuid().nullable().default(null),
   type: z.enum(evidenceTypes).default('example'),
   description: z.string().trim().min(1, 'Describe the evidence in your own words.').max(4_000),
   evidenceOn: optionalDay,
@@ -534,28 +645,52 @@ export const evidenceSaveSchema = z.object({
 export type EvidenceSave = z.infer<typeof evidenceSaveSchema>;
 
 export const measureFieldLabels: Record<
-  Exclude<keyof MeasureFields, 'id' | 'status' | 'kind' | 'direction' | 'support'>,
+  Exclude<keyof MeasureFields, 'id' | 'kind' | 'direction' | 'baselineState' | 'targetState'>,
   { label: string; prompt: string }
 > = {
   name: {
-    label: 'Measure',
-    prompt: 'What business or workplace measure do you want to track?',
+    label: 'What would you like to measure?',
+    prompt: 'The result or change you will track, for example average response time.',
   },
-  importance: { label: 'Why it matters', prompt: 'Why does this measure matter?' },
-  unit: { label: 'Unit', prompt: 'For example %, days, hours, errors per 100 or naira.' },
-  baselineValue: { label: 'Baseline', prompt: 'What is the starting value, if known?' },
-  baselineOn: { label: 'Baseline date', prompt: 'When was the baseline value recorded?' },
-  targetValue: {
-    label: 'Target',
-    prompt: 'What value do you want to achieve, if a target is set?',
+  importance: {
+    label: 'Why is this measure important?',
+    prompt: 'How the measure relates to your planned action.',
   },
-  targetOn: { label: 'Target date', prompt: 'By when do you expect to achieve the target?' },
-  actualValue: { label: 'Actual result', prompt: 'What result have you achieved, when available?' },
-  actualOn: { label: 'Actual result date', prompt: 'When was the actual result recorded?' },
-  source: { label: 'Information source', prompt: 'Where did the information come from?' },
+  method: {
+    label: 'How will you measure it?',
+    prompt: 'The method you will use to obtain the result.',
+  },
+  unit: {
+    label: 'What unit will you use?',
+    prompt: 'For example hours, %, RWF, number of errors or number of customers.',
+  },
+  baselineValue: {
+    label: 'Baseline value',
+    prompt: 'The starting point to compare later results against.',
+  },
+  baselineOn: { label: 'Baseline date', prompt: 'When the baseline value was measured.' },
+  targetValue: { label: 'Target value', prompt: 'The result you hope to achieve.' },
+  targetOn: { label: 'Target date', prompt: 'When you expect to achieve it.' },
+};
+
+export const resultFieldLabels: Record<
+  'value' | 'resultOn' | 'method' | 'meaning' | 'source' | 'influences',
+  { label: string; prompt: string }
+> = {
+  value: { label: 'Actual result', prompt: 'The value or observed outcome achieved.' },
+  resultOn: { label: 'Date of result', prompt: 'When the result was measured or observed.' },
+  method: {
+    label: 'How was this result obtained?',
+    prompt: 'For example, calculated from customer-support records.',
+  },
+  meaning: {
+    label: 'What does this result tell you?',
+    prompt: 'What it means for your planned action. Optional.',
+  },
+  source: { label: 'Please describe the source', prompt: 'Where this information came from.' },
   influences: {
-    label: 'Other influencing factors',
-    prompt: 'What other factors may have influenced the result?',
+    label: 'Describe the other influencing factors',
+    prompt: 'Any other factors that may have contributed to or affected this result.',
   },
 };
 
@@ -573,27 +708,36 @@ export const progressViewSchema = z.object({
 });
 export type ProgressView = z.infer<typeof progressViewSchema>;
 
-/** An earlier actual result of a measure, kept when the delegate records a newer one. */
-export const measureReadingViewSchema = z.object({
-  id: z.uuid(),
-  value: z.string(),
-  readingOn: z.string().nullable(),
-  source: z.string(),
-  support: z.enum(evidenceSupports),
-  recordedAt: z.string(),
-});
-export type MeasureReadingView = z.infer<typeof measureReadingViewSchema>;
+/** One dated actual result of a measure; earlier ones stay when a newer one is recorded. */
+export const measureResultViewSchema = measureResultFieldsBase
+  .omit({ id: true, resultOn: true })
+  .extend({
+    id: z.uuid(),
+    resultOn: z.string().nullable(),
+    /** The measure's name, kind and unit when the result was recorded. */
+    measureName: z.string(),
+    measureKind: z.enum(measureKinds),
+    unit: z.string(),
+    recordedAt: z.string(),
+    updatedAt: z.string(),
+  });
+export type MeasureResultView = z.infer<typeof measureResultViewSchema>;
 
 export const measureViewSchema = measureFieldsBase
-  .omit({ id: true, baselineOn: true, targetOn: true, actualOn: true })
+  .omit({ id: true, baselineOn: true, targetOn: true })
   .extend({
     id: z.uuid(),
     order: z.number().int(),
     baselineOn: z.string().nullable(),
     targetOn: z.string().nullable(),
+    /** The latest result (by its date, then when it was recorded); "" and null when none. */
+    actualValue: z.string(),
     actualOn: z.string().nullable(),
-    /** Earlier actual results, newest first. */
-    readings: z.array(measureReadingViewSchema),
+    source: z.string(),
+    influences: z.string(),
+    support: z.enum(evidenceSupports),
+    /** Every result recorded, newest first. */
+    results: z.array(measureResultViewSchema),
     updatedAt: z.string(),
   });
 export type MeasureView = z.infer<typeof measureViewSchema>;
@@ -616,6 +760,8 @@ export const planActionViewSchema = planActionFieldsBase
     reviewOn: z.string().nullable(),
     progressStatus: z.enum(actionProgressStatuses),
     progress: z.array(progressViewSchema),
+    /** Whether a business measure is identified, not yet known or not applicable; null until chosen. */
+    measureStatus: z.enum(measureStatuses).nullable(),
     /** Business and workplace measures of this action (backlog E14-1), in the delegate's order. */
     measures: z.array(measureViewSchema),
     /** Evidence of application (backlog E14-3), in the delegate's order; `evidence` above is the planning-time text. */
@@ -759,9 +905,11 @@ export const measureReportRowSchema = z.object({
   action: z.object({
     id: z.uuid(),
     order: z.number().int(),
+    title: z.string(),
     action: z.string(),
     isPriority: z.boolean(),
     progressStatus: z.enum(actionProgressStatuses),
+    measureStatus: z.enum(measureStatuses).nullable(),
   }),
   summary: z.enum(measureSummaries),
   measures: z.array(measureViewSchema),
@@ -960,13 +1108,13 @@ export function planCompletionGaps(
 /** True when some action carries a recorded result: a measure's actual value, or results on a progress record. */
 export function planHasResult(
   actions: ReadonlyArray<{
-    measures: ReadonlyArray<{ status: MeasureStatus; actualValue: string }>;
+    measures: ReadonlyArray<{ actualValue: string }>;
     progress: ReadonlyArray<{ results: string | null }>;
   }>,
 ): boolean {
   return actions.some(
     (a) =>
-      a.measures.some((m) => m.status === 'identified' && m.actualValue.trim() !== '') ||
+      a.measures.some((m) => m.actualValue.trim() !== '') ||
       a.progress.some((p) => (p.results ?? '').trim() !== ''),
   );
 }
@@ -975,20 +1123,35 @@ export function planHasResult(
 export const addDaysTo = addDays;
 
 /**
- * Summarises an action's measures. An identified measure with a value outranks one without;
- * "not yet known" outranks "not applicable" when neither is identified. Never counts a planned
+ * Summarises an action's measures from the delegate's choice and the measure records. "Not yet
+ * known" and "not applicable" are answers in their own right, never missing values. Among
+ * identified measures one with a result outranks one with a baseline only. Never counts a planned
  * action or a self-reported result as business impact.
  */
 export function summariseMeasures(
-  measures: ReadonlyArray<{ status: MeasureStatus; baselineValue: string; actualValue: string }>,
+  status: MeasureStatus | null,
+  measures: ReadonlyArray<{ baselineValue: string; actualValue: string }>,
 ): MeasureSummary {
-  if (measures.length === 0) return 'none';
-  const identified = measures.filter((m) => m.status === 'identified');
-  if (identified.some((m) => m.actualValue.trim() !== '')) return 'with_result';
-  if (identified.some((m) => m.baselineValue.trim() !== '')) return 'baseline_only';
-  if (identified.length > 0) return 'identified';
-  if (measures.some((m) => m.status === 'not_yet_known')) return 'not_yet_known';
-  return 'not_applicable';
+  if (status === null) return measures.length ? 'identified' : 'none';
+  if (status !== 'identified') return status;
+  if (measures.some((m) => m.actualValue.trim() !== '')) return 'with_result';
+  if (measures.some((m) => m.baselineValue.trim() !== '')) return 'baseline_only';
+  return 'identified';
+}
+
+/**
+ * How far a measure's results have come, for the organisers' follow-up (spec 2026-11-08, 4D):
+ * none yet, one result, or updated results; and whether the latest is supported by another source.
+ */
+export const resultStates = ['no_result', 'with_result', 'updated'] as const;
+export type ResultState = (typeof resultStates)[number];
+export const resultStateLabels: Record<ResultState, string> = {
+  no_result: 'No actual result yet',
+  with_result: 'Result recorded',
+  updated: 'Results updated over time',
+};
+export function resultStateOf(m: { results: ReadonlyArray<unknown> }): ResultState {
+  return m.results.length === 0 ? 'no_result' : m.results.length === 1 ? 'with_result' : 'updated';
 }
 
 export type MeasureOutcome = 'improved' | 'declined' | 'unchanged' | 'not_comparable';
@@ -1015,7 +1178,6 @@ export interface MeasureComparison {
  * number, an unstated direction or a result dated before its baseline is "not comparable".
  */
 export function compareMeasure(m: {
-  status: MeasureStatus;
   kind: MeasureKind;
   direction: ImprovementDirection;
   baselineValue: string;
@@ -1030,7 +1192,6 @@ export function compareMeasure(m: {
     targetMet: null,
     reason,
   });
-  if (m.status !== 'identified') return none('No measure identified.');
   if (m.kind !== 'quantitative') return none('Qualitative measure: read the values as written.');
   if (!isNumericValue(m.baselineValue) || !isNumericValue(m.actualValue)) {
     return none('Needs a numeric baseline and a numeric actual result.');

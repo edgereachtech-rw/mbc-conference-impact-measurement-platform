@@ -166,6 +166,7 @@ const detail: TransferPlanAdminDetail = {
             recordedAt: '2026-11-24T09:00:00.000Z',
           },
         ],
+        measureStatus: null,
         measures: [],
         evidenceRecords: [],
       },

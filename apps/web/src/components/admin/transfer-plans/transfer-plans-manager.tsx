@@ -6,6 +6,7 @@ import {
   appliedStatuses,
   evidenceSupportLabels,
   evidenceSupports,
+  measureStatusLabels,
   measureSummaries,
   measureSummaryLabels,
   planActionFieldLabels,
@@ -23,7 +24,7 @@ import {
 import { DownloadIcon, EyeIcon, Loader2Icon } from 'lucide-react';
 import { useCallback, useEffect, useId, useState } from 'react';
 
-import { EvidenceLine, MeasureLine } from '@/components/account/measures-evidence';
+import { EvidenceLine, MeasureLine, measureNameFor } from '@/components/account/measures-evidence';
 import { Dialog } from '@/components/console/dialog';
 import {
   consoleButton,
@@ -338,7 +339,7 @@ export function TransferPlansManager({ event }: TransferPlansManagerProps) {
                   <th className="px-4 py-2">Status</th>
                   <th className="px-4 py-2">First priority</th>
                   <th className="px-4 py-2">Progress</th>
-                  <th className="px-4 py-2">Measures and evidence</th>
+                  <th className="px-4 py-2">Business measures and evidence</th>
                   <th className="px-4 py-2">Reminders</th>
                   <th className="px-4 py-2">Updated</th>
                   <th className="px-4 py-2">
@@ -738,9 +739,14 @@ function ActionSummary({
             </div>
           ))}
       </dl>
+      {action.measureStatus && action.measureStatus !== 'identified' ? (
+        <p className="text-xs text-corp-muted">
+          Business measure: {measureStatusLabels[action.measureStatus].toLowerCase()}
+        </p>
+      ) : null}
       {(action.measures ?? []).length > 0 ? (
         <section aria-label="Measures" className="space-y-2">
-          <p className="text-xs font-semibold text-corp-muted">Measures</p>
+          <p className="text-xs font-semibold text-corp-muted">Business measures</p>
           <ul className="space-y-2">
             {action.measures.map((m) => (
               <li key={m.id}>
@@ -758,7 +764,7 @@ function ActionSummary({
           <ul className="space-y-2">
             {action.evidenceRecords.map((e) => (
               <li key={e.id}>
-                <EvidenceLine record={e} />
+                <EvidenceLine record={e} measureName={measureNameFor(action, e)} />
               </li>
             ))}
           </ul>

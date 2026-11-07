@@ -121,7 +121,7 @@ export function journeyRouter({ prisma, config, middleware, now }: Deps): Router
                 action: true,
                 isPriority: true,
                 progressStatus: true,
-                measures: { select: { status: true, actualValue: true } },
+                measures: { select: { actualValue: true } },
                 _count: { select: { evidenceRecords: true } },
               },
             },
@@ -203,9 +203,7 @@ export function journeyRouter({ prisma, config, middleware, now }: Deps): Router
             applied: plan.actions.filter((a) => appliedStatuses.includes(a.progressStatus)).length,
             measures: plan.actions.reduce((n, a) => n + a.measures.length, 0),
             withResult: plan.actions.reduce(
-              (n, a) =>
-                n +
-                a.measures.filter((m) => m.status === 'identified' && m.actualValue.trim()).length,
+              (n, a) => n + a.measures.filter((m) => m.actualValue.trim()).length,
               0,
             ),
             evidence: plan.actions.reduce((n, a) => n + a._count.evidenceRecords, 0),

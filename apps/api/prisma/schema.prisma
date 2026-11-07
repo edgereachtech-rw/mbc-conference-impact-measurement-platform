@@ -181,6 +181,36 @@ enum MeasureStatus {
   @@map("measure_status")
 }
 
+/// Whether the starting value of a measure is known (spec of 2026-11-08, section B).
+enum BaselineState {
+  known
+  not_yet_known
+
+  @@map("baseline_state")
+}
+
+/// Whether a measure has a target (spec of 2026-11-08, section B).
+enum TargetState {
+  set
+  not_yet_known
+  not_applicable
+
+  @@map("target_state")
+}
+
+/// Where an actual result came from (spec of 2026-11-08, section D).
+enum ResultSource {
+  personal_observation
+  workplace_records
+  organisational_data
+  customer_feedback
+  manager_feedback
+  colleague_feedback
+  other
+
+  @@map("result_source")
+}
+
 /// Quantitative measures carry numeric values with a unit; qualitative ones carry text.
 enum MeasureKind {
   quantitative
@@ -213,8 +243,10 @@ enum EvidenceSupport {
 enum EvidenceType {
   example
   work_product
+  process
   confirmation
   organisational_measure
+  customer_feedback
   case_example
   other
 
@@ -858,6 +890,9 @@ model TransferPlanAction {
 
   plan            TransferPlan           @relation(fields: [planId], references: [id], onDelete: Cascade)
   progress        TransferPlanProgress[]
+  /// Whether the delegate can identify a business measure for this action (spec 2026-11-08);
+  /// null until chosen. "identified" needs at least one measure record.
+  measureStatus   MeasureStatus?       @map("measure_status")
   measures        TransferPlanMeasure[]
   evidenceRecords TransferPlanEvidence[]
 
@@ -873,59 +908,76 @@ model TransferPlanMeasure {
   id            String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   actionId      String               @map("action_id") @db.Uuid
   order         Int
-  status        MeasureStatus        @default(identified)
   kind          MeasureKind          @default(quantitative)
   /// What is tracked (application rate, turnaround time, error rate, ...). Free text, never a fixed list.
   name          String               @default("")
   /// Why the measure matters.
   importance    String               @default("")
+  /// How the result will be obtained (spec 2026-11-08, section A).
+  method        String               @default("")
   unit          String               @default("")
   direction     ImprovementDirection @default(unspecified)
+  baselineState BaselineState        @default(not_yet_known) @map("baseline_state")
   baselineValue String               @default("") @map("baseline_value")
   baselineOn    DateTime?            @map("baseline_on") @db.Date
+  targetState   TargetState          @default(not_yet_known) @map("target_state")
   targetValue   String               @default("") @map("target_value")
   targetOn      DateTime?            @map("target_on") @db.Date
+  /// The latest actual result, copied from the newest result record; "" when none.
   actualValue   String               @default("") @map("actual_value")
   actualOn      DateTime?            @map("actual_on") @db.Date
-  /// Where the information came from.
+  /// Source and influences of the latest result, copied from its record.
   source        String               @default("")
-  /// Other factors that may have influenced the result.
   influences    String               @default("")
-  /// How the actual result is supported.
   support       EvidenceSupport      @default(self_reported)
   createdAt     DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt     DateTime             @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  action   TransferPlanAction           @relation(fields: [actionId], references: [id], onDelete: Cascade)
-  readings TransferPlanMeasureReading[]
+  action          TransferPlanAction          @relation(fields: [actionId], references: [id], onDelete: Cascade)
+  results         TransferPlanMeasureResult[]
+  evidenceRecords TransferPlanEvidence[]
 
   @@index([actionId])
   @@map("transfer_plan_measure")
 }
 
-/// Every actual result a measure has carried, appended when the result changes, so an earlier
-/// reading stays available after the delegate updates it.
-model TransferPlanMeasureReading {
-  id         String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  measureId  String          @map("measure_id") @db.Uuid
-  value      String
-  readingOn  DateTime?       @map("reading_on") @db.Date
-  source     String          @default("")
-  support    EvidenceSupport @default(self_reported)
-  recordedAt DateTime        @default(now()) @map("recorded_at") @db.Timestamptz(3)
+/// A dated actual result of a measure (spec 2026-11-08, section C). Results are kept, never
+/// overwritten: April's 30 hours stays when May's 22 hours arrives. Each record remembers the
+/// measure's name, kind and unit as they were, so a later change of definition does not rewrite
+/// what was recorded.
+model TransferPlanMeasureResult {
+  id            String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  measureId     String          @map("measure_id") @db.Uuid
+  value         String
+  resultOn      DateTime?       @map("result_on") @db.Date
+  /// How the result was obtained.
+  method        String          @default("")
+  /// What the result tells the delegate.
+  meaning       String          @default("")
+  isFinal       Boolean         @default(false) @map("is_final")
+  sourceType    ResultSource    @default(other) @map("source_type")
+  /// The source described, when the type asks for it.
+  source        String          @default("")
+  hasInfluences Boolean         @default(false) @map("has_influences")
+  influences    String          @default("")
+  support       EvidenceSupport @default(self_reported)
+  measureName   String          @default("") @map("measure_name")
+  measureKind   MeasureKind     @default(quantitative) @map("measure_kind")
+  unit          String          @default("")
+  recordedAt    DateTime        @default(now()) @map("recorded_at") @db.Timestamptz(3)
+  updatedAt     DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   measure TransferPlanMeasure @relation(fields: [measureId], references: [id], onDelete: Cascade)
 
   @@index([measureId])
-  @@map("transfer_plan_measure_reading")
+  @@map("transfer_plan_measure_result")
 }
 
-/// Evidence of application on a planned action (backlog E14-3 to E14-5): a description, its
-/// type, date and whether it is self-reported or supported by another source. `reference` is a
-/// link or document name the delegate chooses to give; no file is stored.
 model TransferPlanEvidence {
   id          String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   actionId    String          @map("action_id") @db.Uuid
+  /// The measure this evidence supports, when it is about one (spec 2026-11-08, section 2).
+  measureId   String?         @map("measure_id") @db.Uuid
   order       Int
   type        EvidenceType    @default(example)
   description String          @default("")
@@ -937,9 +989,11 @@ model TransferPlanEvidence {
   createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt   DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  action TransferPlanAction @relation(fields: [actionId], references: [id], onDelete: Cascade)
+  action  TransferPlanAction   @relation(fields: [actionId], references: [id], onDelete: Cascade)
+  measure TransferPlanMeasure? @relation(fields: [measureId], references: [id], onDelete: SetNull)
 
   @@index([actionId])
+  @@index([measureId])
   @@map("transfer_plan_evidence")
 }
 

@@ -9,7 +9,6 @@ import {
   formatFigure,
   improvementDirectionLabels,
   measureOutcomeLabels,
-  measureStatusLabels,
   measureSummaries,
   measureSummaryLabels,
   reminderFrequencies,
@@ -1032,11 +1031,7 @@ export function ReportView({ report, timezone }: { report: EventReport; timezone
                         <tr key={m.id}>
                           <td className="px-3 py-1.5">{row.delegate?.name ?? '—'}</td>
                           <td className="px-3 py-1.5 text-corp-text">{row.action || '—'}</td>
-                          <td className="px-3 py-1.5">
-                            {m.status === 'identified'
-                              ? m.name || 'Unnamed'
-                              : measureStatusLabels[m.status]}
-                          </td>
+                          <td className="px-3 py-1.5">{m.name || 'Unnamed'}</td>
                           <td className="px-3 py-1.5 text-xs">
                             {improvementDirectionLabels[m.direction]}
                           </td>

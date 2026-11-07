@@ -504,29 +504,53 @@ describe.skipIf(!hasDatabase)('event dashboards and reports', () => {
       `/me/events/${eventId}/transfer-plans/${deePlanId}/actions/${a2!.id}/measures`,
       {
         version: progress.body.plan.version,
+        measureStatus: 'identified',
         measures: [
           {
             name: 'Error rate',
+            importance: 'Errors cost rework',
+            method: 'Errors per 100 items, from the QA log',
             kind: 'quantitative',
             unit: '%',
             direction: 'lower',
+            baselineState: 'known',
             baselineValue: '12',
-            actualValue: '9',
-            actualOn: '2027-01-15',
-            support: 'supported',
-            influences: 'New checklist too',
           },
-          { status: 'not_yet_known' },
         ],
       },
       cookies.dee,
     );
     expect(measures.status, measures.text).toBe(200);
+    const measureId = (
+      measures.body.plan.actions.find((a: { id: string }) => a.id === a2!.id) as {
+        measures: Array<{ id: string }>;
+      }
+    ).measures[0]!.id;
+    const result = await call(
+      'put',
+      `/me/events/${eventId}/transfer-plans/${deePlanId}/actions/${a2!.id}/measures/${measureId}/results`,
+      {
+        version: measures.body.plan.version,
+        results: [
+          {
+            value: '9',
+            resultOn: '2027-01-15',
+            method: 'Counted from the QA log',
+            sourceType: 'workplace_records',
+            support: 'supported',
+            hasInfluences: true,
+            influences: 'New checklist too',
+          },
+        ],
+      },
+      cookies.dee,
+    );
+    expect(result.status, result.text).toBe(200);
     const evidence = await call(
       'put',
       `/me/events/${eventId}/transfer-plans/${deePlanId}/actions/${a1!.id}/evidence`,
       {
-        version: measures.body.plan.version,
+        version: result.body.plan.version,
         evidence: [
           {
             type: 'confirmation',
@@ -701,10 +725,7 @@ describe.skipIf(!hasDatabase)('event dashboards and reports', () => {
       not_comparable: 0,
     });
     expect(res.measures.resultSupport).toEqual({ self_reported: 0, supported: 1 });
-    expect(res.measures.rows[0]!.measures.map((m) => m.status)).toEqual([
-      'identified',
-      'not_yet_known',
-    ]);
+    expect(res.measures.rows[0]!.measures.map((m) => m.name)).toEqual(['Error rate']);
     expect(res.evidence.examples[0]).toMatchObject({
       support: 'supported',
       description: 'Manager confirmed the briefing',
@@ -916,7 +937,7 @@ describe.skipIf(!hasDatabase)('event dashboards and reports', () => {
         actions: 2,
         priority: 'Brief stakeholders',
         applied: 1,
-        measures: 2,
+        measures: 1,
         withResult: 1,
         evidence: 1,
         reminder: 'weekly',

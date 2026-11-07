@@ -26,6 +26,7 @@ import {
   type MyTransferPlan,
   type MyTransferPlans,
   type PlanActionFields,
+  type MeasureView,
   type PlanActionView,
   type ReminderFrequency,
   type ReminderPreference,
@@ -48,7 +49,7 @@ import { ApiError, apiFetch } from '@/lib/api';
 import { formatDateShort, formatInstant } from '@/lib/events';
 import { describeError } from '@/lib/imports';
 
-import { ActionMeasures, EvidenceDialog, MeasuresDialog } from './measures-evidence';
+import { ActionMeasures, EvidenceDialog, MeasuresDialog, ResultsDialog } from './measures-evidence';
 import { SupportRequestPanel } from './support-request';
 
 export type MyTransferPlansState =
@@ -433,6 +434,7 @@ function PlanEditor({
     | { kind: 'complete' }
     | { kind: 'progress'; action: PlanActionView }
     | { kind: 'measures'; action: PlanActionView }
+    | { kind: 'results'; action: PlanActionView; measure: MeasureView }
     | { kind: 'evidence'; action: PlanActionView }
   >(null);
   const id = useId();
@@ -709,6 +711,7 @@ function PlanEditor({
             onProgress={(action) => setDialog({ kind: 'progress', action })}
             dirty={dirty}
             onMeasures={(action) => setDialog({ kind: 'measures', action })}
+            onResults={(action, measure) => setDialog({ kind: 'results', action, measure })}
             onEvidence={(action) => setDialog({ kind: 'evidence', action })}
             timezone={timezone}
           />
@@ -1272,6 +1275,42 @@ function PlanEditor({
           }}
         />
       ) : null}
+      {dialog?.kind === 'results' ? (
+        <ResultsDialog
+          eventId={eventId}
+          planId={plan.id}
+          action={dialog.action}
+          measure={dialog.measure}
+          version={plan.version}
+          onClose={() => setDialog(null)}
+          onSaved={(result) => {
+            setDialog(null);
+            onUpdated(result, 'Results saved.');
+          }}
+          onStale={(message) => {
+            setDialog(null);
+            setFailure({ message, stale: true });
+          }}
+        />
+      ) : null}
+      {dialog?.kind === 'results' ? (
+        <ResultsDialog
+          eventId={eventId}
+          planId={plan.id}
+          action={dialog.action}
+          measure={dialog.measure}
+          version={plan.version}
+          onClose={() => setDialog(null)}
+          onSaved={(result) => {
+            setDialog(null);
+            onUpdated(result, 'Results saved.');
+          }}
+          onStale={(message) => {
+            setDialog(null);
+            setFailure({ message, stale: true });
+          }}
+        />
+      ) : null}
       {dialog?.kind === 'evidence' ? (
         <EvidenceDialog
           eventId={eventId}
@@ -1330,6 +1369,7 @@ function ActionCard({
   onProgress,
   dirty,
   onMeasures,
+  onResults,
   onEvidence,
   timezone,
 }: {
@@ -1346,6 +1386,7 @@ function ActionCard({
   /** Unsaved plan edits; the measure and evidence dialogs wait for a save. */
   dirty: boolean;
   onMeasures: (action: PlanActionView) => void;
+  onResults: (action: PlanActionView, measure: MeasureView) => void;
   onEvidence: (action: PlanActionView) => void;
   timezone: string;
 }) {
@@ -1579,6 +1620,7 @@ function ActionCard({
           disabled={disabled}
           dirty={dirty}
           onMeasures={() => onMeasures(saved)}
+          onResults={(measure) => onResults(saved, measure)}
           onEvidence={() => onEvidence(saved)}
         />
       ) : null}

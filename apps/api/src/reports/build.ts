@@ -835,7 +835,7 @@ export async function buildReport(input: BuildInput): Promise<BuiltReport> {
               progress: { orderBy: { recordedAt: 'desc' } },
               measures: {
                 orderBy: { order: 'asc' },
-                include: { readings: { orderBy: { recordedAt: 'desc' } } },
+                include: { results: { orderBy: [{ resultOn: 'desc' }, { recordedAt: 'desc' }] } },
               },
               evidenceRecords: { orderBy: { order: 'asc' } },
             },
@@ -862,7 +862,9 @@ export async function buildReport(input: BuildInput): Promise<BuiltReport> {
       MeasureSummary,
       number
     >;
-    for (const { action } of allActions) counts[summariseMeasures(measuresIn(action))] += 1;
+    for (const { action } of allActions) {
+      counts[summariseMeasures(action.measureStatus, measuresIn(action))] += 1;
+    }
     return counts;
   };
   const evidenceCounts = () => {
@@ -1161,7 +1163,7 @@ export async function buildReport(input: BuildInput): Promise<BuiltReport> {
     for (const { plan, action } of allActions) {
       const measures = measuresIn(action);
       for (const m of measures) {
-        if (m.status === 'identified' && m.actualValue.trim()) {
+        if (m.actualValue.trim()) {
           resultSupport[m.support] += 1;
           outcomes[
             compareMeasure({

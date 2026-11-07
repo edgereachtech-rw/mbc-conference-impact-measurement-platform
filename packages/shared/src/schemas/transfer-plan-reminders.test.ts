@@ -141,14 +141,10 @@ describe('planCompletionGaps and planHasResult', () => {
     ).toEqual([{ actionId: 'a', action: 'Run the workshop', missing: ['evidence'] }]);
   });
 
-  it('separates a recorded result from completion: a placeholder measure is not a result', () => {
+  it('separates a recorded result from completion: a measure without a result is not one', () => {
     expect(planHasResult([{ measures: [], progress: [] }])).toBe(false);
-    expect(
-      planHasResult([{ measures: [{ status: 'not_yet_known', actualValue: '' }], progress: [] }]),
-    ).toBe(false);
-    expect(
-      planHasResult([{ measures: [{ status: 'identified', actualValue: '12' }], progress: [] }]),
-    ).toBe(true);
+    expect(planHasResult([{ measures: [{ actualValue: '' }], progress: [] }])).toBe(false);
+    expect(planHasResult([{ measures: [{ actualValue: '12' }], progress: [] }])).toBe(true);
     expect(
       planHasResult([{ measures: [], progress: [{ results: 'Three teams adopted it' }] }]),
     ).toBe(true);

@@ -538,6 +538,26 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   stamps who and when, reopening clears them; audited `support_request.updated`), shown on the
   event settings "Support" tab. The journey reports `supportRequests.state` as `ok` once the
   delegate has one.
+- Business measures (spec of 2026-11-08; migration `20261107232000_business_measures`): per
+  planned action the delegate first answers "Can you identify a business measure?" (identified /
+  not yet known / not applicable, `transfer_plan_action.measure_status`; "identified" needs at
+  least one measure, and the other two are answers, never missing values). A measure (sections A
+  and B of the spec) has a name, why it matters, how it is measured, a type (quantitative with a
+  unit and a direction of improvement, or qualitative), an explicit baseline state (known / not
+  yet known) and target state (set / not yet known / not applicable) with values and dates.
+  Actual results (sections C and D) are dated records in `transfer_plan_measure_result` (the
+  readings table renamed): value, date, how it was obtained, what it tells, final or not, source
+  type (plus a description when "other"), other influencing factors, self-reported or supported.
+  Earlier results are kept, each with the measure's name, kind and unit as they were, and the
+  measure carries a copy of the latest for lists and reports. Evidence may name the measure it
+  supports (`transfer_plan_evidence.measure_id`); the evidence types follow the spec (two
+  added). Routes: `PUT …/actions/:id/measures` (choice plus definitions) and
+  `PUT …/actions/:id/measures/:measureId/results`; every save is audited. Admin: Event →
+  Transfer Planning → "Business measures" shows overview tiles, a register with one row per
+  measure (and one per action without a measure), the detail of a measure with every result in
+  date order and its evidence, and filters for no result / result / updated results / supported
+  vs self-reported / not yet known / not applicable. File attachments on evidence are not built:
+  the platform stores no files (decision of 2026-11-04).
 - Planned action form (spec of 2026-11-08): each action has a short **title**
   (`transfer_plan_action.title`, migration `20261107230000_transfer_plan_action_title`) and the
   card is laid out as the spec has it: "Action identification" (title, priority learning, "What

@@ -4,8 +4,11 @@ import {
   actionSubmissionGaps,
   evidenceSaveSchema,
   evidenceSupports,
+  measureResultsSaveSchema,
   measureSummaries,
   measuresSaveSchema,
+  isNumericValue,
+  resultSourceLabels,
   addDaysTo,
   dateIn,
   IMPACT_CHECK_DAYS,
@@ -93,7 +96,7 @@ const ACTION_INCLUDE = {
   progress: { orderBy: { recordedAt: 'desc' } },
   measures: {
     orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
-    include: { readings: { orderBy: { recordedAt: 'desc' } } },
+    include: { results: { orderBy: [{ resultOn: 'desc' }, { recordedAt: 'desc' }] } },
   },
   evidenceRecords: { orderBy: [{ order: 'asc' }, { createdAt: 'asc' }] },
 } satisfies Prisma.TransferPlanActionInclude;
@@ -120,14 +123,16 @@ export function measureViewOf(m: ActionRow['measures'][number]): MeasureView {
   return {
     id: m.id,
     order: m.order,
-    status: m.status,
     kind: m.kind,
     name: m.name,
     importance: m.importance,
+    method: m.method,
     unit: m.unit,
     direction: m.direction,
+    baselineState: m.baselineState,
     baselineValue: m.baselineValue,
     baselineOn: isoDate(m.baselineOn),
+    targetState: m.targetState,
     targetValue: m.targetValue,
     targetOn: isoDate(m.targetOn),
     actualValue: m.actualValue,
@@ -135,13 +140,23 @@ export function measureViewOf(m: ActionRow['measures'][number]): MeasureView {
     source: m.source,
     influences: m.influences,
     support: m.support,
-    readings: m.readings.map((r) => ({
+    results: m.results.map((r) => ({
       id: r.id,
       value: r.value,
-      readingOn: isoDate(r.readingOn),
+      resultOn: isoDate(r.resultOn),
+      method: r.method,
+      meaning: r.meaning,
+      isFinal: r.isFinal,
+      sourceType: r.sourceType,
       source: r.source,
+      hasInfluences: r.hasInfluences,
+      influences: r.influences,
       support: r.support,
+      measureName: r.measureName,
+      measureKind: r.measureKind,
+      unit: r.unit,
       recordedAt: r.recordedAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
     })),
     updatedAt: m.updatedAt.toISOString(),
   };
@@ -151,6 +166,7 @@ export function evidenceViewOf(e: ActionRow['evidenceRecords'][number]): Evidenc
   return {
     id: e.id,
     order: e.order,
+    measureId: e.measureId,
     type: e.type,
     description: e.description,
     evidenceOn: isoDate(e.evidenceOn),
@@ -202,6 +218,7 @@ function actionViewOf(a: ActionRow): PlanActionView {
       newTargetOn: isoDate(p.newTargetOn),
       recordedAt: p.recordedAt.toISOString(),
     })),
+    measureStatus: a.measureStatus,
     measures: a.measures.map(measureViewOf),
     evidenceRecords: a.evidenceRecords.map(evidenceViewOf),
   };
@@ -827,9 +844,10 @@ export function transferPlanRouter({
       'Your plan changed since you opened it, possibly in another tab. Reload it and apply your changes again.',
     );
 
-  // Business and workplace measures of one action (backlog E14-1, E14-2): the list is replaced,
-  // ids are kept, and an actual result that changes leaves the earlier one behind as a reading.
-  // Saving bumps the plan's version like any other change; no second plan is ever created.
+  // Business measures of one action (backlog E14-1, E14-2; spec of 2026-11-08): the action's
+  // answer ("can you identify a measure?") and the measure definitions. The list is replaced and
+  // ids are kept; actual results live in their own records and are untouched here. Saving bumps
+  // the plan's version like any other change; no second plan is ever created.
   router.put(
     '/me/events/:eventId/transfer-plans/:planId/actions/:actionId/measures',
     middleware.requireAuth,
@@ -855,7 +873,6 @@ export function transferPlanRouter({
       }
       const keepIds = new Set(input.measures.filter((m) => m.id).map((m) => m.id!));
       const removed = action.measures.filter((m) => !keepIds.has(m.id)).map((m) => m.id);
-      let readings = 0;
       await prisma().$transaction(async (tx) => {
         if (removed.length) {
           await tx.transferPlanMeasure.deleteMany({
@@ -865,45 +882,29 @@ export function transferPlanRouter({
         for (const [index, m] of input.measures.entries()) {
           const data = {
             order: index + 1,
-            status: m.status,
             kind: m.kind,
             name: m.name,
             importance: m.importance,
+            method: m.method,
             unit: m.unit,
             direction: m.direction,
-            baselineValue: m.baselineValue,
-            baselineOn: dayOf(m.baselineOn),
-            targetValue: m.targetValue,
-            targetOn: dayOf(m.targetOn),
-            actualValue: m.actualValue,
-            actualOn: dayOf(m.actualOn),
-            source: m.source,
-            influences: m.influences,
-            support: m.support,
+            baselineState: m.baselineState,
+            baselineValue: m.baselineState === 'known' ? m.baselineValue : '',
+            baselineOn: m.baselineState === 'known' ? dayOf(m.baselineOn) : null,
+            targetState: m.targetState,
+            targetValue: m.targetState === 'set' ? m.targetValue : '',
+            targetOn: m.targetState === 'set' ? dayOf(m.targetOn) : null,
           };
-          const before = m.id ? known.get(m.id) : undefined;
-          if (!before) {
+          if (m.id && known.has(m.id)) {
+            await tx.transferPlanMeasure.update({ where: { id: m.id }, data });
+          } else {
             await tx.transferPlanMeasure.create({ data: { ...data, actionId: action.id } });
-            continue;
-          }
-          await tx.transferPlanMeasure.update({ where: { id: before.id }, data });
-          const resultChanged =
-            before.actualValue !== m.actualValue ||
-            isoDate(before.actualOn) !== (m.actualOn ?? null);
-          if (before.actualValue !== '' && resultChanged) {
-            await tx.transferPlanMeasureReading.create({
-              data: {
-                measureId: before.id,
-                value: before.actualValue,
-                readingOn: before.actualOn,
-                source: before.source,
-                support: before.support,
-                recordedAt: before.updatedAt,
-              },
-            });
-            readings += 1;
           }
         }
+        await tx.transferPlanAction.update({
+          where: { id: action.id },
+          data: { measureStatus: input.measureStatus },
+        });
         await tx.transferPlan.update({
           where: { id: plan.id },
           data: { version: plan.version + 1, updatedByUserId: principal.userId },
@@ -915,10 +916,146 @@ export function transferPlanRouter({
           eventId: delegate.eventId,
           actorUserId: principal.userId,
           newValue: {
+            measureStatus: input.measureStatus,
             measures: input.measures.length,
             removed: removed.length,
-            readings,
-            summary: summariseMeasures(input.measures),
+            summary: summariseMeasures(
+              input.measureStatus,
+              input.measures.map((m) => ({
+                baselineValue: m.baselineState === 'known' ? m.baselineValue : '',
+                actualValue: (m.id && known.get(m.id)?.actualValue) || '',
+              })),
+            ),
+          },
+          ...clientOf(res),
+        });
+      });
+      res.json(await myView(delegate.eventId, delegate.id, plan.id));
+    },
+  );
+
+  /**
+   * Actual results of one measure (spec of 2026-11-08, sections C and D): dated records that
+   * are kept, never overwritten. The list is replaced and ids are kept, so the delegate can
+   * correct a record; a new one is simply added. Each record remembers the measure's name, kind
+   * and unit as they were when it was recorded, and the measure keeps a copy of the latest
+   * result for the lists and reports. A quantitative measure takes numbers only.
+   */
+  router.put(
+    '/me/events/:eventId/transfer-plans/:planId/actions/:actionId/measures/:measureId/results',
+    middleware.requireAuth,
+    validated(measureResultsSaveSchema),
+    async (req, res) => {
+      const { principal, delegate, plan, action } = await myAction(
+        res,
+        String(req.params.eventId),
+        String(req.params.planId),
+        String(req.params.actionId),
+      );
+      const measureId = String(req.params.measureId);
+      const measure = UUID.test(measureId) ? action.measures.find((m) => m.id === measureId) : null;
+      if (!measure) throw new HttpError(404, 'not_found', 'Measure not found.');
+      const input = req.body as z.infer<typeof measureResultsSaveSchema>;
+      if (input.version !== plan.version) throw stale();
+      const known = new Map(measure.results.map((r) => [r.id, r]));
+      for (const [index, r] of input.results.entries()) {
+        if (r.id && !known.has(r.id)) {
+          throw new HttpError(
+            422,
+            'validation_failed',
+            'results: an id does not belong to this measure.',
+          );
+        }
+        if (measure.kind === 'quantitative' && !isNumericValue(r.value)) {
+          throw new HttpError(
+            422,
+            'validation_failed',
+            `results.${index}.value: enter a number such as 30 or 2.5; the unit is ${measure.unit || 'the measure\u2019s unit'}.`,
+          );
+        }
+      }
+      const keepIds = new Set(input.results.filter((r) => r.id).map((r) => r.id!));
+      const removed = measure.results.filter((r) => !keepIds.has(r.id)).map((r) => r.id);
+      // The latest result by its date, then by when it was recorded, becomes the measure's copy.
+      const ordered = [...input.results].sort((a, b) => {
+        if (a.resultOn !== b.resultOn) return a.resultOn < b.resultOn ? 1 : -1;
+        const ra = a.id ? (known.get(a.id)?.recordedAt.getTime() ?? Infinity) : Infinity;
+        const rb = b.id ? (known.get(b.id)?.recordedAt.getTime() ?? Infinity) : Infinity;
+        return rb - ra;
+      });
+      const latest = ordered[0] ?? null;
+      await prisma().$transaction(async (tx) => {
+        if (removed.length) {
+          await tx.transferPlanMeasureResult.deleteMany({
+            where: { id: { in: removed }, measureId: measure.id },
+          });
+        }
+        for (const r of input.results) {
+          const data = {
+            value: r.value,
+            resultOn: dayOf(r.resultOn),
+            method: r.method,
+            meaning: r.meaning,
+            isFinal: r.isFinal,
+            sourceType: r.sourceType,
+            source: r.sourceType === 'other' || r.source ? r.source : '',
+            hasInfluences: r.hasInfluences,
+            influences: r.hasInfluences ? r.influences : '',
+            support: r.support,
+          };
+          if (r.id) {
+            await tx.transferPlanMeasureResult.update({ where: { id: r.id }, data });
+          } else {
+            await tx.transferPlanMeasureResult.create({
+              data: {
+                ...data,
+                measureId: measure.id,
+                measureName: measure.name,
+                measureKind: measure.kind,
+                unit: measure.unit,
+              },
+            });
+          }
+        }
+        await tx.transferPlanMeasure.update({
+          where: { id: measure.id },
+          data: latest
+            ? {
+                actualValue: latest.value,
+                actualOn: dayOf(latest.resultOn),
+                source: latest.source
+                  ? `${resultSourceLabels[latest.sourceType]}: ${latest.source}`
+                  : resultSourceLabels[latest.sourceType],
+                influences: latest.hasInfluences ? latest.influences : '',
+                support: latest.support,
+              }
+            : {
+                actualValue: '',
+                actualOn: null,
+                source: '',
+                influences: '',
+                support: 'self_reported',
+              },
+        });
+        await tx.transferPlan.update({
+          where: { id: plan.id },
+          data: { version: plan.version + 1, updatedByUserId: principal.userId },
+        });
+        await audit(tx, {
+          action: 'transfer_plan.results_saved',
+          entityType: 'transfer_plan_action',
+          entityId: action.id,
+          eventId: delegate.eventId,
+          actorUserId: principal.userId,
+          newValue: {
+            measureId: measure.id,
+            results: input.results.length,
+            added: input.results.filter((r) => !r.id).length,
+            removed: removed.length,
+            final: input.results.some((r) => r.isFinal),
+            support: Object.fromEntries(
+              evidenceSupports.map((s) => [s, input.results.filter((r) => r.support === s).length]),
+            ),
           },
           ...clientOf(res),
         });
@@ -943,12 +1080,20 @@ export function transferPlanRouter({
       const input = req.body as z.infer<typeof evidenceSaveSchema>;
       if (input.version !== plan.version) throw stale();
       const known = new Set(action.evidenceRecords.map((e) => e.id));
+      const measureIds = new Set(action.measures.map((m) => m.id));
       for (const e of input.evidence) {
         if (e.id && !known.has(e.id)) {
           throw new HttpError(
             422,
             'validation_failed',
             'evidence: an id does not belong to this action.',
+          );
+        }
+        if (e.measureId && !measureIds.has(e.measureId)) {
+          throw new HttpError(
+            422,
+            'validation_failed',
+            'evidence: a measure does not belong to this action.',
           );
         }
       }
@@ -963,6 +1108,7 @@ export function transferPlanRouter({
         for (const [index, e] of input.evidence.entries()) {
           const data = {
             order: index + 1,
+            measureId: e.measureId,
             type: e.type,
             description: e.description,
             evidenceOn: dayOf(e.evidenceOn),
@@ -1207,7 +1353,8 @@ export function transferPlanRouter({
             title: true,
             isPriority: true,
             progressStatus: true,
-            measures: { select: { status: true, baselineValue: true, actualValue: true } },
+            measureStatus: true,
+            measures: { select: { baselineValue: true, actualValue: true } },
             evidenceRecords: { select: { support: true } },
           },
         },
@@ -1226,7 +1373,7 @@ export function transferPlanRouter({
       >;
       for (const a of p.actions) {
         progress[a.progressStatus] += 1;
-        measures[summariseMeasures(a.measures)] += 1;
+        measures[summariseMeasures(a.measureStatus, a.measures)] += 1;
       }
       return {
         delegate: p.delegate,
@@ -1275,11 +1422,13 @@ export function transferPlanRouter({
         action: {
           id: a.id,
           order: a.order,
+          title: a.title,
           action: a.action,
           isPriority: a.isPriority,
           progressStatus: a.progressStatus,
+          measureStatus: a.measureStatus,
         },
-        summary: summariseMeasures(a.measures),
+        summary: summariseMeasures(a.measureStatus, a.measures),
         measures: a.measures.map(measureViewOf),
         evidence: evidenceCounts(a.evidenceRecords),
         evidenceRecords: includeEvidence ? a.evidenceRecords.map(evidenceViewOf) : null,
