@@ -1,242 +1,54 @@
+# Staging: the production stack (docker-compose.yml) with staging defaults layered on top.
+#
+#   cd deploy && cp .env.staging.example .env   # fill in real values
+#   docker compose up -d --build                # .env names both files in COMPOSE_FILE
+#
+# or, without COMPOSE_FILE in .env:
+#   docker compose -f docker-compose.yml -f docker-compose.staging.yml up -d --build
+#
+# This file changes nothing about the services themselves: same images, same healthchecks, same
+# volumes, same memory limits. What it changes:
+#   - the Compose project name, so a staging stack beside a production one on the same host gets
+#     its own containers, network and volumes (pgdata, mailpitdata) instead of sharing them
+#   - NODE_ENV=staging for api and worker: test registrations may sign in, the seed may create its
+#     ten test delegates, and plain-HTTP or Mailpit mail is accepted. Everything else (secure
+#     cookies, rate limits, audit) behaves as in production. Set NODE_ENV=production in .env to
+#     rehearse the production rules on staging
+#   - Sentry events tagged "staging"
+#   - the two test-data switches default to on (E0-5): staff rehearse the delegate side here
+#   - backups keep less: 7 daily, 4 weekly, 3 monthly, by default
+#
+# Ports are not set here: the base file reads WEB_PUBLISH, API_PUBLISH, MAILPIT_UI_PUBLISH and
+# MAILPIT_SMTP_PUBLISH from .env, and .env.staging.example picks ports that do not collide with a
+# production stack on the same host (33332, 44443, 8024, 1024).
+#
+# Never run `docker compose down -v` here either: staging data is cheap to lose, the habit is not.
+
 name: mbc-impact-staging
 
-x-logging: &default-logging
-  driver: json-file
-  options:
-    max-size: '10m'
-    max-file: '5'
-
-x-app-env: &app-env
-  NODE_ENV: ${NODE_ENV:-production}
-  APP_DOMAIN: ${APP_DOMAIN}
-  EVENT_TIMEZONE: ${EVENT_TIMEZONE:-Africa/Lagos}
-  DATABASE_URL: ${DATABASE_URL}
-  SMTP_HOST: ${SMTP_HOST}
-  SMTP_PORT: ${SMTP_PORT:-587}
-  SMTP_USER: ${SMTP_USER}
-  SMTP_PASSWORD: ${SMTP_PASSWORD}
-  MAIL_FROM: ${MAIL_FROM}
-  MAIL_CONTACT_EMAIL: ${MAIL_CONTACT_EMAIL:-}
-  MAIL_ORGANISER_NAME: ${MAIL_ORGANISER_NAME:-}
-  MAIL_TRANSPORT: ${MAIL_TRANSPORT:-smtp}
-  APP_URL: ${APP_URL:-https://${APP_DOMAIN}}
-  SESSION_SECRET: ${SESSION_SECRET}
-  SESSION_TTL_DAYS: ${SESSION_TTL_DAYS:-14}
-  SESSION_IDLE_DAYS: ${SESSION_IDLE_DAYS:-7}
-  MAGIC_LINK_TTL_MINUTES: ${MAGIC_LINK_TTL_MINUTES:-15}
-  AUTH_RATE_LIMIT_PER_EMAIL: ${AUTH_RATE_LIMIT_PER_EMAIL:-3}
-  AUTH_RATE_LIMIT_PER_IP: ${AUTH_RATE_LIMIT_PER_IP:-10}
-  AUTH_VERIFY_LIMIT_PER_IP: ${AUTH_VERIFY_LIMIT_PER_IP:-20}
-  AUTH_ALLOWED_ORIGINS: ${AUTH_ALLOWED_ORIGINS:-}
-  AUTH_ALLOW_TEST_REGISTRATIONS: ${AUTH_ALLOW_TEST_REGISTRATIONS:-false}
-  # Widens the session cookie to a parent domain when the web app and the API are different
-  # hostnames (app.example.com / api.example.com). Leave empty for one host on two ports.
-  COOKIE_DOMAIN: ${COOKIE_DOMAIN:-}
-  # Names the network a TLS terminator or load balancer reaches the container from, so
-  # X-Forwarded-* is honoured only from there. "false" trusts nobody.
-  TRUST_PROXY: ${TRUST_PROXY:-uniquelocal}
-  SENTRY_DSN: ${SENTRY_DSN:-}
-  SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
-  SENTRY_RELEASE: ${IMAGE_TAG:-local}
-  LOG_LEVEL: ${LOG_LEVEL:-info}
-  ADMIN_EMAIL: ${ADMIN_EMAIL:-}
-  SEED_TEST_DELEGATES: ${SEED_TEST_DELEGATES:-false}
+x-staging-env: &staging-env
+  NODE_ENV: ${NODE_ENV:-staging}
+  SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-staging}
+  AUTH_ALLOW_TEST_REGISTRATIONS: ${AUTH_ALLOW_TEST_REGISTRATIONS:-true}
+  SEED_TEST_DELEGATES: ${SEED_TEST_DELEGATES:-true}
 
 services:
-  # ---------------------------------------------------------------- Next.js web app (public)
   web:
-    image: ${IMAGE_PREFIX:-mbc-impact}/web:${IMAGE_TAG:-local}
-    build:
-      context: ..
-      dockerfile: apps/web/Dockerfile
-    restart: unless-stopped
-    ports:
-      - '${WEB_PUBLISH:-33332}:33333'
     environment:
-      NODE_ENV: production
-      PORT: 33333
-      HOSTNAME: 0.0.0.0
-      APP_DOMAIN: ${APP_DOMAIN}
-      SENTRY_DSN: ${SENTRY_DSN:-}
-      # Server components call the API over the private network...
-      API_INTERNAL_URL: http://api:44444
-      # ...while the browser calls it on its public origin, published as a meta tag by the layout.
-      API_PUBLIC_URL: ${API_PUBLIC_URL}
-      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
-      SENTRY_RELEASE: ${IMAGE_TAG:-local}
-    healthcheck:
-      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:33333/ > /dev/null || exit 1']
-      interval: 30s
-      timeout: 5s
-      start_period: 20s
-      retries: 3
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-    logging: *default-logging
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-staging}
 
-  # ---------------------------------------------------------------- Express API
   api:
-    image: ${IMAGE_PREFIX:-mbc-impact}/api:${IMAGE_TAG:-local}
-    build:
-      context: ..
-      dockerfile: apps/api/Dockerfile
-    restart: unless-stopped
-    ports:
-      - '${API_PUBLISH:-44443}:44444'
     environment:
-      <<: *app-env
-      PORT: 44444
-    depends_on:
-      db:
-        condition: service_healthy
-    healthcheck:
-      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:44444/health > /dev/null || exit 1']
-      interval: 30s
-      timeout: 5s
-      start_period: 20s
-      retries: 3
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-    logging: *default-logging
+      <<: *staging-env
 
-  # ---------------------------------------------------------------- pg-boss worker (same image as api)
   worker:
-    image: ${IMAGE_PREFIX:-mbc-impact}/api:${IMAGE_TAG:-local}
-    restart: unless-stopped
-    command: ['node', 'dist/worker.js']
-    # The api image healthcheck probes HTTP; the worker has none, so check the process instead.
-    healthcheck:
-      test: ['CMD-SHELL', 'pgrep -f "dist/worker.js" > /dev/null || exit 1']
-      interval: 30s
-      timeout: 5s
-      start_period: 20s
-      retries: 3
     environment:
-      <<: *app-env
-      HEALTHCHECKS_WORKER_URL: ${HEALTHCHECKS_WORKER_URL:-}
-      HEARTBEAT_INTERVAL_SECONDS: ${HEARTBEAT_INTERVAL_SECONDS:-120}
-    depends_on:
-      db:
-        condition: service_healthy
-      api:
-        condition: service_healthy # api image build must finish before the worker uses it
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-    logging: *default-logging
+      <<: *staging-env
 
-  # ---------------------------------------------------------------- PostgreSQL 16
-  db:
-    image: postgres:16.15-alpine3.23
-    restart: unless-stopped
-    expose:
-      - '5432'
-    shm_size: 256m
-    environment:
-      POSTGRES_DB: ${DB_NAME}
-      POSTGRES_USER: ${DB_USER}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
-      TZ: UTC
-      PGTZ: UTC
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
-      interval: 10s
-      timeout: 5s
-      start_period: 15s
-      retries: 5
-    deploy:
-      resources:
-        limits:
-          memory: 1G
-    logging: *default-logging
-
-  # ---------------------------------------------------------------- encrypted off-site backups (E0-7)
   backup:
-    # pg_dump -> age -> rclone to an off-site S3 bucket. The database is the only thing to back up:
-    # the platform stores no files (Garage was removed on 2026-11-04).
-    # Scheduler: 02:00 Africa/Lagos nightly, or hourly with BACKUP_MODE=hourly (12-13 November).
-    # Manual run:  docker compose -f docker-compose.yml run --rm backup /backup/backup.sh
-    # Restore test: see docs/backup-and-recovery.md
-    image: ${IMAGE_PREFIX:-mbc-impact}/backup:${IMAGE_TAG:-local}
-    build:
-      context: ./backup
-    restart: unless-stopped
     environment:
-      TZ: ${EVENT_TIMEZONE:-Africa/Lagos}
-      PGHOST: db
-      PGDATABASE: ${DB_NAME}
-      PGUSER: ${DB_USER}
-      PGPASSWORD: ${DB_PASSWORD}
       BACKUP_MODE: ${BACKUP_MODE:-nightly}
-      BACKUP_AGE_PUBLIC_KEY: ${BACKUP_AGE_PUBLIC_KEY:-}
-      BACKUP_S3_PROVIDER: ${BACKUP_S3_PROVIDER:-Other}
-      BACKUP_S3_ENDPOINT: ${BACKUP_S3_ENDPOINT:-}
-      BACKUP_S3_REGION: ${BACKUP_S3_REGION:-auto}
-      BACKUP_S3_BUCKET: ${BACKUP_S3_BUCKET:-}
-      BACKUP_S3_ACCESS_KEY: ${BACKUP_S3_ACCESS_KEY:-}
-      BACKUP_S3_SECRET_KEY: ${BACKUP_S3_SECRET_KEY:-}
-      BACKUP_KEEP_HOURLY: ${BACKUP_KEEP_HOURLY:-48}
-      BACKUP_KEEP_DAILY: ${BACKUP_KEEP_DAILY:-14}
-      BACKUP_KEEP_WEEKLY: ${BACKUP_KEEP_WEEKLY:-8}
-      BACKUP_KEEP_MONTHLY: ${BACKUP_KEEP_MONTHLY:-12}
-      HEALTHCHECKS_BACKUP_URL: ${HEALTHCHECKS_BACKUP_URL:-}
-    depends_on:
-      db:
-        condition: service_healthy
-    healthcheck:
-      test: ['CMD-SHELL', 'pgrep crond > /dev/null || exit 1']
-      interval: 60s
-      timeout: 5s
-      start_period: 10s
-      retries: 3
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-    logging: *default-logging
-
-  # ---------------------------------------------------------------- Mailpit: outgoing mail inbox
-  # Keeps a copy of every email the platform sends. That includes magic sign-in links, so reading
-  # this inbox is as good as signing in as any delegate or admin: set MAILPIT_UI_AUTH before the
-  # port is reachable, and put the UI behind the same TLS terminator as the rest (it speaks plain
-  # HTTP) or keep MAILPIT_UI_PUBLISH on 127.0.0.1.
-  #
-  # To route the platform's own mail here, point the SMTP settings at it. MAIL_TRANSPORT stays
-  # "smtp", the only transport the API accepts in production:
-  #   SMTP_HOST=mailpit  SMTP_PORT=1025  SMTP_USER / SMTP_PASSWORD matching MAILPIT_SMTP_AUTH
-  mailpit:
-    image: axllent/mailpit:v1.32.0
-    restart: unless-stopped
-    ports:
-      - '${MAILPIT_UI_PUBLISH:-8025}:8025'
-      - '${MAILPIT_SMTP_PUBLISH:-1025}:1025'
-    environment:
-      TZ: ${EVENT_TIMEZONE:-Africa/Lagos}
-      # "user:password", comma-separated for several accounts. Empty leaves the inbox open to
-      # anyone who reaches the port.
-      MP_UI_AUTH: ${MAILPIT_UI_AUTH:-}
-      MP_SMTP_AUTH: ${MAILPIT_SMTP_AUTH:-}
-      # Nothing inside the Docker network speaks TLS, and Mailpit refuses SMTP credentials over a
-      # plain connection unless this says otherwise.
-      MP_SMTP_AUTH_ALLOW_INSECURE: 'true'
-      # Survive restarts, and cap how much is kept.
-      MP_DATABASE: /data/mailpit.db
-      MP_MAX_MESSAGES: ${MAILPIT_MAX_MESSAGES:-5000}
-    volumes:
-      - mailpitdata:/data
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-    logging: *default-logging
-
-volumes:
-  pgdata:
-  mailpitdata:
+      BACKUP_KEEP_HOURLY: ${BACKUP_KEEP_HOURLY:-24}
+      BACKUP_KEEP_DAILY: ${BACKUP_KEEP_DAILY:-7}
+      BACKUP_KEEP_WEEKLY: ${BACKUP_KEEP_WEEKLY:-4}
+      BACKUP_KEEP_MONTHLY: ${BACKUP_KEEP_MONTHLY:-3}

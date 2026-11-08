@@ -1,17 +1,18 @@
 # Deployment
 
-Everything runs with Docker Compose on one VPS (backlog E0-2, E0-4, E0-10). The same files serve
-local development (with `docker-compose.override.yml`), staging and production.
+Everything runs with Docker Compose on one VPS (backlog E0-2, E0-4, E0-10). One stack definition
+(`docker-compose.yml`) serves production; staging layers `docker-compose.staging.yml` on top of it
+(see "Staging" below). There is no reverse proxy in the stack since 2026-10-31: web and api each
+publish a port, and TLS is terminated in front of the server.
 
-| Service | Image                     | Role                                                                                         |
-| ------- | ------------------------- | -------------------------------------------------------------------------------------------- |
-| caddy   | caddy:2.11.7-alpine       | TLS, HTTP to HTTPS redirect, `/api/*` to api, rest to web. Only service with published ports |
-| web     | built from apps/web       | Next.js standalone server on 33333                                                           |
-| api     | built from apps/api       | Express API on 44444                                                                         |
-| worker  | same image as api         | pg-boss job runner (`node dist/worker.js`)                                                   |
-| db      | postgres:16.15-alpine3.23 | PostgreSQL 16, volume `pgdata`                                                               |
-| backup  | postgres:16.15-alpine3.23 | Placeholder until E0-7 (encrypted off-site backups)                                          |
-| mailpit | axllent/mailpit:v1.32.0   | Development only: catches outgoing email                                                     |
+| Service | Image                     | Role                                                                                 |
+| ------- | ------------------------- | ------------------------------------------------------------------------------------ |
+| web     | built from apps/web       | Next.js standalone server, published on `WEB_PUBLISH` (33333)                        |
+| api     | built from apps/api       | Express API, published on `API_PUBLISH` (44444); answers CORS for the web origin     |
+| worker  | same image as api         | pg-boss job runner (`node dist/worker.js`); no port                                  |
+| db      | postgres:16.15-alpine3.23 | PostgreSQL 16, volume `pgdata`; internal network only                                |
+| backup  | built from deploy/backup  | `pg_dump` → `age` → `rclone` to the off-site bucket, nightly or hourly (E0-7)        |
+| mailpit | axllent/mailpit:v1.32.0   | Inbox of every email sent; sign-in links included, so `MAILPIT_UI_AUTH` is mandatory |
 
 No object storage: the Garage service was removed on 2026-11-04 (decision recorded in
 `docs/backlog.md`) because nothing in the platform used it. Registration import files are parsed
@@ -54,16 +55,48 @@ docker compose -f docker-compose.yml up -d
 curl -k https://localhost/api/health     # Caddy issues a local certificate for "localhost"
 ```
 
+## Staging
+
+Staging is the production stack with a staging overlay, `docker-compose.staging.yml`, which
+changes no service definition: it names the Compose project `mbc-impact-staging` (own containers,
+network and volumes, so it can share a host with production), runs api and worker with
+`NODE_ENV=staging` (test registrations may sign in, the seed creates its test delegates, Mailpit is
+accepted as the relay), tags Sentry events `staging`, switches the two test-data settings on by
+default and keeps fewer backups. Ports, domains and credentials come from `.env` as always.
+
+```bash
+cd deploy
+cp .env.staging.example .env && chmod 600 .env   # staging ports 33332/44443, Mailpit as relay
+# fill in APP_DOMAIN, API_PUBLIC_URL, the passwords and SESSION_SECRET
+docker compose config --quiet                     # .env names both files in COMPOSE_FILE
+docker compose up -d --build
+docker compose run --rm --no-deps api ./node_modules/.bin/prisma migrate deploy
+docker compose run --rm --no-deps api node dist/seed.js
+docker compose ps
+```
+
+`deploy/scripts/deploy.sh` (what CI runs) reads `COMPOSE_FILE` from `.env`, so the staging
+overlay is applied on every automatic deploy; production, whose `.env` leaves `COMPOSE_FILE` at
+`docker-compose.yml`, is untouched. Without `COMPOSE_FILE` in `.env`, name both files by hand:
+`docker compose -f docker-compose.yml -f docker-compose.staging.yml <command>`.
+
+By default staging mail stays on the server: `SMTP_HOST=mailpit`, and staff read sign-in links in
+the Mailpit inbox on `MAILPIT_UI_PUBLISH` (8024) behind `MAILPIT_UI_AUTH`. Point the `SMTP_*`
+values at the real relay only to test delivery to internal addresses, never to delegates.
+
 ## Staging and production: first-time setup
 
 Staging and production are identical stacks on separate servers (or at least separate
-`deploy/` directories, databases, domains and credentials, backlog E0-5).
+`deploy/` directories, databases, domains and credentials, backlog E0-5). On staging use
+`.env.staging.example` and plain `docker compose` commands as above; the commands below spell out
+`-f docker-compose.yml` for production.
 
 1. Server (Ubuntu LTS, backlog E0-10): SSH keys only, `ufw` allowing 22, 80, 443, Fail2ban,
    unattended security updates, a non-root deploy user in the `docker` group. Install Docker
    Engine and the Compose plugin from Docker's repository.
-2. DNS: an A (and AAAA) record for `APP_DOMAIN` pointing at the server. Caddy obtains the
-   certificate on first request; port 80 must be reachable for the ACME challenge.
+2. DNS: an A (and AAAA) record for `APP_DOMAIN` pointing at the TLS terminator in front of the
+   server (cloud load balancer, Cloudflare, or a host-level proxy), which forwards to
+   `WEB_PUBLISH` and `API_PUBLISH`. The stack itself serves plain HTTP.
 3. Clone the repository and create the environment file:
    ```bash
    git clone <repo> /srv/mbc-impact && cd /srv/mbc-impact/deploy
@@ -76,11 +109,13 @@ Staging and production are identical stacks on separate servers (or at least sep
    docker compose -f docker-compose.yml up -d
    docker compose -f docker-compose.yml ps
    ```
-5. Apply database migrations (see below), then open `https://APP_DOMAIN/api/health` and the
-   home page.
+5. Apply database migrations (see below), then open `API_PUBLIC_URL/api/health` and the home
+   page.
 
-Always pass `-f docker-compose.yml` on servers so the development override is never merged.
-Alternatively set `COMPOSE_FILE=docker-compose.yml` in `.env`.
+Always pass `-f docker-compose.yml` on servers so the development override is never merged, or
+set `COMPOSE_FILE` in `.env` (`docker-compose.yml` on production,
+`docker-compose.yml:docker-compose.staging.yml` on staging), which every compose command and
+`deploy.sh` then follow.
 
 ## Migrations: one-off command, never on container start
 
