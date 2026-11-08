@@ -47,7 +47,15 @@ export async function sendDueTransferPlanReminders(deps: ReminderDeps) {
       reminderFrequency: { not: 'none' },
       nextReminderAt: { lte: at },
       status: { not: 'completed' },
-      event: { status: 'active' },
+      // No reminder while the organisers hide Transfer Planning (2026-11-08); the schedule
+      // stands, so reminders resume at the next interval once it is shown.
+      event: {
+        status: 'active',
+        OR: [
+          { transferPlanVisibility: 'shown' },
+          { transferPlanVisibility: 'scheduled', transferPlanShownFrom: { lte: at } },
+        ],
+      },
       delegate: { registrationStatus: { in: ['active', 'test'] } },
     },
     include: {

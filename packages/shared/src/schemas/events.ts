@@ -167,14 +167,52 @@ export const eventCreateSchema = eventProfileFieldsSchema
   .superRefine(noDuplicateDates);
 export type EventCreate = z.infer<typeof eventCreateSchema>;
 
-export const eventPatchSchema = eventProfileFieldsSchema.partial().extend({
-  /**
-   * Whether test delegates count in this event's reports, dashboards and summaries (decision of
-   * 2026-11-05). Off by default so a rehearsal never leaks into the figures; never affects
-   * whether a test delegate may sign in.
-   */
-  countTestDelegates: z.boolean().optional(),
-});
+/**
+ * Whether delegates see Transfer Planning (2026-11-08). Hidden means no "Transfer plans" tab, no
+ * next step, no reminders and no "where your actions stand" step in the follow-ups; "scheduled"
+ * hides it until a date and time. Plans and their data stay either way and come back when shown.
+ */
+export const transferPlanVisibilities = ['shown', 'hidden', 'scheduled'] as const;
+export type TransferPlanVisibility = (typeof transferPlanVisibilities)[number];
+export const transferPlanVisibilityLabels: Record<TransferPlanVisibility, string> = {
+  shown: 'Shown to delegates',
+  hidden: 'Hidden from delegates',
+  scheduled: 'Hidden until a date and time',
+};
+export function transferPlanVisible(
+  event: {
+    transferPlanVisibility: TransferPlanVisibility;
+    transferPlanShownFrom: string | Date | null;
+  },
+  at: Date,
+): boolean {
+  if (event.transferPlanVisibility === 'shown') return true;
+  if (event.transferPlanVisibility === 'hidden') return false;
+  return event.transferPlanShownFrom !== null && new Date(event.transferPlanShownFrom) <= at;
+}
+
+export const eventPatchSchema = eventProfileFieldsSchema
+  .partial()
+  .extend({
+    /**
+     * Whether test delegates count in this event's reports, dashboards and summaries (decision of
+     * 2026-11-05). Off by default so a rehearsal never leaks into the figures; never affects
+     * whether a test delegate may sign in.
+     */
+    countTestDelegates: z.boolean().optional(),
+    transferPlanVisibility: z.enum(transferPlanVisibilities).optional(),
+    /** The instant Transfer Planning becomes visible when scheduled (ISO 8601 with offset). */
+    transferPlanShownFrom: z.iso.datetime({ offset: true }).nullable().optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.transferPlanVisibility === 'scheduled' && !value.transferPlanShownFrom) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['transferPlanShownFrom'],
+        message: 'Say from when delegates see Transfer Planning.',
+      });
+    }
+  });
 export type EventPatch = z.infer<typeof eventPatchSchema>;
 
 export const eventStatusSchema = z.object({ status: z.enum(eventStatuses) });
@@ -344,6 +382,9 @@ export const eventDetailSchema = z.object({
   status: z.enum(eventStatuses),
   /** Whether test delegates count in reports and figures; see eventPatchSchema. */
   countTestDelegates: z.boolean(),
+  /** Whether delegates see Transfer Planning (2026-11-08); see transferPlanVisible. */
+  transferPlanVisibility: z.enum(transferPlanVisibilities),
+  transferPlanShownFrom: z.string().nullable(),
   /** Derived: the earliest and latest selected dates (brief section 4, pending confirmation). */
   startsOn: isoDateSchema,
   endsOn: isoDateSchema,

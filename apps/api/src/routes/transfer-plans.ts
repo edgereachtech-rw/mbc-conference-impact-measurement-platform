@@ -22,6 +22,7 @@ import {
   planTitleOf,
   referenceQuestionsSaveSchema,
   summariseMeasures,
+  transferPlanVisible,
   transferPlanCompleteSchema,
   transferPlanCreateSchema,
   transferPlanSaveSchema,
@@ -322,10 +323,22 @@ export function transferPlanRouter({
         registrationStatus: { in: [...eligible()] },
         event: { status: 'active' },
       },
-      select: { id: true, eventId: true },
+      select: {
+        id: true,
+        eventId: true,
+        event: { select: { transferPlanVisibility: true, transferPlanShownFrom: true } },
+      },
     });
     if (!delegate) throw new HttpError(404, 'not_found', 'No event of yours has this id.');
-    return { principal, delegate };
+    // Hidden by the organisers (2026-11-08): nothing of the plan is served to the delegate.
+    if (!transferPlanVisible(delegate.event, clock())) {
+      throw new HttpError(
+        409,
+        'transfer_plan_hidden',
+        'Transfer Planning is not open to delegates for this event right now.',
+      );
+    }
+    return { principal, delegate: { id: delegate.id, eventId: delegate.eventId } };
   }
 
   /**

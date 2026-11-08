@@ -26,6 +26,7 @@ const journey = {
   reflections: { available: 0, submitted: 0 },
   feedback: { sessions: 0, submitted: 0 },
   plan: null,
+  transferPlanHidden: false,
   supportRequests: { state: 'none_recorded' },
 } as unknown as Journey;
 

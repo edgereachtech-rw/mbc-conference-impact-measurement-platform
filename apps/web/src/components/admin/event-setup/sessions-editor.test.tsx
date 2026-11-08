@@ -22,6 +22,8 @@ const base: EventDetail = {
   additionalInfo: null,
   status: 'draft',
   countTestDelegates: false,
+  transferPlanVisibility: 'shown',
+  transferPlanShownFrom: null,
   startsOn: '2026-11-10',
   endsOn: '2026-11-12',
   dates: [

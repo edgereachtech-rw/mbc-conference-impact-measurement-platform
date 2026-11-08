@@ -41,6 +41,8 @@ export const myEventSchema = z.object({
    * or close the dates, then attended, partially attended or absent.
    */
   attendance: z.object({ status: z.enum(['pending', 'attended', 'partial', 'absent']) }),
+  /** Whether Transfer Planning is shown to this delegate right now (2026-11-08). */
+  transferPlan: z.object({ visible: z.boolean(), shownFrom: z.string().nullable() }),
 });
 export type MyEvent = z.infer<typeof myEventSchema>;
 

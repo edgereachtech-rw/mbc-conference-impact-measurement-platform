@@ -34,6 +34,8 @@ const event: EventDetail = {
   additionalInfo: null,
   status: 'active',
   countTestDelegates: false,
+  transferPlanVisibility: 'shown',
+  transferPlanShownFrom: null,
   startsOn: '2026-11-12',
   endsOn: '2026-11-13',
   dates: [

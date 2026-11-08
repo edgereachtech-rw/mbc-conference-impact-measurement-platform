@@ -540,6 +540,15 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   stamps who and when, reopening clears them; audited `support_request.updated`), shown on the
   event settings "Support" tab. The journey reports `supportRequests.state` as `ok` once the
   delegate has one.
+- Transfer Planning visibility (2026-11-08; migration `*_transfer_plan_visibility`): Event →
+  Transfer Planning → "Transfer Planning for delegates" sets shown (default), hidden, or hidden
+  until a date and time in the event's time zone (`event.transfer_plan_visibility`,
+  `transfer_plan_shown_from`; `transferPlanVisible()` in `packages/shared`). Hidden means: no
+  "Transfer plans" tab on the delegate's event page (`myEvent.transferPlan.visible`), no plan
+  step in "Also waiting for you" (`journey.transferPlanHidden`), the delegate plan routes answer
+  409 `transfer_plan_hidden`, the follow-ups show no plan and skip the action-status step, and
+  plan reminders pause (their schedule stands and resumes at the next interval once shown).
+  Plans and their data are untouched; the organisers' pages are unaffected.
 - Hide on close, reopen with the same data (2026-11-08). Daily reflections: "Close" hides the
   reflection from delegates and keeps every question and answer; "Publish again" shows it as it
   was (a deadline already behind us is cleared on the way back; audit

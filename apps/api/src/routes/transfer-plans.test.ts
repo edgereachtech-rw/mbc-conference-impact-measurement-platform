@@ -1129,6 +1129,64 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
     ).toBe(403);
   });
 
+  it('hides Transfer Planning from delegates outright or until a date, keeps the plans, and reopens it (2026-11-08)', async () => {
+    const eventUrl = `/events/${eventId}`;
+    const mine = `/me/events/${eventId}`;
+    // Scheduled needs a date.
+    const noDate = await call('patch', eventUrl, { transferPlanVisibility: 'scheduled' });
+    expect(noDate.status).toBe(422);
+    // Hidden: the delegate's event says so, the plan routes refuse, the journey has no plan step.
+    const hidden = await call('patch', eventUrl, { transferPlanVisibility: 'hidden' });
+    expect(hidden.status, hidden.text).toBe(200);
+    expect(hidden.body.event).toMatchObject({
+      transferPlanVisibility: 'hidden',
+      transferPlanShownFrom: null,
+    });
+    const myEvent = await call('get', mine, undefined, cookies.dee);
+    expect(myEvent.status, myEvent.text).toBe(200);
+    expect(myEvent.body.event.transferPlan).toEqual({ visible: false, shownFrom: null });
+    const refused = await call('get', `${mine}/transfer-plans`, undefined, cookies.dee);
+    expect(refused.status).toBe(409);
+    expect(refused.body.error.code).toBe('transfer_plan_hidden');
+    expect(
+      (await call('get', `${mine}/transfer-plans/${planId}`, undefined, cookies.dee)).status,
+    ).toBe(409);
+    const journey = await call('get', `${mine}/journey`, undefined, cookies.dee);
+    expect(journey.body.journey).toMatchObject({ transferPlanHidden: true, plan: null });
+    // The follow-up shows no plan and asks for no statuses while it is hidden.
+    const assessments = await call('get', `${mine}/assessments`, undefined, cookies.dee);
+    const fu = assessments.body.assessments.find((a: { stage: string }) => a.stage === 'follow_up');
+    if (fu) expect(fu.context.plan).toBeNull();
+    // The organisers still see every plan.
+    expect((await call('get', `${eventUrl}/transfer-plans`)).body.plans.length).toBeGreaterThan(0);
+    // Scheduled for the day after tomorrow: still hidden; once the time comes, shown, with the
+    // same plan.
+    const soon = new Date(now.getTime() + 2 * 86_400_000);
+    const later = await call('patch', eventUrl, {
+      transferPlanVisibility: 'scheduled',
+      transferPlanShownFrom: soon.toISOString(),
+    });
+    expect(later.status, later.text).toBe(200);
+    expect(later.body.event.transferPlanShownFrom).toBe(soon.toISOString());
+    expect((await call('get', mine, undefined, cookies.dee)).body.event.transferPlan).toEqual({
+      visible: false,
+      shownFrom: soon.toISOString(),
+    });
+    expect((await call('get', `${mine}/transfer-plans`, undefined, cookies.dee)).status).toBe(409);
+    await tick(new Date(soon.getTime() + 3_600_000).toISOString());
+    const shown = await call('get', mine, undefined, cookies.dee);
+    expect(shown.status, shown.text).toBe(200);
+    expect(shown.body.event.transferPlan.visible).toBe(true);
+    const back = await call('get', `${mine}/transfer-plans/${planId}`, undefined, cookies.dee);
+    expect(back.status, back.text).toBe(200);
+    expect(back.body.plan.id).toBe(planId);
+    // Shown again outright, for the tests that follow.
+    expect((await call('patch', eventUrl, { transferPlanVisibility: 'shown' })).status).toBe(200);
+    expect(
+      await prisma.auditLog.count({ where: { eventId, action: 'event.updated' } }),
+    ).toBeGreaterThanOrEqual(3);
+  });
+
   it('sends the reminders delegates asked for, once per interval, and logs each attempt', async () => {
     mailer.sent.length = 0;
     const deps = {
@@ -1150,6 +1208,16 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
     now = new Date('2026-11-24T12:00:00.000Z');
     expect(await sendDueTransferPlanReminders(deps)).toMatchObject({ due: 0, sent: 0 });
     await tick('2026-11-25T09:05:00.000Z');
+    // Hidden Transfer Planning sends no reminder (2026-11-08); shown again, the due one goes.
+    await prisma.event.update({
+      where: { id: eventId },
+      data: { transferPlanVisibility: 'hidden' },
+    });
+    expect(await sendDueTransferPlanReminders(deps)).toMatchObject({ due: 0, sent: 0 });
+    await prisma.event.update({
+      where: { id: eventId },
+      data: { transferPlanVisibility: 'shown' },
+    });
     expect(await sendDueTransferPlanReminders(deps)).toMatchObject({ due: 1, sent: 1, failed: 0 });
     expect(mailer.sent).toHaveLength(1);
     expect(mailer.sent[0]!.subject).toMatch(/plan going/);

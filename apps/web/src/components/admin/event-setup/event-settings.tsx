@@ -18,6 +18,7 @@ import { consoleButton } from '@/components/console/page';
 import { apiFetch } from '@/lib/api';
 import { TabStrip, useTabState } from '@/components/console/tabs';
 import { TestDelegatesSetting } from './test-delegates-setting';
+import { TransferPlanVisibilitySetting } from './transfer-plan-visibility-setting';
 import { describeError } from '@/lib/imports';
 
 import { AssessmentConfig } from './assessment-config';
@@ -202,7 +203,12 @@ export function EventSettings({ initialEvent }: EventSettingsProps) {
         {tab === 'attendance' ? <AttendanceManager event={event} /> : null}
         {tab === 'reflections' ? <ReflectionsManager event={event} /> : null}
         {tab === 'feedback' ? <FeedbackManager event={event} /> : null}
-        {tab === 'transfer-plans' ? <TransferPlansManager event={event} /> : null}
+        {tab === 'transfer-plans' ? (
+          <div className="space-y-8">
+            <TransferPlanVisibilitySetting event={event} onSaved={saved} />
+            <TransferPlansManager event={event} />
+          </div>
+        ) : null}
         {tab === 'support' ? <SupportManager event={event} /> : null}
         {tab === 'support' ? <SupportManager event={event} /> : null}
         {tab === 'qr-codes' ? <ActionQrCodes event={event} /> : null}

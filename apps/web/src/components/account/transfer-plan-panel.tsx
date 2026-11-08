@@ -59,11 +59,13 @@ type PlanState =
   | { kind: 'error'; message: string; requestId?: string; gone?: boolean };
 
 /** The delegate's plans for one event, loaded once by the event page and shared by the tabs. */
-export function useMyTransferPlans(eventId: string) {
+export function useMyTransferPlans(eventId: string, enabled = true) {
   const [state, setState] = useState<MyTransferPlansState>({ kind: 'loading' });
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let cancelled = false;
+    // Transfer Planning hidden by the organisers (2026-11-08): nothing is asked for.
+    if (!enabled) return undefined;
     apiFetch<MyTransferPlans>(`/me/events/${eventId}/transfer-plans`).then(
       (data) => {
         if (!cancelled) setState({ kind: 'ready', plans: data.plans });
@@ -78,16 +80,20 @@ export function useMyTransferPlans(eventId: string) {
     return () => {
       cancelled = true;
     };
-  }, [eventId, attempt]);
+  }, [eventId, attempt, enabled]);
+  // Hidden reads as an empty, settled list; nothing was asked for.
+  const hidden: MyTransferPlansState = { kind: 'ready', plans: [] };
   return {
-    state,
+    state: enabled ? state : hidden,
     retry: () => setAttempt((n) => n + 1),
     /** After a change the list is read again so every tab's label and status is current. */
     refresh: () =>
-      apiFetch<MyTransferPlans>(`/me/events/${eventId}/transfer-plans`).then(
-        (data) => setState({ kind: 'ready', plans: data.plans }),
-        () => undefined,
-      ),
+      !enabled
+        ? Promise.resolve()
+        : apiFetch<MyTransferPlans>(`/me/events/${eventId}/transfer-plans`).then(
+            (data) => setState({ kind: 'ready', plans: data.plans }),
+            () => undefined,
+          ),
   };
 }
 

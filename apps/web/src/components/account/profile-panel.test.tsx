@@ -26,6 +26,7 @@ const lagos: MyEvent = {
     signedUpAt: '2026-10-29T15:34:07.015Z',
   },
   attendance: { status: 'pending' },
+  transferPlan: { visible: true, shownFrom: null },
 };
 
 describe('ProfilePanel', () => {

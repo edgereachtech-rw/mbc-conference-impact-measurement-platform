@@ -39,6 +39,8 @@ const eventWith = (stages: EventDetail['assessmentStages']): EventDetail => ({
   additionalInfo: null,
   status: 'active',
   countTestDelegates: false,
+  transferPlanVisibility: 'shown',
+  transferPlanShownFrom: null,
   startsOn: '2026-11-12',
   endsOn: '2026-11-13',
   dates: [{ id: 'd1', date: '2026-11-13' }],

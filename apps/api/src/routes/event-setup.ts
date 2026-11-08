@@ -90,6 +90,8 @@ export function eventDetailOf(event: EventRow): EventDetail {
     additionalInfo: event.additionalInfo,
     status: event.status,
     countTestDelegates: event.countTestDelegates,
+    transferPlanVisibility: event.transferPlanVisibility,
+    transferPlanShownFrom: event.transferPlanShownFrom?.toISOString() ?? null,
     startsOn: isoDate(event.startsOn),
     endsOn: isoDate(event.endsOn),
     dates: event.dates.map((d) => ({ id: d.id, date: isoDate(d.date) })),

@@ -26,6 +26,7 @@ const lagos: MyEvent = {
     signedUpAt: null,
   },
   attendance: { status: 'pending' },
+  transferPlan: { visible: true, shownFrom: null },
 };
 const past: MyEvent = {
   ...lagos,

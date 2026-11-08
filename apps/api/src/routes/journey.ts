@@ -4,6 +4,7 @@ import {
   stageWindowState,
   waveLabel,
   type Journey,
+  transferPlanVisible,
 } from '@mbc/shared';
 import { Router } from 'express';
 
@@ -64,6 +65,8 @@ export function journeyRouter({ prisma, config, middleware, now }: Deps): Router
             id: true,
             name: true,
             timezone: true,
+            transferPlanVisibility: true,
+            transferPlanShownFrom: true,
             dates: {
               orderBy: { date: 'asc' },
               select: { id: true, date: true, attendanceClosedAt: true },
@@ -195,23 +198,27 @@ export function journeyRouter({ prisma, config, middleware, now }: Deps): Router
         submitted: reflections.filter((r) => r._count.responses > 0).length,
       },
       feedback: { sessions: feedbackSessions, submitted: feedback },
-      plan: plan
-        ? {
-            status: plan.status,
-            actions: plan.actions.length,
-            priority: (plan.actions.find((a) => a.isPriority) ?? plan.actions[0])?.action || null,
-            applied: plan.actions.filter((a) => appliedStatuses.includes(a.progressStatus)).length,
-            measures: plan.actions.reduce((n, a) => n + a.measures.length, 0),
-            withResult: plan.actions.reduce(
-              (n, a) => n + a.measures.filter((m) => m.actualValue.trim()).length,
-              0,
-            ),
-            evidence: plan.actions.reduce((n, a) => n + a._count.evidenceRecords, 0),
-            reminder: plan.reminderFrequency,
-            nextReminderAt: plan.nextReminderAt?.toISOString() ?? null,
-            updatedAt: plan.updatedAt.toISOString(),
-          }
-        : null,
+      // Transfer Planning hidden by the organisers (2026-11-08): no plan, no next step.
+      transferPlanHidden: !transferPlanVisible(delegate.event, clock()),
+      plan:
+        plan && transferPlanVisible(delegate.event, clock())
+          ? {
+              status: plan.status,
+              actions: plan.actions.length,
+              priority: (plan.actions.find((a) => a.isPriority) ?? plan.actions[0])?.action || null,
+              applied: plan.actions.filter((a) => appliedStatuses.includes(a.progressStatus))
+                .length,
+              measures: plan.actions.reduce((n, a) => n + a.measures.length, 0),
+              withResult: plan.actions.reduce(
+                (n, a) => n + a.measures.filter((m) => m.actualValue.trim()).length,
+                0,
+              ),
+              evidence: plan.actions.reduce((n, a) => n + a._count.evidenceRecords, 0),
+              reminder: plan.reminderFrequency,
+              nextReminderAt: plan.nextReminderAt?.toISOString() ?? null,
+              updatedAt: plan.updatedAt.toISOString(),
+            }
+          : null,
       // Support requests exist since 2026-11-07 (brief 11.7): "ok" once the delegate has one.
       supportRequests: { state: supportRequests > 0 ? 'ok' : 'no_response' },
     };

@@ -29,6 +29,15 @@ datasource db {
 
 // ------------------------------------------------------------------ enums
 
+/// Whether delegates see Transfer Planning (2026-11-08): always, never, or from a date.
+enum TransferPlanVisibility {
+  shown
+  hidden
+  scheduled
+
+  @@map("transfer_plan_visibility")
+}
+
 enum EventStatus {
   draft
   active
@@ -501,6 +510,11 @@ model Event {
   /// Whether registrations with status `test` count in this event's reports, dashboards and
   /// summaries. Off by default; never affects whether a test delegate may sign in.
   countTestDelegates Boolean     @default(false) @map("count_test_delegates")
+  /// Whether delegates see Transfer Planning (2026-11-08): shown, hidden, or shown from
+  /// transferPlanShownFrom. Hidden means no tab, no next step, no reminders and no status step
+  /// in the follow-ups; the plans and their data stay and come back when shown again.
+  transferPlanVisibility TransferPlanVisibility @default(shown) @map("transfer_plan_visibility")
+  transferPlanShownFrom  DateTime?              @map("transfer_plan_shown_from") @db.Timestamptz(3)
   /// Structured profile (E1 brief, section 3). The slug is the unique event code.
   description        String      @default("")
   eventType          EventType   @default(conference) @map("event_type")

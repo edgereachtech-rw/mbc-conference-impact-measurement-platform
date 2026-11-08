@@ -1,4 +1,4 @@
-import { overallAttendance, type MyEvent } from '@mbc/shared';
+import { overallAttendance, transferPlanVisible, type MyEvent } from '@mbc/shared';
 import { Router } from 'express';
 
 import type { AuthConfig } from '../auth/config.js';
@@ -36,6 +36,8 @@ const EVENT_SELECT = {
   location: true,
   format: true,
   status: true,
+  transferPlanVisibility: true,
+  transferPlanShownFrom: true,
 } as const;
 
 function isoDate(value: Date): string {
@@ -94,6 +96,10 @@ export function meEventsRouter({ prisma, config, middleware, now }: Deps): Route
       startsOn: isoDate(r.event.startsOn),
       endsOn: isoDate(r.event.endsOn),
       timezone: r.event.timezone,
+      transferPlan: {
+        visible: transferPlanVisible(r.event, clock()),
+        shownFrom: r.event.transferPlanShownFrom?.toISOString() ?? null,
+      },
       location: r.event.location,
       format: r.event.format,
       period: isoDate(r.event.endsOn) >= current ? 'upcoming' : 'past',

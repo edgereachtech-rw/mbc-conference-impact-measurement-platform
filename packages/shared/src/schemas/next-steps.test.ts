@@ -20,8 +20,18 @@ const journey = (over: Partial<Journey> = {}): Journey => ({
   reflections: { available: 0, submitted: 0 },
   feedback: { sessions: 0, submitted: 0 },
   plan: null,
+  transferPlanHidden: false,
   supportRequests: { state: 'not_collected' },
   ...over,
+});
+
+describe('nextSteps with Transfer Planning hidden', () => {
+  it('leaves the plan step out while the organisers hide Transfer Planning', () => {
+    expect(
+      nextSteps(journey({ transferPlanHidden: true })).some((s) => s.key === 'transfer-plan'),
+    ).toBe(false);
+    expect(nextSteps(journey()).some((s) => s.key === 'transfer-plan')).toBe(true);
+  });
 });
 
 describe('nextSteps', () => {

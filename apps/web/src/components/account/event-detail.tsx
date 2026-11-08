@@ -67,6 +67,7 @@ const STATIC: Record<StaticTab, TabItem> = {
 function journeyTabs(
   forms: readonly MyAssessment[],
   reflections: readonly MyReflection[],
+  planVisible: boolean,
 ): TabItem[] {
   const of = (stage: AssessmentStage): TabItem[] =>
     forms
@@ -91,8 +92,9 @@ function journeyTabs(
         hint: `Reflection for ${formatDay(r.date)}`,
       })),
     STATIC.feedback,
-    // One Transfer plans tab (2026-11-07); the plans are tabs inside it.
-    STATIC['transfer-plan'],
+    // One Transfer plans tab (2026-11-07); the plans are tabs inside it. None while the
+    // organisers hide Transfer Planning (2026-11-08).
+    ...(planVisible ? [STATIC['transfer-plan']] : []),
     ...of('end_of_conference'),
     ...of('follow_up'),
   ];
@@ -108,11 +110,13 @@ function journeyTabs(
 export function EventDetail({ event, contactEmail }: { event: MyEvent; contactEmail: string }) {
   const assessments = useMyAssessments(event.id);
   const reflections = useMyReflections(event.id);
-  const transferPlans = useMyTransferPlans(event.id);
+  // Transfer Planning can be hidden by the organisers, outright or until a date (2026-11-08).
+  const planVisible = event.transferPlan?.visible !== false;
+  const transferPlans = useMyTransferPlans(event.id, planVisible);
   const forms = assessments.state.kind === 'ready' ? assessments.state.assessments : [];
   const days = reflections.state.kind === 'ready' ? reflections.state.reflections : [];
   const plans = transferPlans.state.kind === 'ready' ? transferPlans.state.plans : [];
-  const tabs = journeyTabs(forms, days);
+  const tabs = journeyTabs(forms, days, planVisible);
   // A plan's own id (`#transfer-plan-<id>`) is a known address: it opens the tab on that plan.
   const ids: Tab[] = [
     ...tabs.map((t) => t.id),
@@ -223,7 +227,7 @@ export function EventDetail({ event, contactEmail }: { event: MyEvent; contactEm
           />
         ) : null}
         {tab === 'feedback' ? <SessionFeedbackList eventId={event.id} /> : null}
-        {tab === 'transfer-plan' ? (
+        {tab === 'transfer-plan' && planVisible ? (
           <TransferPlansTabs
             eventId={event.id}
             timezone={event.timezone}

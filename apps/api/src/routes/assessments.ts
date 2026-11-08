@@ -21,6 +21,7 @@ import {
   questionPatchSchema,
   responseSaveSchema,
   followUpProgressSchema,
+  transferPlanVisible,
   sectionFieldsSchema,
   sectionKeyOf,
   sectionOrderSchema,
@@ -1429,8 +1430,17 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
   }
 
   /** What the built-in blocks need: reference answers and the plan status, once per request. */
+  /** Transfer Planning hidden by the organisers (2026-11-08): a follow-up shows no plan. */
+  async function planHiddenFor(eventId: string): Promise<boolean> {
+    const event = await prisma().event.findUnique({
+      where: { id: eventId },
+      select: { transferPlanVisibility: true, transferPlanShownFrom: true },
+    });
+    return !event || !transferPlanVisible(event, clock());
+  }
+
   async function contextFor(eventId: string, delegateId: string) {
-    const [references, planStatus, plan] = await Promise.all([
+    const [references, planStatus, plan, planHidden] = await Promise.all([
       referenceAnswersFor(prisma(), eventId, delegateId),
       planStatusFor(prisma(), eventId, delegateId),
       // The plan itself, so a follow-up wave shows it beside its questions and the delegate
@@ -1467,31 +1477,33 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
           },
         },
       }),
+      planHiddenFor(eventId),
     ]);
     const hasPreAnswer = Boolean(references[0]?.answer);
-    const planSummary = plan
-      ? {
-          id: plan.id,
-          status: plan.status,
-          actions: plan.actions.map((a) => ({
-            id: a.id,
-            order: a.order,
-            title: a.title,
-            action: a.action,
-            isPriority: a.isPriority,
-            progressStatus: a.progressStatus,
-            targetDate: a.targetOn ? a.targetOn.toISOString().slice(0, 10) : null,
-            followUps: a.progress.map((p) => ({
-              wave: p.followUpWave!,
-              waveLabel: p.waveLabel,
-              status: p.status,
-              note: p.note ?? '',
-              occurredOn: p.occurredOn ? p.occurredOn.toISOString().slice(0, 10) : null,
-              recordedAt: p.recordedAt.toISOString(),
+    const planSummary =
+      plan && !planHidden
+        ? {
+            id: plan.id,
+            status: plan.status,
+            actions: plan.actions.map((a) => ({
+              id: a.id,
+              order: a.order,
+              title: a.title,
+              action: a.action,
+              isPriority: a.isPriority,
+              progressStatus: a.progressStatus,
+              targetDate: a.targetOn ? a.targetOn.toISOString().slice(0, 10) : null,
+              followUps: a.progress.map((p) => ({
+                wave: p.followUpWave!,
+                waveLabel: p.waveLabel,
+                status: p.status,
+                note: p.note ?? '',
+                occurredOn: p.occurredOn ? p.occurredOn.toISOString().slice(0, 10) : null,
+                recordedAt: p.recordedAt.toISOString(),
+              })),
             })),
-          })),
-        }
-      : null;
+          }
+        : null;
     // Every question key this delegate's stages may refer to, answered once per request: which
     // questions they are asked, and which earlier answers are shown back, both depend on it.
     const referenced = await prisma().assessmentQuestion.findMany({
@@ -1672,6 +1684,7 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
     delegateId: string,
     wave: number,
   ): Promise<number> {
+    if (await planHiddenFor(eventId)) return 0;
     const plan = await prisma().transferPlan.findFirst({
       where: { eventId, delegateId },
       orderBy: { sequence: 'desc' },

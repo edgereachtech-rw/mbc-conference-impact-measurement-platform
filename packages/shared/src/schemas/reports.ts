@@ -613,6 +613,8 @@ export const journeySchema = z.object({
   ),
   reflections: z.object({ available: z.number().int(), submitted: z.number().int() }),
   feedback: z.object({ sessions: z.number().int(), submitted: z.number().int() }),
+  /** Transfer Planning is hidden from the delegate right now (2026-11-08): no plan step. */
+  transferPlanHidden: z.boolean().default(false),
   plan: z
     .object({
       status: z.enum(transferPlanStatuses),

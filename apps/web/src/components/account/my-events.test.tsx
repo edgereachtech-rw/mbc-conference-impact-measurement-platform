@@ -43,6 +43,7 @@ const lagos = {
     signedUpAt: null,
   },
   attendance: { status: 'pending' },
+  transferPlan: { visible: true, shownFrom: null },
 } as const;
 const past = {
   ...lagos,

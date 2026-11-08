@@ -108,7 +108,7 @@ export function nextSteps(journey: Journey): NextStep[] {
     });
   }
 
-  if (!journey.plan || journey.plan.status === 'draft') {
+  if (!journey.transferPlanHidden && (!journey.plan || journey.plan.status === 'draft')) {
     const started = Boolean(journey.plan && journey.plan.actions > 0);
     steps.push({
       key: 'transfer-plan',
