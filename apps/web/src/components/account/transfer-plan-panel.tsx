@@ -56,7 +56,7 @@ export type MyTransferPlansState =
 type PlanState =
   | { kind: 'loading' }
   | { kind: 'ready'; data: MyTransferPlan }
-  | { kind: 'error'; message: string; requestId?: string };
+  | { kind: 'error'; message: string; requestId?: string; gone?: boolean };
 
 /** The delegate's plans for one event, loaded once by the event page and shared by the tabs. */
 export function useMyTransferPlans(eventId: string) {
@@ -146,19 +146,46 @@ export function TransferPlanPanel({
         if (!cancelled) setPlan({ id: planId, state: { kind: 'ready', data } });
       },
       (e: unknown) => {
-        if (!cancelled) {
-          const failure = describeError(e, 'Your plan could not be loaded.');
+        if (cancelled) return;
+        // The plan is gone (deleted or replaced while this page was open): the list is read
+        // again and the current plan takes its place (2026-11-08), instead of asking for the
+        // same id until the page is reloaded.
+        if (e instanceof ApiError && e.status === 404) {
           setPlan({
             id: planId,
-            state: { kind: 'error', message: failure.message, requestId: failure.requestId },
+            state: {
+              kind: 'error',
+              gone: true,
+              message: 'This plan no longer exists. Your current plan is being opened instead.',
+              requestId: e.requestId,
+            },
           });
+          onPlansChanged();
+          return;
         }
+        const failure = describeError(e, 'Your plan could not be loaded.');
+        setPlan({
+          id: planId,
+          state: { kind: 'error', message: failure.message, requestId: failure.requestId },
+        });
       },
     );
     return () => {
       cancelled = true;
     };
+    // onPlansChanged is a stable callback of the page; the load depends on the ids only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eventId, planId, attempt]);
+
+  // Once the fresh list is in and the gone plan is not on it, open the plan that is current.
+  useEffect(() => {
+    if (!plan || plan.id !== planId || plan.state.kind !== 'error' || !plan.state.gone) return;
+    if (plans.kind !== 'ready' || plans.plans.some((p) => p.id === planId)) return;
+    const next = defaultPlan(plans.plans);
+    if (next && next !== planId) onOpenPlan(next);
+    // onOpenPlan is a stable callback of the page.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [plan, planId, plans]);
 
   function updated(data: MyTransferPlan, message?: string) {
     setPlan({ id: data.plan.id, state: { kind: 'ready', data } });

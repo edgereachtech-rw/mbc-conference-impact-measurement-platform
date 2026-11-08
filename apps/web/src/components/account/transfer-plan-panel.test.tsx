@@ -167,6 +167,12 @@ function stub(initial: MyTransferPlan) {
         return json({ plans: [...plans.values()].map(summaryOf) });
       }
       const id = /transfer-plans\/([^/?]+)/.exec(url)?.[1] ?? initial.plan.id;
+      if (!plans.has(id)) {
+        return json(
+          { error: { code: 'not_found', message: 'Plan not found.', requestId: 'r404' } },
+          404,
+        );
+      }
       let current = plans.get(id)!;
       if (init?.method === 'PUT') {
         const input = body as {
@@ -357,6 +363,16 @@ describe('TransferPlanPanel', () => {
     const alert = await screen.findByRole('alert');
     expect(alert.textContent).toMatch(/changed since you opened it/);
     expect(within(alert).getByRole('button', { name: 'Reload my plan' })).toBeTruthy();
+  });
+
+  it('falls back to the current plan when the one it asked for no longer exists', async () => {
+    // The page still holds an old plan id; the server only knows the current plan.
+    const calls = stub(plan({ plan: { ...plan().plan, id: PLAN2 } }));
+    render(<Harness planId={PLAN} />);
+    expect(await screen.findByText('How to measure transfer')).toBeTruthy();
+    expect(calls.some((c) => c.url.endsWith(`/transfer-plans/${PLAN}`))).toBe(true);
+    expect(calls.some((c) => c.url.endsWith(`/transfer-plans/${PLAN2}`))).toBe(true);
+    expect(screen.queryByText(/could not be loaded/)).toBeNull();
   });
 
   it('shows the progress the follow-ups recorded and leaves recording to them', async () => {
