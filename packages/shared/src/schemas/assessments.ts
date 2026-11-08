@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { transferPlanStatuses } from './transfer-plans.js';
+import { actionProgressStatuses, transferPlanStatuses } from './transfer-plans.js';
 
 import { assessmentStages, isoDateSchema, type AssessmentStage } from './events.js';
 
@@ -677,16 +677,31 @@ export type KnowledgeFeedback = z.infer<typeof knowledgeFeedbackSchema>;
  * The delegate's own plan, shown back inside a follow-up wave (E12-2, E12-3): they never re-enter
  * it. Read-only and compact — the actions and where each one stands, not the whole plan form.
  */
+/** One status a follow-up wave recorded on a planned action (2026-11-08). */
+export const followUpProgressViewSchema = z.object({
+  wave: z.number().int(),
+  waveLabel: z.string(),
+  status: z.enum(actionProgressStatuses),
+  note: z.string(),
+  occurredOn: z.string().nullable(),
+  recordedAt: z.string(),
+});
+export type FollowUpProgressView = z.infer<typeof followUpProgressViewSchema>;
+
 export const assessmentPlanSummarySchema = z.object({
+  id: z.uuid(),
   status: z.enum(transferPlanStatuses),
   actions: z.array(
     z.object({
       id: z.uuid(),
       order: z.number().int(),
+      title: z.string(),
       action: z.string(),
       isPriority: z.boolean(),
-      progressStatus: z.string(),
+      progressStatus: z.enum(actionProgressStatuses),
       targetDate: z.string().nullable(),
+      /** What each follow-up wave recorded for this action so far, oldest first. */
+      followUps: z.array(followUpProgressViewSchema),
     }),
   ),
 });

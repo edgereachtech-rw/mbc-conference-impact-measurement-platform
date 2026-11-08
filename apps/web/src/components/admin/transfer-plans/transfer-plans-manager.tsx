@@ -773,13 +773,15 @@ function ActionSummary({
       {action.progress.length > 0 ? (
         <details>
           <summary className="cursor-pointer text-xs font-semibold text-corp-green-text">
-            Progress ({action.progress.length})
+            Progress from the follow-ups ({action.progress.length})
           </summary>
           <ul className="mt-1 space-y-1 text-xs text-corp-text">
             {action.progress.map((p) => (
               <li key={p.id}>
+                {p.waveLabel ? <span className="text-corp-muted">{p.waveLabel} · </span> : null}
                 <span className="font-semibold">{actionProgressLabels[p.status]}</span>{' '}
                 <span className="text-corp-muted">{formatInstant(p.recordedAt, timezone)}</span>
+                {p.occurredOn ? ` · on ${formatDateShort(p.occurredOn)}` : ''}
                 {p.note ? ` · ${p.note}` : ''}
                 {p.newTargetOn ? ` · new target ${formatDateShort(p.newTargetOn)}` : ''}
               </li>

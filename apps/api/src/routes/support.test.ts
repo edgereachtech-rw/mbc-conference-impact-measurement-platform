@@ -262,6 +262,26 @@ describe.skipIf(!hasDatabase)('transfer support requests', () => {
     );
     expect(draft.status, draft.text).toBe(200);
     expect(await prisma.supportRequest.count({ where: { eventId, source: 'follow_up' } })).toBe(0);
+    // The wave asks where each planned action stands before it can be submitted (2026-11-08).
+    const plans = await call('get', `/me/events/${eventId}/transfer-plans`, undefined, cookies.dee);
+    const plan = await call(
+      'get',
+      `/me/events/${eventId}/transfer-plans/${plans.body.plans[0].id}`,
+      undefined,
+      cookies.dee,
+    );
+    const statuses = await call(
+      'put',
+      `/me/events/${eventId}/assessments/follow_up/plan-progress?wave=1`,
+      {
+        actions: (plan.body.plan.actions as Array<{ id: string }>).map((a) => ({
+          actionId: a.id,
+          status: 'started',
+        })),
+      },
+      cookies.dee,
+    );
+    expect(statuses.status, statuses.text).toBe(200);
     const submitted = await call(
       'put',
       `/me/events/${eventId}/assessments/follow_up?wave=1`,

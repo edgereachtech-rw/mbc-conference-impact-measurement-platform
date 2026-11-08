@@ -1,5 +1,4 @@
 import {
-  actionProgressSchema,
   actionProgressStatuses,
   actionSubmissionGaps,
   evidenceSaveSchema,
@@ -211,6 +210,9 @@ function actionViewOf(a: ActionRow): PlanActionView {
     progress: a.progress.map((p) => ({
       id: p.id,
       status: p.status,
+      wave: p.followUpWave,
+      waveLabel: p.waveLabel,
+      occurredOn: isoDate(p.occurredOn),
       note: p.note,
       evidence: p.evidence,
       results: p.results,
@@ -769,60 +771,6 @@ export function transferPlanRouter({
         });
       });
       res.json(await myView(delegate.eventId, delegate.id, plan.id));
-    },
-  );
-
-  router.post(
-    '/me/events/:eventId/transfer-plans/:planId/actions/:actionId/progress',
-    middleware.requireAuth,
-    validated(actionProgressSchema),
-    async (req, res) => {
-      const { principal, delegate } = await myRegistration(res, String(req.params.eventId));
-      const actionId = String(req.params.actionId);
-      if (!UUID.test(actionId)) throw new HttpError(404, 'not_found', 'Action not found.');
-      const plan = await loadPlan(delegate.eventId, delegate.id, String(req.params.planId));
-      assertEditable(plan);
-      const action = plan.actions.find((a) => a.id === actionId);
-      if (!action) throw new HttpError(404, 'not_found', 'Action not found.');
-      const input = req.body as z.infer<typeof actionProgressSchema>;
-      const at = clock();
-      await prisma().$transaction(async (tx) => {
-        await tx.transferPlanProgress.create({
-          data: {
-            actionId: action.id,
-            status: input.status,
-            note: input.note || null,
-            evidence: input.evidence || null,
-            results: input.results || null,
-            challenges: input.challenges || null,
-            newTargetOn: dayOf(input.newTargetOn),
-            recordedAt: at,
-            recordedByUserId: principal.userId,
-          },
-        });
-        await tx.transferPlanAction.update({
-          where: { id: action.id },
-          data: {
-            progressStatus: input.status,
-            ...(input.newTargetOn ? { targetOn: dayOf(input.newTargetOn) } : {}),
-          },
-        });
-        await tx.transferPlan.update({
-          where: { id: plan.id },
-          data: { version: plan.version + 1, updatedByUserId: principal.userId },
-        });
-        await audit(tx, {
-          action: 'transfer_plan.progress_recorded',
-          entityType: 'transfer_plan_action',
-          entityId: action.id,
-          eventId: delegate.eventId,
-          actorUserId: principal.userId,
-          oldValue: { status: action.progressStatus },
-          newValue: { status: input.status, targetChanged: Boolean(input.newTargetOn) },
-          ...clientOf(res),
-        });
-      });
-      res.status(201).json(await myView(delegate.eventId, delegate.id, plan.id));
     },
   );
 

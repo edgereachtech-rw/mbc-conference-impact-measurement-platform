@@ -89,19 +89,90 @@ export const actionProgressLabels: Record<ActionProgressStatus, string> = {
 /** Statuses that count as application of learning (backlog E12-11). */
 export const appliedStatuses: readonly ActionProgressStatus[] = ['applied', 'applied_consistently'];
 
-/** What the delegate must add with a status (backlog E12-9, Appendix B); null when nothing. */
+/**
+ * What each status means and an example of it, in the words of the product owner's rules
+ * (2026-11-08). Shown beside the choice in every follow-up. "Started", "In progress" and
+ * "Completed" do not mean the learning was applied: application is "Applied" or "Applied
+ * consistently", reported in its own right.
+ */
+export const actionProgressDefinitions: Record<
+  ActionProgressStatus,
+  { definition: string; example: string }
+> = {
+  not_started: {
+    definition: 'You have not begun the planned action.',
+    example: 'You plan to meet your line manager but have not scheduled or held the meeting.',
+  },
+  started: {
+    definition:
+      'You have taken an initial step, but the action is not yet advanced enough to be in progress.',
+    example: 'You have contacted your line manager to arrange a meeting.',
+  },
+  in_progress: {
+    definition:
+      'You are actively working on the action, but it has not yet reached the planned point of completion or application.',
+    example: 'You are developing an application-tracking process with the relevant stakeholders.',
+  },
+  applied: {
+    definition: 'You have used the learning or practice at least once in a real work situation.',
+    example: 'You used the new tracking process for one training programme.',
+  },
+  applied_consistently: {
+    definition: 'You have used the learning or practice repeatedly over the period you describe.',
+    example: 'You have used the tracking process across several training programmes.',
+  },
+  completed: {
+    definition: 'The planned action has been finished according to your stated goal.',
+    example: 'Your planned task was to introduce a tracking process, and it has been introduced.',
+  },
+  changed: {
+    definition:
+      'The original action has been revised because your circumstances, priorities or approach changed.',
+    example: 'You changed the planned initiative after an organisational review.',
+  },
+  no_longer_applicable: {
+    definition: 'The original action is no longer relevant or possible in your circumstances.',
+    example: 'You moved to a role where the planned action cannot be carried out.',
+  },
+};
+
+/** What a status asks the delegate to add (backlog E12-9; rules of 2026-11-08); null when nothing. */
 export const progressDetailPrompt: Record<ActionProgressStatus, string | null> = {
   not_started: null,
   started: null,
   in_progress: null,
-  applied: 'Give an example and say when you applied it.',
-  applied_consistently: 'Give an example and say over which period you applied it.',
-  completed: 'Say what was completed and when.',
+  applied: 'Give an example, and say when that application occurred.',
+  applied_consistently: 'Give an example, and say when an application occurred.',
+  completed: 'Say what was completed, and when.',
   changed: 'Explain briefly what changed and why.',
   no_longer_applicable: 'Explain briefly why it no longer applies.',
 };
 export const progressNeedsDetail = (status: ActionProgressStatus) =>
   progressDetailPrompt[status] !== null;
+/** The label of the explanation a status asks for; null when it asks for none. */
+export const progressNoteLabel: Record<ActionProgressStatus, string | null> = {
+  not_started: null,
+  started: null,
+  in_progress: null,
+  applied: 'An example of applying it',
+  applied_consistently: 'An example of applying it',
+  completed: 'What was completed',
+  changed: 'What changed, and why',
+  no_longer_applicable: 'Why it no longer applies',
+};
+/** The label of the date a status asks for; null when it asks for none. */
+export const progressDateLabel: Record<ActionProgressStatus, string | null> = {
+  not_started: null,
+  started: null,
+  in_progress: null,
+  applied: 'When did this application occur?',
+  applied_consistently: 'When did an application occur?',
+  completed: 'When was it completed?',
+  changed: null,
+  no_longer_applicable: null,
+};
+export const progressNeedsDate = (status: ActionProgressStatus) =>
+  progressDateLabel[status] !== null;
 
 export const reminderFrequencies = [
   'none',
@@ -288,14 +359,17 @@ export const impactCheckAnswerSchema = z
   });
 export type ImpactCheckAnswerInput = z.infer<typeof impactCheckAnswerSchema>;
 
-export const actionProgressSchema = z
+/**
+ * Where one planned action stands, as told in a follow-up (2026-11-08): the status, the
+ * explanation or example the status asks for, and the date of the application or completion
+ * when it asks for one.
+ */
+export const followUpProgressItemSchema = z
   .object({
+    actionId: z.uuid(),
     status: z.enum(actionProgressStatuses),
     note: text(2_000),
-    evidence: text(2_000),
-    results: text(2_000),
-    challenges: text(2_000),
-    newTargetOn: optionalDay,
+    occurredOn: optionalDay,
   })
   .superRefine((value, ctx) => {
     if (progressNeedsDetail(value.status) && value.note.trim() === '') {
@@ -305,8 +379,20 @@ export const actionProgressSchema = z
         message: progressDetailPrompt[value.status] ?? 'Add a short note.',
       });
     }
+    if (progressNeedsDate(value.status) && !value.occurredOn) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['occurredOn'],
+        message: progressDateLabel[value.status] ?? 'Give the date.',
+      });
+    }
   });
-export type ActionProgressInput = z.infer<typeof actionProgressSchema>;
+export const followUpProgressSchema = z.object({
+  /** The plan the statuses belong to; the delegate's latest plan when left out. */
+  planId: z.uuid().optional(),
+  actions: z.array(followUpProgressItemSchema).min(1).max(50),
+});
+export type FollowUpProgressInput = z.infer<typeof followUpProgressSchema>;
 
 /** The 14 plan fields of backlog Appendix A5 (Q-TP-1 to 13 per action; Q-TP-14 is the reminder). */
 export const planActionFieldLabels: Record<
@@ -699,6 +785,11 @@ export const resultFieldLabels: Record<
 export const progressViewSchema = z.object({
   id: z.uuid(),
   status: z.enum(actionProgressStatuses),
+  /** The follow-up wave that recorded it, and its name; null and "" for older plan-page records. */
+  wave: z.number().int().nullable(),
+  waveLabel: z.string(),
+  /** When the application or completion occurred, when the status asked for it. */
+  occurredOn: z.string().nullable(),
   note: z.string().nullable(),
   evidence: z.string().nullable(),
   results: z.string().nullable(),

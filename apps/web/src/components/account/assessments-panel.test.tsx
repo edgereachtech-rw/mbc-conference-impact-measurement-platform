@@ -217,7 +217,124 @@ function Harness({ stage, wave = 1 }: { stage: AssessmentStage; wave?: number })
     />
   );
 }
+const json = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+const PLAN_ACTION = '99999999-9999-4999-8999-999999999999';
+const PLAN_ID = '88888888-8888-4888-8888-888888888888';
+/** A 30-day follow-up with a plan whose action has no status in this wave yet. */
+const followUpWithPlan: MyAssessment = {
+  ...open,
+  stage: 'follow_up',
+  wave: 1,
+  waveLabel: '30-day follow-up',
+  questions: [
+    question('t', { type: 'long_text', prompt: 'What have you done so far?', required: false }),
+  ] as MyAssessment['questions'],
+  context: {
+    ...noContext,
+    plan: {
+      id: PLAN_ID,
+      status: 'submitted',
+      actions: [
+        {
+          id: PLAN_ACTION,
+          order: 1,
+          title: 'Faster handovers',
+          action: 'Brief stakeholders',
+          isPriority: true,
+          progressStatus: 'not_started',
+          targetDate: null,
+          followUps: [],
+        },
+      ],
+    },
+  },
+};
+
 describe('AssessmentsPanel', () => {
+  it('asks where each planned action stands before the follow-up questions, with the detail the status needs', async () => {
+    const calls: Array<{ url: string; body: unknown }> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (init?.method === 'PUT') {
+          const body = JSON.parse(String(init.body)) as {
+            actions: Array<{ status: 'applied'; note: string; occurredOn: string }>;
+          };
+          calls.push({ url, body });
+          const recorded = {
+            ...followUpWithPlan,
+            context: {
+              ...followUpWithPlan.context,
+              plan: {
+                ...followUpWithPlan.context.plan!,
+                actions: followUpWithPlan.context.plan!.actions.map((a) => ({
+                  ...a,
+                  progressStatus: body.actions[0]!.status,
+                  followUps: [
+                    {
+                      wave: 1,
+                      waveLabel: '30-day follow-up',
+                      status: body.actions[0]!.status,
+                      note: body.actions[0]!.note,
+                      occurredOn: body.actions[0]!.occurredOn,
+                      recordedAt: '2026-12-15T09:00:00.000Z',
+                    },
+                  ],
+                })),
+              },
+            },
+          };
+          return json({ assessments: [recorded] });
+        }
+        return json({ assessments: [followUpWithPlan] });
+      }),
+    );
+    const user = userEvent.setup();
+    render(<Harness stage="follow_up" />);
+    const card = await screen.findByRole('article', { name: '30-day follow-up' });
+    // The questions wait for the statuses.
+    expect(within(card).queryByLabelText('What have you done so far?')).toBeNull();
+    expect(within(card).getByText(/questions follow once you have saved/)).toBeTruthy();
+    const section = within(card).getByRole('region', { name: 'Where your actions stand' });
+    const form = within(section).getByRole('group', { name: 'Faster handovers' });
+    await user.selectOptions(
+      within(form).getByLabelText('Where does this action stand?'),
+      'applied',
+    );
+    expect(form.textContent).toMatch(/used the learning or practice at least once/);
+    await user.click(within(section).getByRole('button', { name: 'Save where my actions stand' }));
+    expect(within(section).getByRole('alert').textContent).toMatch(/Give an example/);
+    expect(calls).toHaveLength(0);
+    await user.type(
+      within(form).getByLabelText(/^An example of applying it/),
+      'Used it in the Q1 programme',
+    );
+    await user.type(within(form).getByLabelText(/^When did this application occur/), '2026-12-10');
+    await user.click(within(section).getByRole('button', { name: 'Save where my actions stand' }));
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.url).toMatch(
+      /\/me\/events\/e1\/assessments\/follow_up\/plan-progress\?wave=1$/,
+    );
+    expect(calls[0]!.body).toEqual({
+      planId: PLAN_ID,
+      actions: [
+        {
+          actionId: PLAN_ACTION,
+          status: 'applied',
+          note: 'Used it in the Q1 programme',
+          occurredOn: '2026-12-10',
+        },
+      ],
+    });
+    // Saved: the summary shows, and the questions open.
+    const summary = await within(card).findByRole('list', { name: 'Statuses in this follow-up' });
+    expect(summary.textContent).toMatch(/Applied/);
+    expect(summary.textContent).toMatch(/Used it in the Q1 programme/);
+    expect(within(card).getByLabelText('What have you done so far?')).toBeTruthy();
+    expect(within(section).getByRole('button', { name: 'Change' })).toBeTruthy();
+  });
+
   it('shows one stage per tab, flags missing answers in a banner, saves a draft and submits after a review popup', async () => {
     const calls = stub([open, upcoming]);
     const user = userEvent.setup();

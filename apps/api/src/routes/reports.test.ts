@@ -492,18 +492,11 @@ describe.skipIf(!hasDatabase)('event dashboards and reports', () => {
     );
     expect(submitted.status, submitted.text).toBe(200);
     const [a1, a2] = submitted.body.plan.actions as Array<{ id: string }>;
-    const progress = await call(
-      'post',
-      `/me/events/${eventId}/transfer-plans/${deePlanId}/actions/${a1!.id}/progress`,
-      { status: 'applied', note: 'Briefed them', challenges: 'Diary clashes' },
-      cookies.dee,
-    );
-    expect(progress.status, progress.text).toBe(201);
     const measures = await call(
       'put',
       `/me/events/${eventId}/transfer-plans/${deePlanId}/actions/${a2!.id}/measures`,
       {
-        version: progress.body.plan.version,
+        version: submitted.body.plan.version,
         measureStatus: 'identified',
         measures: [
           {
@@ -590,6 +583,37 @@ describe.skipIf(!hasDatabase)('event dashboards and reports', () => {
     });
     expect((await call('put', fup(), { enabled: true, status: 'open' })).status).toBe(200);
     await tick('2026-12-15T10:00:00.000Z');
+    // Progress is told in the follow-up (2026-11-08): where each action stands comes first.
+    const deeStatuses = await call(
+      'put',
+      `/me/events/${eventId}/assessments/follow_up/plan-progress`,
+      {
+        actions: [
+          { actionId: a1!.id, status: 'applied', note: 'Briefed them', occurredOn: '2026-12-10' },
+          { actionId: a2!.id, status: 'not_started' },
+        ],
+      },
+      cookies.dee,
+    );
+    expect(deeStatuses.status, deeStatuses.text).toBe(200);
+    const adaPlanNow = await call(
+      'get',
+      `/me/events/${eventId}/transfer-plans/${adaPlanId}`,
+      undefined,
+      cookies.ada,
+    );
+    const adaStatuses = await call(
+      'put',
+      `/me/events/${eventId}/assessments/follow_up/plan-progress`,
+      {
+        actions: (adaPlanNow.body.plan.actions as Array<{ id: string }>).map((a) => ({
+          actionId: a.id,
+          status: 'not_started',
+        })),
+      },
+      cookies.ada,
+    );
+    expect(adaStatuses.status, adaStatuses.text).toBe(200);
     expect(
       (
         await call(
@@ -713,7 +737,8 @@ describe.skipIf(!hasDatabase)('event dashboards and reports', () => {
       prompt: 'What changed at work?',
       responses: 1,
     });
-    expect(t.application.barriers[1]).toMatchObject({ key: 'progress.challenges', responses: 1 });
+    // Challenges are no longer recorded with progress (2026-11-08): the row stays, at zero.
+    expect(t.application.barriers[1]).toMatchObject({ key: 'progress.challenges', responses: 0 });
     expect(t.application.measures).toMatchObject({ with_result: 1, none: 2 });
     expect(t.application.evidence).toEqual({ self_reported: 0, supported: 1 });
     // Results: a lower error rate is an improvement; the result is marked supported, nothing is verified.

@@ -1,8 +1,17 @@
 'use client';
 
 import {
+  actionProgressDefinitions,
   actionProgressLabels,
+  actionProgressStatuses,
+  appliedStatuses,
+  progressDateLabel,
+  progressDetailPrompt,
+  progressNeedsDate,
+  progressNeedsDetail,
+  progressNoteLabel,
   type ActionProgressStatus,
+  type AssessmentPlanSummary,
   answerIssue,
   BUILTIN,
   describeAnswer,
@@ -23,8 +32,9 @@ import { useEffect, useId, useRef, useState } from 'react';
 
 import { Dialog } from '@/components/console/dialog';
 import { consoleButton, StatePanel, StatusPill } from '@/components/console/page';
+import { NativeSelect } from '@/components/imports/native-select';
 import { ApiError, apiFetch } from '@/lib/api';
-import { formatInstant, stageLabels, stagePurpose, stageWhen } from '@/lib/events';
+import { formatDateShort, formatInstant, stageLabels, stagePurpose, stageWhen } from '@/lib/events';
 import { describeError } from '@/lib/imports';
 
 /**
@@ -191,6 +201,14 @@ function AssessmentCard({
         ? 'Closed'
         : 'Opens later';
   const canAnswer = assessment.canAnswer && !submitted;
+  // A follow-up first asks where each action of the Transfer Plan stands (2026-11-08); the
+  // questions come once the statuses of this wave are saved.
+  const planActions =
+    assessment.stage === 'follow_up' ? (assessment.context.plan?.actions ?? []) : [];
+  const statusesRecorded = planActions.every((a) =>
+    a.followUps.some((f) => f.wave === assessment.wave),
+  );
+  const needStatuses = canAnswer && planActions.length > 0 && !statusesRecorded;
   /**
    * A delegate who declines a question is not pressed on what follows from it: the questions
    * after it in the same section, on the same reference and the same branch, drop away. Mirrors
@@ -415,10 +433,26 @@ function AssessmentCard({
           eventId={eventId}
         />
       ) : null}
+      {assessment.stage === 'follow_up' &&
+      assessment.status !== 'upcoming' &&
+      assessment.context.plan &&
+      planActions.length > 0 ? (
+        <FollowUpActionStatuses
+          eventId={eventId}
+          plan={assessment.context.plan}
+          wave={assessment.wave}
+          editable={canAnswer}
+          onUpdated={onUpdated}
+        />
+      ) : null}
 
       {assessment.status === 'upcoming' ? (
         <p className="text-sm text-corp-muted">
           The questions appear here when the assessment opens.
+        </p>
+      ) : needStatuses ? (
+        <p className="text-sm text-corp-muted">
+          The questions follow once you have saved where each action of your plan stands.
         </p>
       ) : assessment.questions.length === 0 ? (
         <p className="text-sm text-corp-muted">No questions have been published for this stage.</p>
@@ -1083,13 +1117,22 @@ function FollowUpContext({
                   {action.isPriority ? (
                     <span className="font-semibold text-corp-ink">First priority: </span>
                   ) : null}
-                  {action.action}
+                  {action.title || action.action}
                   <span className="text-corp-muted">
                     {' · '}
-                    {actionProgressLabels[action.progressStatus as ActionProgressStatus] ??
-                      action.progressStatus}
+                    {actionProgressLabels[action.progressStatus]}
                     {action.targetDate ? ` · target ${action.targetDate}` : ''}
                   </span>
+                  {action.followUps.length > 0 ? (
+                    <span className="block text-xs text-corp-muted">
+                      Earlier follow-ups:{' '}
+                      {action.followUps
+                        .map(
+                          (f) => `${f.waveLabel}: ${actionProgressLabels[f.status].toLowerCase()}`,
+                        )
+                        .join(' · ')}
+                    </span>
+                  ) : null}
                 </li>
               ))}
             </ol>
@@ -1098,10 +1141,277 @@ function FollowUpContext({
             href={`/account/events/${eventId}#transfer-plan`}
             className="mt-2 inline-block text-sm font-semibold text-corp-green-text hover:underline"
           >
-            Open my plan to update progress
+            Open my plan
           </Link>
         </div>
       ) : null}
+    </section>
+  );
+}
+
+interface StatusDraft {
+  status: ActionProgressStatus;
+  note: string;
+  occurredOn: string;
+}
+
+/**
+ * Where each action of the Transfer Plan stands, asked at the start of every follow-up wave
+ * (2026-11-08). One current status per action, with the explanation or example the status asks
+ * for and the date of the application or completion; the delegate may change it until the wave
+ * is submitted. Started, in progress and completed describe the action; application is reported
+ * in its own right, as applied or applied consistently.
+ */
+function FollowUpActionStatuses({
+  eventId,
+  plan,
+  wave,
+  editable,
+  onUpdated,
+}: {
+  eventId: string;
+  plan: AssessmentPlanSummary;
+  wave: number;
+  editable: boolean;
+  onUpdated: (assessments: MyAssessment[]) => void;
+}) {
+  const recordedFor = (a: AssessmentPlanSummary['actions'][number]) =>
+    a.followUps.find((f) => f.wave === wave) ?? null;
+  const recorded = plan.actions.every((a) => recordedFor(a));
+  const [editing, setEditing] = useState(!recorded);
+  const [rows, setRows] = useState<Record<string, StatusDraft>>(() =>
+    Object.fromEntries(
+      plan.actions.map((a) => {
+        const mine = recordedFor(a);
+        return [
+          a.id,
+          {
+            status: mine?.status ?? a.progressStatus,
+            note: mine?.note ?? '',
+            occurredOn: mine?.occurredOn ?? '',
+          },
+        ];
+      }),
+    ),
+  );
+  const [problem, setProblem] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const id = useId();
+  const nameOf = (a: AssessmentPlanSummary['actions'][number]) =>
+    a.title || a.action || `Action ${a.order}`;
+
+  function update(actionId: string, patch: Partial<StatusDraft>) {
+    setRows((r) => ({ ...r, [actionId]: { ...r[actionId]!, ...patch } }));
+    setProblem(null);
+  }
+
+  async function save() {
+    for (const a of plan.actions) {
+      const row = rows[a.id]!;
+      if (progressNeedsDetail(row.status) && row.note.trim() === '') {
+        setProblem(`${nameOf(a)}: ${progressDetailPrompt[row.status]}`);
+        return;
+      }
+      if (progressNeedsDate(row.status) && !row.occurredOn) {
+        setProblem(`${nameOf(a)}: ${progressDateLabel[row.status]}`);
+        return;
+      }
+    }
+    setBusy(true);
+    setProblem(null);
+    try {
+      const result = await apiFetch<{ assessments: MyAssessment[] }>(
+        `/me/events/${eventId}/assessments/follow_up/plan-progress?wave=${wave}`,
+        {
+          method: 'PUT',
+          body: JSON.stringify({
+            planId: plan.id,
+            actions: plan.actions.map((a) => ({
+              actionId: a.id,
+              status: rows[a.id]!.status,
+              note: rows[a.id]!.note,
+              occurredOn: rows[a.id]!.occurredOn || null,
+            })),
+          }),
+        },
+      );
+      onUpdated(result.assessments);
+      setEditing(false);
+    } catch (e) {
+      setProblem(describeError(e, 'Your statuses could not be saved.').message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section
+      aria-label="Where your actions stand"
+      className="space-y-3 border border-corp-line bg-white p-4"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h4 className="font-semibold text-corp-ink">Where your actions stand</h4>
+        {recorded && editable && !editing ? (
+          <button
+            type="button"
+            onClick={() => setEditing(true)}
+            className={consoleButton({ variant: 'secondary', size: 'sm' })}
+          >
+            Change
+          </button>
+        ) : null}
+      </div>
+      <p className="text-sm text-corp-text">
+        Choose one current status for each action of your plan. Started, in progress and completed
+        describe the action itself; if you have used the learning at work, say so with “applied” or
+        “applied consistently”. Each follow-up adds to the history on your plan; nothing is
+        overwritten.
+      </p>
+      {problem ? (
+        <p
+          role="alert"
+          className="border border-brand-danger/40 bg-brand-danger/10 p-3 text-sm font-semibold text-brand-danger"
+        >
+          {problem}
+        </p>
+      ) : null}
+      {!editing ? (
+        <ul aria-label="Statuses in this follow-up" className="space-y-2">
+          {plan.actions.map((a) => {
+            const mine = recordedFor(a);
+            return (
+              <li key={a.id} className="border-l-2 border-corp-line pl-3 text-sm">
+                <p className="font-semibold text-corp-ink">{nameOf(a)}</p>
+                {mine ? (
+                  <>
+                    <p className="flex flex-wrap items-center gap-2">
+                      <StatusPill
+                        tone={appliedStatuses.includes(mine.status) ? 'positive' : 'neutral'}
+                      >
+                        {actionProgressLabels[mine.status]}
+                      </StatusPill>
+                      {mine.occurredOn ? (
+                        <span className="text-xs text-corp-muted">
+                          on {formatDateShort(mine.occurredOn)}
+                        </span>
+                      ) : null}
+                    </p>
+                    {mine.note ? <p className="text-corp-text">{mine.note}</p> : null}
+                  </>
+                ) : (
+                  <p className="text-corp-muted">Not recorded in this follow-up.</p>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        <div className="space-y-4">
+          {plan.actions.map((a, index) => {
+            const row = rows[a.id]!;
+            const noteLabel = progressNoteLabel[row.status];
+            const dateLabel = progressDateLabel[row.status];
+            const meta = actionProgressDefinitions[row.status];
+            return (
+              <fieldset
+                key={a.id}
+                aria-label={nameOf(a)}
+                className="space-y-3 border border-corp-line bg-corp-surface p-3"
+              >
+                <legend className="float-left text-sm font-semibold text-corp-ink">
+                  Action {index + 1}: {nameOf(a)}
+                </legend>
+                <div className="clear-both space-y-1">
+                  <label
+                    htmlFor={`${id}-${a.id}-status`}
+                    className="text-sm font-semibold text-corp-ink"
+                  >
+                    Where does this action stand?
+                  </label>
+                  <NativeSelect
+                    id={`${id}-${a.id}-status`}
+                    value={row.status}
+                    disabled={busy || !editable}
+                    onChange={(e) =>
+                      update(a.id, { status: e.target.value as ActionProgressStatus })
+                    }
+                    className="rounded-none border-corp-line"
+                  >
+                    {actionProgressStatuses.map((s) => (
+                      <option key={s} value={s}>
+                        {actionProgressLabels[s]}
+                      </option>
+                    ))}
+                  </NativeSelect>
+                  <p className="text-xs text-corp-text">{meta.definition}</p>
+                  <p className="text-xs text-corp-muted">Example: {meta.example}</p>
+                </div>
+                {noteLabel ? (
+                  <div className="space-y-1">
+                    <label
+                      htmlFor={`${id}-${a.id}-note`}
+                      className="text-sm font-semibold text-corp-ink"
+                    >
+                      {noteLabel}
+                      <span className="ml-1 text-xs font-normal text-corp-muted">(required)</span>
+                    </label>
+                    <textarea
+                      id={`${id}-${a.id}-note`}
+                      rows={2}
+                      value={row.note}
+                      disabled={busy || !editable}
+                      onChange={(e) => update(a.id, { note: e.target.value })}
+                      className="w-full rounded-none border border-corp-line bg-white px-3 py-2 text-base md:text-sm"
+                    />
+                  </div>
+                ) : null}
+                {dateLabel ? (
+                  <div className="space-y-1">
+                    <label
+                      htmlFor={`${id}-${a.id}-on`}
+                      className="text-sm font-semibold text-corp-ink"
+                    >
+                      {dateLabel}
+                      <span className="ml-1 text-xs font-normal text-corp-muted">(required)</span>
+                    </label>
+                    <input
+                      id={`${id}-${a.id}-on`}
+                      type="date"
+                      value={row.occurredOn}
+                      disabled={busy || !editable}
+                      onChange={(e) => update(a.id, { occurredOn: e.target.value })}
+                      className="h-11 w-full rounded-none border border-corp-line bg-white px-3 text-base md:text-sm"
+                    />
+                  </div>
+                ) : null}
+              </fieldset>
+            );
+          })}
+          {editable ? (
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void save()}
+                className={consoleButton({ variant: 'accent' })}
+              >
+                {busy ? <Loader2Icon className="animate-spin" aria-hidden="true" /> : null}
+                Save where my actions stand
+              </button>
+              {recorded ? (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => setEditing(false)}
+                  className={consoleButton({ variant: 'ghost' })}
+                >
+                  Cancel
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      )}
     </section>
   );
 }

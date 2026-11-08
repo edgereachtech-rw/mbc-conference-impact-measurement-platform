@@ -538,6 +538,22 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   stamps who and when, reopening clears them; audited `support_request.updated`), shown on the
   event settings "Support" tab. The journey reports `supportRequests.state` as `ok` once the
   delegate has one.
+- Progress through the follow-ups (rules of 2026-11-08; migration
+  `20261108001700_follow_up_progress`): the plan page no longer records progress. Each 30, 60,
+  90-day and longer-term follow-up first asks where every action of the Transfer Plan stands,
+  with one current status per action (not yet started, started, in progress, applied, applied
+  consistently, completed, changed, no longer applicable; definitions and examples in
+  `actionProgressDefinitions`). "Changed" and "no longer applicable" need a brief explanation;
+  "applied" and "applied consistently" an example and the date an application occurred;
+  "completed" what was completed and when. The statuses go to
+  `PUT /me/events/:eventId/assessments/follow_up/plan-progress?wave=n` (one record per action
+  per wave in `transfer_plan_progress`, replaceable until the wave is submitted, kept as history
+  afterwards); a wave's sections cannot be submitted before they are in (422
+  `plan_progress_missing`). The plan page and the organisers' plan detail show each follow-up's
+  record under the action; the organisers' list and the reports count each action once, in its
+  latest status. Started, in progress and completed are not application. The delegate support
+  panel left the plan page the same day: support needs are collected by the follow-up questions
+  whose area names support (brief 11.7), and the organisers' Support tab stays.
 - Business measures (spec of 2026-11-08; migration `20261107232000_business_measures`): per
   planned action the delegate first answers "Can you identify a business measure?" (identified /
   not yet known / not applicable, `transfer_plan_action.measure_status`; "identified" needs at

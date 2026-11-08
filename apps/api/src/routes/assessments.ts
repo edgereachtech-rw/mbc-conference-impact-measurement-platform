@@ -20,6 +20,7 @@ import {
   questionOrderSchema,
   questionPatchSchema,
   responseSaveSchema,
+  followUpProgressSchema,
   sectionFieldsSchema,
   sectionKeyOf,
   sectionOrderSchema,
@@ -1438,16 +1439,30 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
         where: { eventId, delegateId },
         orderBy: { sequence: 'desc' },
         select: {
+          id: true,
           status: true,
           actions: {
             orderBy: { order: 'asc' },
             select: {
               id: true,
               order: true,
+              title: true,
               action: true,
               isPriority: true,
               progressStatus: true,
               targetOn: true,
+              progress: {
+                where: { followUpWave: { not: null } },
+                orderBy: [{ followUpWave: 'asc' }, { recordedAt: 'asc' }],
+                select: {
+                  followUpWave: true,
+                  waveLabel: true,
+                  status: true,
+                  note: true,
+                  occurredOn: true,
+                  recordedAt: true,
+                },
+              },
             },
           },
         },
@@ -1456,14 +1471,24 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
     const hasPreAnswer = Boolean(references[0]?.answer);
     const planSummary = plan
       ? {
+          id: plan.id,
           status: plan.status,
           actions: plan.actions.map((a) => ({
             id: a.id,
             order: a.order,
+            title: a.title,
             action: a.action,
             isPriority: a.isPriority,
             progressStatus: a.progressStatus,
             targetDate: a.targetOn ? a.targetOn.toISOString().slice(0, 10) : null,
+            followUps: a.progress.map((p) => ({
+              wave: p.followUpWave!,
+              waveLabel: p.waveLabel,
+              status: p.status,
+              note: p.note ?? '',
+              occurredOn: p.occurredOn ? p.occurredOn.toISOString().slice(0, 10) : null,
+              recordedAt: p.recordedAt.toISOString(),
+            })),
           })),
         }
       : null;
@@ -1638,6 +1663,148 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
     res.json({ assessments: await myAssessments(delegate) });
   });
 
+  /**
+   * Planned actions of the delegate's latest plan with no status yet in a follow-up wave: the
+   * wave cannot be submitted while any remain (2026-11-08). Zero when the delegate has no plan.
+   */
+  async function planProgressMissing(
+    eventId: string,
+    delegateId: string,
+    wave: number,
+  ): Promise<number> {
+    const plan = await prisma().transferPlan.findFirst({
+      where: { eventId, delegateId },
+      orderBy: { sequence: 'desc' },
+      select: {
+        actions: {
+          select: { id: true, progress: { where: { followUpWave: wave }, select: { id: true } } },
+        },
+      },
+    });
+    if (!plan) return 0;
+    return plan.actions.filter((a) => a.progress.length === 0).length;
+  }
+
+  /**
+   * Where each action of the Transfer Plan stands, told in a follow-up wave (2026-11-08):
+   * progress is measured in the 30, 60, 90-day and longer-term follow-ups, not on the plan page.
+   * One record per action per wave, with the explanation the status asks for and the date of
+   * the application or completion; the delegate may change it until the wave is submitted. The
+   * action's current status follows, and earlier records stay as the history.
+   */
+  router.put(
+    '/me/events/:eventId/assessments/follow_up/plan-progress',
+    middleware.requireAuth,
+    validated(followUpProgressSchema),
+    async (req, res) => {
+      const delegate = await myRegistration(res, String(req.params.eventId));
+      const wave = waveOf(req);
+      const input = req.body as z.infer<typeof followUpProgressSchema>;
+      const config = await prisma().assessmentStageConfig.findUnique({
+        where: { eventId_stage_wave: { eventId: delegate.eventId, stage: 'follow_up', wave } },
+        select: {
+          id: true,
+          enabled: true,
+          status: true,
+          opensAt: true,
+          closesAt: true,
+          dueAfterDays: true,
+          responses: { where: { delegateId: delegate.id }, select: { submittedAt: true } },
+        },
+      });
+      if (!config || !config.enabled || windowState(config, clock()) !== 'open') {
+        throw new HttpError(409, 'assessment_not_open', 'This follow-up is not open right now.');
+      }
+      if (config.responses[0]?.submittedAt) {
+        throw new HttpError(
+          409,
+          'already_submitted',
+          'You have already submitted this follow-up; its statuses are kept as they were.',
+        );
+      }
+      const plan = await prisma().transferPlan.findFirst({
+        where: {
+          eventId: delegate.eventId,
+          delegateId: delegate.id,
+          ...(input.planId ? { id: input.planId } : {}),
+        },
+        orderBy: { sequence: 'desc' },
+        select: {
+          id: true,
+          version: true,
+          status: true,
+          actions: { select: { id: true, progressStatus: true } },
+        },
+      });
+      if (!plan) throw new HttpError(404, 'not_found', 'You have no Transfer Plan for this event.');
+      const known = new Map(plan.actions.map((a) => [a.id, a]));
+      for (const item of input.actions) {
+        if (!known.has(item.actionId)) {
+          throw new HttpError(
+            422,
+            'validation_failed',
+            'actions: an id does not belong to your plan.',
+          );
+        }
+      }
+      const covered = new Set(input.actions.map((a) => a.actionId));
+      if (plan.actions.some((a) => !covered.has(a.id))) {
+        throw new HttpError(
+          422,
+          'validation_failed',
+          'actions: every action of your plan needs a status in this follow-up.',
+        );
+      }
+      const label = waveLabel('follow_up', wave, config.dueAfterDays);
+      const at = clock();
+      const principal = principalOf(res);
+      await prisma().$transaction(async (tx) => {
+        for (const item of input.actions) {
+          const data = {
+            status: item.status,
+            note: item.note || null,
+            occurredOn: item.occurredOn ? new Date(`${item.occurredOn}T00:00:00.000Z`) : null,
+            waveLabel: label,
+            recordedAt: at,
+            recordedByUserId: principal.userId,
+          };
+          await tx.transferPlanProgress.upsert({
+            where: { actionId_followUpWave: { actionId: item.actionId, followUpWave: wave } },
+            update: data,
+            create: { ...data, actionId: item.actionId, followUpWave: wave },
+          });
+          await tx.transferPlanAction.update({
+            where: { id: item.actionId },
+            data: { progressStatus: item.status },
+          });
+        }
+        await tx.transferPlan.update({
+          where: { id: plan.id },
+          data: { version: plan.version + 1, updatedByUserId: principal.userId },
+        });
+        await audit(tx, {
+          action: 'transfer_plan.follow_up_progress_recorded',
+          entityType: 'transfer_plan',
+          entityId: plan.id,
+          eventId: delegate.eventId,
+          actorUserId: principal.userId,
+          newValue: {
+            wave,
+            actions: input.actions.length,
+            statuses: Object.fromEntries(
+              input.actions.map((a) => [
+                a.actionId,
+                { from: known.get(a.actionId)!.progressStatus, to: a.status },
+              ]),
+            ),
+          },
+          ...clientOf(res),
+        });
+      });
+      res.json({ assessments: await myAssessments(delegate) });
+    },
+  );
+
   router.put(
     '/me/events/:eventId/assessments/:stage',
     middleware.requireAuth,
@@ -1790,6 +1957,18 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
           problems,
         });
         return;
+      }
+      // A follow-up is submitted only once the delegate has said where each action of their
+      // Transfer Plan stands in this wave (2026-11-08): the follow-ups are how progress is measured.
+      if (config.stage === 'follow_up' && (submit || submitSection !== undefined)) {
+        const missing = await planProgressMissing(delegate.eventId, delegate.id, config.wave);
+        if (missing > 0) {
+          throw new HttpError(
+            422,
+            'plan_progress_missing',
+            `Record where each action of your Transfer Plan stands before submitting this follow-up (${missing} still to record).`,
+          );
+        }
       }
       const at = clock();
       const newKeys = submitting.filter((k) => !locked.has(k));

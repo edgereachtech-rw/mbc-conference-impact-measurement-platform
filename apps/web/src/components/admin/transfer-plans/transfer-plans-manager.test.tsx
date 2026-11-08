@@ -158,6 +158,9 @@ const detail: TransferPlanAdminDetail = {
           {
             id: 'p1',
             status: 'applied',
+            wave: 1,
+            waveLabel: '30-day follow-up',
+            occurredOn: '2026-12-10',
             note: 'Used in Q1 plan',
             evidence: null,
             results: null,

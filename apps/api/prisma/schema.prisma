@@ -1006,11 +1006,19 @@ model TransferPlanProgress {
   results          String?
   challenges       String?
   newTargetOn      DateTime?            @map("new_target_on") @db.Date
+  /// The follow-up wave that recorded this status (2026-11-08): progress is measured in the
+  /// 30, 60, 90-day and longer-term follow-ups, one record per action per wave. Null on the
+  /// records made from the plan page before that date.
+  followUpWave     Int?                 @map("follow_up_wave")
+  waveLabel        String               @default("") @map("wave_label")
+  /// When the application or completion the status reports occurred.
+  occurredOn       DateTime?            @map("occurred_on") @db.Date
   recordedAt       DateTime             @default(now()) @map("recorded_at") @db.Timestamptz(3)
   recordedByUserId String               @map("recorded_by_user_id") @db.Uuid
 
   action TransferPlanAction @relation(fields: [actionId], references: [id], onDelete: Cascade)
 
+  @@unique([actionId, followUpWave])
   @@index([actionId])
   @@map("transfer_plan_progress")
 }

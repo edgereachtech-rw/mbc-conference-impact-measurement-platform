@@ -260,34 +260,6 @@ function stub(initial: MyTransferPlan) {
         plans.set(id, current);
         return json(current);
       }
-      if (url.includes('/progress')) {
-        const input = body as { status: PlanActionView['progressStatus']; note: string };
-        current = {
-          ...current,
-          plan: {
-            ...current.plan,
-            version: current.plan.version + 1,
-            actions: current.plan.actions.map((a) => ({
-              ...a,
-              progressStatus: input.status,
-              progress: [
-                {
-                  id: 'p1',
-                  status: input.status,
-                  note: input.note,
-                  evidence: null,
-                  results: null,
-                  challenges: null,
-                  newTargetOn: null,
-                  recordedAt: '2026-12-01T09:00:00.000Z',
-                },
-              ],
-            })),
-          },
-        };
-        plans.set(id, current);
-        return json(current, 201);
-      }
       return json(current);
     }),
   );
@@ -387,8 +359,8 @@ describe('TransferPlanPanel', () => {
     expect(within(alert).getByRole('button', { name: 'Reload my plan' })).toBeTruthy();
   });
 
-  it('records progress on a saved action with the details the status needs', async () => {
-    const calls = stub(
+  it('shows the progress the follow-ups recorded and leaves recording to them', async () => {
+    stub(
       plan({
         canSubmit: false,
         plan: {
@@ -396,43 +368,45 @@ describe('TransferPlanPanel', () => {
           status: 'submitted',
           submittedAt: '2026-11-13T13:30:00.000Z',
           version: 5,
-          actions: [action()],
+          actions: [
+            action({
+              progressStatus: 'applied',
+              progress: [
+                {
+                  id: 'p1',
+                  status: 'applied',
+                  wave: 1,
+                  waveLabel: '30-day follow-up',
+                  occurredOn: '2026-12-10',
+                  note: 'Used it in the Q1 programme',
+                  evidence: null,
+                  results: null,
+                  challenges: null,
+                  newTargetOn: null,
+                  recordedAt: '2026-12-15T09:00:00.000Z',
+                },
+              ],
+            }),
+          ],
         },
       }),
     );
-    const user = userEvent.setup();
     render(<Harness planId={PLAN} />);
     const card = await screen.findByRole('article', { name: 'Brief stakeholders' });
-    expect(within(card).getByText('Not yet started')).toBeTruthy();
-    // A submitted plan says what completion still needs.
+    expect(within(card).queryByRole('button', { name: 'Record progress' })).toBeNull();
+    const list = within(card).getByRole('list', { name: 'Progress from follow-ups' });
+    expect(list.textContent).toMatch(/30-day follow-up/);
+    expect(list.textContent).toMatch(/Applied/);
+    expect(list.textContent).toMatch(/Used it in the Q1 programme/);
+    // A submitted plan says what completion still needs: evidence, now that the action is applied.
     expect(
       screen.getByRole('list', { name: 'Still needed before completion' }).textContent,
-    ).toMatch(/Brief stakeholders: needs to be recorded as applied and evidence/);
+    ).toMatch(/Brief stakeholders: needs evidence/);
     expect(
       screen.getByRole('button', { name: 'Mark this plan completed' }).hasAttribute('disabled'),
     ).toBe(true);
-    await user.click(within(card).getByRole('button', { name: 'Record progress' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Record progress' });
-    await user.selectOptions(
-      within(dialog).getByLabelText('Where does this action stand?'),
-      'applied',
-    );
-    await user.click(within(dialog).getByRole('button', { name: 'Save progress' }));
-    expect(within(dialog).getByRole('alert').textContent).toMatch(/Give an example/);
-    expect(calls.filter((c) => c.url.includes('/progress'))).toHaveLength(0);
-    await user.type(
-      within(dialog).getByLabelText('Details (required)'),
-      'Used it in the Q1 programme',
-    );
-    await user.click(within(dialog).getByRole('button', { name: 'Save progress' }));
-    const post = calls.find((c) => c.url.includes('/progress'));
-    expect(post?.url).toBe(
-      `/api/v1/me/events/${EVENT}/transfer-plans/${PLAN}/actions/${ACTION}/progress`,
-    );
-    expect(post?.body).toMatchObject({ status: 'applied', note: 'Used it in the Q1 programme' });
-    const updated = await screen.findByRole('article', { name: 'Brief stakeholders' });
-    expect(within(updated).getAllByText('Applied').length).toBeGreaterThan(0);
-    expect(updated.textContent).toMatch(/Used it in the Q1 programme/);
+    // Support is no longer asked from the plan page.
+    expect(screen.queryByText(/Need support to apply your plan/)).toBeNull();
   });
 
   it('completes a submitted plan once every action is applied with evidence, asks about impact, then runs the checks', async () => {

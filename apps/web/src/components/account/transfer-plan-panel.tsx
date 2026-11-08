@@ -2,12 +2,10 @@
 
 import {
   actionProgressLabels,
-  actionProgressStatuses,
+  appliedStatuses,
   actionSubmissionGaps,
   measurePlaceholders,
   planActionFieldLabels,
-  progressDetailPrompt,
-  progressNeedsDetail,
   dateIn,
   impactCheckAnswerLabels,
   impactCheckAnswersFor,
@@ -21,7 +19,6 @@ import {
   reminderFrequencyLabels,
   transferPlanStatusLabels,
   weekdays,
-  type ActionProgressStatus,
   type ImpactCheckAnswer,
   type MyTransferPlan,
   type MyTransferPlans,
@@ -50,7 +47,6 @@ import { formatDateShort, formatInstant } from '@/lib/events';
 import { describeError } from '@/lib/imports';
 
 import { ActionMeasures, EvidenceDialog, MeasuresDialog, ResultsDialog } from './measures-evidence';
-import { SupportRequestPanel } from './support-request';
 
 export type MyTransferPlansState =
   | { kind: 'loading' }
@@ -294,10 +290,6 @@ export function TransferPlanPanel({
           onReload={() => setAttempt((n) => n + 1)}
         />
       )}
-      {/* Support to apply the plan (brief 11.7): asked from here, answered by the organisers. */}
-      {current?.kind === 'ready' ? (
-        <SupportRequestPanel eventId={eventId} actions={current.data.plan.actions} />
-      ) : null}
       {done ? (
         <Dialog
           title={done === 'completed' ? 'Plan completed' : 'Plan submitted'}
@@ -316,7 +308,7 @@ export function TransferPlanPanel({
           <p className="text-sm text-corp-text">
             {done === 'completed'
               ? 'Thank you. Your plan is completed: every action applied, with evidence, and the organisers have been told. Its reminders have stopped. Next comes impact assessment: in about three months we will ask whether the actions have made a measurable difference, and later whether that has lasted. Start another plan only if you take on something new.'
-              : 'Thank you. Your plan is submitted. Come back to this page to record progress on each action and to adjust the plan as things change.'}
+              : 'Thank you. Your plan is submitted. Your 30, 60, 90-day and longer-term follow-ups will ask where each action stands, and what you tell them is shown here as your progress. You can still adjust the plan as things change.'}
           </p>
         </Dialog>
       ) : null}
@@ -432,7 +424,6 @@ function PlanEditor({
     | null
     | { kind: 'review' }
     | { kind: 'complete' }
-    | { kind: 'progress'; action: PlanActionView }
     | { kind: 'measures'; action: PlanActionView }
     | { kind: 'results'; action: PlanActionView; measure: MeasureView }
     | { kind: 'evidence'; action: PlanActionView }
@@ -708,7 +699,6 @@ function PlanEditor({
             onPriority={() => setPriority(a.key)}
             onMove={(delta) => move(a.key, delta)}
             onRemove={() => setRemoving(a.key)}
-            onProgress={(action) => setDialog({ kind: 'progress', action })}
             dirty={dirty}
             onMeasures={(action) => setDialog({ kind: 'measures', action })}
             onResults={(action, measure) => setDialog({ kind: 'results', action, measure })}
@@ -1098,7 +1088,7 @@ function PlanEditor({
       {dialog?.kind === 'review' ? (
         <Dialog
           title="Submit your plan?"
-          description="Check your actions. After submitting you can still update the plan and record progress; the organisers keep this version as submitted."
+          description="Check your actions. After submitting you can still update the plan; progress is recorded through your follow-ups. The organisers keep this version as submitted."
           onClose={() => setDialog(null)}
           closeDisabled={busy}
           footer={
@@ -1246,18 +1236,6 @@ function PlanEditor({
           </div>
         </Dialog>
       ) : null}
-      {dialog?.kind === 'progress' ? (
-        <ProgressDialog
-          eventId={eventId}
-          planId={plan.id}
-          action={dialog.action}
-          onClose={() => setDialog(null)}
-          onSaved={(result) => {
-            setDialog(null);
-            onUpdated(result, 'Progress recorded.');
-          }}
-        />
-      ) : null}
       {dialog?.kind === 'measures' ? (
         <MeasuresDialog
           eventId={eventId}
@@ -1366,7 +1344,6 @@ function ActionCard({
   onPriority,
   onMove,
   onRemove,
-  onProgress,
   dirty,
   onMeasures,
   onResults,
@@ -1382,7 +1359,6 @@ function ActionCard({
   onPriority: () => void;
   onMove: (delta: -1 | 1) => void;
   onRemove: () => void;
-  onProgress: (action: PlanActionView) => void;
   /** Unsaved plan edits; the measure and evidence dialogs wait for a save. */
   dirty: boolean;
   onMeasures: (action: PlanActionView) => void;
@@ -1579,40 +1555,45 @@ function ActionCard({
 
       {saved ? (
         <div className="space-y-2 border-t border-corp-line pt-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-sm font-semibold text-corp-ink">Progress</p>
-            <button
-              type="button"
-              disabled={disabled}
-              onClick={() => onProgress(saved)}
-              className={consoleButton({ variant: 'secondary', size: 'sm' })}
-            >
-              Record progress
-            </button>
-          </div>
+          <p className="text-sm font-semibold text-corp-ink">Progress from your follow-ups</p>
+          <p className="text-xs text-corp-muted">
+            Each 30, 60, 90-day and longer-term follow-up asks where this action stands. What you
+            answer there is recorded here; nothing is recorded from this page.
+          </p>
           {saved.progress.length > 0 ? (
-            <ul className="space-y-2 text-sm text-corp-text">
+            <ul aria-label="Progress from follow-ups" className="space-y-2 text-sm text-corp-text">
               {saved.progress.map((p) => (
                 <li key={p.id} className="border-l-2 border-corp-line pl-3">
                   <p className="font-semibold text-corp-ink">
-                    {actionProgressLabels[p.status]}
+                    {p.waveLabel || 'Recorded on the plan page'}
                     <span className="ml-2 font-normal text-corp-muted">
                       {formatInstant(p.recordedAt, timezone)}
                     </span>
                   </p>
+                  <p className="flex flex-wrap items-center gap-2">
+                    <StatusPill tone={appliedStatuses.includes(p.status) ? 'positive' : 'neutral'}>
+                      {actionProgressLabels[p.status]}
+                    </StatusPill>
+                    {p.occurredOn ? (
+                      <span className="text-xs text-corp-muted">
+                        on {formatDateShort(p.occurredOn)}
+                      </span>
+                    ) : null}
+                  </p>
                   {p.note ? <p>{p.note}</p> : null}
                   {p.results ? <p>Results: {p.results}</p> : null}
                   {p.challenges ? <p>Challenges: {p.challenges}</p> : null}
-                  {p.newTargetOn ? <p>New target: {formatDateShort(p.newTargetOn)}</p> : null}
                 </li>
               ))}
             </ul>
           ) : (
-            <p className="text-xs text-corp-muted">No progress recorded yet.</p>
+            <p className="text-xs text-corp-muted">
+              No follow-up has recorded progress on this action yet.
+            </p>
           )}
         </div>
       ) : (
-        <p className="text-xs text-corp-muted">Save the plan to record progress on this action.</p>
+        <p className="text-xs text-corp-muted">Save the plan to see progress on this action.</p>
       )}
       {saved ? (
         <ActionMeasures
@@ -1625,192 +1606,6 @@ function ActionCard({
         />
       ) : null}
     </article>
-  );
-}
-
-// ------------------------------------------------------------------ progress dialog
-
-function ProgressDialog({
-  eventId,
-  planId,
-  action,
-  onClose,
-  onSaved,
-}: {
-  eventId: string;
-  planId: string;
-  action: PlanActionView;
-  onClose: () => void;
-  onSaved: (data: MyTransferPlan) => void;
-}) {
-  const id = useId();
-  const [status, setStatus] = useState<ActionProgressStatus>(action.progressStatus);
-  const [note, setNote] = useState('');
-  const [evidence, setEvidence] = useState('');
-  const [results, setResults] = useState('');
-  const [challenges, setChallenges] = useState('');
-  const [newTargetOn, setNewTargetOn] = useState('');
-  const [problem, setProblem] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const detail = progressDetailPrompt[status];
-
-  async function save() {
-    if (progressNeedsDetail(status) && note.trim() === '') {
-      setProblem(detail);
-      return;
-    }
-    setBusy(true);
-    setProblem(null);
-    try {
-      const result = await apiFetch<MyTransferPlan>(
-        `/me/events/${eventId}/transfer-plans/${planId}/actions/${action.id}/progress`,
-        {
-          method: 'POST',
-          body: JSON.stringify({
-            status,
-            note,
-            evidence,
-            results,
-            challenges,
-            newTargetOn: newTargetOn || null,
-          }),
-        },
-      );
-      onSaved(result);
-    } catch (e) {
-      setProblem(describeError(e, 'The progress could not be recorded.').message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <Dialog
-      title="Record progress"
-      description={action.action.trim() || 'Your action'}
-      onClose={onClose}
-      closeDisabled={busy}
-      footer={
-        <>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={onClose}
-            className={consoleButton({ variant: 'ghost' })}
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => void save()}
-            className={consoleButton({ variant: 'accent' })}
-          >
-            {busy ? <Loader2Icon className="animate-spin" aria-hidden="true" /> : null}
-            Save progress
-          </button>
-        </>
-      }
-    >
-      <div className="space-y-4">
-        {problem ? (
-          <p
-            role="alert"
-            className="border border-brand-danger/40 bg-brand-danger/10 p-3 text-sm font-semibold text-brand-danger"
-          >
-            {problem}
-          </p>
-        ) : null}
-        <div className="space-y-1">
-          <label htmlFor={`${id}-status`} className="text-sm font-semibold text-corp-ink">
-            Where does this action stand?
-          </label>
-          <NativeSelect
-            id={`${id}-status`}
-            value={status}
-            disabled={busy}
-            onChange={(e) => setStatus(e.target.value as ActionProgressStatus)}
-            className="rounded-none border-corp-line"
-          >
-            {actionProgressStatuses.map((s) => (
-              <option key={s} value={s}>
-                {actionProgressLabels[s]}
-              </option>
-            ))}
-          </NativeSelect>
-          <p className="text-xs text-corp-muted">
-            Started, in progress and completed describe the action; applied means you used the
-            learning in real work.
-          </p>
-        </div>
-        <div className="space-y-1">
-          <label htmlFor={`${id}-note`} className="text-sm font-semibold text-corp-ink">
-            {detail ? 'Details (required)' : 'Note (optional)'}
-          </label>
-          {detail ? <p className="text-xs text-corp-muted">{detail}</p> : null}
-          <textarea
-            id={`${id}-note`}
-            rows={3}
-            value={note}
-            disabled={busy}
-            onChange={(e) => setNote(e.target.value)}
-            className={textarea}
-          />
-        </div>
-        <div className="space-y-1">
-          <label htmlFor={`${id}-results`} className="text-sm font-semibold text-corp-ink">
-            Results so far (optional)
-          </label>
-          <textarea
-            id={`${id}-results`}
-            rows={2}
-            value={results}
-            disabled={busy}
-            onChange={(e) => setResults(e.target.value)}
-            className={textarea}
-          />
-        </div>
-        <div className="space-y-1">
-          <label htmlFor={`${id}-evidence`} className="text-sm font-semibold text-corp-ink">
-            Evidence (optional)
-          </label>
-          <textarea
-            id={`${id}-evidence`}
-            rows={2}
-            value={evidence}
-            disabled={busy}
-            onChange={(e) => setEvidence(e.target.value)}
-            className={textarea}
-          />
-        </div>
-        <div className="space-y-1">
-          <label htmlFor={`${id}-challenges`} className="text-sm font-semibold text-corp-ink">
-            Challenges (optional)
-          </label>
-          <textarea
-            id={`${id}-challenges`}
-            rows={2}
-            value={challenges}
-            disabled={busy}
-            onChange={(e) => setChallenges(e.target.value)}
-            className={textarea}
-          />
-        </div>
-        <div className="space-y-1">
-          <label htmlFor={`${id}-target`} className="text-sm font-semibold text-corp-ink">
-            New target date (optional)
-          </label>
-          <input
-            id={`${id}-target`}
-            type="date"
-            value={newTargetOn}
-            disabled={busy}
-            onChange={(e) => setNewTargetOn(e.target.value)}
-            className={input}
-          />
-        </div>
-      </div>
-    </Dialog>
   );
 }
 

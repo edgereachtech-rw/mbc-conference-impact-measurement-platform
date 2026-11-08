@@ -493,34 +493,161 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
     );
   });
 
-  it('records progress per action and counts it for the organisers', async () => {
-    await tick('2026-11-24T09:00:00.000Z');
-    const mine = await call(
-      'get',
-      `/me/events/${eventId}/transfer-plans/${planId}`,
-      undefined,
+  it('records where each action stands through a follow-up wave, and counts it for the organisers', async () => {
+    await tick('2026-12-15T09:00:00.000Z');
+    // The 30-day wave opens. The plan page itself records no progress (2026-11-08).
+    await prisma.assessmentStageConfig.upsert({
+      where: { eventId_stage_wave: { eventId, stage: 'follow_up', wave: 1 } },
+      update: { dueAfterDays: 30, enabled: true, status: 'open', opensAt: null, closesAt: null },
+      create: {
+        eventId,
+        stage: 'follow_up',
+        wave: 1,
+        dueAfterDays: 30,
+        enabled: true,
+        status: 'open',
+        opensAt: null,
+        closesAt: null,
+      },
+    });
+    const planUrl = `/me/events/${eventId}/transfer-plans/${planId}`;
+    const mine = await call('get', planUrl, undefined, cookies.dee);
+    const [first, second] = mine.body.plan.actions as Array<{ id: string }>;
+    const path = `/me/events/${eventId}/assessments/follow_up/plan-progress?wave=1`;
+    expect(
+      (
+        await call(
+          'post',
+          `${planUrl}/actions/${first!.id}/progress`,
+          { status: 'applied', note: 'x' },
+          cookies.dee,
+        )
+      ).status,
+    ).toBe(404);
+
+    // Every action needs a status; "applied" needs an example and a date; "changed" a reason.
+    const partial = await call(
+      'put',
+      path,
+      {
+        actions: [
+          { actionId: first!.id, status: 'applied', note: 'Used it', occurredOn: '2026-12-10' },
+        ],
+      },
       cookies.dee,
     );
-    const actionId = mine.body.plan.actions[0].id as string;
-    const progress = await call(
-      'post',
-      `/me/events/${eventId}/transfer-plans/${planId}/actions/${actionId}/progress`,
-      { status: 'applied', note: 'Used the measures in the Q1 plan', newTargetOn: '2027-01-15' },
+    expect(partial.status).toBe(422);
+    const noExample = await call(
+      'put',
+      path,
+      {
+        actions: [
+          { actionId: first!.id, status: 'applied' },
+          { actionId: second!.id, status: 'started' },
+        ],
+      },
       cookies.dee,
     );
-    expect(progress.status, progress.text).toBe(201);
-    const action = progress.body.plan.actions[0];
+    expect(noExample.status).toBe(422);
+    const noReason = await call(
+      'put',
+      path,
+      {
+        actions: [
+          { actionId: first!.id, status: 'started' },
+          { actionId: second!.id, status: 'changed' },
+        ],
+      },
+      cookies.dee,
+    );
+    expect(noReason.status).toBe(422);
+    // The wave cannot be submitted before the statuses are in.
+    const early = await call(
+      'put',
+      `/me/events/${eventId}/assessments/follow_up?wave=1`,
+      { answers: {}, submit: true },
+      cookies.dee,
+    );
+    expect(early.status).toBe(422);
+    expect(early.body.error.code).toBe('plan_progress_missing');
+
+    const recorded = await call(
+      'put',
+      path,
+      {
+        actions: [
+          {
+            actionId: first!.id,
+            status: 'applied',
+            note: 'Used the measures in the Q1 plan',
+            occurredOn: '2026-12-10',
+          },
+          { actionId: second!.id, status: 'started' },
+        ],
+      },
+      cookies.dee,
+    );
+    expect(recorded.status, recorded.text).toBe(200);
+    const fu = recorded.body.assessments.find(
+      (a: { stage: string; wave: number }) => a.stage === 'follow_up' && a.wave === 1,
+    );
+    expect(fu.context.plan.actions[0].followUps).toEqual([
+      expect.objectContaining({
+        wave: 1,
+        waveLabel: '30-day follow-up',
+        status: 'applied',
+        note: 'Used the measures in the Q1 plan',
+        occurredOn: '2026-12-10',
+      }),
+    ]);
+    // The plan shows it as progress, and the action's current status follows.
+    const plan = await call('get', planUrl, undefined, cookies.dee);
+    const action = plan.body.plan.actions[0];
     expect(action.progressStatus).toBe('applied');
-    expect(action.targetOn).toBe('2027-01-15');
     expect(action.progress).toHaveLength(1);
-    expect(action.progress[0]).toMatchObject({ status: 'applied', newTargetOn: '2027-01-15' });
+    expect(action.progress[0]).toMatchObject({
+      status: 'applied',
+      wave: 1,
+      waveLabel: '30-day follow-up',
+      occurredOn: '2026-12-10',
+      note: 'Used the measures in the Q1 plan',
+    });
+    // A correction before the wave is submitted replaces the record of that wave; it adds none.
+    const corrected = await call(
+      'put',
+      path,
+      {
+        actions: [
+          {
+            actionId: first!.id,
+            status: 'applied_consistently',
+            note: 'Used it in every programme since',
+            occurredOn: '2026-12-12',
+          },
+          { actionId: second!.id, status: 'started' },
+        ],
+      },
+      cookies.dee,
+    );
+    expect(corrected.status, corrected.text).toBe(200);
+    const again = await call('get', planUrl, undefined, cookies.dee);
+    expect(again.body.plan.actions[0].progress).toHaveLength(1);
+    expect(again.body.plan.actions[0].progress[0].status).toBe('applied_consistently');
+    // Another delegate's actions, and admins, are refused.
     const other = await call(
-      'post',
-      `/me/events/${eventId}/transfer-plans/${planId}/actions/${actionId}/progress`,
-      { status: 'completed', note: 'done' },
+      'put',
+      path,
+      {
+        actions: [
+          { actionId: first!.id, status: 'completed', note: 'done', occurredOn: '2026-12-10' },
+        ],
+      },
       cookies.ada,
     );
-    expect(other.status).toBe(404);
+    expect(other.status).toBe(422);
+    expect(
+      (await call('put', path, { actions: [{ actionId: first!.id, status: 'started' }] })).status,
+    ).toBe(403);
 
     const list = await call('get', `/events/${eventId}/transfer-plans`);
     expect(list.status, list.text).toBe(200);
@@ -531,7 +658,8 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
       priorityAction: 'Brief stakeholders (revised)',
       reminderFrequency: 'weekly',
     });
-    expect(dee.progress).toMatchObject({ applied: 1, not_started: 1 });
+    // Each action counted once, in its latest status.
+    expect(dee.progress).toMatchObject({ applied_consistently: 1, started: 1 });
     expect(list.body.sessions).toHaveLength(2);
   });
 
@@ -1147,7 +1275,7 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
       undefined,
       cookies.dee,
     );
-    const [, second] = mine.body.plan.actions as Array<{ id: string; action: string }>;
+    const [first, second] = mine.body.plan.actions as Array<{ id: string; action: string }>;
     // The first action carries a measured result and evidence from earlier; the second has neither.
     const blocked = await call(
       'post',
@@ -1160,23 +1288,41 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
     expect(blocked.body.gaps).toEqual([
       { actionId: second!.id, action: second!.action, missing: ['applied', 'evidence'] },
     ]);
-    // A progress record with results, and one evidence record, close the gaps.
+    // The follow-up records the action as applied, and one evidence record closes the gaps.
     const progressed = await call(
-      'post',
-      `/me/events/${eventId}/transfer-plans/${planId}/actions/${second!.id}/progress`,
+      'put',
+      `/me/events/${eventId}/assessments/follow_up/plan-progress?wave=1`,
       {
-        status: 'applied',
-        note: 'Agreed with the programme owners in December',
-        results: 'Measures agreed with every programme owner',
+        planId,
+        actions: [
+          {
+            actionId: first!.id,
+            status: 'applied_consistently',
+            note: 'Used it in every programme since',
+            occurredOn: '2026-12-12',
+          },
+          {
+            actionId: second!.id,
+            status: 'applied',
+            note: 'Agreed with the programme owners in December',
+            occurredOn: '2026-12-20',
+          },
+        ],
       },
       cookies.dee,
     );
-    expect(progressed.status, progressed.text).toBe(201);
+    expect(progressed.status, progressed.text).toBe(200);
+    const afterProgress = await call(
+      'get',
+      `/me/events/${eventId}/transfer-plans/${planId}`,
+      undefined,
+      cookies.dee,
+    );
     const evidenced = await call(
       'put',
       `/me/events/${eventId}/transfer-plans/${planId}/actions/${second!.id}/evidence`,
       {
-        version: progressed.body.plan.version,
+        version: afterProgress.body.plan.version,
         evidence: [{ type: 'work_product', description: 'The signed-off measures sheet' }],
       },
       cookies.dee,
@@ -1435,17 +1581,33 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
     expect(submitted.status, submitted.text).toBe(200);
     const a = submitted.body.plan.actions[0] as { id: string };
     const applied = await call(
-      'post',
-      `/me/events/${eventId}/transfer-plans/${p2.id}/actions/${a.id}/progress`,
-      { status: 'applied', note: 'Coached both team leads through January' },
+      'put',
+      `/me/events/${eventId}/assessments/follow_up/plan-progress?wave=1`,
+      {
+        planId: p2.id,
+        actions: [
+          {
+            actionId: a.id,
+            status: 'applied',
+            note: 'Coached both team leads through January',
+            occurredOn: '2027-01-20',
+          },
+        ],
+      },
       cookies.dee,
     );
-    expect(applied.status, applied.text).toBe(201);
+    expect(applied.status, applied.text).toBe(200);
+    const p2Now = await call(
+      'get',
+      `/me/events/${eventId}/transfer-plans/${p2.id}`,
+      undefined,
+      cookies.dee,
+    );
     const withEvidence = await call(
       'put',
       `/me/events/${eventId}/transfer-plans/${p2.id}/actions/${a.id}/evidence`,
       {
-        version: applied.body.plan.version,
+        version: p2Now.body.plan.version,
         evidence: [{ type: 'example', description: 'Coaching notes from four sessions' }],
       },
       cookies.dee,
