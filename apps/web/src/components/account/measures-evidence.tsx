@@ -3,7 +3,6 @@
 import {
   baselineStateLabels,
   baselineStates,
-  compareMeasure,
   confidentialityNotice,
   evidenceSupportHints,
   evidenceSupportLabels,
@@ -17,11 +16,7 @@ import {
   measureFieldLabels,
   measureKindLabels,
   measureKinds,
-  measureOutcomeLabels,
   measureStatusLabels,
-  resultFieldLabels,
-  resultSourceLabels,
-  resultSources,
   targetStateLabels,
   targetStates,
   type BaselineState,
@@ -32,13 +27,10 @@ import {
   type ImprovementDirection,
   type MeasureFields,
   type MeasureKind,
-  type MeasureResultFields,
-  type MeasureResultView,
   type MeasureStatus,
   type MeasureView,
   type MyTransferPlan,
   type PlanActionView,
-  type ResultSource,
   type TargetState,
 } from '@mbc/shared';
 import { Loader2Icon, PlusIcon, Trash2Icon } from 'lucide-react';
@@ -52,14 +44,14 @@ import { formatDateShort } from '@/lib/events';
 import { describeError } from '@/lib/imports';
 
 /**
- * Business measures, their actual results and evidence of application on one planned action
- * (backlog E14, S12; spec of 2026-11-08). Everything hangs off the action of the delegate's
- * existing plan and is saved with the plan's version, so an update changes that plan and never
- * creates another. The delegate first says whether a measure can be identified for the action
- * (or that it is not yet known or not applicable), then defines measures, records dated results
- * on each as the weeks go by (earlier results are kept), and adds evidence, which may name the
- * measure it supports. Each result and each evidence record is self-reported or supported by
- * another source; nothing here is called verified, and no file is uploaded.
+ * Business measures and evidence of application on one planned action (backlog E14, S12; spec
+ * of 2026-11-08). Everything hangs off the action of the delegate's existing plan and is saved
+ * with the plan's version, so an update changes that plan and never creates another. The
+ * delegate answers on the action card whether a measure can be identified, defines the measures
+ * here (name, why it matters, how it is measured, baseline and target), and adds evidence, which
+ * may name the measure it supports. No actual results are recorded (decision 2026-11-09): what
+ * happened is told by the evidence and by the follow-ups. Each evidence record is self-reported
+ * or supported by another source; nothing here is called verified, and no file is uploaded.
  */
 
 const textarea =
@@ -92,22 +84,7 @@ export function targetText(m: MeasureView) {
 
 // ------------------------------------------------------------------ read-only lines
 
-export function MeasureLine({
-  measure,
-  onResults,
-  disabled,
-}: {
-  measure: MeasureView;
-  /** Opens the results of this measure; absent in read-only places. */
-  onResults?: () => void;
-  disabled?: boolean;
-}) {
-  const comparison = compareMeasure(measure);
-  const change =
-    comparison.change === null
-      ? null
-      : `${comparison.change > 0 ? '+' : ''}${comparison.change}${measure.unit.trim() ? ` ${measure.unit.trim()}` : ''}`;
-  const latest = measure.results[0] ?? null;
+export function MeasureLine({ measure }: { measure: MeasureView }) {
   return (
     <div className="space-y-1 border-l-2 border-corp-line pl-3 text-sm">
       <p className="font-semibold text-corp-ink">
@@ -123,53 +100,7 @@ export function MeasureLine({
         <p className="text-xs text-corp-muted">Measured by: {measure.method}</p>
       ) : null}
       <p className="text-corp-text">
-        Baseline {baselineText(measure)} · Target {targetText(measure)} · Latest result{' '}
-        {formatMeasureValue(measure.actualValue, measure.unit)}
-        {when(measure.actualOn)}
-      </p>
-      {measure.actualValue.trim() ? (
-        <p className="flex flex-wrap items-center gap-2 text-xs text-corp-muted">
-          <StatusPill
-            tone={
-              comparison.outcome === 'improved'
-                ? 'positive'
-                : comparison.outcome === 'declined'
-                  ? 'attention'
-                  : 'neutral'
-            }
-          >
-            {measureOutcomeLabels[comparison.outcome]}
-          </StatusPill>
-          {comparison.reason ?? (change !== null ? `Change ${change}` : null)}
-          {comparison.targetMet !== null
-            ? comparison.targetMet
-              ? ' · target reached'
-              : ' · target not yet reached'
-            : null}
-          <span>· {evidenceSupportLabels[measure.support]}</span>
-          {measure.source.trim() ? <span>· Source: {measure.source}</span> : null}
-          {latest?.isFinal ? <span>· marked final</span> : null}
-        </p>
-      ) : null}
-      {measure.influences.trim() ? (
-        <p className="text-xs text-corp-muted">Other factors: {measure.influences}</p>
-      ) : null}
-      <p className="flex flex-wrap items-center gap-2 text-xs text-corp-muted">
-        {measure.results.length === 0
-          ? 'No actual result recorded yet.'
-          : measure.results.length === 1
-            ? '1 result recorded.'
-            : `${measure.results.length} results recorded; earlier ones are kept.`}
-        {onResults ? (
-          <button
-            type="button"
-            disabled={disabled}
-            onClick={onResults}
-            className={consoleButton({ variant: 'secondary', size: 'sm' })}
-          >
-            {measure.results.length > 0 ? 'Results' : 'Record a result'}
-          </button>
-        ) : null}
+        Baseline {baselineText(measure)} · Target {targetText(measure)}
       </p>
     </div>
   );
@@ -221,7 +152,6 @@ export function ActionMeasures({
   dirty,
   onMeasures,
   onEvidence,
-  onResults,
 }: {
   action: PlanActionView;
   disabled: boolean;
@@ -229,7 +159,6 @@ export function ActionMeasures({
   dirty: boolean;
   onMeasures: () => void;
   onEvidence: () => void;
-  onResults: (measure: MeasureView) => void;
 }) {
   const measures = action.measures ?? [];
   const records = action.evidenceRecords ?? [];
@@ -258,7 +187,7 @@ export function ActionMeasures({
               onClick={onMeasures}
               className={consoleButton({ variant: 'secondary', size: 'sm' })}
             >
-              {measures.length > 0 ? 'Edit measures' : 'Add a measure'}
+              {measures.length > 0 ? 'Update measures' : 'Add a measure'}
             </button>
           ) : null}
           <button
@@ -267,7 +196,7 @@ export function ActionMeasures({
             onClick={onEvidence}
             className={consoleButton({ variant: 'secondary', size: 'sm' })}
           >
-            {records.length > 0 ? 'Edit evidence' : 'Add evidence'}
+            {records.length > 0 ? 'Update evidence' : 'Add evidence'}
           </button>
         </div>
       </div>
@@ -284,8 +213,7 @@ export function ActionMeasures({
         </p>
       ) : status === 'identified' && measures.length === 0 ? (
         <p className="text-xs text-corp-muted">
-          Add the measure: what you will track, its starting point and target where known. Actual
-          results are recorded against it as they come in.
+          Add the measure: what you will track, its starting point and the target where known.
         </p>
       ) : status !== 'identified' ? (
         <p className="text-xs text-corp-muted">
@@ -297,11 +225,7 @@ export function ActionMeasures({
         <ul aria-label="Measures" className="space-y-2">
           {measures.map((m) => (
             <li key={m.id}>
-              <MeasureLine
-                measure={m}
-                disabled={disabled || dirty}
-                onResults={() => onResults(m)}
-              />
+              <MeasureLine measure={m} />
             </li>
           ))}
         </ul>
@@ -330,47 +254,6 @@ function Problem({ text }: { text: string | null }) {
     >
       {text}
     </p>
-  );
-}
-
-function YesNo({
-  id,
-  label,
-  hint,
-  value,
-  disabled,
-  onChange,
-}: {
-  id: string;
-  label: string;
-  hint?: string;
-  value: boolean;
-  disabled: boolean;
-  onChange: (value: boolean) => void;
-}) {
-  return (
-    <fieldset className="space-y-1">
-      <legend className="text-sm font-semibold text-corp-ink">{label}</legend>
-      {hint ? <p className="text-xs text-corp-muted">{hint}</p> : null}
-      <div className="flex flex-wrap gap-4">
-        {[
-          { v: true, text: 'Yes' },
-          { v: false, text: 'No' },
-        ].map((o) => (
-          <label key={o.text} className="flex min-h-tap items-center gap-2 text-sm text-corp-ink">
-            <input
-              type="radio"
-              name={id}
-              checked={value === o.v}
-              disabled={disabled}
-              onChange={() => onChange(o.v)}
-              className="size-5 accent-corp-green"
-            />
-            {o.text}
-          </label>
-        ))}
-      </div>
-    </fieldset>
   );
 }
 
@@ -830,428 +713,6 @@ function MeasureForm({
           </div>
         ) : null}
       </section>
-    </fieldset>
-  );
-}
-
-// ------------------------------------------------------------------ results dialog
-
-interface ResultDraft {
-  key: string;
-  id?: string;
-  value: string;
-  resultOn: string;
-  method: string;
-  meaning: string;
-  isFinal: boolean;
-  sourceType: ResultSource | '';
-  source: string;
-  hasInfluences: boolean;
-  influences: string;
-  support: EvidenceSupport;
-  recordedAt: string | null;
-  /** The measure's name and unit when it was recorded, for a record older than a rename. */
-  context: { measureName: string; unit: string } | null;
-}
-
-function emptyResult(): ResultDraft {
-  return {
-    key: nextKey(),
-    value: '',
-    resultOn: '',
-    method: '',
-    meaning: '',
-    isFinal: false,
-    sourceType: '',
-    source: '',
-    hasInfluences: false,
-    influences: '',
-    support: 'self_reported',
-    recordedAt: null,
-    context: null,
-  };
-}
-
-function resultDraftOf(r: MeasureResultView): ResultDraft {
-  return {
-    key: r.id,
-    id: r.id,
-    value: r.value,
-    resultOn: r.resultOn ?? '',
-    method: r.method,
-    meaning: r.meaning,
-    isFinal: r.isFinal,
-    sourceType: r.sourceType,
-    source: r.source,
-    hasInfluences: r.hasInfluences,
-    influences: r.influences,
-    support: r.support,
-    recordedAt: r.recordedAt,
-    context: { measureName: r.measureName, unit: r.unit },
-  };
-}
-
-function resultPayload(rows: ResultDraft[]): MeasureResultFields[] {
-  return rows.map(({ key, recordedAt, context, sourceType, ...rest }) => {
-    void key;
-    void recordedAt;
-    void context;
-    return { ...rest, sourceType: sourceType as ResultSource };
-  });
-}
-
-function firstResultProblem(measure: MeasureView, rows: ResultDraft[]): string | null {
-  if (rows.length === 0) return null;
-  for (const [i, r] of rows.entries()) {
-    const n = `Result ${i + 1}`;
-    if (!r.value.trim()) return `${n}: record the actual result.`;
-    if (measure.kind === 'quantitative' && !isNumericValue(r.value)) {
-      return `${n}: enter a number such as 30 or 2.5; the unit is ${measure.unit.trim() || 'the measure’s unit'}.`;
-    }
-    if (!r.resultOn) return `${n}: give the date of the result.`;
-    if (!r.method.trim()) return `${n}: say how this result was obtained.`;
-    if (!r.sourceType) return `${n}: say what the source of this information is.`;
-    if (r.sourceType === 'other' && !r.source.trim()) return `${n}: please specify the source.`;
-    if (r.hasInfluences && !r.influences.trim()) {
-      return `${n}: describe the other factors that may have affected this result.`;
-    }
-  }
-  return null;
-}
-
-export function ResultsDialog({
-  eventId,
-  planId,
-  action,
-  measure,
-  version,
-  onClose,
-  onSaved,
-  onStale,
-}: {
-  eventId: string;
-  planId: string;
-  action: PlanActionView;
-  measure: MeasureView;
-  version: number;
-  onClose: () => void;
-  onSaved: (data: MyTransferPlan) => void;
-  onStale: (message: string) => void;
-}) {
-  const [rows, setRows] = useState<ResultDraft[]>(() => measure.results.map(resultDraftOf));
-  const [busy, setBusy] = useState(false);
-  const [problem, setProblem] = useState<string | null>(null);
-
-  function update(key: string, patch: Partial<ResultDraft>) {
-    setRows((list) => list.map((r) => (r.key === key ? { ...r, ...patch } : r)));
-  }
-
-  async function save() {
-    const invalid = firstResultProblem(measure, rows);
-    if (invalid) {
-      setProblem(invalid);
-      return;
-    }
-    setBusy(true);
-    setProblem(null);
-    try {
-      const result = await apiFetch<MyTransferPlan>(
-        `/me/events/${eventId}/transfer-plans/${planId}/actions/${action.id}/measures/${measure.id}/results`,
-        { method: 'PUT', body: JSON.stringify({ version, results: resultPayload(rows) }) },
-      );
-      onSaved(result);
-    } catch (e) {
-      if (e instanceof ApiError && e.code === 'stale_plan') onStale(e.message);
-      else setProblem(describeError(e, 'The results could not be saved.').message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <Dialog
-      title={`Results: ${measure.name.trim() || 'this measure'}`}
-      description={`Baseline ${baselineText(measure)} · Target ${targetText(measure)}`}
-      onClose={onClose}
-      closeDisabled={busy}
-      footer={
-        <>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={onClose}
-            className={consoleButton({ variant: 'ghost' })}
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => void save()}
-            className={consoleButton({ variant: 'accent' })}
-          >
-            {busy ? <Loader2Icon className="animate-spin" aria-hidden="true" /> : null}
-            Save results
-          </button>
-        </>
-      }
-    >
-      <div className="space-y-4">
-        <p className="border-l-4 border-corp-accent bg-corp-accent-soft/40 p-3 text-xs text-corp-text">
-          Record what actually happened after applying your learning. You can record a result more
-          than once as the weeks go by: each one is kept with its date, so an earlier result is
-          never overwritten by a later one. {confidentialityNotice}
-        </p>
-        <Problem text={problem} />
-        <button
-          type="button"
-          disabled={busy || rows.length >= 50}
-          onClick={() => setRows((list) => [emptyResult(), ...list])}
-          className={consoleButton({ variant: 'secondary' })}
-        >
-          <PlusIcon aria-hidden="true" /> Record a result
-        </button>
-        {rows.length === 0 ? (
-          <p className="text-sm text-corp-muted">No result recorded yet.</p>
-        ) : null}
-        {rows.map((r, index) => (
-          <ResultForm
-            key={r.key}
-            draft={r}
-            index={index}
-            measure={measure}
-            disabled={busy}
-            onChange={(patch) => update(r.key, patch)}
-            onRemove={() => setRows((list) => list.filter((x) => x.key !== r.key))}
-          />
-        ))}
-      </div>
-    </Dialog>
-  );
-}
-
-function ResultForm({
-  draft,
-  index,
-  measure,
-  disabled,
-  onChange,
-  onRemove,
-}: {
-  draft: ResultDraft;
-  index: number;
-  measure: MeasureView;
-  disabled: boolean;
-  onChange: (patch: Partial<ResultDraft>) => void;
-  onRemove: () => void;
-}) {
-  const id = useId();
-  const [open, setOpen] = useState(!draft.id);
-  const [confirming, setConfirming] = useState(false);
-  const quantitative = measure.kind === 'quantitative';
-  const unit = draft.context?.unit ?? measure.unit;
-  const summary = draft.id
-    ? `${formatMeasureValue(draft.value, unit)}${draft.resultOn ? ` · ${formatDateShort(draft.resultOn)}` : ''}${draft.isFinal ? ' · final' : ''}`
-    : 'New result';
-  const renamed =
-    draft.context &&
-    (draft.context.measureName !== measure.name || draft.context.unit !== measure.unit);
-  const text = (name: 'method' | 'meaning' | 'source' | 'influences', required: boolean) => {
-    const meta = resultFieldLabels[name];
-    return (
-      <div className="space-y-1">
-        <label htmlFor={`${id}-${name}`} className="text-sm font-semibold text-corp-ink">
-          {meta.label}
-          <span className="ml-1 text-xs font-normal text-corp-muted">
-            {required ? '(required)' : '(optional)'}
-          </span>
-        </label>
-        <p className="text-xs text-corp-muted">{meta.prompt}</p>
-        <textarea
-          id={`${id}-${name}`}
-          rows={2}
-          value={draft[name]}
-          disabled={disabled}
-          onChange={(e) => onChange({ [name]: e.target.value } as Partial<ResultDraft>)}
-          className={textarea}
-        />
-      </div>
-    );
-  };
-
-  return (
-    <fieldset
-      aria-label={`Result ${index + 1}`}
-      className="space-y-3 border border-corp-line bg-white p-3"
-    >
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <legend className="float-left text-sm font-semibold text-corp-ink">
-          Result {index + 1}
-          <span className="ml-2 font-normal text-corp-muted">{summary}</span>
-        </legend>
-        <div className="flex gap-1">
-          {draft.id ? (
-            <button
-              type="button"
-              disabled={disabled}
-              onClick={() => setOpen((v) => !v)}
-              className={consoleButton({ variant: 'ghost', size: 'sm' })}
-            >
-              {open ? 'Hide' : 'Edit'}
-            </button>
-          ) : null}
-          {confirming ? (
-            <>
-              <button
-                type="button"
-                disabled={disabled}
-                onClick={onRemove}
-                className={consoleButton({ variant: 'danger', size: 'sm' })}
-              >
-                Remove this result
-              </button>
-              <button
-                type="button"
-                disabled={disabled}
-                onClick={() => setConfirming(false)}
-                className={consoleButton({ variant: 'ghost', size: 'sm' })}
-              >
-                Keep it
-              </button>
-            </>
-          ) : (
-            <button
-              type="button"
-              aria-label={`Remove result ${index + 1}`}
-              disabled={disabled}
-              onClick={() => (draft.id ? setConfirming(true) : onRemove())}
-              className={consoleButton({ variant: 'ghost', size: 'sm' })}
-            >
-              <Trash2Icon aria-hidden="true" />
-            </button>
-          )}
-        </div>
-      </div>
-      {renamed && draft.context ? (
-        <p className="text-xs text-corp-muted">
-          Recorded when the measure was “{draft.context.measureName || 'unnamed'}”
-          {draft.context.unit ? ` in ${draft.context.unit}` : ''}. It is kept as it was.
-        </p>
-      ) : null}
-      {open ? (
-        <>
-          <section aria-label="Record actual results" className="space-y-3">
-            <h5 className={heading}>C. The result</h5>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="space-y-1">
-                <label htmlFor={`${id}-value`} className="text-sm font-semibold text-corp-ink">
-                  {resultFieldLabels.value.label}
-                  {quantitative && measure.unit.trim() ? ` (${measure.unit.trim()})` : ''}
-                  <span className="ml-1 text-xs font-normal text-corp-muted">(required)</span>
-                </label>
-                <p className="text-xs text-corp-muted">
-                  {quantitative
-                    ? 'A number; the unit is shown beside the label.'
-                    : 'Describe the change you observed.'}
-                </p>
-                {quantitative ? (
-                  <input
-                    id={`${id}-value`}
-                    type="number"
-                    step="any"
-                    inputMode="decimal"
-                    value={draft.value}
-                    disabled={disabled}
-                    onChange={(e) => onChange({ value: e.target.value })}
-                    className={input}
-                  />
-                ) : (
-                  <textarea
-                    id={`${id}-value`}
-                    rows={2}
-                    value={draft.value}
-                    disabled={disabled}
-                    onChange={(e) => onChange({ value: e.target.value })}
-                    className={textarea}
-                  />
-                )}
-              </div>
-              <div className="space-y-1">
-                <label htmlFor={`${id}-on`} className="text-sm font-semibold text-corp-ink">
-                  {resultFieldLabels.resultOn.label}
-                  <span className="ml-1 text-xs font-normal text-corp-muted">(required)</span>
-                </label>
-                <p className="text-xs text-corp-muted">{resultFieldLabels.resultOn.prompt}</p>
-                <input
-                  id={`${id}-on`}
-                  type="date"
-                  value={draft.resultOn}
-                  disabled={disabled}
-                  onChange={(e) => onChange({ resultOn: e.target.value })}
-                  className={input}
-                />
-              </div>
-            </div>
-            {text('method', true)}
-            {text('meaning', false)}
-            <YesNo
-              id={`${id}-final`}
-              label="Is this result final?"
-              hint="Whether you consider this the final result for now. You can still record more later."
-              value={draft.isFinal}
-              disabled={disabled}
-              onChange={(isFinal) => onChange({ isFinal })}
-            />
-          </section>
-          <section
-            aria-label="Source and influencing factors"
-            className="space-y-3 border-t border-corp-line pt-3"
-          >
-            <h5 className={heading}>D. Source and influencing factors</h5>
-            <div className="space-y-1">
-              <label htmlFor={`${id}-sourceType`} className="text-sm font-semibold text-corp-ink">
-                What is the source of this information?
-                <span className="ml-1 text-xs font-normal text-corp-muted">(required)</span>
-              </label>
-              <NativeSelect
-                id={`${id}-sourceType`}
-                value={draft.sourceType}
-                disabled={disabled}
-                onChange={(e) => onChange({ sourceType: e.target.value as ResultSource | '' })}
-                className="rounded-none border-corp-line"
-              >
-                <option value="">Choose…</option>
-                {resultSources.map((s) => (
-                  <option key={s} value={s}>
-                    {resultSourceLabels[s]}
-                  </option>
-                ))}
-              </NativeSelect>
-            </div>
-            {draft.sourceType === 'other'
-              ? text('source', true)
-              : draft.sourceType
-                ? text('source', false)
-                : null}
-            <YesNo
-              id={`${id}-influences`}
-              label="Were there other factors that influenced this result?"
-              hint="A result may be influenced by things beyond your conference learning."
-              value={draft.hasInfluences}
-              disabled={disabled}
-              onChange={(hasInfluences) => onChange({ hasInfluences })}
-            />
-            {draft.hasInfluences ? text('influences', true) : null}
-            <SupportChoice
-              id={`${id}-support`}
-              legend="Is this result self-reported or supported by another source?"
-              value={draft.support}
-              disabled={disabled}
-              onChange={(support) => onChange({ support })}
-            />
-          </section>
-        </>
-      ) : null}
     </fieldset>
   );
 }

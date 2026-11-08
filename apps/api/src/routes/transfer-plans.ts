@@ -3,11 +3,8 @@ import {
   actionSubmissionGaps,
   evidenceSaveSchema,
   evidenceSupports,
-  measureResultsSaveSchema,
   measureSummaries,
   measuresSaveSchema,
-  isNumericValue,
-  resultSourceLabels,
   addDaysTo,
   dateIn,
   IMPACT_CHECK_DAYS,
@@ -17,7 +14,6 @@ import {
   nextReminderAfter,
   planCompletionGaps,
   planHasContent,
-  planHasResult,
   planOutcomeLabels,
   planTitleOf,
   referenceQuestionsSaveSchema,
@@ -864,136 +860,6 @@ export function transferPlanRouter({
     },
   );
 
-  /**
-   * Actual results of one measure (spec of 2026-11-08, sections C and D): dated records that
-   * are kept, never overwritten. The list is replaced and ids are kept, so the delegate can
-   * correct a record; a new one is simply added. Each record remembers the measure's name, kind
-   * and unit as they were when it was recorded, and the measure keeps a copy of the latest
-   * result for the lists and reports. A quantitative measure takes numbers only.
-   */
-  router.put(
-    '/me/events/:eventId/transfer-plans/:planId/actions/:actionId/measures/:measureId/results',
-    middleware.requireAuth,
-    validated(measureResultsSaveSchema),
-    async (req, res) => {
-      const { principal, delegate, plan, action } = await myAction(
-        res,
-        String(req.params.eventId),
-        String(req.params.planId),
-        String(req.params.actionId),
-      );
-      const measureId = String(req.params.measureId);
-      const measure = UUID.test(measureId) ? action.measures.find((m) => m.id === measureId) : null;
-      if (!measure) throw new HttpError(404, 'not_found', 'Measure not found.');
-      const input = req.body as z.infer<typeof measureResultsSaveSchema>;
-      if (input.version !== plan.version) throw stale();
-      const known = new Map(measure.results.map((r) => [r.id, r]));
-      for (const [index, r] of input.results.entries()) {
-        if (r.id && !known.has(r.id)) {
-          throw new HttpError(
-            422,
-            'validation_failed',
-            'results: an id does not belong to this measure.',
-          );
-        }
-        if (measure.kind === 'quantitative' && !isNumericValue(r.value)) {
-          throw new HttpError(
-            422,
-            'validation_failed',
-            `results.${index}.value: enter a number such as 30 or 2.5; the unit is ${measure.unit || 'the measure\u2019s unit'}.`,
-          );
-        }
-      }
-      const keepIds = new Set(input.results.filter((r) => r.id).map((r) => r.id!));
-      const removed = measure.results.filter((r) => !keepIds.has(r.id)).map((r) => r.id);
-      // The latest result by its date, then by when it was recorded, becomes the measure's copy.
-      const ordered = [...input.results].sort((a, b) => {
-        if (a.resultOn !== b.resultOn) return a.resultOn < b.resultOn ? 1 : -1;
-        const ra = a.id ? (known.get(a.id)?.recordedAt.getTime() ?? Infinity) : Infinity;
-        const rb = b.id ? (known.get(b.id)?.recordedAt.getTime() ?? Infinity) : Infinity;
-        return rb - ra;
-      });
-      const latest = ordered[0] ?? null;
-      await prisma().$transaction(async (tx) => {
-        if (removed.length) {
-          await tx.transferPlanMeasureResult.deleteMany({
-            where: { id: { in: removed }, measureId: measure.id },
-          });
-        }
-        for (const r of input.results) {
-          const data = {
-            value: r.value,
-            resultOn: dayOf(r.resultOn),
-            method: r.method,
-            meaning: r.meaning,
-            isFinal: r.isFinal,
-            sourceType: r.sourceType,
-            source: r.sourceType === 'other' || r.source ? r.source : '',
-            hasInfluences: r.hasInfluences,
-            influences: r.hasInfluences ? r.influences : '',
-            support: r.support,
-          };
-          if (r.id) {
-            await tx.transferPlanMeasureResult.update({ where: { id: r.id }, data });
-          } else {
-            await tx.transferPlanMeasureResult.create({
-              data: {
-                ...data,
-                measureId: measure.id,
-                measureName: measure.name,
-                measureKind: measure.kind,
-                unit: measure.unit,
-              },
-            });
-          }
-        }
-        await tx.transferPlanMeasure.update({
-          where: { id: measure.id },
-          data: latest
-            ? {
-                actualValue: latest.value,
-                actualOn: dayOf(latest.resultOn),
-                source: latest.source
-                  ? `${resultSourceLabels[latest.sourceType]}: ${latest.source}`
-                  : resultSourceLabels[latest.sourceType],
-                influences: latest.hasInfluences ? latest.influences : '',
-                support: latest.support,
-              }
-            : {
-                actualValue: '',
-                actualOn: null,
-                source: '',
-                influences: '',
-                support: 'self_reported',
-              },
-        });
-        await tx.transferPlan.update({
-          where: { id: plan.id },
-          data: { version: plan.version + 1, updatedByUserId: principal.userId },
-        });
-        await audit(tx, {
-          action: 'transfer_plan.results_saved',
-          entityType: 'transfer_plan_action',
-          entityId: action.id,
-          eventId: delegate.eventId,
-          actorUserId: principal.userId,
-          newValue: {
-            measureId: measure.id,
-            results: input.results.length,
-            added: input.results.filter((r) => !r.id).length,
-            removed: removed.length,
-            final: input.results.some((r) => r.isFinal),
-            support: Object.fromEntries(
-              evidenceSupports.map((s) => [s, input.results.filter((r) => r.support === s).length]),
-            ),
-          },
-          ...clientOf(res),
-        });
-      });
-      res.json(await myView(delegate.eventId, delegate.id, plan.id));
-    },
-  );
-
   // Evidence of application on one action (backlog E14-3 to E14-5): descriptions, their type,
   // date and whether each is self-reported or supported by another source. No file is taken.
   router.put(
@@ -1109,15 +975,9 @@ export function transferPlanRouter({
         });
         return;
       }
-      // Impact is the delegate's own report, never read off completion. A claimed improvement
-      // needs a recorded result somewhere on the plan to stand on.
-      if (improvement === 'seen' && !planHasResult(plan.actions)) {
-        throw new HttpError(
-          422,
-          'result_missing',
-          'To report a measurable improvement, record the result on at least one action first (a measure with an actual value, or results on a progress record).',
-        );
-      }
+      // Impact is the delegate's own report, never read off completion, and the reports label
+      // it as self-reported. It stands on the evidence recorded on the actions; no separate
+      // results are recorded (decision 2026-11-09).
       const outcome: PlanOutcome = improvement === 'seen' ? 'impact_demonstrated' : 'applied';
       const at = clock();
       const event = await prisma().event.findUniqueOrThrow({

@@ -673,8 +673,7 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
     const [first, second] = mine.body.plan.actions as Array<{ id: string }>;
     const path = (actionId: string, tail: string) =>
       `/me/events/${eventId}/transfer-plans/${planId}/actions/${actionId}/${tail}`;
-    type ResultRow = Record<string, unknown> & { id: string; value: string };
-    type MeasureRow = Record<string, unknown> & { id: string; results: ResultRow[] };
+    type MeasureRow = Record<string, unknown> & { id: string };
     const actionOf = (body: { plan: { actions: Array<{ id: string }> } }, id: string) =>
       body.plan.actions.find((a) => a.id === id) as unknown as {
         measureStatus: string | null;
@@ -696,20 +695,6 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
       targetValue: m.targetValue,
       targetOn: m.targetOn,
     });
-    const resultInput = (r: ResultRow) => ({
-      id: r.id,
-      value: r.value,
-      resultOn: r.resultOn,
-      method: r.method,
-      meaning: r.meaning,
-      isFinal: r.isFinal,
-      sourceType: r.sourceType,
-      source: r.source,
-      hasInfluences: r.hasInfluences,
-      influences: r.influences,
-      support: r.support,
-    });
-
     // Before any choice, the action says nothing about measures.
     expect(actionOf(mine.body, first!.id).measureStatus).toBeNull();
 
@@ -822,144 +807,25 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
     expect(text.status).toBe(422);
     expect(text.body.error.code).toBe('validation_failed');
 
-    // Results are dated records on the measure. A second result keeps the first; the measure
-    // carries the latest one for the lists and reports.
+    // No actual results are recorded on a measure (decision 2026-11-09): the route is gone.
     const measureId = a1.measures[0]!.id;
-    const results = path(first!.id, `measures/${measureId}/results`);
-    const r1 = await call(
-      'put',
-      results,
-      {
-        version: version + 2,
-        results: [
-          {
-            value: '10',
-            resultOn: '2027-01-15',
-            method: 'Average from the team tracker',
-            meaning: 'Moving the right way, target not reached yet',
-            sourceType: 'workplace_records',
-          },
-        ],
-      },
-      cookies.dee,
-    );
-    expect(r1.status, r1.text).toBe(200);
-    expect(r1.body.plan.version).toBe(version + 3);
-    const m1 = actionOf(r1.body, first!.id).measures[0]!;
-    expect(m1).toMatchObject({
-      actualValue: '10',
-      actualOn: '2027-01-15',
-      support: 'self_reported',
-      source: 'Workplace records or reports',
-    });
-    expect(m1.results).toHaveLength(1);
-    expect(m1.results[0]).toMatchObject({
-      value: '10',
-      resultOn: '2027-01-15',
-      method: 'Average from the team tracker',
-      measureName: 'Turnaround time',
-      measureKind: 'quantitative',
-      unit: 'days',
-      isFinal: false,
-      hasInfluences: false,
-    });
-    const r2 = await call(
-      'put',
-      results,
-      {
-        version: version + 3,
-        results: [
-          resultInput(m1.results[0]!),
-          {
-            value: '9',
-            resultOn: '2027-02-15',
-            method: 'Taken from the monthly operations report',
-            sourceType: 'other',
-            source: 'Monthly operations report',
-            support: 'supported',
-            hasInfluences: true,
-            influences: 'Two colleagues joined in January',
-            isFinal: true,
-          },
-        ],
-      },
-      cookies.dee,
-    );
-    expect(r2.status, r2.text).toBe(200);
-    const m2 = actionOf(r2.body, first!.id).measures[0]!;
-    expect(m2).toMatchObject({
-      actualValue: '9',
-      actualOn: '2027-02-15',
-      support: 'supported',
-      source: 'Other: Monthly operations report',
-      influences: 'Two colleagues joined in January',
-    });
-    expect(m2.results.map((r) => r.value)).toEqual(['9', '10']);
-    expect(m2.results[0]).toMatchObject({ isFinal: true, hasInfluences: true });
-
-    // A word for a number, "other" without a description, a foreign result id, a stale version,
-    // an unknown measure, foreign measure ids, other delegates and admins are all refused.
-    const word = await call(
-      'put',
-      results,
-      {
-        version: version + 4,
-        results: [
-          {
-            value: 'nine',
-            resultOn: '2027-03-01',
-            method: 'Guess',
-            sourceType: 'personal_observation',
-          },
-        ],
-      },
-      cookies.dee,
-    );
-    expect(word.status).toBe(422);
-    expect(word.body.error.message).toMatch(/number/);
-    const noSource = await call(
-      'put',
-      results,
-      {
-        version: version + 4,
-        results: [{ value: '8', resultOn: '2027-03-01', method: 'Report', sourceType: 'other' }],
-      },
-      cookies.dee,
-    );
-    expect(noSource.status).toBe(422);
-    const foreignResult = await call(
-      'put',
-      results,
-      {
-        version: version + 4,
-        results: [{ ...resultInput(m2.results[0]!), id: randomUUID() }],
-      },
-      cookies.dee,
-    );
-    expect(foreignResult.status).toBe(422);
-    const staleResults = await call(
-      'put',
-      results,
-      { version: version + 1, results: [] },
-      cookies.dee,
-    );
-    expect(staleResults.status).toBe(409);
-    expect(staleResults.body.error.code).toBe('stale_plan');
     expect(
       (
         await call(
           'put',
-          path(first!.id, `measures/${randomUUID()}/results`),
-          { version: version + 4, results: [] },
+          path(first!.id, `measures/${measureId}/results`),
+          { version: version + 2, results: [] },
           cookies.dee,
         )
       ).status,
     ).toBe(404);
+
+    // A foreign measure id, other delegates and admins are refused.
     const foreignId = await call(
       'put',
       path(first!.id, 'measures'),
       {
-        version: version + 4,
+        version: version + 2,
         measureStatus: 'identified',
         measures: [{ ...defined, id: randomUUID() }],
       },
@@ -986,15 +852,15 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
       ).status,
     ).toBe(403);
 
-    // Changing the measure's definition later leaves the recorded results as they were.
+    // The measure's definition can be changed later; its id stays.
     const renamed = await call(
       'put',
       path(first!.id, 'measures'),
       {
-        version: version + 4,
+        version: version + 2,
         measureStatus: 'identified',
         measures: [
-          { ...measureInput(m2), name: 'Delivery time', unit: 'working days' },
+          { ...measureInput(a1.measures[0]!), name: 'Delivery time', unit: 'working days' },
           measureInput(a1.measures[1]!),
         ],
       },
@@ -1002,24 +868,14 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
     );
     expect(renamed.status, renamed.text).toBe(200);
     const m3 = actionOf(renamed.body, first!.id).measures[0]!;
-    expect(m3).toMatchObject({
-      id: measureId,
-      name: 'Delivery time',
-      unit: 'working days',
-      actualValue: '9',
-    });
-    expect(m3.results[1]).toMatchObject({
-      value: '10',
-      measureName: 'Turnaround time',
-      unit: 'days',
-    });
+    expect(m3).toMatchObject({ id: measureId, name: 'Delivery time', unit: 'working days' });
 
     // Evidence: a description is the only requirement; each record says how it is supported
     // and may name the measure it supports.
     const noText = await call(
       'put',
       path(first!.id, 'evidence'),
-      { version: version + 5, evidence: [{ type: 'example', description: ' ' }] },
+      { version: version + 3, evidence: [{ type: 'example', description: ' ' }] },
       cookies.dee,
     );
     expect(noText.status).toBe(422);
@@ -1027,7 +883,7 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
       'put',
       path(first!.id, 'evidence'),
       {
-        version: version + 5,
+        version: version + 3,
         evidence: [{ type: 'example', description: 'Report', measureId: randomUUID() }],
       },
       cookies.dee,
@@ -1037,7 +893,7 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
       'put',
       path(first!.id, 'evidence'),
       {
-        version: version + 5,
+        version: version + 3,
         evidence: [
           {
             type: 'work_product',
@@ -1058,7 +914,7 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
     );
     expect(evidence.status, evidence.text).toBe(200);
     expect(evidence.body.plan.id).toBe(planId);
-    expect(evidence.body.plan.version).toBe(version + 6);
+    expect(evidence.body.plan.version).toBe(version + 4);
     const records = actionOf(evidence.body, first!.id).evidenceRecords;
     expect(records.map((e) => e.support)).toEqual(['self_reported', 'supported']);
     expect(records[0]).toMatchObject({ measureId: null, type: 'work_product' });
@@ -1079,34 +935,30 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
     const detail = await call('get', `/events/${eventId}/transfer-plans/${deeId}`);
     expect(detail.status, detail.text).toBe(200);
     expect(detail.body.plan.snapshot.actions[0].measures).toEqual([]);
-    expect(actionOf(detail.body.plan, first!.id).measures[0]!.results).toHaveLength(2);
+    expect(actionOf(detail.body.plan, first!.id).measures[0]!.results).toHaveLength(0);
     expect(detail.body.plan.history.map((h: { action: string }) => h.action)).toEqual(
-      expect.arrayContaining([
-        'transfer_plan.measures_saved',
-        'transfer_plan.results_saved',
-        'transfer_plan.evidence_saved',
-      ]),
+      expect.arrayContaining(['transfer_plan.measures_saved', 'transfer_plan.evidence_saved']),
     );
 
     // The organisers: counts on the list; the report carries each action's choice and its
-    // measures with every result, evidence counted but not quoted unless asked (and asking is
+    // measures (no results are recorded), evidence counted but not quoted unless asked (and asking is
     // audited); delegates get nothing.
     const list = await call('get', `/events/${eventId}/transfer-plans`);
     const dee = list.body.plans.find((p: { delegate: { id: string } }) => p.delegate.id === deeId);
-    expect(dee.measures).toMatchObject({ with_result: 1, not_yet_known: 1 });
+    expect(dee.measures).toMatchObject({ baseline_only: 1, not_yet_known: 1 });
     expect(dee.evidence).toEqual({ self_reported: 1, supported: 1 });
     const report = await call('get', `/events/${eventId}/transfer-plans/measures`);
     expect(report.status, report.text).toBe(200);
     const row = report.body.rows.find((r: { action: { id: string } }) => r.action.id === first!.id);
     expect(row).toMatchObject({
       planStatus: 'submitted',
-      summary: 'with_result',
+      summary: 'baseline_only',
       action: { measureStatus: 'identified' },
       evidence: { self_reported: 1, supported: 1 },
       evidenceRecords: null,
     });
-    expect(row.measures[0]).toMatchObject({ name: 'Delivery time', actualValue: '9' });
-    expect(row.measures[0].results).toHaveLength(2);
+    expect(row.measures[0]).toMatchObject({ name: 'Delivery time', actualValue: '' });
+    expect(row.measures[0].results).toHaveLength(0);
     expect(
       report.body.rows.find((r: { action: { id: string } }) => r.action.id === second!.id),
     ).toMatchObject({ summary: 'not_yet_known', action: { measureStatus: 'not_yet_known' } });
@@ -1343,7 +1195,7 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
       cookies.dee,
     );
     const [first, second] = mine.body.plan.actions as Array<{ id: string; action: string }>;
-    // The first action carries a measured result and evidence from earlier; the second has neither.
+    // The first action carries evidence from earlier; the second has none and is not applied.
     const blocked = await call(
       'post',
       `/me/events/${eventId}/transfer-plans/${planId}/complete`,
@@ -1680,15 +1532,6 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
       cookies.dee,
     );
     expect(withEvidence.status, withEvidence.text).toBe(200);
-    // Claiming an improvement without any recorded result is refused; "not yet" is accepted.
-    const claimed = await call(
-      'post',
-      `/me/events/${eventId}/transfer-plans/${p2.id}/complete`,
-      { version: withEvidence.body.plan.version, improvement: 'seen' },
-      cookies.dee,
-    );
-    expect(claimed.status).toBe(422);
-    expect(claimed.body.error.code).toBe('result_missing');
     const done = await call(
       'post',
       `/me/events/${eventId}/transfer-plans/${p2.id}/complete`,

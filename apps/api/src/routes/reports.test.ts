@@ -519,31 +519,13 @@ describe.skipIf(!hasDatabase)('event dashboards and reports', () => {
         measures: Array<{ id: string }>;
       }
     ).measures[0]!.id;
-    const result = await call(
-      'put',
-      `/me/events/${eventId}/transfer-plans/${deePlanId}/actions/${a2!.id}/measures/${measureId}/results`,
-      {
-        version: measures.body.plan.version,
-        results: [
-          {
-            value: '9',
-            resultOn: '2027-01-15',
-            method: 'Counted from the QA log',
-            sourceType: 'workplace_records',
-            support: 'supported',
-            hasInfluences: true,
-            influences: 'New checklist too',
-          },
-        ],
-      },
-      cookies.dee,
-    );
-    expect(result.status, result.text).toBe(200);
+    // No actual results are recorded (2026-11-09); the measure stands with its baseline.
+    void measureId;
     const evidence = await call(
       'put',
       `/me/events/${eventId}/transfer-plans/${deePlanId}/actions/${a1!.id}/evidence`,
       {
-        version: result.body.plan.version,
+        version: measures.body.plan.version,
         evidence: [
           {
             type: 'confirmation',
@@ -739,23 +721,24 @@ describe.skipIf(!hasDatabase)('event dashboards and reports', () => {
     });
     // Challenges are no longer recorded with progress (2026-11-08): the row stays, at zero.
     expect(t.application.barriers[1]).toMatchObject({ key: 'progress.challenges', responses: 0 });
-    expect(t.application.measures).toMatchObject({ with_result: 1, none: 2 });
+    expect(t.application.measures).toMatchObject({ baseline_only: 1, none: 2 });
     expect(t.application.evidence).toEqual({ self_reported: 0, supported: 1 });
-    // Results: a lower error rate is an improvement; the result is marked supported, nothing is verified.
+    // No actual results are recorded (2026-11-09): the outcome counts stay at zero and the
+    // measure is listed by its definition; nothing is verified.
     const res = d.results!;
     expect(res.measures.outcomes).toEqual({
-      improved: 1,
+      improved: 0,
       declined: 0,
       unchanged: 0,
       not_comparable: 0,
     });
-    expect(res.measures.resultSupport).toEqual({ self_reported: 0, supported: 1 });
+    expect(res.measures.resultSupport).toEqual({ self_reported: 0, supported: 0 });
     expect(res.measures.rows[0]!.measures.map((m) => m.name)).toEqual(['Error rate']);
     expect(res.evidence.examples[0]).toMatchObject({
       support: 'supported',
       description: 'Manager confirmed the briefing',
     });
-    expect(res.influences).toEqual(['New checklist too']);
+    expect(res.influences).toEqual([]);
     expect(res.expectations.state).toBe('not_configured');
     // "Verified" appears only where the report denies verification, never as a label on data.
     expect(d.limitations.join(' ')).toMatch(/neither label means independently verified/);
@@ -963,7 +946,7 @@ describe.skipIf(!hasDatabase)('event dashboards and reports', () => {
         priority: 'Brief stakeholders',
         applied: 1,
         measures: 1,
-        withResult: 1,
+        withResult: 0,
         evidence: 1,
         reminder: 'weekly',
       },

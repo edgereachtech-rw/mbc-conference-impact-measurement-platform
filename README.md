@@ -593,8 +593,11 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   product or process, a manager's or stakeholder's confirmation, a relevant organisational
   measure, a case example; migration `20261108211500_evidence_types_brief` folded the earlier
   "process", "customer feedback" and "other" rows into the nearest of them), and each item says
-  whether it is self-reported or supported by another source. Routes: `PUT …/actions/:id/measures` (choice plus definitions) and
-  `PUT …/actions/:id/measures/:measureId/results`; every save is audited. Admin: Event →
+  whether it is self-reported or supported by another source. Routes: `PUT …/actions/:id/measures` (choice plus definitions); every save is audited.
+  **Decision 2026-11-09: no actual results are recorded.** The "Record a result" button, its
+  dialog and the results route left; what happened is told by the evidence and the follow-ups.
+  The result records and the measure's latest-result columns stay in the schema, empty, until a
+  decision to drop them. Admin: Event →
   Transfer Planning → "Business measures" shows overview tiles, a register with one row per
   measure (and one per action without a measure), the detail of a measure with every result in
   date order and its evidence, and filters for no result / result / updated results / supported
@@ -649,8 +652,8 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   not impact. `POST .../complete` now needs every written action recorded as applied, applied
   consistently or completed, with evidence (`planCompletionGaps`); an action marked no longer
   applicable is left out. The delegate says at the same time whether a measurable improvement has
-  been seen (`improvement: seen | not_yet`, plus a note); "seen" is refused with 422
-  `result_missing` unless some action carries a recorded result (`planHasResult`). The plan's
+  been seen (`improvement: seen | not_yet`, plus a note); since 2026-11-09 "seen" stands on the
+  evidence recorded on the actions and is labelled self-reported (no result is recorded). The plan's
   `outcome` becomes `applied` (no measurable improvement yet) or `impact_demonstrated`; the
   platform never promotes a plan on its own. An impact check (`transfer_plan_impact_check`) falls
   due `IMPACT_CHECK_DAYS` (90) later: the worker emails the delegate once
@@ -698,8 +701,8 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   measures, 1 with a result", "No evidence yet"), a tick once answered well enough to count,
   and the one button that answers it; the progress history, measures and evidence are listed
   beneath. The
-  completion gap list carries a button per gap that opens the right dialog on that action, the
-  "measurable improvement" warning offers "Record a result", and the reminders block says they
+  completion gap list carries a button per gap that opens the right dialog on that action, and
+  the reminders block says they
   are for after the conference and send nothing until the start date.
 - Session feedback follows the day's attendance (task of 2026-11-07): a delegate may answer a
   session's feedback when their attendance record for that session's date is attended or

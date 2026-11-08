@@ -13,7 +13,6 @@ import {
   impactCheckAnswersFor,
   NO_REMINDERS,
   planCompletionGaps,
-  planHasResult,
   planOutcomeDescriptions,
   planOutcomeLabels,
   planTitleOf,
@@ -25,7 +24,6 @@ import {
   type MyTransferPlan,
   type MyTransferPlans,
   type PlanActionFields,
-  type MeasureView,
   type PlanActionView,
   type ReminderFrequency,
   type ReminderPreference,
@@ -48,7 +46,7 @@ import { ApiError, apiFetch } from '@/lib/api';
 import { formatDateShort, formatInstant } from '@/lib/events';
 import { describeError } from '@/lib/imports';
 
-import { ActionMeasures, EvidenceDialog, MeasuresDialog, ResultsDialog } from './measures-evidence';
+import { ActionMeasures, EvidenceDialog, MeasuresDialog } from './measures-evidence';
 
 export type MyTransferPlansState =
   | { kind: 'loading' }
@@ -464,7 +462,6 @@ function PlanEditor({
     | { kind: 'review' }
     | { kind: 'complete' }
     | { kind: 'measures'; action: PlanActionView }
-    | { kind: 'results'; action: PlanActionView; measure: MeasureView }
     | { kind: 'evidence'; action: PlanActionView }
   >(null);
   const id = useId();
@@ -478,8 +475,6 @@ function PlanEditor({
   const [removing, setRemoving] = useState<string | null>(null);
   /** What still stands between a submitted plan and completion, from the saved plan. */
   const gaps = submitted ? planCompletionGaps(plan.actions) : [];
-  /** Completion is application; impact is the delegate's own report, which needs a recorded result. */
-  const hasResult = planHasResult(plan.actions);
   const [improvement, setImprovement] = useState<'seen' | 'not_yet'>('not_yet');
   const [outcomeNote, setOutcomeNote] = useState('');
   /** The impact check waiting for an answer, if any, as of today in the event's timezone. */
@@ -756,7 +751,6 @@ function PlanEditor({
             onRemove={() => setRemoving(a.key)}
             dirty={dirty}
             onMeasures={(action) => setDialog({ kind: 'measures', action })}
-            onResults={(action, measure) => setDialog({ kind: 'results', action, measure })}
             onEvidence={(action) => setDialog({ kind: 'evidence', action })}
             timezone={timezone}
           />
@@ -1224,7 +1218,7 @@ function PlanEditor({
               </button>
               <button
                 type="button"
-                disabled={busy || (improvement === 'seen' && !hasResult)}
+                disabled={busy}
                 onClick={() => void complete()}
                 className={consoleButton({ variant: 'primary' })}
               >
@@ -1268,12 +1262,6 @@ function PlanEditor({
                 />
                 <span>Yes, there is a measurable improvement, and the evidence shows it</span>
               </label>
-              {improvement === 'seen' && !hasResult ? (
-                <p role="alert" className="text-xs text-brand-danger">
-                  Record the result on at least one action first: a measure with an actual value, or
-                  results on a progress record.
-                </p>
-              ) : null}
             </fieldset>
             <div className="space-y-1">
               <label htmlFor={`${id}-outcome-note`} className="font-semibold text-corp-ink">
@@ -1301,42 +1289,6 @@ function PlanEditor({
           onSaved={(result) => {
             setDialog(null);
             onUpdated(result, 'Measures saved.');
-          }}
-          onStale={(message) => {
-            setDialog(null);
-            setFailure({ message, stale: true });
-          }}
-        />
-      ) : null}
-      {dialog?.kind === 'results' ? (
-        <ResultsDialog
-          eventId={eventId}
-          planId={plan.id}
-          action={dialog.action}
-          measure={dialog.measure}
-          version={plan.version}
-          onClose={() => setDialog(null)}
-          onSaved={(result) => {
-            setDialog(null);
-            onUpdated(result, 'Results saved.');
-          }}
-          onStale={(message) => {
-            setDialog(null);
-            setFailure({ message, stale: true });
-          }}
-        />
-      ) : null}
-      {dialog?.kind === 'results' ? (
-        <ResultsDialog
-          eventId={eventId}
-          planId={plan.id}
-          action={dialog.action}
-          measure={dialog.measure}
-          version={plan.version}
-          onClose={() => setDialog(null)}
-          onSaved={(result) => {
-            setDialog(null);
-            onUpdated(result, 'Results saved.');
           }}
           onStale={(message) => {
             setDialog(null);
@@ -1401,7 +1353,6 @@ function ActionCard({
   onRemove,
   dirty,
   onMeasures,
-  onResults,
   onEvidence,
   timezone,
 }: {
@@ -1417,7 +1368,6 @@ function ActionCard({
   /** Unsaved plan edits; the measure and evidence dialogs wait for a save. */
   dirty: boolean;
   onMeasures: (action: PlanActionView) => void;
-  onResults: (action: PlanActionView, measure: MeasureView) => void;
   onEvidence: (action: PlanActionView) => void;
   timezone: string;
 }) {
@@ -1684,7 +1634,6 @@ function ActionCard({
           disabled={disabled}
           dirty={dirty}
           onMeasures={() => onMeasures(saved)}
-          onResults={(measure) => onResults(saved, measure)}
           onEvidence={() => onEvidence(saved)}
         />
       ) : null}
