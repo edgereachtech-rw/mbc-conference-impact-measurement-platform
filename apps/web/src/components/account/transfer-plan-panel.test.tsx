@@ -290,6 +290,8 @@ describe('TransferPlanPanel', () => {
       (within(card).getByLabelText('Is this your first priority action?') as HTMLSelectElement)
         .value,
     ).toBe('first');
+    // The first plan has no name until the delegate gives it one here (2026-11-08).
+    await user.type(screen.getByLabelText('Plan name'), 'Coaching plan');
     // Submission waits for the three required fields of every action (spec 2026-11-08).
     await user.type(within(card).getByLabelText(/^Action title/), 'Measures first');
     await user.type(within(card).getByLabelText(/^Priority learning/), 'Measure before you train');
@@ -302,7 +304,7 @@ describe('TransferPlanPanel', () => {
     expect(put?.url).toBe(`/api/v1/me/events/${EVENT}/transfer-plans/${PLAN}`);
     expect(put?.body).toMatchObject({
       version: 1,
-      title: '',
+      title: 'Coaching plan',
       actions: [
         {
           title: 'Measures first',

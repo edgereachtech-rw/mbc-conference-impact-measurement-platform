@@ -442,6 +442,8 @@ function PlanEditor({
   onReload: () => void;
 }) {
   const { plan } = data;
+  // The first plan is created without a name; it gets one here like any other (2026-11-08).
+  const [title, setTitle] = useState(plan.title);
   const [actions, setActions] = useState<ActionDraft[]>(() => plan.actions.map(draftOf));
   const [reminder, setReminder] = useState<ReminderPreference>({
     frequency: plan.reminder.frequency,
@@ -534,7 +536,7 @@ function PlanEditor({
           method: 'PUT',
           body: JSON.stringify({
             version: plan.version,
-            title: plan.title,
+            title: title.trim(),
             actions: payloadOf(actions),
             reminder: {
               ...reminder,
@@ -670,6 +672,27 @@ function PlanEditor({
                   ? `Keep saving your draft. You'll submit in the final Transfer Planning session on ${formatDateShort(finalSession.date)} at ${finalSession.startTime}.`
                   : 'Keep saving your draft until you are ready to submit.'}
         </p>
+      </div>
+
+      <div className="space-y-1">
+        <label htmlFor={`${id}-plan-title`} className="text-sm font-semibold text-corp-ink">
+          Plan name
+        </label>
+        <p className="text-xs text-corp-muted">
+          A short name for this plan. It names its tab and appears in your reminders.
+        </p>
+        <input
+          id={`${id}-plan-title`}
+          value={title}
+          maxLength={120}
+          readOnly={locked}
+          placeholder={`Plan ${plan.sequence}`}
+          onChange={(e) => {
+            setDirty(true);
+            setTitle(e.target.value);
+          }}
+          className={input}
+        />
       </div>
 
       {data.sessions.length > 0 ? (
