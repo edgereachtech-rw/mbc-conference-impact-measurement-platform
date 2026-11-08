@@ -407,10 +407,12 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   time, each question with its answer as text, correct flag and weight), audited as
   `assessment.response_viewed` without the answers. Shown on the stage page's Submissions tab
   with a "View" popup per delegate. The CSV export prefixes each column with its section title.
-  A delegate who submits a marked section (scored or knowledge) sees their mark at once as a
-  percentage (2026-11-07): `response.sectionMarks` on the delegate's assessment view, one entry
-  per submitted marked section (points scored over points available, computed by
-  `sectionMarkOf` in `packages/shared`), shown in the submission popup and on the section.
+  A delegate who submits a knowledge section sees their mark at once as a percentage
+  (2026-11-07; narrowed to knowledge sections on 2026-11-08): `response.sectionMarks` on the
+  delegate's assessment view, one entry per submitted knowledge section (one point per knowledge
+  question, computed by `sectionMarkOf` in `packages/shared`), shown in the submission popup
+  and on the section. A rating-scale section is averaged in the reports and never marked for the
+  delegate.
 - Session feedback (task of 2026-10-31; backlog E8): a questionnaire per session, reached by the
   session's link or QR code, answered after the session by delegates recorded as attending it
   (session attendance, E6), one response per delegate, recorded once (2026-11-07: no updating;

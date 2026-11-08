@@ -653,10 +653,10 @@ function AssessmentCard({
                   : 'Submit your responses?'
           }
           description={
-            // A marked section (scored or knowledge) gets no "check your responses" line
-            // (2026-11-07): the answers are what they are, and the line read as an invitation to
-            // second-guess them.
-            review.done || (reviewGroup.section && reviewGroup.section.marking !== 'none')
+            // A knowledge section gets no "check your responses" line (2026-11-07): the answers
+            // are what they are, and the line read as an invitation to second-guess them. A
+            // rating-scale section is not marked for the delegate (2026-11-08), so it keeps it.
+            review.done || reviewGroup.section?.marking === 'knowledge'
               ? undefined
               : 'Check your responses below. Once submitted they cannot be changed.'
           }

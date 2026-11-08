@@ -570,8 +570,9 @@ export function answerScore(
 }
 
 /**
- * A delegate's mark on a marked section (2026-11-07): points scored over the points available
- * (one per knowledge question, the highest option score per scored question), as a percentage.
+ * A delegate's mark on a knowledge section (2026-11-07, narrowed 2026-11-08): points scored over
+ * the points available, one per knowledge question, as a percentage. A rating-scale ("scored")
+ * section carries option scores for the reports' averages and is never marked for the delegate.
  */
 export const sectionMarkSchema = z.object({
   scored: z.number(),
@@ -581,28 +582,21 @@ export const sectionMarkSchema = z.object({
 export type SectionMark = z.infer<typeof sectionMarkSchema>;
 
 /**
- * The mark of one section from the delegate's stored answers: knowledge questions count one
- * point for a right answer; scored questions count their option's score against the highest
- * score on offer. Null when the section is unmarked or has nothing to score.
+ * The mark of one knowledge section from the delegate's stored answers: one point for each
+ * knowledge question answered correctly. Null for a text or rating-scale section, or for a
+ * knowledge section with no knowledge question in it.
  */
 export function sectionMarkOf(
   marking: SectionMarking,
   questions: ReadonlyArray<Pick<AssessmentQuestionView, 'id' | 'type' | 'options' | 'isKnowledge'>>,
   scoreOf: (questionId: string) => number | null | undefined,
 ): SectionMark | null {
-  if (marking === 'none') return null;
+  if (marking !== 'knowledge') return null;
   let scored = 0;
   let max = 0;
   for (const q of questions) {
-    if (q.type !== 'single_choice') continue;
-    const top =
-      marking === 'knowledge'
-        ? q.isKnowledge
-          ? 1
-          : 0
-        : Math.max(0, ...(q.options ?? []).map((o) => o.score ?? 0));
-    if (top <= 0) continue;
-    max += top;
+    if (q.type !== 'single_choice' || !q.isKnowledge) continue;
+    max += 1;
     scored += scoreOf(q.id) ?? 0;
   }
   if (max <= 0) return null;

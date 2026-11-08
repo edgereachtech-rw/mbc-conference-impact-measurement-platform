@@ -127,7 +127,7 @@ const sectioned: MyAssessment = {
       description: null,
       highlightDescription: false,
       order: 2,
-      marking: 'scored',
+      marking: 'knowledge',
       audience: 'all',
       sourceSectionId: null,
       sourceLabel: null,
@@ -443,7 +443,7 @@ describe('AssessmentsPanel', () => {
     expect(within(card).queryByRole('button', { name: /Previous section/ })).toBeNull();
     await user.click(within(card).getByLabelText('Yes'));
     await user.click(within(card).getByRole('button', { name: 'Submit section' }));
-    // A marked (scored) section gets no "check your responses" line.
+    // A knowledge section gets no "check your responses" line.
     const reviewTwo = await screen.findByRole('dialog', { name: 'Submit this section?' });
     expect(reviewTwo.textContent).not.toMatch(/Check your responses below/);
     await user.click(within(reviewTwo).getByRole('button', { name: 'Submit now' }));
@@ -452,7 +452,7 @@ describe('AssessmentsPanel', () => {
     expect(within(all).getByRole('status').textContent).toMatch(
       /Every section is submitted.*email you when the next step opens/,
     );
-    // The scored section's mark, as a percentage, shown at once.
+    // The knowledge section's mark, as a percentage, shown at once.
     expect(within(all).getByLabelText('Your mark').textContent).toMatch(/75%.*3 of 4 points/);
     expect(within(all).getByRole('link', { name: 'Back to my dashboard' })).toBeTruthy();
     expect(within(all).queryByRole('button', { name: 'Close' })).toBeNull();
