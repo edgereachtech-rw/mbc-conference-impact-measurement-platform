@@ -368,7 +368,12 @@ describe.skipIf(!hasDatabase)('daily learning reflections', () => {
     expect(closedView.body.reflections[0]).toMatchObject({ status: 'closed', canSubmit: false });
     expect(await prisma.reflectionAnswer.count({ where: { response: { eventId } } })).toBe(3);
     expect((await call('post', `${base}/close`, {})).body.activity.status).toBe('closed');
-    // Closed by the organisers means hidden from delegates (2026-11-08); the answers stay.
+    // Closed by the organisers means hidden from delegates (2026-11-08); the answers stay, and
+    // the dashboard no longer asks for reflections.
+    expect(
+      (await call('get', `/me/events/${eventId}/journey`, undefined, cookies.ada)).body.journey
+        .reflections,
+    ).toEqual({ available: 0, submitted: 0 });
     expect(
       (await call('get', `/me/events/${eventId}/reflections`, undefined, cookies.ada)).body
         .reflections,

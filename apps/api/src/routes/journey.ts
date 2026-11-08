@@ -4,6 +4,7 @@ import {
   stageWindowState,
   waveLabel,
   type Journey,
+  reflectionWindowState,
   transferPlanVisible,
 } from '@mbc/shared';
 import { Router } from 'express';
@@ -100,10 +101,15 @@ export function journeyRouter({ prisma, config, middleware, now }: Deps): Router
           where: { eventId, delegateId: delegate.id },
           select: { eventDateId: true, status: true },
         }),
+        // Reflections the delegate can open right now (2026-11-08): a draft or a closed one is
+        // hidden from them, and one that opens later is nothing to do yet.
         db.reflectionActivity.findMany({
-          where: { eventId, status: { not: 'draft' } },
+          where: { eventId, status: 'published' },
           select: {
             id: true,
+            status: true,
+            opensAt: true,
+            closesAt: true,
             _count: { select: { responses: { where: { delegateId: delegate.id } } } },
           },
         }),
@@ -193,10 +199,13 @@ export function journeyRouter({ prisma, config, middleware, now }: Deps): Router
           };
         });
       }),
-      reflections: {
-        available: reflections.length,
-        submitted: reflections.filter((r) => r._count.responses > 0).length,
-      },
+      reflections: (() => {
+        const open = reflections.filter((r) => reflectionWindowState(r, clock()) === 'open');
+        return {
+          available: open.length,
+          submitted: open.filter((r) => r._count.responses > 0).length,
+        };
+      })(),
       feedback: { sessions: feedbackSessions, submitted: feedback },
       // Transfer Planning hidden by the organisers (2026-11-08): no plan, no next step.
       transferPlanHidden: !transferPlanVisible(delegate.event, clock()),
