@@ -687,7 +687,9 @@ function MeasureForm({
         ) : (
           <input
             id={`${id}-${name}`}
-            type={kind === 'date' ? 'date' : 'text'}
+            // A quantitative value takes only a number; the unit has its own field.
+            type={kind === 'date' ? 'date' : kind === 'value' && quantitative ? 'number' : 'text'}
+            step={kind === 'value' && quantitative ? 'any' : undefined}
             inputMode={kind === 'value' && quantitative ? 'decimal' : undefined}
             list={name === 'name' ? examplesId : undefined}
             value={value}
@@ -1155,7 +1157,8 @@ function ResultForm({
                 {quantitative ? (
                   <input
                     id={`${id}-value`}
-                    type="text"
+                    type="number"
+                    step="any"
                     inputMode="decimal"
                     value={draft.value}
                     disabled={disabled}

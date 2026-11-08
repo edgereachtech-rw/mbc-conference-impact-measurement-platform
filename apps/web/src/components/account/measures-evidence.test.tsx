@@ -296,13 +296,17 @@ describe('MeasuresDialog', () => {
       within(form).getByLabelText('Do you know the current starting value (baseline)?'),
       'known',
     );
-    await user.type(within(form).getByLabelText(/^Baseline value/), '12 %');
+    // A quantitative value is a number field: letters and symbols are not taken (2026-11-08).
+    const baseline = within(form).getByLabelText(/^Baseline value/) as HTMLInputElement;
+    expect(baseline.type).toBe('number');
+    await user.type(baseline, '12 %');
+    expect(baseline.value).not.toBe('12 %');
+    await user.clear(baseline);
     await user.click(screen.getByRole('button', { name: 'Save measures' }));
-    expect(screen.getByRole('alert').textContent).toMatch(/must be a number/);
+    expect(screen.getByRole('alert').textContent).toMatch(/give the current value/);
     expect(calls).toHaveLength(0);
 
-    await user.clear(within(form).getByLabelText(/^Baseline value/));
-    await user.type(within(form).getByLabelText(/^Baseline value/), '12');
+    await user.type(baseline, '12');
     await user.selectOptions(within(form).getByLabelText('Which way is better?'), 'lower');
     await user.click(screen.getByRole('button', { name: 'Save measures' }));
     expect(calls).toHaveLength(1);
@@ -384,11 +388,12 @@ describe('ResultsDialog', () => {
     const form = screen.getByRole('group', { name: 'Result 1' });
     await user.click(screen.getByRole('button', { name: 'Save results' }));
     expect(screen.getByRole('alert').textContent).toMatch(/record the actual result/);
-    await user.type(within(form).getByLabelText(/^Actual result/), 'nine');
-    await user.click(screen.getByRole('button', { name: 'Save results' }));
-    expect(screen.getByRole('alert').textContent).toMatch(/enter a number/);
-    await user.clear(within(form).getByLabelText(/^Actual result/));
-    await user.type(within(form).getByLabelText(/^Actual result/), '9');
+    const actual = within(form).getByLabelText(/^Actual result/) as HTMLInputElement;
+    expect(actual.type).toBe('number');
+    await user.type(actual, 'nine');
+    expect(actual.value).toBe('');
+    await user.clear(actual);
+    await user.type(actual, '9');
     await user.type(within(form).getByLabelText(/^Date of result/), '2027-02-15');
     await user.type(
       within(form).getByLabelText(/^How was this result obtained/),
