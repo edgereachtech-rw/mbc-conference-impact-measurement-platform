@@ -673,6 +673,36 @@ describe.skipIf(!hasDatabase)('assessment questions and answers', () => {
     now = new Date('2026-11-17T12:00:00.000Z');
     expect((await stageOf()).status).toBe('closed');
 
+    // Closed by status, then opened again (2026-11-08): the same questions and the submitted
+    // answers come back. A deadline already behind us has to be cleared or moved first.
+    const window = { opensAt: '2026-11-14T09:00:00+01:00', closesAt: '2026-11-16T18:00:00+01:00' };
+    expect(
+      (await call('put', stageUrl, { enabled: true, status: 'closed', ...window })).status,
+    ).toBe(200);
+    expect((await stageOf()).status).toBe('closed');
+    const stale = await call('put', stageUrl, { enabled: true, status: 'open', ...window });
+    expect(stale.status).toBe(422);
+    expect(stale.body.error.code).toBe('deadline_passed');
+    const reopened = await call('put', stageUrl, {
+      enabled: true,
+      status: 'open',
+      opensAt: window.opensAt,
+      closesAt: null,
+    });
+    expect(reopened.status, reopened.text).toBe(200);
+    const again = (await call('get', me, undefined, cookies.delegate)).body.assessments[0] as {
+      status: string;
+      questions: unknown[];
+      response: { submittedAt: string | null } | null;
+    };
+    expect(again.status).toBe('open');
+    expect(again.questions.length).toBe(open.questions.length);
+    expect(again.response?.submittedAt).toBeTruthy();
+    // Back to the scheduled window for the rest of this test.
+    expect(
+      (await call('put', stageUrl, { enabled: true, status: 'scheduled', ...window })).status,
+    ).toBe(200);
+
     // Non-completers: every eligible registration without a submitted response.
     const other = await createRegisteredIdentity(prisma, eventId, `other-q-${tag}@example.com`, {
       name: 'Ada Other',

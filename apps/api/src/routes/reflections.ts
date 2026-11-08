@@ -288,8 +288,8 @@ export function reflectionRouter({ prisma, config, middleware, now }: Deps): Rou
     const principal = requireAdmin(res);
     const current = await loadActivity(String(req.params.eventId), String(req.params.activityId));
     if (to === 'published') {
-      if (current.status !== 'draft') {
-        throw new HttpError(409, 'not_draft', 'Only a draft can be published.');
+      if (current.status === 'published') {
+        throw new HttpError(409, 'already_published', 'This reflection is already published.');
       }
       if (current.questions.length === 0) {
         throw new HttpError(422, 'no_questions', 'Add at least one question before publishing.');
@@ -298,17 +298,31 @@ export function reflectionRouter({ prisma, config, middleware, now }: Deps): Rou
       throw new HttpError(409, 'not_published', 'Only a published reflection can be closed.');
     }
     const at = clock();
+    // Closing hides the reflection from delegates and keeps everything (2026-11-08); publishing
+    // it again shows it with the same questions and answers. A deadline already behind us would
+    // keep it closed, so it is cleared on the way back.
+    const republished = to === 'published' && current.status === 'closed';
+    const pastDeadline = republished && current.closesAt !== null && current.closesAt < at;
     const updated = await prisma().$transaction(async (tx) => {
       const row = await tx.reflectionActivity.update({
         where: { id: current.id },
         data:
           to === 'published'
-            ? { status: 'published', publishedAt: at }
+            ? {
+                status: 'published',
+                publishedAt: current.publishedAt ?? at,
+                closedAt: null,
+                ...(pastDeadline ? { closesAt: null } : {}),
+              }
             : { status: 'closed', closedAt: at },
         include: ACTIVITY_INCLUDE,
       });
       await audit(tx, {
-        action: to === 'published' ? 'reflection.published' : 'reflection.closed',
+        action: republished
+          ? 'reflection.republished'
+          : to === 'published'
+            ? 'reflection.published'
+            : 'reflection.closed',
         entityType: 'reflection_activity',
         entityId: row.id,
         eventId: current.eventId,

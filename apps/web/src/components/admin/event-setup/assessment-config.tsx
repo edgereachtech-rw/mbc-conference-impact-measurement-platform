@@ -111,7 +111,9 @@ function StageCard({
         : seen === 'upcoming'
           ? `Delegates see "Opens later" until ${formatInstant(stage.opensAt, event.timezone)}; it opens by itself then.`
           : seen === 'closed'
-            ? 'Closed to delegates.'
+            ? stage.status === 'closed'
+              ? 'Closed by you: delegates see it as closed and can read their answers. Set the status to Open to reopen it with the same questions and answers.'
+              : 'Closed to delegates: the deadline has passed. Clear or extend the deadline to reopen it.'
             : `Open to delegates${stage.closesAt ? ` until ${formatInstant(stage.closesAt, event.timezone)}` : ''}.`;
 
   // Response counts for an enabled stage with questions; refreshed whenever the stage changes.
@@ -383,9 +385,22 @@ function StageCard({
             id={`${id}-status`}
             value={draft.enabled ? draft.status : 'draft'}
             disabled={readOnly || busy || !draft.enabled}
-            onChange={(e) =>
-              set('status', e.target.value as (typeof assessmentStageStatuses)[number])
-            }
+            onChange={(e) => {
+              const status = e.target.value as (typeof assessmentStageStatuses)[number];
+              set('status', status);
+              // Opening again after the deadline (2026-11-08): a deadline already behind us would
+              // keep the stage closed, so it is cleared here and the admin is told.
+              const closes = draft.closesAt
+                ? zonedLocalToIso(draft.closesAt, event.timezone)
+                : null;
+              if (status === 'open' && closes && new Date(closes) < new Date()) {
+                set('closesAt', '');
+                setNotice({
+                  ok: true,
+                  text: 'The deadline had passed, so it was cleared: the stage opens again without one. Set a new deadline if you want one, then save.',
+                });
+              }
+            }}
             className="rounded-none"
           >
             {assessmentStageStatuses.map((s) => (

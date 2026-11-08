@@ -329,6 +329,12 @@ function DateCard({
             <StatusPill tone="neutral">Disabled</StatusPill>
           )}
         </div>
+        {activity?.status === 'closed' ? (
+          <p className="text-xs text-corp-muted">
+            Closed: hidden from delegates, their answers kept. “Publish again” shows it with the
+            same questions.
+          </p>
+        ) : null}
 
         {!activity ? (
           <div className="space-y-2">
@@ -452,6 +458,21 @@ function DateCard({
                       className={consoleButton({ variant: 'secondary', size: 'sm' })}
                     >
                       Close
+                    </button>
+                  ) : null}
+                  {activity.status === 'closed' ? (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() =>
+                        void run(
+                          () => apiFetch(`${base}/publish`, { method: 'POST', body: '{}' }),
+                          'Reflection published again. Delegates can see it.',
+                        )
+                      }
+                      className={consoleButton({ variant: 'accent', size: 'sm' })}
+                    >
+                      Publish again
                     </button>
                   ) : null}
                   {activity.submitted === 0 ? (

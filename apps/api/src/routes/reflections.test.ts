@@ -368,6 +368,30 @@ describe.skipIf(!hasDatabase)('daily learning reflections', () => {
     expect(closedView.body.reflections[0]).toMatchObject({ status: 'closed', canSubmit: false });
     expect(await prisma.reflectionAnswer.count({ where: { response: { eventId } } })).toBe(3);
     expect((await call('post', `${base}/close`, {})).body.activity.status).toBe('closed');
+    // Closed by the organisers means hidden from delegates (2026-11-08); the answers stay.
+    expect(
+      (await call('get', `/me/events/${eventId}/reflections`, undefined, cookies.ada)).body
+        .reflections,
+    ).toEqual([]);
+    expect(await prisma.reflectionAnswer.count({ where: { response: { eventId } } })).toBe(3);
+    // Published again: the same questions and answers; the deadline behind us is cleared.
+    const republished = await call('post', `${base}/publish`, {});
+    expect(republished.status, republished.text).toBe(200);
+    expect(republished.body.activity).toMatchObject({
+      status: 'published',
+      closedAt: null,
+      closesAt: null,
+    });
+    expect(republished.body.activity.questions.map((q: { id: string }) => q.id)).toContain(
+      versioned.body.question.id,
+    );
+    const back = await call('get', `/me/events/${eventId}/reflections`, undefined, cookies.ada);
+    expect(back.body.reflections[0]).toMatchObject({ id: day1Activity, status: 'open' });
+    expect(await prisma.reflectionAnswer.count({ where: { response: { eventId } } })).toBe(3);
+    expect((await call('post', `${base}/publish`, {})).status).toBe(409);
+    expect(
+      await prisma.auditLog.count({ where: { eventId, action: 'reflection.republished' } }),
+    ).toBe(1);
   });
 
   it('keeps dates independent: disabling Day 2 removes its draft only, and a new activity can be enabled with its own questions', async () => {

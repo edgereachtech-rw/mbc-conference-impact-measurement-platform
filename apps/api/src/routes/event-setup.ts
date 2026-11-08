@@ -487,6 +487,16 @@ export function eventSetupRouter({ prisma, middleware, now }: Deps): Router {
         targetGroup: input.target === 'group' ? (input.targetGroup ?? null) : null,
         status: input.status,
       };
+      // Opening a stage whose deadline has passed would leave it closed for the delegates
+      // (2026-11-08): the deadline is cleared or moved first. Reopening keeps every question
+      // and every answer; nothing is retired by closing.
+      if (input.status === 'open' && data.closesAt && data.closesAt < clock()) {
+        throw new HttpError(
+          422,
+          'deadline_passed',
+          'The deadline has already passed. Clear it or set a later one, then open the stage again.',
+        );
+      }
       const previous = event.assessmentStages.find((s) => s.stage === stage && s.wave === wave);
       if (
         (input.status === 'open' || input.status === 'scheduled') &&

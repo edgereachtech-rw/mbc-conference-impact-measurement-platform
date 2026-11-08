@@ -538,6 +538,14 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   stamps who and when, reopening clears them; audited `support_request.updated`), shown on the
   event settings "Support" tab. The journey reports `supportRequests.state` as `ok` once the
   delegate has one.
+- Hide on close, reopen with the same data (2026-11-08). Daily reflections: "Close" hides the
+  reflection from delegates and keeps every question and answer; "Publish again" shows it as it
+  was (a deadline already behind us is cleared on the way back; audit
+  `reflection.republished`). Session feedback: "Close feedback" hides the session from the
+  delegates' list and journey, keeps the answers, link and QR code, and "Reopen feedback" opens
+  it again (unchanged). Assessment stages: setting the status back to Open after Closed brings
+  the same questions and answers back; a deadline that has already passed is refused with 422
+  `deadline_passed`, and the stage card clears it for the admin when they choose Open.
 - Progress through the follow-ups (rules of 2026-11-08; migration
   `20261108001700_follow_up_progress`): the plan page no longer records progress. Each 30, 60,
   90-day and longer-term follow-up first asks where every action of the Transfer Plan stands,

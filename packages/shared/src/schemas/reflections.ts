@@ -165,7 +165,9 @@ export function reflectionWindowState(
   at: Date,
 ): 'hidden' | 'upcoming' | 'open' | 'closed' {
   if (activity.status === 'draft') return 'hidden';
-  if (activity.status === 'closed') return 'closed';
+  // Closed by the organisers means hidden from delegates (2026-11-08); a reflection whose
+  // deadline has passed stays visible as closed. Publishing it again brings it back as it was.
+  if (activity.status === 'closed') return 'hidden';
   const opens = activity.opensAt ? new Date(activity.opensAt) : null;
   const closes = activity.closesAt ? new Date(activity.closesAt) : null;
   if (opens && at < opens) return 'upcoming';
