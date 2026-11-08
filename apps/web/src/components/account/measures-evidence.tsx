@@ -19,7 +19,6 @@ import {
   measureKinds,
   measureOutcomeLabels,
   measureStatusLabels,
-  measureStatuses,
   resultFieldLabels,
   resultSourceLabels,
   resultSources,
@@ -252,14 +251,16 @@ export function ActionMeasures({
           ) : null}
         </p>
         <div className="flex flex-wrap gap-1">
-          <button
-            type="button"
-            disabled={disabled || dirty}
-            onClick={onMeasures}
-            className={consoleButton({ variant: 'secondary', size: 'sm' })}
-          >
-            {status || measures.length > 0 ? 'Edit measures' : 'Add a measure'}
-          </button>
+          {status === 'identified' ? (
+            <button
+              type="button"
+              disabled={disabled || dirty}
+              onClick={onMeasures}
+              className={consoleButton({ variant: 'secondary', size: 'sm' })}
+            >
+              {measures.length > 0 ? 'Edit measures' : 'Add a measure'}
+            </button>
+          ) : null}
           <button
             type="button"
             disabled={disabled || dirty}
@@ -275,11 +276,21 @@ export function ActionMeasures({
           Save your plan first, then add measures and evidence.
         </p>
       ) : null}
-      {!status && measures.length === 0 && records.length === 0 ? (
+      {!status ? (
         <p className="text-xs text-corp-muted">
-          Choose a result or change that can show whether this action is making a difference, record
-          the starting point and the target where known, then the actual results as they come in and
-          the evidence of what you did. “Not yet known” and “Not applicable” are answers too.
+          Answer “Can you identify a business measure for this action?” above and save the plan.
+          Measures can be added once the answer is yes; evidence of what you did can be added at any
+          time.
+        </p>
+      ) : status === 'identified' && measures.length === 0 ? (
+        <p className="text-xs text-corp-muted">
+          Add the measure: what you will track, its starting point and target where known. Actual
+          results are recorded against it as they come in.
+        </p>
+      ) : status !== 'identified' ? (
+        <p className="text-xs text-corp-muted">
+          No measure is needed for now. Change the answer above when a measure becomes known or
+          relevant.
         </p>
       ) : null}
       {measures.length > 0 ? (
@@ -515,14 +526,14 @@ export function MeasuresDialog({
   onSaved: (data: MyTransferPlan) => void;
   onStale: (message: string) => void;
 }) {
-  const [status, setStatus] = useState<MeasureStatus>(action.measureStatus ?? 'identified');
+  // The question is answered on the action card (2026-11-08); the dialog opens only for "yes".
+  const status: MeasureStatus = 'identified';
   const [rows, setRows] = useState<MeasureDraft[]>(() =>
     (action.measures ?? []).map(measureDraftOf),
   );
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const listId = useId();
-  const id = useId();
 
   function update(key: string, patch: Partial<MeasureDraft>) {
     setRows((list) => list.map((m) => (m.key === key ? { ...m, ...patch } : m)));
@@ -587,38 +598,11 @@ export function MeasuresDialog({
           {confidentialityNotice}
         </p>
         <Problem text={problem} />
-        <div className="space-y-1">
-          <label htmlFor={`${id}-status`} className="text-sm font-semibold text-corp-ink">
-            Can you identify a business measure for this action?
-          </label>
-          <p className="text-xs text-corp-muted">
-            Choose a result or change that can help you understand whether your planned action is
-            making a difference. It may be a numerical measure, such as time saved or errors
-            reduced, or a qualitative measure, such as improved teamwork or customer experience.
-          </p>
-          <NativeSelect
-            id={`${id}-status`}
-            value={status}
-            disabled={busy}
-            onChange={(e) => setStatus(e.target.value as MeasureStatus)}
-            className="rounded-none border-corp-line"
-          >
-            {measureStatuses.map((s) => (
-              <option key={s} value={s}>
-                {measureStatusLabels[s]}
-              </option>
-            ))}
-          </NativeSelect>
-          {!identified ? (
-            <p className="text-xs text-corp-muted">
-              No measure is needed. Come back and change this when a measure becomes known or
-              relevant.
-              {rows.length > 0
-                ? ` Your ${rows.length} recorded measure${rows.length === 1 ? ' stays' : 's stay'} as ${rows.length === 1 ? 'it is' : 'they are'}; choose “Yes” to edit ${rows.length === 1 ? 'it' : 'them'}.`
-                : ''}
-            </p>
-          ) : null}
-        </div>
+        <p className="text-xs text-corp-muted">
+          Choose a result or change that can help you understand whether your planned action is
+          making a difference. It may be a numerical measure, such as time saved or errors reduced,
+          or a qualitative measure, such as improved teamwork or customer experience.
+        </p>
         {identified ? (
           <>
             <datalist id={`${listId}-examples`}>

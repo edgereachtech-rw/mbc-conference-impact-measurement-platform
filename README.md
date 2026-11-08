@@ -511,8 +511,8 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   `20261031250000_transfer_plans`. Delegate routes: `GET /me/events/:id/transfer-plan` (the
   plan, the planning sessions, whether submission is open, the reference answers, reminder
   attempts), `PUT` (replace the actions, keep ids, one first priority, reminder preferences),
-  `POST .../submit` (`{ version }`; 422 `plan_empty` without an action, 409 `not_yet`
-  before the final session starts, 409 `already_submitted`), `POST
+  `POST .../submit` (`{ version }`; open at any time since 2026-11-08; 422 `plan_empty`
+  without an action, 409 `already_submitted`), `POST
 .../actions/:actionId/progress`. Admin routes: `GET /events/:id/transfer-plans` (every plan
   with actions counted once in their latest status, plus the sessions), `GET
 .../transfer-plans/:delegateId` (current plan, the snapshot, references, audit history,
@@ -574,9 +574,12 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   panel left the plan page the same day: support needs are collected by the follow-up questions
   whose area names support (brief 11.7), and the organisers' Support tab stays.
 - Business measures (spec of 2026-11-08; migration `20261107232000_business_measures`): per
-  planned action the delegate first answers "Can you identify a business measure?" (identified /
-  not yet known / not applicable, `transfer_plan_action.measure_status`; "identified" needs at
-  least one measure, and the other two are answers, never missing values). A measure (sections A
+  planned action the delegate first answers "Can you identify a business measure for this
+  action?" (identified / not yet known / not applicable, `transfer_plan_action.measure_status`;
+  "identified" needs at least one measure, and the other two are answers, never missing values).
+  Since 2026-11-08 the question is asked on the action card, under the action's other questions,
+  and saved with the plan (`PUT .../transfer-plans/:planId`, `actions[].measureStatus`); the
+  "Add a measure" button appears only when the answer is yes. A measure (sections A
   and B of the spec) has a name, why it matters, how it is measured, a type (quantitative with a
   unit and a direction of improvement, or qualitative), an explicit baseline state (known / not
   yet known) and target state (set / not yet known / not applicable) with values and dates.
@@ -611,8 +614,9 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   (optional title) adds the next, numbered in order, and every delegate route takes the plan id
   (`/me/events/:id/transfer-plans/:planId...`). **Decision 2026-11-07 (evening): the delegate's
   screens follow section 9 of the brief, one Individual Transfer Plan per delegate**, begun on
-  Day 1, reopened on Day 2 and submitted once the final Transfer Planning session has started;
-  "more" means more actions in that plan, with one first priority among them. The "Start another
+  Day 1, reopened on Day 2 and submitted when the delegate is ready (since 2026-11-08 at any
+  time; until then only once the final Transfer Planning session had started); "more" means more
+  actions in that plan, with one first priority among them. The "Start another
   plan" entry was removed from the delegate's page; the route stays for the organisers' tooling.
   A per-day model built earlier that day (one plan per conference day, then any number per day,
   submitted together on the last day with a priority plan) was taken out again the same evening

@@ -183,6 +183,7 @@ function stub(initial: MyTransferPlan) {
             priorityLearning?: string;
             action: string;
             isPriority: boolean;
+            measureStatus?: 'identified' | 'not_yet_known' | 'not_applicable' | null;
           }>;
           reminder: MyTransferPlan['plan']['reminder'];
         };
@@ -212,6 +213,7 @@ function stub(initial: MyTransferPlan) {
                 priorityLearning: a.priorityLearning ?? '',
                 action: a.action,
                 isPriority: a.isPriority,
+                measureStatus: a.measureStatus ?? null,
                 startOn: null,
                 firstStep: '',
               }),
@@ -279,7 +281,7 @@ describe('TransferPlanPanel', () => {
     render(<Harness planId={PLAN} />);
     expect((await screen.findAllByText('Draft')).length).toBeGreaterThan(0);
     expect(await screen.findByText('How to measure transfer')).toBeTruthy();
-    expect(screen.getByText(/final session, submission opens/)).toBeTruthy();
+    expect(screen.getByText(/\(final session\)/)).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Submit my plan' }).hasAttribute('disabled')).toBe(
       true,
     );
@@ -299,6 +301,11 @@ describe('TransferPlanPanel', () => {
       within(card).getByLabelText(/^What specifically will you do differently?/),
       'Define measures first',
     );
+    // The business-measure question sits with the action's questions (2026-11-08).
+    await user.selectOptions(
+      within(card).getByLabelText('Can you identify a business measure for this action?'),
+      'identified',
+    );
     await user.click(screen.getByRole('button', { name: 'Save draft' }));
     const put = calls.find((c) => c.init?.method === 'PUT');
     expect(put?.url).toBe(`/api/v1/me/events/${EVENT}/transfer-plans/${PLAN}`);
@@ -312,11 +319,14 @@ describe('TransferPlanPanel', () => {
           action: 'Define measures first',
           isPriority: true,
           startOn: null,
+          measureStatus: 'identified',
         },
       ],
       reminder: { frequency: 'none', startOn: null, endOn: null, time: '09:00', days: [] },
     });
     expect(await screen.findByText('Draft saved.')).toBeTruthy();
+    // Only a "yes" shows the way to the measures themselves.
+    expect(await screen.findByRole('button', { name: 'Add a measure' })).toBeTruthy();
 
     await user.click(screen.getByRole('button', { name: 'Submit my plan' }));
     const dialog = await screen.findByRole('dialog', { name: 'Submit your plan?' });
@@ -333,17 +343,14 @@ describe('TransferPlanPanel', () => {
     expect(screen.getByRole('button', { name: 'Save changes' })).toBeTruthy();
   });
 
-  it('explains when submission opens and refuses a stale save with a reload', async () => {
+  it('refuses a stale save with a reload', async () => {
     const calls = stub(
       plan({ canSubmit: false, plan: { ...plan().plan, version: 3, actions: [action()] } }),
     );
     const user = userEvent.setup();
     render(<Harness planId={PLAN} />);
-    expect(
-      await screen.findByText(
-        /You'll submit in the final Transfer Planning session on 13 Nov 2026 at 14:00/,
-      ),
-    ).toBeTruthy();
+    expect(await screen.findByText(/You can submit at any time/)).toBeTruthy();
+    // The server decides whether submission is open; here it is not.
     expect(screen.queryByRole('button', { name: 'Submit my plan' })).toBeNull();
     // Another tab saved in the meantime: the server now holds version 4.
     calls.length = 0;

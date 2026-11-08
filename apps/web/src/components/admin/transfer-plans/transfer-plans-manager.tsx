@@ -727,7 +727,7 @@ function ActionSummary({
       </div>
       <dl className="grid gap-x-4 gap-y-1 sm:grid-cols-2">
         {fields
-          .filter((f) => f !== 'action' && action[f])
+          .filter((f) => f !== 'action' && f !== 'measureStatus' && action[f])
           .map((f) => (
             <div key={f}>
               <dt className="text-xs text-corp-muted">{planActionFieldLabels[f].label}</dt>

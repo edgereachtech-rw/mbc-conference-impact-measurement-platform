@@ -5,6 +5,8 @@ import {
   appliedStatuses,
   actionSubmissionGaps,
   measurePlaceholders,
+  measureStatuses,
+  measureStatusLabels,
   planActionFieldLabels,
   dateIn,
   impactCheckAnswerLabels,
@@ -380,6 +382,7 @@ function emptyAction(): ActionDraft {
     measure: '',
     baseline: '',
     reviewOn: '',
+    measureStatus: null,
   };
 }
 
@@ -403,6 +406,7 @@ function draftOf(a: PlanActionView): ActionDraft {
     measure: a.measure,
     baseline: a.baseline,
     reviewOn: a.reviewOn ?? '',
+    measureStatus: a.measureStatus,
   };
 }
 
@@ -467,7 +471,6 @@ function PlanEditor({
   const submitted = plan.status === 'submitted';
   /** Completed plans are finished: read-only, reminders stopped (2026-11-06). */
   const locked = plan.status === 'completed';
-  const finalSession = data.sessions.find((s) => s.isFinal);
   const hasContent = actions.some((a) => a.action.trim() !== '');
   // Submission waits for a title, the priority learning and the action on every card
   // (spec 2026-11-08); drafts save with anything missing.
@@ -666,11 +669,7 @@ function PlanEditor({
             ? `Completed ${formatInstant(plan.completedAt, timezone)}. This plan is finished and its reminders have stopped; it stays here to read. Start another plan for anything new.`
             : submitted
               ? `Submitted ${formatInstant(plan.submittedAt, timezone)}. You can keep updating it; the organisers keep your original submission.`
-              : data.canSubmit
-                ? 'Save as often as you like, then submit when your plan is ready.'
-                : finalSession
-                  ? `Keep saving your draft. You'll submit in the final Transfer Planning session on ${formatDateShort(finalSession.date)} at ${finalSession.startTime}.`
-                  : 'Keep saving your draft until you are ready to submit.'}
+              : 'Save as often as you like, then submit when your plan is ready. You can submit at any time, and keep updating the plan afterwards.'}
         </p>
       </div>
 
@@ -702,7 +701,7 @@ function PlanEditor({
             {data.sessions.map((s) => (
               <li key={s.id}>
                 {formatDateShort(s.date)}, {s.startTime}–{s.endTime}: {s.title}
-                {s.isFinal ? ' (final session, submission opens)' : ''}
+                {s.isFinal ? ' (final session)' : ''}
               </li>
             ))}
           </ul>
@@ -1607,6 +1606,34 @@ function ActionCard({
         {text('support')}
         {text('barriers')}
         {text('expectedResult')}
+        <div className="space-y-1">
+          <label htmlFor={`${id}-measureStatus`} className="text-sm font-semibold text-corp-ink">
+            {planActionFieldLabels.measureStatus.label}
+          </label>
+          <p className="text-xs text-corp-muted">{planActionFieldLabels.measureStatus.prompt}</p>
+          <NativeSelect
+            id={`${id}-measureStatus`}
+            value={draft.measureStatus ?? ''}
+            disabled={disabled}
+            onChange={(e) =>
+              onChange({
+                measureStatus: (e.target.value || null) as ActionDraft['measureStatus'],
+              })
+            }
+          >
+            <option value="">Choose an answer</option>
+            {measureStatuses.map((s) => (
+              <option key={s} value={s}>
+                {measureStatusLabels[s]}
+              </option>
+            ))}
+          </NativeSelect>
+          {draft.measureStatus === 'identified' ? (
+            <p className="text-xs text-corp-muted">
+              Save the plan, then add the measure under “Business measures and evidence” below.
+            </p>
+          ) : null}
+        </div>
       </section>
 
       {saved ? (

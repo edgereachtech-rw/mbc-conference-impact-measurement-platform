@@ -310,6 +310,7 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
             title: 'Measures first',
             priorityLearning: 'Measurement before training',
             action: 'Define measures before training',
+            measureStatus: 'not_yet_known',
           },
         ],
         reminder: { frequency: 'none' },
@@ -319,6 +320,10 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
     expect(second.status, second.text).toBe(200);
     expect(second.body.plan.actions.map((a: { id: string }) => a.id)).toEqual([ids[1], ids[0]]);
     expect(second.body.plan.actions[0]).toMatchObject({ isPriority: true, order: 1 });
+    // The business-measure question is answered with the action (2026-11-08); null until then.
+    expect(
+      second.body.plan.actions.map((a: { measureStatus: string | null }) => a.measureStatus),
+    ).toEqual([null, 'not_yet_known']);
     expect(second.body.plan.reminder.nextReminderAt).toBeNull();
     const foreign = await call(
       'put',
@@ -329,7 +334,7 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
     expect(foreign.status).toBe(422);
   });
 
-  it('opens submission with the last planning session, snapshots it and stays editable', async () => {
+  it('lists the planning sessions, accepts submission at any time, snapshots it and stays editable', async () => {
     const s1 = await call('post', `/events/${eventId}/sessions`, {
       title: 'Transfer Planning 1',
       date: '2026-11-12',
@@ -355,6 +360,8 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
     // No setting chooses the closing session: the later one in the schedule is it.
     expect(firstId).not.toBe(secondId);
 
+    // Submission is open at any time (decision 2026-11-08), before the sessions as well; the
+    // final session is still named for the delegate.
     await tick('2026-11-10T10:00:00.000Z');
     const early = await call(
       'get',
@@ -363,17 +370,9 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
       cookies.dee,
     );
     expect(early.body.sessions.map((s: { isFinal: boolean }) => s.isFinal)).toEqual([false, true]);
-    expect(early.body.canSubmit).toBe(false);
-    const refused = await call(
-      'post',
-      `/me/events/${eventId}/transfer-plans/${planId}/submit`,
-      { version: early.body.plan.version },
-      cookies.dee,
-    );
-    expect(refused.status).toBe(409);
-    expect(refused.body.error.code).toBe('not_yet');
+    expect(early.body.canSubmit).toBe(true);
 
-    await tick('2026-11-13T13:30:00.000Z'); // 14:30 in Lagos, the final session has begun
+    await tick('2026-11-13T13:30:00.000Z'); // 14:30 in Lagos, during the final session
     const open = await call(
       'get',
       `/me/events/${eventId}/transfer-plans/${planId}`,

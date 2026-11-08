@@ -218,6 +218,15 @@ const text = (max: number) => z.string().trim().max(max).default('');
 const optionalDay = isoDay.nullable().optional();
 
 /** The fields of a planned action, before the date rule (views derive from this shape). */
+/** The action's answer to the business-measure question (spec 2026-11-08, section A). */
+export const measureStatuses = ['identified', 'not_yet_known', 'not_applicable'] as const;
+export type MeasureStatus = (typeof measureStatuses)[number];
+export const measureStatusLabels: Record<MeasureStatus, string> = {
+  identified: 'Yes, I can identify a measure',
+  not_yet_known: 'Not yet known',
+  not_applicable: 'Not applicable',
+};
+
 export const planActionFieldsBase = z.object({
   id: z.uuid().optional(),
   isPriority: z.boolean().default(false),
@@ -237,6 +246,12 @@ export const planActionFieldsBase = z.object({
   measure: text(2_000),
   baseline: text(2_000),
   reviewOn: optionalDay,
+  /**
+   * The answer to "Can you identify a business measure for this action?", asked with the
+   * action's other questions (2026-11-08) and saved with the plan; null until answered. The
+   * measures themselves are added separately, and only when the answer is "yes".
+   */
+  measureStatus: z.enum(measureStatuses).nullable().default(null),
 });
 export const planActionFieldsSchema = planActionFieldsBase.superRefine((a, ctx) => {
   // When both dates are given, the target comes no earlier than the start.
@@ -450,6 +465,11 @@ export const planActionFieldLabels: Record<
     prompt: 'What is its current starting point? "Not yet known" and "Not applicable" are fine.',
   },
   reviewOn: { label: 'Review date', prompt: 'When will you review your progress?' },
+  measureStatus: {
+    label: 'Can you identify a business measure for this action?',
+    prompt:
+      'A result or change that can show whether your action is making a difference: a number such as time saved or errors reduced, or something qualitative such as better teamwork or customer experience. “Not yet known” and “Not applicable” are answers too.',
+  },
 };
 /** Accepted in place of a measure or baseline (backlog E9-5). */
 export const measurePlaceholders = ['Not yet known', 'Not applicable'] as const;
@@ -474,13 +494,6 @@ export const referenceQuestionsSaveSchema = z.object({
  * 2026-11-08, section 5). "identified" needs at least one measure record; the other two stand
  * on their own and are never counted as missing or as zero.
  */
-export const measureStatuses = ['identified', 'not_yet_known', 'not_applicable'] as const;
-export type MeasureStatus = (typeof measureStatuses)[number];
-export const measureStatusLabels: Record<MeasureStatus, string> = {
-  identified: 'Yes, I can identify a measure',
-  not_yet_known: 'Not yet known',
-  not_applicable: 'Not applicable',
-};
 
 export const measureKinds = ['quantitative', 'qualitative'] as const;
 export type MeasureKind = (typeof measureKinds)[number];

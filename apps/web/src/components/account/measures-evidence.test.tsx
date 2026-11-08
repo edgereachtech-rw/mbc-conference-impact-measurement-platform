@@ -193,10 +193,39 @@ describe('MeasureLine', () => {
 });
 
 describe('ActionMeasures', () => {
-  it('waits for unsaved plan edits before opening any dialog, and shows the action’s choice', () => {
-    const { unmount } = render(
+  it('offers measures only once the action answers "yes", waits for unsaved plan edits, and shows the choice', () => {
+    // No answer yet: no way to add measures, only a pointer to the question on the card.
+    const first = render(
       <ActionMeasures
         action={action()}
+        disabled={false}
+        dirty={false}
+        onMeasures={() => {}}
+        onEvidence={() => {}}
+        onResults={() => {}}
+      />,
+    );
+    expect(screen.queryByRole('button', { name: 'Add a measure' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Add evidence' })).toBeTruthy();
+    expect(screen.getByText(/Answer “Can you identify a business measure/)).toBeTruthy();
+    first.unmount();
+    // "Not yet known": the answer is shown, still no measures button.
+    const second = render(
+      <ActionMeasures
+        action={action({ measureStatus: 'not_yet_known' })}
+        disabled={false}
+        dirty={false}
+        onMeasures={() => {}}
+        onEvidence={() => {}}
+        onResults={() => {}}
+      />,
+    );
+    expect(screen.getByText('Not yet known')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Add a measure' })).toBeNull();
+    second.unmount();
+    const { unmount } = render(
+      <ActionMeasures
+        action={action({ measureStatus: 'identified' })}
         disabled={false}
         dirty
         onMeasures={() => {}}
@@ -235,15 +264,18 @@ describe('MeasuresDialog', () => {
     const calls = stub();
     const onSaved = vi.fn();
     const user = userEvent.setup();
-    render(<MeasuresDialog {...dialogProps} action={action()} onSaved={onSaved} />);
+    render(
+      <MeasuresDialog
+        {...dialogProps}
+        action={action({ measureStatus: 'identified' })}
+        onSaved={onSaved}
+      />,
+    );
     expect(screen.getByText(/Do not enter confidential/)).toBeTruthy();
+    // The question itself is answered on the action card, not here (2026-11-08).
     expect(
-      (
-        screen.getByLabelText(
-          'Can you identify a business measure for this action?',
-        ) as HTMLSelectElement
-      ).value,
-    ).toBe('identified');
+      screen.queryByLabelText('Can you identify a business measure for this action?'),
+    ).toBeNull();
     await user.click(screen.getByRole('button', { name: 'Save measures' }));
     expect(screen.getByRole('alert').textContent).toMatch(/Add at least one measure/);
 
@@ -301,7 +333,7 @@ describe('MeasuresDialog', () => {
     expect(onSaved).toHaveBeenCalledTimes(1);
   });
 
-  it('lets the measure be not yet known with nothing else, keeps existing ids, and reports a stale plan', async () => {
+  it('keeps existing ids and reports a stale plan', async () => {
     const calls = stub(409, {
       error: { code: 'stale_plan', message: 'Your plan changed since you opened it.' },
     });
@@ -316,16 +348,10 @@ describe('MeasuresDialog', () => {
       />,
     );
     expect(screen.getByRole('group', { name: 'Turnaround time' })).toBeTruthy();
-    await user.selectOptions(
-      screen.getByLabelText('Can you identify a business measure for this action?'),
-      'not_yet_known',
-    );
-    expect(screen.queryByRole('group', { name: 'Turnaround time' })).toBeNull();
-    expect(screen.getByText(/Your 1 recorded measure stays as it is/)).toBeTruthy();
     await user.click(screen.getByRole('button', { name: 'Save measures' }));
     expect(calls[0]!.body).toEqual({
       version: 7,
-      measureStatus: 'not_yet_known',
+      measureStatus: 'identified',
       measures: [expect.objectContaining({ id: MEASURE, name: 'Turnaround time' })],
     });
     expect(onStale).toHaveBeenCalledWith('Your plan changed since you opened it.');

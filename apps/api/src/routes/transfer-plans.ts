@@ -372,33 +372,13 @@ export function transferPlanRouter({
     }));
   }
 
-  /** Submission opens with the start of the last planning session (any time when none is scheduled). */
-  async function canSubmitAt(eventId: string, timezone: string, at: Date) {
-    const sessions = await planningSessions(eventId);
-    const final = sessions.find((s) => s.isFinal);
-    if (!final) return { sessions, canSubmit: true };
-    // The session's wall-clock start in the event's zone, compared as an instant.
-    const startLocal = new Date(`${final.date}T${final.startTime}:00`);
-    const offsetMinutes = (() => {
-      const parts = new Intl.DateTimeFormat('en-GB', {
-        timeZone: timezone,
-        timeZoneName: 'longOffset',
-      }).formatToParts(startLocal);
-      const name = parts.find((p) => p.type === 'timeZoneName')?.value ?? 'GMT';
-      const m = /GMT([+-])(\d{2}):?(\d{2})?/.exec(name);
-      return m ? (m[1] === '-' ? -1 : 1) * (Number(m[2]) * 60 + Number(m[3] ?? 0)) : 0;
-    })();
-    const start = new Date(
-      Date.UTC(
-        Number(final.date.slice(0, 4)),
-        Number(final.date.slice(5, 7)) - 1,
-        Number(final.date.slice(8, 10)),
-        Number(final.startTime.slice(0, 2)),
-        Number(final.startTime.slice(3, 5)),
-      ) -
-        offsetMinutes * 60_000,
-    );
-    return { sessions, canSubmit: at >= start };
+  /**
+   * A draft can be submitted at any time (decision 2026-11-08). Until then submission opened
+   * with the start of the last Transfer Planning session; the sessions are still listed so the
+   * delegate knows when the plan is worked on together.
+   */
+  async function canSubmitAt(eventId: string) {
+    return { sessions: await planningSessions(eventId), canSubmit: true };
   }
 
   /** The delegate's pre-event answers to the event's reference questions. */
@@ -485,11 +465,10 @@ export function transferPlanRouter({
     delegateId: string,
     planId: string,
   ): Promise<MyTransferPlan> {
-    const [plan, event] = await Promise.all([
+    const [plan, { sessions, canSubmit }] = await Promise.all([
       loadPlan(eventId, delegateId, planId),
-      prisma().event.findUniqueOrThrow({ where: { id: eventId }, select: { timezone: true } }),
+      canSubmitAt(eventId),
     ]);
-    const { sessions, canSubmit } = await canSubmitAt(eventId, event.timezone, clock());
     return {
       plan: planViewOf(plan),
       sessions,
@@ -663,6 +642,7 @@ export function transferPlanRouter({
             measure: a.measure,
             baseline: a.baseline,
             reviewOn: dayOf(a.reviewOn),
+            measureStatus: a.measureStatus,
           };
           if (a.id) await tx.transferPlanAction.update({ where: { id: a.id }, data });
           else await tx.transferPlanAction.create({ data: { ...data, planId: plan.id } });
@@ -746,19 +726,8 @@ export function transferPlanRouter({
         });
         return;
       }
-      const event = await prisma().event.findUniqueOrThrow({
-        where: { id: delegate.eventId },
-        select: { timezone: true },
-      });
+      // Submission is open at any time (decision 2026-11-08).
       const at = clock();
-      const { canSubmit } = await canSubmitAt(delegate.eventId, event.timezone, at);
-      if (!canSubmit) {
-        throw new HttpError(
-          409,
-          'not_yet',
-          'Plans are submitted during the final Transfer Planning session; keep saving your draft until then.',
-        );
-      }
       await prisma().$transaction(async (tx) => {
         await tx.transferPlan.update({
           where: { id: plan.id },
