@@ -556,32 +556,35 @@ export const evidenceSupportLabels: Record<EvidenceSupport, string> = {
   self_reported: 'Self-reported',
   supported: 'Supported by another source',
 };
+/**
+ * Hints for the delegate (E14-4). The reports keep the two labels apart and never call either
+ * "independently verified"; that caveat is theirs to state, not the form's.
+ */
 export const evidenceSupportHints: Record<EvidenceSupport, string> = {
-  self_reported: 'You describe your own application or result.',
+  self_reported: 'You are describing what you did or what happened, in your own words.',
   supported:
-    'You identify information or confirmation from another source. An attachment or a name does not make it independently verified.',
+    'Someone or something else confirms it, for example your manager, a colleague, a customer, a report or a system figure. Say who or what in the description.',
 };
 
+/**
+ * What a piece of evidence is: the five kinds the brief names (E14-3), in its order, and nothing
+ * else (decision 2026-11-08). The earlier "process", "customer feedback" and "other" entries were
+ * folded in by migration 20261108211500_evidence_types_brief.
+ */
 export const evidenceTypes = [
+  'example',
   'work_product',
-  'process',
   'confirmation',
   'organisational_measure',
-  'customer_feedback',
   'case_example',
-  'example',
-  'other',
 ] as const;
 export type EvidenceType = (typeof evidenceTypes)[number];
 export const evidenceTypeLabels: Record<EvidenceType, string> = {
-  work_product: 'Example of work completed',
-  process: 'New or improved workplace process',
-  confirmation: 'Manager or stakeholder confirmation',
-  organisational_measure: 'Organisational performance information',
-  customer_feedback: 'Customer or client feedback',
-  case_example: 'Case example',
-  example: 'Example of what I did differently',
-  other: 'Other',
+  example: 'An example of what I did differently',
+  work_product: 'A completed work product or process',
+  confirmation: 'A manager’s or stakeholder’s confirmation',
+  organisational_measure: 'A relevant organisational measure',
+  case_example: 'A case example',
 };
 
 /** Shown as suggestions only; the measure itself is free text (backlog E14-1). */

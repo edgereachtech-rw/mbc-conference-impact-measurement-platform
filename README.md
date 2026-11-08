@@ -588,8 +588,12 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   type (plus a description when "other"), other influencing factors, self-reported or supported.
   Earlier results are kept, each with the measure's name, kind and unit as they were, and the
   measure carries a copy of the latest for lists and reports. Evidence may name the measure it
-  supports (`transfer_plan_evidence.measure_id`); the evidence types follow the spec (two
-  added). Routes: `PUT …/actions/:id/measures` (choice plus definitions) and
+  supports (`transfer_plan_evidence.measure_id`). Since 2026-11-08 the evidence types are
+  exactly the five the brief names (an example of what I did differently, a completed work
+  product or process, a manager's or stakeholder's confirmation, a relevant organisational
+  measure, a case example; migration `20261108211500_evidence_types_brief` folded the earlier
+  "process", "customer feedback" and "other" rows into the nearest of them), and each item says
+  whether it is self-reported or supported by another source. Routes: `PUT …/actions/:id/measures` (choice plus definitions) and
   `PUT …/actions/:id/measures/:measureId/results`; every save is audited. Admin: Event →
   Transfer Planning → "Business measures" shows overview tiles, a register with one row per
   measure (and one per action without a measure), the detail of a measure with every result in

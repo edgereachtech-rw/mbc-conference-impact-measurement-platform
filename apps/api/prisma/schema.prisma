@@ -249,15 +249,13 @@ enum EvidenceSupport {
   @@map("evidence_support")
 }
 
+/// The five kinds of evidence the brief names (E14-3); nothing else since 2026-11-08.
 enum EvidenceType {
   example
   work_product
-  process
   confirmation
   organisational_measure
-  customer_feedback
   case_example
-  other
 
   @@map("evidence_type")
 }
@@ -497,33 +495,33 @@ enum ImportResolution {
 // ------------------------------------------------------------------ event setup (E1)
 
 model Event {
-  id                 String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  slug               String      @unique
-  name               String
-  theme              String?
-  startsOn           DateTime    @map("starts_on") @db.Date
-  endsOn             DateTime    @map("ends_on") @db.Date
-  timezone           String      @default("Africa/Lagos")
-  location           String?
-  format             EventFormat @default(hybrid)
-  status             EventStatus @default(draft)
+  id                     String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  slug                   String                 @unique
+  name                   String
+  theme                  String?
+  startsOn               DateTime               @map("starts_on") @db.Date
+  endsOn                 DateTime               @map("ends_on") @db.Date
+  timezone               String                 @default("Africa/Lagos")
+  location               String?
+  format                 EventFormat            @default(hybrid)
+  status                 EventStatus            @default(draft)
   /// Whether registrations with status `test` count in this event's reports, dashboards and
   /// summaries. Off by default; never affects whether a test delegate may sign in.
-  countTestDelegates Boolean     @default(false) @map("count_test_delegates")
+  countTestDelegates     Boolean                @default(false) @map("count_test_delegates")
   /// Whether delegates see Transfer Planning (2026-11-08): shown, hidden, or shown from
   /// transferPlanShownFrom. Hidden means no tab, no next step, no reminders and no status step
   /// in the follow-ups; the plans and their data stay and come back when shown again.
   transferPlanVisibility TransferPlanVisibility @default(shown) @map("transfer_plan_visibility")
   transferPlanShownFrom  DateTime?              @map("transfer_plan_shown_from") @db.Timestamptz(3)
   /// Structured profile (E1 brief, section 3). The slug is the unique event code.
-  description        String      @default("")
-  eventType          EventType   @default(conference) @map("event_type")
-  organiser          String      @default("")
-  website            String?
-  imageUrl           String?     @map("image_url")
-  additionalInfo     String?     @map("additional_info")
-  createdAt          DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt          DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+  description            String                 @default("")
+  eventType              EventType              @default(conference) @map("event_type")
+  organiser              String                 @default("")
+  website                String?
+  imageUrl               String?                @map("image_url")
+  additionalInfo         String?                @map("additional_info")
+  createdAt              DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt              DateTime               @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   participationCategories ParticipationCategory[]
   delegates               Delegate[]
@@ -906,7 +904,7 @@ model TransferPlanAction {
   progress        TransferPlanProgress[]
   /// Whether the delegate can identify a business measure for this action (spec 2026-11-08);
   /// null until chosen. "identified" needs at least one measure record.
-  measureStatus   MeasureStatus?       @map("measure_status")
+  measureStatus   MeasureStatus?         @map("measure_status")
   measures        TransferPlanMeasure[]
   evidenceRecords TransferPlanEvidence[]
 
