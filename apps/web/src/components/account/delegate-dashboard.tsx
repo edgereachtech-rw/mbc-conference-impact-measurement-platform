@@ -87,11 +87,11 @@ export function DelegateDashboard({ contactEmail, initialEvents }: Props) {
         className="rounded-none border border-corp-green-line bg-corp-accent-soft p-4 text-sm text-corp-ink"
         aria-label="Help"
       >
-        Need a correction to your registration or a different email? Write to{' '}
+        Need a correction to your registration details or want to change your registered email
+        address? Write to{' '}
         <a href={`mailto:${contactEmail}`} className="font-semibold text-corp-green-text underline">
           {contactEmail}
         </a>
-        . Nothing changes on your account without the organiser team.
       </aside>
     </div>
   );
