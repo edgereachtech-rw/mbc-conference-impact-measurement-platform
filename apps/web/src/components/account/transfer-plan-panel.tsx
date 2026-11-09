@@ -21,6 +21,7 @@ import {
   transferPlanStatusLabels,
   weekdays,
   type ImpactCheckAnswer,
+  type MyAssessment,
   type MyTransferPlan,
   type MyTransferPlans,
   type PlanActionFields,
@@ -776,7 +777,7 @@ function PlanEditor({
         <p className="text-sm text-corp-muted">
           {locked
             ? 'This plan is completed, so its reminders have stopped.'
-            : 'When and how often would you like to be reminded about this plan? Reminders arrive by email at the time you choose and mention your first priority. In the last week before they end, the email says so and you can extend them here. Change or stop them at any time.'}
+            : 'When and how often would you like to be reminded about this plan? Reminders arrive by email at the times you choose. While a post-conference follow-up is open, the reminder asks you to answer it: the 30-day follow-up first, then the 60-day, 90-day and longer-term ones as the organisers schedule them. Once you have answered the open follow-up, nothing is sent until the next one opens. Reminders stop at the end date you set, so a follow-up that opens after that date is not announced by them. In the last week before they end, the email says so and you can extend them here.'}
         </p>
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="space-y-1">
@@ -1641,6 +1642,83 @@ function ActionCard({
   );
 }
 
+// ------------------------------------------------------------------ the follow-ups
+
+/**
+ * The post-conference follow-ups, listed on the plan tab (decision 2026-11-09): each one asks
+ * where every action stands and what was applied, in its own window after the event. The
+ * delegate's reminders point at the one that is open; here they see all of them with where each
+ * stands, and open one in its own tab.
+ */
+function FollowUpsBlock({
+  followUps,
+  timezone,
+  onOpen,
+}: {
+  followUps: readonly MyAssessment[];
+  timezone: string;
+  onOpen?: (followUp: MyAssessment) => void;
+}) {
+  const id = useId();
+  const ordered = [...followUps].sort((a, b) => a.wave - b.wave);
+  return (
+    <section
+      aria-labelledby={`${id}-follow-ups`}
+      className="space-y-2 border border-corp-line bg-white p-4"
+    >
+      <h3 id={`${id}-follow-ups`} className="font-semibold text-corp-ink">
+        Post-conference follow-ups
+      </h3>
+      <p className="text-sm text-corp-muted">
+        After the conference, each follow-up asks where every action of your plans stands and what
+        you have applied. What you answer is recorded under each action below. Your reminders point
+        you to the follow-up that is open.
+      </p>
+      <ul className="divide-y divide-corp-line">
+        {ordered.map((f) => {
+          const submittedAt = f.response?.submittedAt ?? null;
+          const state = submittedAt
+            ? `Submitted ${formatInstant(submittedAt, timezone)}`
+            : f.status === 'upcoming'
+              ? f.opensAt
+                ? `Opens ${formatInstant(f.opensAt, timezone)}`
+                : 'Opens later'
+              : f.status === 'closed'
+                ? 'Closed'
+                : f.closesAt
+                  ? `Open until ${formatInstant(f.closesAt, timezone)}`
+                  : 'Open now';
+          return (
+            <li
+              key={`${f.stage}:${f.wave}`}
+              className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm"
+            >
+              <span>
+                <span className="font-semibold text-corp-ink">
+                  {f.waveLabel || 'Post-conference follow-up'}
+                </span>
+                <span className="block text-xs text-corp-muted">{state}</span>
+              </span>
+              {onOpen ? (
+                <button
+                  type="button"
+                  onClick={() => onOpen(f)}
+                  className={consoleButton({
+                    variant: !submittedAt && f.status === 'open' ? 'accent' : 'secondary',
+                    size: 'sm',
+                  })}
+                >
+                  {submittedAt ? 'Read your answers' : f.status === 'open' ? 'Answer now' : 'View'}
+                </button>
+              ) : null}
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
 // ------------------------------------------------------------------ the plans, grouped
 
 /**
@@ -1656,6 +1734,8 @@ export function TransferPlansTabs({
   onSelectPlan,
   onPlansChanged,
   onRetry,
+  followUps = [],
+  onOpenFollowUp,
 }: {
   eventId: string;
   timezone: string;
@@ -1664,6 +1744,9 @@ export function TransferPlansTabs({
   onSelectPlan: (planId: string) => void;
   onPlansChanged: () => void;
   onRetry: () => void;
+  /** The post-conference follow-ups of this event, in wave order (decision 2026-11-09). */
+  followUps?: readonly MyAssessment[];
+  onOpenFollowUp?: (followUp: MyAssessment) => void;
 }) {
   if (plans.kind === 'loading') return <StatePanel kind="loading" title="Loading your plans…" />;
   if (plans.kind === 'error') {
@@ -1690,6 +1773,9 @@ export function TransferPlansTabs({
     list.find((p) => p.id === selectedPlanId) ?? list.find((p) => p.id === defaultPlan(list));
   return (
     <div className="space-y-4">
+      {followUps.length > 0 ? (
+        <FollowUpsBlock followUps={followUps} timezone={timezone} onOpen={onOpenFollowUp} />
+      ) : null}
       {list.length > 1 ? (
         <div
           role="tablist"

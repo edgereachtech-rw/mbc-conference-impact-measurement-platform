@@ -2,10 +2,7 @@
 
 import {
   DEFAULT_FOLLOW_UP_WAVES,
-  defaultWaveOpensAt,
-  FOLLOW_UP_OPEN_DAYS,
-  FOLLOW_UP_REMINDER_AFTER_DAYS,
-  FOLLOW_UP_REMINDER_LIMIT,
+  defaultWaveWindow,
   followUpWaveOf,
   LONGER_TERM_WAVE,
   type EventDetail,
@@ -18,16 +15,14 @@ import { apiFetch } from '@/lib/api';
 import { describeError } from '@/lib/imports';
 
 /**
- * Creating the follow-up schedule (backlog E12-1), added 2026-11-03.
+ * Creating the Transfer Plan follow-up schedule (backlog E12-1; windows of 2026-11-09).
  *
- * The waves were reachable only through the API, so an event created before the schedule existed
- * showed its single follow-up round and nothing else, with no way to get the rest. This offers the
- * three waves once, as drafts with their default dates, and then steps out of the way: the cards
- * below are how each one is reviewed, moved and enabled.
- *
- * The longer-term wave (requirement 11.5) is offered separately and stays available after the
- * three are created: it is not part of the usual programme, and an event asks for it only when
- * results need longer than 90 days to show.
+ * Offers the three default follow-ups once, as drafts with their default windows (days 1 to 30,
+ * 31 to 60 and 61 to 90 after the event's last day), and then steps out of the way: the cards
+ * below are how each one is reviewed, moved and enabled. The longer-term follow-up (requirement
+ * 11.5) is offered separately and stays available after the three are created: it is not part of
+ * the usual programme, and an event asks for it only when results need longer than 90 days to
+ * show. Its window starts on day 91 and has no end until an admin sets one.
  */
 export function FollowUpSchedule({
   event,
@@ -67,14 +62,14 @@ export function FollowUpSchedule({
   }
 
   const longerTerm = followUpWaveOf(LONGER_TERM_WAVE);
-  const longerTermDate =
+  const longerTermFrom =
     longerTerm && event.endsOn
       ? new Intl.DateTimeFormat('en-GB', {
           day: 'numeric',
           month: 'long',
           year: 'numeric',
           timeZone: event.timezone,
-        }).format(defaultWaveOpensAt(event.endsOn, longerTerm.dueAfterDays, event.timezone))
+        }).format(defaultWaveWindow(event.endsOn, LONGER_TERM_WAVE, event.timezone).opensAt)
       : null;
 
   return (
@@ -92,16 +87,16 @@ export function FollowUpSchedule({
         <div className="space-y-2">
           <h3 className="font-semibold text-corp-ink">Set up the follow-up schedule</h3>
           <p className="text-sm text-corp-text">
-            Follow-ups run in waves: <strong className="font-semibold">30, 60 and 90 days</strong>{' '}
-            after the last day of the event. Each wave gets its own questions, dates and
-            invitations. They are created as drafts, {FOLLOW_UP_OPEN_DAYS} days open, chasing anyone
-            who has not answered every {FOLLOW_UP_REMINDER_AFTER_DAYS} days up to{' '}
-            {FOLLOW_UP_REMINDER_LIMIT} times — nothing is sent until you enable a wave.
+            Three follow-ups, each covering a stretch of days after the last day of the event:{' '}
+            <strong className="font-semibold">days 1 to 30, 31 to 60 and 61 to 90</strong>. Each has
+            its own questions and its own window, which you can move on its card. They are created
+            as drafts; nothing is sent until you enable one. Delegates are pointed to the open
+            follow-up by the reminders they chose on their Transfer Plan.
           </p>
           {waves.length > 0 && scheduled.length === 0 ? (
             <p className="text-sm text-corp-muted">
               This event has one follow-up round from before the schedule existed. It is left
-              exactly as it is; the three waves are added alongside it.
+              exactly as it is; the three follow-ups are added alongside it.
             </p>
           ) : null}
           <button
@@ -115,7 +110,7 @@ export function FollowUpSchedule({
             ) : (
               <CalendarPlusIcon aria-hidden="true" />
             )}
-            Create the 30, 60 and 90-day waves
+            Create the 30, 60 and 90-day follow-ups
           </button>
         </div>
       ) : null}
@@ -124,16 +119,16 @@ export function FollowUpSchedule({
         <div className={`space-y-2${!hasDefaults ? ' border-t border-corp-line pt-4' : ''}`}>
           <h3 className="font-semibold text-corp-ink">Longer-term follow-up (optional)</h3>
           <p className="text-sm text-corp-text">
-            A further wave about{' '}
-            <strong className="font-semibold">{longerTerm.dueAfterDays} days</strong> after the
-            event{longerTermDate ? `, which would open on ${longerTermDate}` : ''}, for results that
-            need longer than 90 days to show. It is created as a draft with no questions, and a wave
-            with no questions cannot be opened — add its questions, review the date, then enable it.
+            A further follow-up from <strong className="font-semibold">day 91</strong> onwards
+            {longerTermFrom ? `, which would open on ${longerTermFrom}` : ''}, with no end until you
+            set one, for results that need longer than 90 days to show. It is created as a draft
+            with no questions, and a follow-up with no questions cannot be opened — add its
+            questions, review the window, then enable it.
           </p>
           <p role="note" className="text-sm text-corp-muted">
             It invites <strong className="font-semibold">every delegate</strong> of this event, as
-            the other waves do. Sending it to only some delegates or organisations is not built yet,
-            so do not enable it expecting a smaller audience.
+            the other follow-ups do. Sending it to only some delegates or organisations is not built
+            yet, so do not enable it expecting a smaller audience.
           </p>
           <button
             type="button"

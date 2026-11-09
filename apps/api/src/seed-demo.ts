@@ -30,11 +30,8 @@ import {
   assessmentStages,
   DEFAULT_FEEDBACK_QUESTIONS,
   DEFAULT_FOLLOW_UP_WAVES,
-  defaultWaveOpensAt,
+  defaultWaveWindow,
   followUpWaveOf,
-  FOLLOW_UP_OPEN_DAYS,
-  FOLLOW_UP_REMINDER_AFTER_DAYS,
-  FOLLOW_UP_REMINDER_LIMIT,
   LONGER_TERM_WAVE,
   type DelegateQuestionView,
   type MyAssessment,
@@ -428,7 +425,7 @@ export async function seedDemo(prisma: PrismaClient) {
   }
   for (const wave of [...DEFAULT_FOLLOW_UP_WAVES, LONGER_TERM_WAVE]) {
     const definition = followUpWaveOf(wave)!;
-    const opensAt = defaultWaveOpensAt(isoDate(last), definition.dueAfterDays, event.timezone);
+    const { opensAt, closesAt } = defaultWaveWindow(isoDate(last), wave, event.timezone);
     const scheduled = wave !== LONGER_TERM_WAVE;
     const row = await prisma.assessmentStageConfig.upsert({
       where: { eventId_stage_wave: { eventId, stage: 'follow_up', wave } },
@@ -440,9 +437,9 @@ export async function seedDemo(prisma: PrismaClient) {
         status: scheduled ? 'scheduled' : 'draft',
         dueAfterDays: definition.dueAfterDays,
         opensAt,
-        closesAt: new Date(opensAt.getTime() + FOLLOW_UP_OPEN_DAYS * DAY_MS),
-        reminderAfterDays: FOLLOW_UP_REMINDER_AFTER_DAYS,
-        reminderLimit: FOLLOW_UP_REMINDER_LIMIT,
+        closesAt,
+        reminderAfterDays: null,
+        reminderLimit: 0,
       },
       update: {},
       include: { _count: { select: { questions: true } } },

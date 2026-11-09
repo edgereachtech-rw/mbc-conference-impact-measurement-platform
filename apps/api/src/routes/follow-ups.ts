@@ -1,11 +1,10 @@
 import {
-  defaultWaveOpensAt,
+  defaultWaveWindow,
   followUpScheduleRequestSchema,
   followUpWaveOf,
-  FOLLOW_UP_OPEN_DAYS,
-  FOLLOW_UP_REMINDER_AFTER_DAYS,
-  FOLLOW_UP_REMINDER_LIMIT,
   waveLabel,
+  type FollowUpOverview,
+  type FollowUpOverviewRow,
   type FollowUpWaveView,
 } from '@mbc/shared';
 import { Router, type Response } from 'express';
@@ -29,13 +28,14 @@ interface Deps {
 const isoDate = (d: Date) => d.toISOString().slice(0, 10);
 
 /**
- * The follow-up schedule (backlog E12-1, E12-13).
+ * The Transfer Plan post-conference follow-ups (backlog E12-1, E12-13; decision 2026-11-09).
  *
- * A follow-up wave is a round of the follow-up assessment: one row of the stage with its own
- * dates, its own questions and its own invitations. Creating the schedule gives each wave a
- * default opening date — 30, 60 and 90 days after the event's last day, at 09:00 in the event's
- * zone — and leaves it a draft for the admin to review and move; the dates are a default, never
- * a rule.
+ * A follow-up wave is one row of the `follow_up` stage with its own window, questions,
+ * invitations and answers. Creating the schedule gives each wave a default window — days 1 to
+ * 30, 31 to 60 and 61 to 90 after the event's last day, the longer-term one from day 91 with no
+ * end — and leaves it a draft for the admin to review and move; the windows are a default, never
+ * a rule. The delegate's own Transfer Plan reminders point at whichever wave is current, so no
+ * chaser is configured by default; an admin may still add one on the wave's card.
  *
  * Waves are created **empty**: the questions are the event's own content, as for every other
  * stage, and an enabled wave with no questions cannot be scheduled or opened. ITTEC's approved
@@ -141,12 +141,11 @@ export function followUpRouter({ prisma, middleware, now }: Deps): Router {
           for (const wave of create) {
             const definition = followUpWaveOf(wave);
             if (!definition) throw new HttpError(422, 'unknown_wave', 'Unknown follow-up wave.');
-            const opensAt = defaultWaveOpensAt(
+            const { opensAt, closesAt } = defaultWaveWindow(
               isoDate(event.endsOn),
-              definition.dueAfterDays,
+              wave,
               event.timezone,
             );
-            const closesAt = new Date(opensAt.getTime() + FOLLOW_UP_OPEN_DAYS * 86_400_000);
             await tx.assessmentStageConfig.create({
               data: {
                 eventId: event.id,
@@ -159,8 +158,9 @@ export function followUpRouter({ prisma, middleware, now }: Deps): Router {
                 status: 'draft',
                 opensAt,
                 closesAt,
-                reminderAfterDays: FOLLOW_UP_REMINDER_AFTER_DAYS,
-                reminderLimit: FOLLOW_UP_REMINDER_LIMIT,
+                // The delegate's own plan reminders do the chasing (2026-11-09).
+                reminderAfterDays: null,
+                reminderLimit: 0,
               },
             });
           }
@@ -170,7 +170,7 @@ export function followUpRouter({ prisma, middleware, now }: Deps): Router {
             entityId: event.id,
             eventId: event.id,
             actorUserId: principal.userId,
-            newValue: { waves: create, defaultOpenDays: FOLLOW_UP_OPEN_DAYS },
+            newValue: { waves: create },
             ...clientOf(res),
           });
         });
@@ -183,6 +183,69 @@ export function followUpRouter({ prisma, middleware, now }: Deps): Router {
       });
     },
   );
+
+  /**
+   * Every delegate's follow-up responses in one place (decision 2026-11-09): one row per counted
+   * delegate, one entry per wave they have started or submitted, with the number of planned
+   * actions whose status that wave recorded. Answers themselves stay on each wave's page.
+   */
+  router.get('/events/:eventId/follow-up-responses', guard, async (req, res) => {
+    requireAdmin(res);
+    const event = await loadEvent(String(req.params.eventId), false);
+    const { waves } = await scheduleOf(event.id);
+    const flag = await prisma().event.findUnique({
+      where: { id: event.id },
+      select: { countTestDelegates: true },
+    });
+    const counted = figureStatuses(flag ?? { countTestDelegates: false });
+    const waveById = new Map(waves.map((w) => [w.id, w.wave]));
+    const [delegates, responses, statuses] = await Promise.all([
+      prisma().delegate.findMany({
+        where: { eventId: event.id, registrationStatus: { in: [...counted] } },
+        select: { id: true, name: true, organisation: true },
+        orderBy: { name: 'asc' },
+      }),
+      prisma().assessmentResponse.findMany({
+        where: { stageConfigId: { in: waves.map((w) => w.id) } },
+        select: { stageConfigId: true, delegateId: true, submittedAt: true, updatedAt: true },
+      }),
+      prisma().transferPlanProgress.groupBy({
+        by: ['followUpWave', 'actionId'],
+        where: { followUpWave: { not: null }, action: { plan: { eventId: event.id } } },
+        _count: { _all: true },
+      }),
+    ]);
+    // Statuses recorded per wave per plan owner: joined through the action's plan.
+    const actionOwners = await prisma().transferPlanAction.findMany({
+      where: { id: { in: statuses.map((s) => s.actionId) } },
+      select: { id: true, plan: { select: { delegateId: true } } },
+    });
+    const ownerOf = new Map(actionOwners.map((a) => [a.id, a.plan.delegateId]));
+    const statusCount = new Map<string, number>();
+    for (const s of statuses) {
+      const owner = ownerOf.get(s.actionId);
+      if (!owner || s.followUpWave === null) continue;
+      const key = `${owner}:${s.followUpWave}`;
+      statusCount.set(key, (statusCount.get(key) ?? 0) + 1);
+    }
+    const rows: FollowUpOverviewRow[] = delegates.map((d) => {
+      const mine: FollowUpOverviewRow['responses'] = {};
+      for (const r of responses) {
+        if (r.delegateId !== d.id) continue;
+        const wave = waveById.get(r.stageConfigId);
+        if (wave === undefined) continue;
+        mine[String(wave)] = {
+          state: r.submittedAt ? 'submitted' : 'started',
+          submittedAt: r.submittedAt?.toISOString() ?? null,
+          updatedAt: r.updatedAt.toISOString(),
+          statuses: statusCount.get(`${d.id}:${wave}`) ?? 0,
+        };
+      }
+      return { delegateId: d.id, name: d.name, organisation: d.organisation, responses: mine };
+    });
+    const overview: FollowUpOverview = { waves, rows };
+    res.json(overview);
+  });
 
   return router;
 }

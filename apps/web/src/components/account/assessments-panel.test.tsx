@@ -341,7 +341,7 @@ describe('AssessmentsPanel', () => {
     // An upcoming stage on its own tab says so; no second row of stage tabs exists any more.
     const later = render(<Harness stage="follow_up" />);
     expect(
-      (await screen.findByRole('article', { name: 'Follow-up assessment' })).textContent,
+      (await screen.findByRole('article', { name: 'Post-conference follow-up' })).textContent,
     ).toMatch(/Opens later/);
     expect(screen.queryByRole('tablist')).toBeNull();
     later.unmount();
@@ -469,7 +469,7 @@ describe('AssessmentsPanel', () => {
     const calls = stub([scored]);
     const user = userEvent.setup();
     render(<Harness stage="follow_up" />);
-    const card = await screen.findByRole('article', { name: 'Follow-up assessment' });
+    const card = await screen.findByRole('article', { name: 'Post-conference follow-up' });
     expect(card.textContent).toMatch(/saved as soon as you choose it/);
 
     await user.click(within(card).getByLabelText('Enrol everyone'));

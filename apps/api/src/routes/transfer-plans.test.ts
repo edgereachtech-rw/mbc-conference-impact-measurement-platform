@@ -1087,6 +1087,46 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
     );
     expect(mine.body.reminders).toHaveLength(1);
     expect(mine.body.reminders[0]).toMatchObject({ status: 'sent' });
+
+    // A reminder that fires while a post-conference follow-up is open asks for that follow-up
+    // (decision 2026-11-09). The 30-day wave of this event is open with no window; it needs a
+    // question to count.
+    const wave1 = await prisma.assessmentStageConfig.findUniqueOrThrow({
+      where: { eventId_stage_wave: { eventId, stage: 'follow_up', wave: 1 } },
+    });
+    await prisma.assessmentQuestion.create({
+      data: {
+        eventId,
+        stageConfigId: wave1.id,
+        order: 1,
+        prompt: 'What have you applied so far?',
+        type: 'long_text',
+        required: false,
+      },
+    });
+    mailer.sent.length = 0;
+    await tick('2026-12-02T09:05:00.000Z');
+    expect(await sendDueTransferPlanReminders(deps)).toMatchObject({ due: 1, sent: 1, skipped: 0 });
+    expect(mailer.sent[0]!.subject).toContain('30-day follow-up');
+    expect(mailer.sent[0]!.text).toContain(
+      `${ORIGIN}/account/events/${eventId}#assessment-follow_up-1`,
+    );
+    // Once the follow-up is answered, the next occurrence sends nothing and the pointer moves on.
+    await prisma.assessmentResponse.upsert({
+      where: { stageConfigId_delegateId: { stageConfigId: wave1.id, delegateId: deeId } },
+      create: { stageConfigId: wave1.id, delegateId: deeId, submittedAt: now },
+      update: { submittedAt: now },
+    });
+    mailer.sent.length = 0;
+    await tick('2026-12-09T09:05:00.000Z');
+    expect(await sendDueTransferPlanReminders(deps)).toMatchObject({ due: 1, sent: 0, skipped: 1 });
+    expect(mailer.sent).toHaveLength(0);
+    const moved = await prisma.transferPlan.findUniqueOrThrow({ where: { id: plan.id } });
+    expect(moved.nextReminderAt).toEqual(new Date('2026-12-16T08:00:00.000Z'));
+    // The follow-up is left unanswered for the tests that follow.
+    await prisma.assessmentResponse.deleteMany({
+      where: { stageConfigId: wave1.id, delegateId: deeId },
+    });
   });
 
   it('keeps several plans per delegate, each with its own reminder window, and refuses bad preferences', async () => {

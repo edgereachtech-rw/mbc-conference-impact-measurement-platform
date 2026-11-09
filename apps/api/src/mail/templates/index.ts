@@ -156,6 +156,11 @@ export interface TransferPlanReminderInput {
    * reminders are about to stop and asks the delegate to complete the plan or extend them.
    */
   finalWeek?: { endsOn: string };
+  /**
+   * The post-conference follow-up that is open when the reminder fires and the delegate has not
+   * answered yet (decision 2026-11-09): the email asks for that, and its button opens it.
+   */
+  followUp?: { label: string; formUrl: string; closesOn?: string };
 }
 
 /** A reminder the delegate asked for: a nudge to record progress on their plan. */
@@ -164,31 +169,42 @@ export function renderTransferPlanReminder(
   input: TransferPlanReminderInput,
 ): RenderedEmail {
   const plan = input.planTitle ? `your plan '${input.planTitle}'` : 'the plan you made';
+  const followUp = input.followUp;
   const paragraphs = [
     input.recipientName ? `Hello ${input.recipientName},` : 'Hello,',
-    `You asked to be reminded ${input.frequency} about ${plan} at ${branding.eventName}. Take two minutes to record where each action stands: what you have tried, what is working, and what has changed.`,
+    followUp
+      ? `You asked to be reminded ${input.frequency} about ${plan} at ${branding.eventName}. Your ${followUp.label} is open${followUp.closesOn ? ` until ${followUp.closesOn}` : ''}: it asks where each action of your plan stands and what you have been able to apply. Your plan is shown beside the questions.`
+      : `You asked to be reminded ${input.frequency} about ${plan} at ${branding.eventName}. Take two minutes to look at where each action stands: what you have tried, what is working, and what has changed.`,
   ];
   if (input.priorityAction) {
     paragraphs.push(`Your first priority: ${input.priorityAction}`);
   }
   if (input.finalWeek) {
     paragraphs.push(
-      `These are the last days of your reminders: they stop after ${input.finalWeek.endsOn}. If the plan is done, record each action's result and evidence and mark it completed. If you need more time, extend the reminders on your plan page.`,
+      `These are the last days of your reminders: they stop after ${input.finalWeek.endsOn}, and a follow-up that opens after that date will not be announced by them. If the plan is done, record the evidence for each action and mark it completed. If you need more time, extend the reminders on your plan page.`,
     );
   }
   return renderLayout(branding, {
     subject: input.finalWeek
       ? `Last days of reminders for your ${branding.eventName} plan`
-      : `How is your ${branding.eventName} plan going?`,
+      : followUp
+        ? `Your ${followUp.label}: how is your ${branding.eventName} plan going?`
+        : `How is your ${branding.eventName} plan going?`,
     preheader: input.finalWeek
       ? 'Your reminders end soon: complete the plan or extend them.'
-      : 'A reminder you asked for: record progress on your plan.',
+      : followUp
+        ? `A reminder you asked for: answer your ${followUp.label}.`
+        : 'A reminder you asked for: look at your plan.',
     eyebrow: 'Transfer plan',
     title: input.finalWeek
       ? 'Complete your plan, or extend your reminders'
-      : 'Record your progress',
+      : followUp
+        ? `Answer your ${followUp.label}`
+        : 'Your plan',
     paragraphs,
-    button: { label: 'Open my plan', url: input.planUrl },
+    button: followUp
+      ? { label: 'Open the follow-up', url: followUp.formUrl }
+      : { label: 'Open my plan', url: input.planUrl },
     notes: ['You can change how often you hear from us, or stop reminders, on your plan page.'],
   });
 }
@@ -265,12 +281,12 @@ export function renderFollowUpInvitation(
     preheader: input.reminder
       ? 'A reminder: your follow-up is still waiting.'
       : 'Tell us what you have applied since the conference.',
-    eyebrow: 'Follow-up',
+    eyebrow: 'Transfer Plan follow-up',
     title: input.reminder ? 'Your follow-up is waiting' : input.waveLabel,
     paragraphs,
     button: { label: 'Open the follow-up', url: input.formUrl },
     notes: [
-      'This is a follow-up scheduled by the organisers; it is separate from the reminders you choose yourself.',
+      'The organisers send this once when a follow-up opens. The reminders you choose on your plan page point at the follow-up that is open when they arrive.',
     ],
   });
 }

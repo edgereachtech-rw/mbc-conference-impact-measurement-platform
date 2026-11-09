@@ -153,7 +153,7 @@ describe.skipIf(!hasDatabase)('follow-up waves and invitations (E12)', () => {
     await prisma.$disconnect();
   });
 
-  it('creates the three waves as drafts, dated from the last day of the event', async () => {
+  it('creates the three waves as drafts, with windows of days 1-30, 31-60 and 61-90 after the event', async () => {
     const created = await call('post', `/events/${eventId}/assessments/follow-ups`, {
       waves: [1, 2, 3],
     });
@@ -165,9 +165,14 @@ describe.skipIf(!hasDatabase)('follow-up waves and invitations (E12)', () => {
       '60-day follow-up',
       '90-day follow-up',
     ]);
-    // 30 days after 13 November, 09:00 in Lagos (UTC+1).
-    expect(waves[0]!.opensAt).toBe('2026-12-13T08:00:00.000Z');
-    expect(waves[1]!.opensAt).toBe('2027-01-12T08:00:00.000Z');
+    // Day 1 after 13 November starts at midnight in Lagos (UTC+1); day 30 ends where day 31
+    // starts (decision 2026-11-09).
+    expect(waves[0]!.opensAt).toBe('2026-11-13T23:00:00.000Z');
+    expect(waves[0]!.closesAt).toBe('2026-12-13T23:00:00.000Z');
+    expect(waves[1]!.opensAt).toBe('2026-12-13T23:00:00.000Z');
+    expect(waves[2]!.closesAt).toBe('2027-02-11T23:00:00.000Z');
+    // No chaser by default: the delegate's own plan reminders point at the open follow-up.
+    expect(waves.every((w) => w.reminderAfterDays === null && w.reminderLimit === 0)).toBe(true);
     // Drafts: creating a schedule never starts emailing anyone.
     expect(waves.every((w) => w.status === 'draft' && w.enabled === false)).toBe(true);
     // And empty: the questions are the event's own content.
@@ -197,6 +202,9 @@ describe.skipIf(!hasDatabase)('follow-up waves and invitations (E12)', () => {
       label: 'Longer-term follow-up',
       questions: 0,
       dueAfterDays: 180,
+      // From day 91, with no end until an admin sets one.
+      opensAt: '2027-02-11T23:00:00.000Z',
+      closesAt: null,
     });
   });
 
@@ -261,7 +269,13 @@ describe.skipIf(!hasDatabase)('follow-up waves and invitations (E12)', () => {
     expect(await prisma.assessmentInvitation.count({ where: { stageConfigId: wave1.id } })).toBe(2);
   });
 
-  it('chases only the delegate who has not submitted, up to the limit', async () => {
+  it('chases only the delegate who has not submitted, up to the limit, when an admin configures chasers', async () => {
+    // Chasers are off by default since 2026-11-09 (the plan reminders do that); an admin may
+    // still switch them on for a wave.
+    await prisma.assessmentStageConfig.updateMany({
+      where: { eventId, stage: 'follow_up', wave: 1 },
+      data: { reminderAfterDays: 7, reminderLimit: 2 },
+    });
     const wave1 = await prisma.assessmentStageConfig.findFirstOrThrow({
       where: { eventId, stage: 'follow_up', wave: 1 },
       include: { questions: true },
@@ -300,6 +314,38 @@ describe.skipIf(!hasDatabase)('follow-up waves and invitations (E12)', () => {
         where: { stageConfigId: wave1.id, kind: 'reminder' },
       }),
     ).toBe(2);
+  });
+
+  it('shows the organisers every delegate’s follow-up responses in one place', async () => {
+    const overview = await call(
+      'get',
+      `/events/${eventId}/follow-up-responses`,
+      undefined,
+      await cookieFor(adminAccountId),
+    );
+    expect(overview.status, overview.text).toBe(200);
+    const waves = overview.body.waves as Array<{ wave: number }>;
+    expect(waves.map((w) => w.wave)).toEqual([1, 2, 3, 4]);
+    const rows = overview.body.rows as Array<{
+      name: string;
+      responses: Record<string, { state: string; submittedAt: string | null }>;
+    }>;
+    // Two counted delegates (the cancelled one is not); Ada submitted wave 1, Bo did not start.
+    expect(rows.map((r) => r.name)).toEqual(['Ada Delegate', 'Bo Delegate']);
+    expect(rows[0]!.responses['1']).toMatchObject({ state: 'submitted' });
+    expect(rows[0]!.responses['1']!.submittedAt).not.toBeNull();
+    expect(rows[1]!.responses).toEqual({});
+    // Delegates get nothing here.
+    expect(
+      (
+        await call(
+          'get',
+          `/events/${eventId}/follow-up-responses`,
+          undefined,
+          await cookieFor(boAccountId),
+        )
+      ).status,
+    ).toBe(403);
   });
 
   it('reports the response rate per wave', async () => {
@@ -355,9 +401,15 @@ describe.skipIf(!hasDatabase)('follow-up waves and invitations (E12)', () => {
           required: true,
         },
       });
+      // Scheduled for later: their default windows would already be open by this test's clock.
       await prisma.assessmentStageConfig.update({
         where: { id: row.id },
-        data: { enabled: true, status: 'scheduled' },
+        data: {
+          enabled: true,
+          status: 'scheduled',
+          opensAt: new Date('2028-01-01T00:00:00.000Z'),
+          closesAt: null,
+        },
       });
     }
 

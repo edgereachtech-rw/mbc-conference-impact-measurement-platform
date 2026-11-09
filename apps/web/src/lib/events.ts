@@ -57,14 +57,14 @@ export const stageLabels: Record<AssessmentStage, string> = {
   pre_conference: 'Pre-conference assessment',
   during_conference: 'During-conference assessment',
   end_of_conference: 'End-of-conference evaluation',
-  follow_up: 'Follow-up assessment',
+  follow_up: 'Post-conference follow-up',
 };
 
 export const stageWhen: Record<AssessmentStage, string> = {
   pre_conference: 'Before the event',
   during_conference: 'During the event',
   end_of_conference: 'At the close of the event',
-  follow_up: 'After the event',
+  follow_up: 'After the event, about your Transfer Plan',
 };
 
 export const stagePurpose: Record<AssessmentStage, string> = {

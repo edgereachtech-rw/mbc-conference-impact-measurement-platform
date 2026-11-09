@@ -148,7 +148,7 @@ describe('EventDashboard', () => {
     expect(
       screen.getAllByRole('link', { name: 'Questions and submissions' })[0]!.getAttribute('href'),
     ).toBe('/admin/events/e1/assessments/pre_conference');
-    const follow = screen.getByRole('article', { name: 'Follow-up assessment' });
+    const follow = screen.getByRole('article', { name: 'Post-conference follow-up' });
     expect(follow.textContent).toMatch(/Disabled.*Not used for this event/);
     expect(calls).toContain('/api/v1/events/e1/dashboard');
   });

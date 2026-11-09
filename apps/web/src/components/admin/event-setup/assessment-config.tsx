@@ -30,29 +30,30 @@ import {
 } from '@/lib/events';
 import { describeError } from '@/lib/imports';
 
-import { FollowUpSchedule } from './follow-up-schedule';
-
 interface AssessmentConfigProps {
   event: EventDetail;
   onSaved: (event: EventDetail) => void;
 }
 
 /**
- * Assessment configuration (brief section 6): three stages, each enabled, scheduled and targeted
- * independently. Windows are entered in the event's time zone and stored as instants. Each
- * stage's questions and submissions live on the stage's own page, linked from its card.
+ * Assessment configuration (brief section 6): the three assessment stages, each enabled,
+ * scheduled and targeted independently. Windows are entered in the event's time zone and stored
+ * as instants. Each stage's questions and submissions live on the stage's own page, linked from
+ * its card. The post-conference follow-ups are not assessments (decision 2026-11-09): their
+ * cards live on the Transfer plans tab.
  */
 export function AssessmentConfig({ event, onSaved }: AssessmentConfigProps) {
+  const stages = event.assessmentStages.filter((s) => s.stage !== 'follow_up');
   return (
     <div className="space-y-6">
       <p className="text-sm text-corp-text">
         Each stage applies only when it is enabled here; no stage is mandatory. Times are in{' '}
         <span className="font-semibold text-corp-ink">{event.timezone}</span>. Attendance is
-        recorded separately and never inferred from a submitted assessment.
+        recorded separately and never inferred from a submitted assessment. The post-conference
+        follow-ups of the Transfer Plan are set up on the Transfer plans tab.
       </p>
-      <FollowUpSchedule event={event} onSaved={onSaved} />
       <div className="grid gap-4 xl:grid-cols-3">
-        {event.assessmentStages.map((stage) => (
+        {stages.map((stage) => (
           <StageCard
             key={`${stage.stage}:${stage.wave}`}
             event={event}
@@ -72,7 +73,7 @@ const TONE: Record<AssessmentStage, 'positive' | 'neutral' | 'attention'> = {
   follow_up: 'attention',
 };
 
-function StageCard({
+export function StageCard({
   event,
   stage,
   onSaved,

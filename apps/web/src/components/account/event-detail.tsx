@@ -236,6 +236,8 @@ export function EventDetail({ event, contactEmail }: { event: MyEvent; contactEm
             onSelectPlan={(id) => choose(transferPlanTabId({ id }))}
             onPlansChanged={() => void transferPlans.refresh()}
             onRetry={transferPlans.retry}
+            followUps={forms.filter((a) => a.stage === 'follow_up')}
+            onOpenFollowUp={(a) => choose(assessmentTabId(a))}
           />
         ) : null}
       </div>

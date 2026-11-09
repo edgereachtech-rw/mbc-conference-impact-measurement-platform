@@ -13,6 +13,7 @@ import { FeedbackManager } from '@/components/admin/feedback/feedback-manager';
 import { ReflectionsManager } from '@/components/admin/reflections/reflections-manager';
 import { ReportWorkspace } from '@/components/admin/reports/report-workspace';
 import { SupportManager } from '@/components/admin/support/support-manager';
+import { FollowUpsSection } from '@/components/admin/transfer-plans/follow-ups-section';
 import { TransferPlansManager } from '@/components/admin/transfer-plans/transfer-plans-manager';
 import { consoleButton } from '@/components/console/page';
 import { apiFetch } from '@/lib/api';
@@ -207,6 +208,7 @@ export function EventSettings({ initialEvent }: EventSettingsProps) {
           <div className="space-y-8">
             <TransferPlanVisibilitySetting event={event} onSaved={saved} />
             <TransferPlansManager event={event} />
+            <FollowUpsSection event={event} onSaved={saved} />
           </div>
         ) : null}
         {tab === 'support' ? <SupportManager event={event} /> : null}
