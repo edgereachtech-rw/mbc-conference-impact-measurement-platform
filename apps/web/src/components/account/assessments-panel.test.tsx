@@ -235,9 +235,12 @@ const followUpWithPlan: MyAssessment = {
     plan: {
       id: PLAN_ID,
       status: 'submitted',
+      plans: [{ id: PLAN_ID, sequence: 1, title: 'Plan 1', status: 'submitted' }],
       actions: [
         {
           id: PLAN_ACTION,
+          planId: PLAN_ID,
+          planTitle: 'Plan 1',
           order: 1,
           title: 'Faster handovers',
           action: 'Brief stakeholders',
@@ -316,8 +319,8 @@ describe('AssessmentsPanel', () => {
     expect(calls[0]!.url).toMatch(
       /\/me\/events\/e1\/assessments\/follow_up\/plan-progress\?wave=1$/,
     );
+    // No plan id: the statuses cover every open plan of the delegate (2026-11-09).
     expect(calls[0]!.body).toEqual({
-      planId: PLAN_ID,
       actions: [
         {
           actionId: PLAN_ACTION,

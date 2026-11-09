@@ -911,9 +911,11 @@ measures | evidence }`, the list replaced with ids kept; own actions only, 404 o
     as that event's own editable data, 7 questions per wave. Another event enters its own.
     **Not seeded:** the proposed application-rate question (Appendix A7 marks it _confirm with
     M.Bryan_) and the longer-term wave's questions, which M.Bryan has still to supply (E12-7).
-  - **The plan, shown not asked** (E12-2, E12-3): a wave shows the delegate's Transfer Plan and
-    their pre-conference "do differently" answer above its questions, then asks one status per
-    action (see "Progress through the follow-ups"), then its questions. Every submitted
+  - **The plans, shown not asked** (E12-2, E12-3): a wave shows every open plan of the delegate
+    (not completed ones; 2026-11-09, before that only the latest plan) and their pre-conference
+    "do differently" answer above its questions, then asks one status per written action across
+    those plans (see "Progress through the follow-ups"), then its questions. Empty action cards
+    are left out. `context.plan` carries `plans` and each action's `planId`/`planTitle`. Every submitted
     follow-up's statuses are recorded and shown under each action on the plan page.
   - **Where it lives** (2026-11-09): for delegates, each follow-up is a tab of its own after the
     event and the Transfer plans tab lists them all with where each stands; for the organisers,

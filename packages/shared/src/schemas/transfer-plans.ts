@@ -403,7 +403,7 @@ export const followUpProgressItemSchema = z
     }
   });
 export const followUpProgressSchema = z.object({
-  /** The plan the statuses belong to; the delegate's latest plan when left out. */
+  /** Accepted for older clients and ignored: a follow-up covers every open plan (2026-11-09). */
   planId: z.uuid().optional(),
   actions: z.array(followUpProgressItemSchema).min(1).max(50),
 });

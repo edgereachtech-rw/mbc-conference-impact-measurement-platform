@@ -693,12 +693,29 @@ export const followUpProgressViewSchema = z.object({
 });
 export type FollowUpProgressView = z.infer<typeof followUpProgressViewSchema>;
 
+/**
+ * The delegate's open plans as a follow-up shows them (2026-11-09: every plan that is not
+ * completed, not only the latest). `id` and `status` are the latest plan's, kept for the
+ * single-plan readers; `plans` names each plan and every action says which plan it belongs to.
+ * Actions nothing has been written in are left out: there is nothing to report on them.
+ */
 export const assessmentPlanSummarySchema = z.object({
   id: z.uuid(),
   status: z.enum(transferPlanStatuses),
+  plans: z.array(
+    z.object({
+      id: z.uuid(),
+      sequence: z.number().int(),
+      /** What the delegate calls the plan, or "Plan n". */
+      title: z.string(),
+      status: z.enum(transferPlanStatuses),
+    }),
+  ),
   actions: z.array(
     z.object({
       id: z.uuid(),
+      planId: z.uuid(),
+      planTitle: z.string(),
       order: z.number().int(),
       title: z.string(),
       action: z.string(),

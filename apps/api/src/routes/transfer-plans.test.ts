@@ -1248,11 +1248,18 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
       { actionId: second!.id, action: second!.action, missing: ['applied', 'evidence'] },
     ]);
     // The follow-up records the action as applied, and one evidence record closes the gaps.
+    // The follow-up covers every open plan (2026-11-09): the second plan's written actions
+    // need a status too, so they are read from the follow-up and reported as started.
+    const context = await call('get', `/me/events/${eventId}/assessments`, undefined, cookies.dee);
+    const everyAction = (
+      context.body.assessments.find((a: { stage: string }) => a.stage === 'follow_up') as {
+        context: { plan: { actions: Array<{ id: string; planId: string }> } };
+      }
+    ).context.plan.actions;
     const progressed = await call(
       'put',
       `/me/events/${eventId}/assessments/follow_up/plan-progress?wave=1`,
       {
-        planId,
         actions: [
           {
             actionId: first!.id,
@@ -1266,6 +1273,9 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
             note: 'Agreed with the programme owners in December',
             occurredOn: '2026-12-20',
           },
+          ...everyAction
+            .filter((a) => a.planId !== planId)
+            .map((a) => ({ actionId: a.id, status: 'started' })),
         ],
       },
       cookies.dee,
