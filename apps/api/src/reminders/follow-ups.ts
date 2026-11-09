@@ -8,7 +8,7 @@ import type { MailConfig } from '../mail/config.js';
 import type { Mailer } from '../mail/mailer.js';
 import { renderFollowUpInvitation } from '../mail/templates/index.js';
 
-export interface FollowUpInvitationDeps {
+export interface FollowUpSendDeps {
   prisma: () => PrismaClient;
   mailer: Mailer;
   mailConfig: MailConfig;
@@ -20,41 +20,36 @@ export interface FollowUpInvitationDeps {
   allowTestRegistrations?: boolean;
 }
 
+/** How many emails one call will send, so a large event spreads over several clicks or runs. */
+const BATCH = 500;
+
 export const FOLLOW_UP_INVITATION_JOB = 'follow-up-invitations';
 
-/** How many emails one pass will send, so a large event spreads over several runs. */
-const BATCH = 200;
-
-const dayInMs = 86_400_000;
+export type FollowUpSendMode = 'invite' | 'remind';
 
 /**
- * Sends the follow-up invitations and chasers that are due (backlog E12-14).
+ * Sends a follow-up wave's emails on the organisers' request (backlog E12-14; decision
+ * 2026-11-09: nothing about a follow-up is sent on its own).
  *
- * A wave invites everyone eligible once its opening time has passed, and chases whoever has not
- * submitted every `reminderAfterDays` up to `reminderLimit` times. Both are driven by rows in
+ * `invite` emails every eligible delegate who has not yet been invited to the wave; being
+ * invited is what makes the follow-up appear for them and lets them answer it. `remind` emails
+ * every invited delegate who has not submitted. Both are driven by rows in
  * `assessment_invitation`, written before the send: that row is the record of what was sent and
- * the lock that stops it being sent twice, so a crash part-way through a batch never doubles up.
- *
- * A wave that is a draft, disabled, closed or without questions sends nothing — the same gate the
- * screens apply, so scheduling a wave is never the thing that starts emailing people.
+ * the lock that stops it being sent twice, so a repeated click or a crash part-way through never
+ * doubles up. Counts only are returned and logged; never an address.
  */
-export async function sendDueFollowUpInvitations(deps: FollowUpInvitationDeps) {
+export async function sendFollowUpEmails(
+  deps: FollowUpSendDeps,
+  waveId: string,
+  mode: FollowUpSendMode,
+): Promise<{ sent: number; failed: number; skipped: number }> {
   const at = (deps.now ?? (() => new Date()))();
   const prisma = deps.prisma();
   const statuses = deps.allowTestRegistrations
     ? (['active', 'test'] as const)
     : (['active'] as const);
-
-  const waves = await prisma.assessmentStageConfig.findMany({
-    where: {
-      stage: 'follow_up',
-      enabled: true,
-      status: { in: ['scheduled', 'open'] },
-      opensAt: { lte: at },
-      OR: [{ closesAt: null }, { closesAt: { gt: at } }],
-      event: { status: 'active' },
-      questions: { some: { retiredAt: null } },
-    },
+  const wave = await prisma.assessmentStageConfig.findUniqueOrThrow({
+    where: { id: waveId },
     include: {
       event: {
         select: {
@@ -67,111 +62,92 @@ export async function sendDueFollowUpInvitations(deps: FollowUpInvitationDeps) {
         },
       },
     },
-    orderBy: { wave: 'asc' },
   });
+  const label = waveLabel('follow_up', wave.wave, wave.dueAfterDays) || 'Post-conference follow-up';
+  const branding = brandingForEvent(deps.mailConfig, wave.event);
+  const formUrl = `${deps.appUrl.replace(/\/$/, '')}/account/events/${wave.event.id}#assessment-follow_up-${wave.wave}`;
+  const deadline = wave.closesAt
+    ? new Intl.DateTimeFormat('en-GB', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+        timeZone: wave.event.timezone,
+      }).format(wave.closesAt)
+    : undefined;
 
-  let invited = 0;
-  let reminded = 0;
+  let sent = 0;
   let failed = 0;
+  let skipped = 0;
 
-  for (const wave of waves) {
-    const label = waveLabel('follow_up', wave.wave, wave.dueAfterDays);
-    const branding = brandingForEvent(deps.mailConfig, wave.event);
-    const formUrl = `${deps.appUrl.replace(/\/$/, '')}/account/events/${wave.event.id}#assessment-follow_up-${wave.wave}`;
-    const deadline = wave.closesAt
-      ? new Intl.DateTimeFormat('en-GB', {
-          day: 'numeric',
-          month: 'long',
-          year: 'numeric',
-          timeZone: wave.event.timezone,
-        }).format(wave.closesAt)
-      : undefined;
-
-    async function send(
-      delegate: { id: string; name: string; email: string },
-      kind: 'invitation' | 'reminder',
-      sequence: number,
-      scheduledFor: Date,
-    ) {
-      // The row first: it is the lock. A duplicate key means another pass already has this one.
-      try {
-        await prisma.assessmentInvitation.create({
-          data: {
-            stageConfigId: wave.id,
-            delegateId: delegate.id,
-            kind,
-            sequence,
-            scheduledFor,
-            status: 'sending',
-          },
-        });
-      } catch {
-        return false;
-      }
-      const rendered = renderFollowUpInvitation(branding, {
-        recipientName: delegate.name,
-        waveLabel: label,
-        formUrl,
-        deadline,
-        reminder: kind === 'reminder',
+  async function send(
+    delegate: { id: string; name: string; email: string },
+    kind: 'invitation' | 'reminder',
+    sequence: number,
+  ) {
+    // The row first: it is the lock. A duplicate key means another call already has this one.
+    try {
+      await prisma.assessmentInvitation.create({
+        data: {
+          stageConfigId: wave.id,
+          delegateId: delegate.id,
+          kind,
+          sequence,
+          scheduledFor: at,
+          status: 'sending',
+        },
       });
-      try {
-        await deps.mailer.send({
-          to: delegate.email,
-          subject: rendered.subject,
-          html: rendered.html,
-          text: rendered.text,
-        });
-        await prisma.assessmentInvitation.update({
-          where: {
-            stageConfigId_delegateId_kind_sequence: {
-              stageConfigId: wave.id,
-              delegateId: delegate.id,
-              kind,
-              sequence,
-            },
-          },
-          data: { sentAt: at, status: 'sent' },
-        });
-        return true;
-      } catch (error) {
-        await prisma.assessmentInvitation.update({
-          where: {
-            stageConfigId_delegateId_kind_sequence: {
-              stageConfigId: wave.id,
-              delegateId: delegate.id,
-              kind,
-              sequence,
-            },
-          },
-          // The reason, never the address: a failed send is reported as a count and a code.
-          data: {
-            status: 'failed',
-            error: error instanceof Error ? error.name : 'send_failed',
-          },
-        });
-        failed += 1;
-        return false;
-      }
+    } catch {
+      skipped += 1;
+      return;
     }
+    const rendered = renderFollowUpInvitation(branding, {
+      recipientName: delegate.name,
+      waveLabel: label,
+      formUrl,
+      deadline,
+      reminder: kind === 'reminder',
+    });
+    const where = {
+      stageConfigId_delegateId_kind_sequence: {
+        stageConfigId: wave.id,
+        delegateId: delegate.id,
+        kind,
+        sequence,
+      },
+    };
+    try {
+      await deps.mailer.send({
+        to: delegate.email,
+        subject: rendered.subject,
+        html: rendered.html,
+        text: rendered.text,
+      });
+      await prisma.assessmentInvitation.update({ where, data: { sentAt: at, status: 'sent' } });
+      sent += 1;
+    } catch (error) {
+      // The reason, never the address: a failed send is reported as a count and a code.
+      await prisma.assessmentInvitation.update({
+        where,
+        data: { status: 'failed', error: error instanceof Error ? error.name : 'send_failed' },
+      });
+      failed += 1;
+    }
+  }
 
-    // First invitations: everyone eligible who has not had one for this wave.
+  if (mode === 'invite') {
     const uninvited = await prisma.delegate.findMany({
       where: {
         eventId: wave.event.id,
         registrationStatus: { in: [...statuses] },
-        assessmentInvitations: { none: { stageConfigId: wave.id, kind: 'invitation' } },
+        assessmentInvitations: {
+          none: { stageConfigId: wave.id, kind: 'invitation', status: { in: ['sent', 'sending'] } },
+        },
       },
       select: { id: true, name: true, email: true },
-      take: BATCH - invited - reminded,
+      take: BATCH,
     });
-    for (const delegate of uninvited) {
-      if (await send(delegate, 'invitation', 0, wave.opensAt ?? at)) invited += 1;
-    }
-    if (invited + reminded >= BATCH) break;
-
-    // Chasers: invited, not submitted, and the next one is due.
-    if (!wave.reminderAfterDays || wave.reminderLimit < 1) continue;
+    for (const delegate of uninvited) await send(delegate, 'invitation', 0);
+  } else {
     const pending = await prisma.assessmentInvitation.findMany({
       where: {
         stageConfigId: wave.id,
@@ -182,40 +158,66 @@ export async function sendDueFollowUpInvitations(deps: FollowUpInvitationDeps) {
           assessmentResponses: { none: { stageConfigId: wave.id, submittedAt: { not: null } } },
         },
       },
-      select: {
-        sentAt: true,
-        delegate: { select: { id: true, name: true, email: true } },
-        delegateId: true,
-      },
-      take: BATCH - invited - reminded,
+      select: { delegate: { select: { id: true, name: true, email: true } } },
+      take: BATCH,
     });
     for (const row of pending) {
-      const sentAt = row.sentAt ?? wave.opensAt ?? at;
       const already = await prisma.assessmentInvitation.count({
-        where: { stageConfigId: wave.id, delegateId: row.delegateId, kind: 'reminder' },
+        where: { stageConfigId: wave.id, delegateId: row.delegate.id, kind: 'reminder' },
       });
-      if (already >= wave.reminderLimit) continue;
-      const sequence = already + 1;
-      const due = new Date(sentAt.getTime() + sequence * wave.reminderAfterDays * dayInMs);
-      if (due > at) continue;
-      if (await send(row.delegate, 'reminder', sequence, due)) reminded += 1;
+      await send(row.delegate, 'reminder', already + 1);
     }
-    if (invited + reminded >= BATCH) break;
   }
 
-  // Counts only: never an address, a name or an answer.
-  if (invited || reminded || failed) {
-    deps.logger.info({ invited, reminded, failed, waves: waves.length }, 'follow-up invitations');
+  if (sent || failed || skipped) {
+    deps.logger.info({ wave: wave.wave, mode, sent, failed, skipped }, 'follow-up emails');
   }
-  return { invited, reminded, failed };
+  return { sent, failed, skipped };
 }
 
-export async function registerFollowUpInvitations(deps: FollowUpInvitationDeps & { boss: PgBoss }) {
+/**
+ * Sends the invitations the organisers scheduled (decision 2026-11-09): every wave whose
+ * `inviteAt` has passed and has not been sent yet, provided it is enabled, scheduled or open and
+ * has questions; a wave not ready at the time waits until it is. The wave is stamped
+ * `invitesSentAt` before the emails go, so a crash cannot send it twice; a batch left over is
+ * finished by the organisers' "Send the invitation", which reaches whoever has not been invited.
+ */
+export async function sendScheduledFollowUpInvitations(deps: FollowUpSendDeps) {
+  const at = (deps.now ?? (() => new Date()))();
+  const prisma = deps.prisma();
+  const due = await prisma.assessmentStageConfig.findMany({
+    where: {
+      stage: 'follow_up',
+      inviteAt: { lte: at },
+      invitesSentAt: null,
+      enabled: true,
+      status: { in: ['scheduled', 'open'] },
+      questions: { some: { retiredAt: null } },
+      event: { status: 'active' },
+    },
+    select: { id: true },
+  });
+  let sent = 0;
+  let failed = 0;
+  for (const wave of due) {
+    await prisma.assessmentStageConfig.update({
+      where: { id: wave.id },
+      data: { invitesSentAt: at },
+    });
+    const result = await sendFollowUpEmails(deps, wave.id, 'invite');
+    sent += result.sent;
+    failed += result.failed;
+  }
+  if (due.length) deps.logger.info({ waves: due.length, sent, failed }, 'scheduled follow-ups');
+  return { waves: due.length, sent, failed };
+}
+
+export async function registerFollowUpInvitations(deps: FollowUpSendDeps & { boss: PgBoss }) {
   const { boss, ...rest } = deps;
   await boss.createQueue(FOLLOW_UP_INVITATION_JOB);
-  await boss.schedule(FOLLOW_UP_INVITATION_JOB, '*/15 * * * *');
+  await boss.schedule(FOLLOW_UP_INVITATION_JOB, '*/5 * * * *');
   await boss.work(FOLLOW_UP_INVITATION_JOB, async () => {
-    await sendDueFollowUpInvitations(rest);
+    await sendScheduledFollowUpInvitations(rest);
   });
   deps.logger.info({ job: FOLLOW_UP_INVITATION_JOB }, 'follow-up invitation job registered');
 }

@@ -1110,6 +1110,10 @@ model AssessmentStageConfig {
   /// Days after the event's last date this wave is due. Names the wave ("30-day follow-up") and
   /// gives the default opening date; null for the single-round stages.
   dueAfterDays      Int?                  @map("due_after_days")
+  /// When the organisers want the invitation sent automatically (2026-11-09); null means by hand
+  /// only. The worker sends it once the time has passed and stamps invitesSentAt.
+  inviteAt          DateTime?             @map("invite_at") @db.Timestamptz(3)
+  invitesSentAt     DateTime?             @map("invites_sent_at") @db.Timestamptz(3)
   /// Chase a delegate who has not submitted this many days after their invitation, up to
   /// reminderLimit times. Null means no chasing (E12-14: configurable intervals).
   reminderAfterDays Int?                  @map("reminder_after_days")

@@ -4,6 +4,7 @@ import {
   evidenceSaveSchema,
   evidenceSupports,
   measureSummaries,
+  actionStatusUpdateSchema,
   measuresSaveSchema,
   addDaysTo,
   dateIn,
@@ -769,6 +770,60 @@ export function transferPlanRouter({
       'stale_plan',
       'Your plan changed since you opened it, possibly in another tab. Reload it and apply your changes again.',
     );
+
+  /**
+   * Where one action stands, told from the plan page (decision 2026-11-09, E12-15): one history
+   * entry with the status, the explanation or example and the date the status asks for, marked
+   * as recorded on the plan page (no follow-up wave). The action's current status follows; the
+   * follow-ups keep writing their own entries, so the history says where each one came from.
+   */
+  router.post(
+    '/me/events/:eventId/transfer-plans/:planId/actions/:actionId/progress',
+    middleware.requireAuth,
+    validated(actionStatusUpdateSchema),
+    async (req, res) => {
+      const { principal, delegate, plan, action } = await myAction(
+        res,
+        String(req.params.eventId),
+        String(req.params.planId),
+        String(req.params.actionId),
+      );
+      const input = req.body as z.infer<typeof actionStatusUpdateSchema>;
+      const at = clock();
+      await prisma().$transaction(async (tx) => {
+        await tx.transferPlanProgress.create({
+          data: {
+            actionId: action.id,
+            status: input.status,
+            note: input.note || null,
+            occurredOn: input.occurredOn ? new Date(`${input.occurredOn}T00:00:00.000Z`) : null,
+            followUpWave: null,
+            waveLabel: '',
+            recordedAt: at,
+            recordedByUserId: principal.userId,
+          },
+        });
+        await tx.transferPlanAction.update({
+          where: { id: action.id },
+          data: { progressStatus: input.status },
+        });
+        await tx.transferPlan.update({
+          where: { id: plan.id },
+          data: { version: plan.version + 1, updatedByUserId: principal.userId },
+        });
+        await audit(tx, {
+          action: 'transfer_plan.progress_recorded',
+          entityType: 'transfer_plan_action',
+          entityId: action.id,
+          eventId: delegate.eventId,
+          actorUserId: principal.userId,
+          newValue: { from: action.progressStatus, to: input.status, source: 'plan_page' },
+          ...clientOf(res),
+        });
+      });
+      res.json(await myView(delegate.eventId, delegate.id, plan.id));
+    },
+  );
 
   // Business measures of one action (backlog E14-1, E14-2; spec of 2026-11-08): the action's
   // answer ("can you identify a measure?") and the measure definitions. The list is replaced and

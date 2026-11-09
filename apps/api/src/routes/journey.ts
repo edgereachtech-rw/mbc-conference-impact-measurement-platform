@@ -61,6 +61,11 @@ export function journeyRouter({ prisma, config, middleware, now }: Deps): Router
       },
       select: {
         id: true,
+        // Follow-ups the organisers have sent this delegate (2026-11-09): only those are listed.
+        assessmentInvitations: {
+          where: { kind: 'invitation', status: 'sent' },
+          select: { stageConfigId: true },
+        },
         event: {
           select: {
             id: true,
@@ -164,8 +169,11 @@ export function journeyRouter({ prisma, config, middleware, now }: Deps): Router
       // does not run at all. Mapping the four stage names would report the first follow-up wave
       // and silently drop the rest (the 60- and 90-day ones), which is what it did before waves.
       assessments: assessmentStages.flatMap<Journey['assessments'][number]>((stage) => {
+        const invited = new Set(delegate.assessmentInvitations.map((i) => i.stageConfigId));
         const configured = delegate.event.assessmentStages
           .filter((x) => x.stage === stage && x.enabled && x._count.questions > 0)
+          // A follow-up is a next step only once its invitation has been sent (2026-11-09).
+          .filter((x) => x.stage !== 'follow_up' || invited.has(x.id))
           .sort((a, b) => a.wave - b.wave);
         if (configured.length === 0) {
           return [

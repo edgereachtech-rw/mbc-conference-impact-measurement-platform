@@ -143,8 +143,6 @@ export function renderAdminMessage(
 
 export interface TransferPlanReminderInput {
   recipientName?: string;
-  /** The delegate's first-priority action, shown so the reminder is concrete; empty when none. */
-  priorityAction?: string;
   /** Absolute link to the delegate's plan page. */
   planUrl: string;
   /** How often the delegate chose to be reminded, in words ("every two weeks"). */
@@ -152,59 +150,52 @@ export interface TransferPlanReminderInput {
   /** What the delegate calls the plan ("Plan 2", "Coaching rollout"). */
   planTitle?: string;
   /**
+   * Each written action with its current status and how long ago that status was recorded
+   * (decision 2026-11-09): the email shows what is stale and asks for an update.
+   */
+  actions: Array<{ name: string; status: string; updated: string; isPriority: boolean }>;
+  /**
    * Set during the last seven days of the reminder window (2026-11-06): the email says the
    * reminders are about to stop and asks the delegate to complete the plan or extend them.
    */
   finalWeek?: { endsOn: string };
-  /**
-   * The post-conference follow-up that is open when the reminder fires and the delegate has not
-   * answered yet (decision 2026-11-09): the email asks for that, and its button opens it.
-   */
-  followUp?: { label: string; formUrl: string; closesOn?: string };
 }
 
-/** A reminder the delegate asked for: a nudge to record progress on their plan. */
+/**
+ * A reminder the delegate asked for (decision 2026-11-09): update where each action of the plan
+ * stands. It lists the actions with their current status and when it was last recorded, and its
+ * button opens the plan page, where "Update status" records a new entry in the history.
+ */
 export function renderTransferPlanReminder(
   branding: EmailBranding,
   input: TransferPlanReminderInput,
 ): RenderedEmail {
   const plan = input.planTitle ? `your plan '${input.planTitle}'` : 'the plan you made';
-  const followUp = input.followUp;
   const paragraphs = [
     input.recipientName ? `Hello ${input.recipientName},` : 'Hello,',
-    followUp
-      ? `You asked to be reminded ${input.frequency} about ${plan} at ${branding.eventName}. Your ${followUp.label} is open${followUp.closesOn ? ` until ${followUp.closesOn}` : ''}: it asks where each action of your plan stands and what you have been able to apply. Your plan is shown beside the questions.`
-      : `You asked to be reminded ${input.frequency} about ${plan} at ${branding.eventName}. Take two minutes to look at where each action stands: what you have tried, what is working, and what has changed.`,
+    `You asked to be reminded ${input.frequency} about ${plan} at ${branding.eventName}. Take two minutes to update where each action stands: not yet started, started, in progress, applied, applied consistently, completed, changed or no longer applicable.`,
+    ...input.actions.map(
+      (a) => `${a.isPriority ? 'First priority: ' : ''}${a.name} — ${a.status}, ${a.updated}.`,
+    ),
   ];
-  if (input.priorityAction) {
-    paragraphs.push(`Your first priority: ${input.priorityAction}`);
-  }
   if (input.finalWeek) {
     paragraphs.push(
-      `These are the last days of your reminders: they stop after ${input.finalWeek.endsOn}, and a follow-up that opens after that date will not be announced by them. If the plan is done, record the evidence for each action and mark it completed. If you need more time, extend the reminders on your plan page.`,
+      `These are the last days of your reminders: they stop after ${input.finalWeek.endsOn}. If the plan is done, record the evidence for each action and mark it completed. If you need more time, extend the reminders on your plan page.`,
     );
   }
   return renderLayout(branding, {
     subject: input.finalWeek
       ? `Last days of reminders for your ${branding.eventName} plan`
-      : followUp
-        ? `Your ${followUp.label}: how is your ${branding.eventName} plan going?`
-        : `How is your ${branding.eventName} plan going?`,
+      : `Where do your ${branding.eventName} actions stand?`,
     preheader: input.finalWeek
       ? 'Your reminders end soon: complete the plan or extend them.'
-      : followUp
-        ? `A reminder you asked for: answer your ${followUp.label}.`
-        : 'A reminder you asked for: look at your plan.',
+      : 'A reminder you asked for: update the status of each action.',
     eyebrow: 'Transfer plan',
     title: input.finalWeek
       ? 'Complete your plan, or extend your reminders'
-      : followUp
-        ? `Answer your ${followUp.label}`
-        : 'Your plan',
+      : 'Update your application status',
     paragraphs,
-    button: followUp
-      ? { label: 'Open the follow-up', url: followUp.formUrl }
-      : { label: 'Open my plan', url: input.planUrl },
+    button: { label: 'Update my statuses', url: input.planUrl },
     notes: ['You can change how often you hear from us, or stop reminders, on your plan page.'],
   });
 }

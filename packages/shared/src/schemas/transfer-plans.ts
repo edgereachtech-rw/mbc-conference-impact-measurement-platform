@@ -379,6 +379,40 @@ export type ImpactCheckAnswerInput = z.infer<typeof impactCheckAnswerSchema>;
  * explanation or example the status asks for, and the date of the application or completion
  * when it asks for one.
  */
+/** The rules every status record follows: an explanation or example, and a date, where the status asks. */
+function refineStatusDetail(
+  value: { status: ActionProgressStatus; note: string; occurredOn?: string | null },
+  ctx: z.RefinementCtx,
+) {
+  if (progressNeedsDetail(value.status) && value.note.trim() === '') {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['note'],
+      message: progressDetailPrompt[value.status] ?? 'Add a short note.',
+    });
+  }
+  if (progressNeedsDate(value.status) && !value.occurredOn) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['occurredOn'],
+      message: progressDateLabel[value.status] ?? 'Give the date.',
+    });
+  }
+}
+
+/**
+ * A status the delegate records on the plan page itself (decision 2026-11-09): one history
+ * entry, source "plan page", with the same rules as a follow-up's status.
+ */
+export const actionStatusUpdateSchema = z
+  .object({
+    status: z.enum(actionProgressStatuses),
+    note: text(2_000),
+    occurredOn: optionalDay,
+  })
+  .superRefine(refineStatusDetail);
+export type ActionStatusUpdate = z.infer<typeof actionStatusUpdateSchema>;
+
 export const followUpProgressItemSchema = z
   .object({
     actionId: z.uuid(),
@@ -386,22 +420,7 @@ export const followUpProgressItemSchema = z
     note: text(2_000),
     occurredOn: optionalDay,
   })
-  .superRefine((value, ctx) => {
-    if (progressNeedsDetail(value.status) && value.note.trim() === '') {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['note'],
-        message: progressDetailPrompt[value.status] ?? 'Add a short note.',
-      });
-    }
-    if (progressNeedsDate(value.status) && !value.occurredOn) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['occurredOn'],
-        message: progressDateLabel[value.status] ?? 'Give the date.',
-      });
-    }
-  });
+  .superRefine(refineStatusDetail);
 export const followUpProgressSchema = z.object({
   /** Accepted for older clients and ignored: a follow-up covers every open plan (2026-11-09). */
   planId: z.uuid().optional(),

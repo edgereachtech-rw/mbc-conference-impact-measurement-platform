@@ -563,9 +563,9 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   it again (unchanged). Assessment stages: setting the status back to Open after Closed brings
   the same questions and answers back; a deadline that has already passed is refused with 422
   `deadline_passed`, and the stage card clears it for the admin when they choose Open.
-- Progress through the follow-ups (rules of 2026-11-08; migration
-  `20261108001700_follow_up_progress`): the plan page no longer records progress. Each 30, 60,
-  90-day and longer-term follow-up first asks where every action of the Transfer Plan stands,
+- Progress through the follow-ups and from the plan page (rules of 2026-11-08; migration
+  `20261108001700_follow_up_progress`; plan page again since 2026-11-09): each 30, 60, 90-day
+  and longer-term follow-up first asks where every action of the Transfer Plan stands,
   with one current status per action (not yet started, started, in progress, applied, applied
   consistently, completed, changed, no longer applicable; definitions and examples in
   `actionProgressDefinitions`). "Changed" and "no longer applicable" need a brief explanation;
@@ -574,9 +574,12 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   `PUT /me/events/:eventId/assessments/follow_up/plan-progress?wave=n` (one record per action
   per wave in `transfer_plan_progress`, replaceable until the wave is submitted, kept as history
   afterwards); a wave's sections cannot be submitted before they are in (422
-  `plan_progress_missing`). The plan page and the organisers' plan detail show each follow-up's
-  record under the action; the organisers' list and the reports count each action once, in its
-  latest status. Started, in progress and completed are not application. The delegate support
+  `plan_progress_missing`). Since 2026-11-09 the delegate can also record a status from the
+  plan page ("Update status" on each saved action; `POST
+.../transfer-plans/:planId/actions/:actionId/progress`, `actionStatusUpdateSchema`, the same
+  detail rules; the entry has no wave and reads "Plan page"). The plan page and the organisers'
+  plan detail show the whole history under the action with where each entry came from; the
+  organisers' list and the reports count each action once, in its latest status. Started, in progress and completed are not application. The delegate support
   panel left the plan page the same day: support needs are collected by the follow-up questions
   whose area names support (brief 11.7), and the organisers' Support tab stays.
 - Business measures (spec of 2026-11-08; migration `20261107232000_business_measures`): per
@@ -897,16 +900,27 @@ measures | evidence }`, the list replaced with ids kept; own actions only, 404 o
     emails nobody, and an enabled wave with no questions cannot be opened. Repeating the request
     adds nothing and changes nothing. `GET` returns each wave with its questions, invitations
     sent and submissions (E12-13).
-  - **Reminders** (decision 2026-11-09): the delegate's own Transfer Plan reminders carry the
-    follow-ups. Each time a reminder fires, the worker finds the follow-up whose window contains
-    that moment (`currentFollowUpWave`: enabled, scheduled or open, with questions) and, if the
-    delegate has not answered it, the email asks for that follow-up and opens it; once answered,
-    that occurrence sends nothing (counted as `skipped`) and the next is scheduled as usual;
-    with no follow-up open the plain plan reminder goes. Reminders stop at the delegate's end
-    date, so a follow-up whose window begins after it is not announced by them. The platform
-    still sends one invitation when a wave opens (`follow-up-invitations`, every 15 minutes,
-    idempotent through `assessment_invitation`); the wave's own chasers default to none
-    (`reminder_after_days` null, `reminder_limit` 0) and an admin may switch them on.
+  - **Sent by the organisers, by hand or at a time they set** (decision 2026-11-09, later the
+    same day): nothing about a follow-up is sent until the organisers decide. On the Transfer
+    plans tab each wave has "Schedule the sending" (`PUT
+/events/:id/assessments/follow-ups/:wave/schedule` `{ inviteAt }`, migration
+    `20261109075500_follow_up_invite_at`; the worker job `follow-up-invitations`, every five
+    minutes, sends the invitation once the time has passed and the wave is enabled, scheduled or
+    open with questions, stamping `invites_sent_at` first so it never sends twice), "Send the
+    invitation" (`POST
+/events/:id/assessments/follow-ups/:wave/invitations`: every eligible delegate not yet
+    invited, once, idempotent through `assessment_invitation`) and "Remind those who have not
+    answered" (`.../reminders`: every invited delegate without a submission, one more reminder
+    each click). A draft, disabled, closed or question-less wave cannot be sent (409
+    `follow_up_not_ready`). **A delegate sees a follow-up only once sent it:** `GET
+/me/events/:id/assessments` and the journey list it only with a sent invitation, and the
+    answer and status routes refuse otherwise (409 `not_invited`).
+  - **Reminders** (decision 2026-11-09): the delegate's own Transfer Plan reminders ask them to
+    update where each action stands. The email lists each written action with its current status
+    and how long ago it was recorded, and opens the plan page. An occurrence is skipped (logged
+    with status `skipped`, the pointer moved) when every action is completed or no longer
+    applicable, or when every action's status was recorded after the previous occurrence.
+    Reminders stop at the delegate's end date as before.
   - **Questions** (E12-4 to E12-6): ITTEC's approved Appendix A7 wording is seeded by `db:seed`
     as that event's own editable data, 7 questions per wave. Another event enters its own.
     **Not seeded:** the proposed application-rate question (Appendix A7 marks it _confirm with

@@ -13,6 +13,7 @@ import {
   createRegisteredIdentity,
   deleteIdentity,
   hasDatabase,
+  inviteToFollowUp,
   testPrisma,
 } from '../db/test-helpers.js';
 import { mailConfigFromEnv } from '../mail/config.js';
@@ -495,7 +496,7 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
   it('records where each action stands through a follow-up wave, and counts it for the organisers', async () => {
     await tick('2026-12-15T09:00:00.000Z');
     // The 30-day wave opens. The plan page itself records no progress (2026-11-08).
-    await prisma.assessmentStageConfig.upsert({
+    const wave1Config = await prisma.assessmentStageConfig.upsert({
       where: { eventId_stage_wave: { eventId, stage: 'follow_up', wave: 1 } },
       update: { dueAfterDays: 30, enabled: true, status: 'open', opensAt: null, closesAt: null },
       create: {
@@ -509,10 +510,14 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
         closesAt: null,
       },
     });
+    // The organisers send it to Dee first (2026-11-09); only then can she answer it.
+    await inviteToFollowUp(prisma, wave1Config.id, deeId);
     const planUrl = `/me/events/${eventId}/transfer-plans/${planId}`;
     const mine = await call('get', planUrl, undefined, cookies.dee);
     const [first, second] = mine.body.plan.actions as Array<{ id: string }>;
     const path = `/me/events/${eventId}/assessments/follow_up/plan-progress?wave=1`;
+    // The plan page records a status too (2026-11-09), under the same rules: "applied" needs
+    // the date an application occurred.
     expect(
       (
         await call(
@@ -522,7 +527,7 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
           cookies.dee,
         )
       ).status,
-    ).toBe(404);
+    ).toBe(422);
 
     // Every action needs a status; "applied" needs an example and a date; "changed" a reason.
     const partial = await call(
@@ -643,7 +648,9 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
       },
       cookies.ada,
     );
-    expect(other.status).toBe(422);
+    // Ada has not been sent this follow-up (2026-11-09), so it is not hers to answer at all.
+    expect(other.status).toBe(409);
+    expect(other.body.error.code).toBe('not_invited');
     expect(
       (await call('put', path, { actions: [{ actionId: first!.id, status: 'started' }] })).status,
     ).toBe(403);
@@ -1071,7 +1078,7 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
     });
     expect(await sendDueTransferPlanReminders(deps)).toMatchObject({ due: 1, sent: 1, failed: 0 });
     expect(mailer.sent).toHaveLength(1);
-    expect(mailer.sent[0]!.subject).toMatch(/plan going/);
+    expect(mailer.sent[0]!.subject).toMatch(/actions stand/);
     expect(mailer.sent[0]!.subject).not.toMatch(/Last days/);
     expect(mailer.sent[0]!.text).toContain('Brief stakeholders (revised)');
     expect(mailer.sent[0]!.text).toContain(`${ORIGIN}/account/events/${eventId}#transfer-plan`);
@@ -1088,45 +1095,56 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
     expect(mine.body.reminders).toHaveLength(1);
     expect(mine.body.reminders[0]).toMatchObject({ status: 'sent' });
 
-    // A reminder that fires while a post-conference follow-up is open asks for that follow-up
-    // (decision 2026-11-09). The 30-day wave of this event is open with no window; it needs a
-    // question to count.
-    const wave1 = await prisma.assessmentStageConfig.findUniqueOrThrow({
-      where: { eventId_stage_wave: { eventId, stage: 'follow_up', wave: 1 } },
-    });
-    await prisma.assessmentQuestion.create({
-      data: {
-        eventId,
-        stageConfigId: wave1.id,
-        order: 1,
-        prompt: 'What have you applied so far?',
-        type: 'long_text',
-        required: false,
-      },
-    });
+    // The reminder lists each written action with its status and its age (decision 2026-11-09).
+    expect(mailer.sent[0]!.text).toMatch(
+      /(last updated d+ days? ago|updated today|no status recorded yet)/,
+    );
+
+    // Once every status is updated from the plan page, the next occurrence has nothing to ask:
+    // skipped, logged as such, the pointer moved on.
+    await tick('2026-11-26T10:00:00.000Z');
+    // The first action stays applied (the completion test later relies on it); the second
+    // is started.
+    for (const [index, a] of (mine.body.plan.actions as Array<{ id: string }>).entries()) {
+      const recorded = await call(
+        'post',
+        `/me/events/${eventId}/transfer-plans/${planId}/actions/${a.id}/progress`,
+        index === 0
+          ? { status: 'applied', note: 'Used it again this week', occurredOn: '2026-11-25' }
+          : { status: 'started', note: 'Got going' },
+        cookies.dee,
+      );
+      expect(recorded.status, recorded.text).toBe(200);
+    }
     mailer.sent.length = 0;
     await tick('2026-12-02T09:05:00.000Z');
-    expect(await sendDueTransferPlanReminders(deps)).toMatchObject({ due: 1, sent: 1, skipped: 0 });
-    expect(mailer.sent[0]!.subject).toContain('30-day follow-up');
-    expect(mailer.sent[0]!.text).toContain(
-      `${ORIGIN}/account/events/${eventId}#assessment-follow_up-1`,
-    );
-    // Once the follow-up is answered, the next occurrence sends nothing and the pointer moves on.
-    await prisma.assessmentResponse.upsert({
-      where: { stageConfigId_delegateId: { stageConfigId: wave1.id, delegateId: deeId } },
-      create: { stageConfigId: wave1.id, delegateId: deeId, submittedAt: now },
-      update: { submittedAt: now },
-    });
-    mailer.sent.length = 0;
-    await tick('2026-12-09T09:05:00.000Z');
     expect(await sendDueTransferPlanReminders(deps)).toMatchObject({ due: 1, sent: 0, skipped: 1 });
     expect(mailer.sent).toHaveLength(0);
-    const moved = await prisma.transferPlan.findUniqueOrThrow({ where: { id: plan.id } });
-    expect(moved.nextReminderAt).toEqual(new Date('2026-12-16T08:00:00.000Z'));
-    // The follow-up is left unanswered for the tests that follow.
-    await prisma.assessmentResponse.deleteMany({
-      where: { stageConfigId: wave1.id, delegateId: deeId },
-    });
+    let moved = await prisma.transferPlan.findUniqueOrThrow({ where: { id: plan.id } });
+    expect(moved.nextReminderAt).toEqual(new Date('2026-12-09T08:00:00.000Z'));
+    // The earlier follow-up test recorded statuses dated 15 December, so they stay fresh for
+    // the next two weekly occurrences; once older than the previous occurrence, the reminder is
+    // sent again, saying how old each status is.
+    await tick('2026-12-09T09:05:00.000Z');
+    expect(await sendDueTransferPlanReminders(deps)).toMatchObject({ due: 1, sent: 0, skipped: 1 });
+    await tick('2026-12-16T09:05:00.000Z');
+    expect(await sendDueTransferPlanReminders(deps)).toMatchObject({ due: 1, sent: 0, skipped: 1 });
+    await tick('2026-12-23T09:05:00.000Z');
+    expect(await sendDueTransferPlanReminders(deps)).toMatchObject({ due: 1, sent: 1, skipped: 0 });
+    expect(mailer.sent[0]!.text).toMatch(/last updated \d+ days ago/);
+    expect(mailer.sent[0]!.text).toContain(`${ORIGIN}/account/events/${eventId}#transfer-plan`);
+    moved = await prisma.transferPlan.findUniqueOrThrow({ where: { id: plan.id } });
+    expect(moved.nextReminderAt).toEqual(new Date('2026-12-30T08:00:00.000Z'));
+    const later = await call(
+      'get',
+      `/me/events/${eventId}/transfer-plans/${planId}`,
+      undefined,
+      cookies.dee,
+    );
+    // The skipped occurrence is on record beside the sent ones.
+    expect((later.body.reminders as Array<{ status: string }>).map((r) => r.status).sort()).toEqual(
+      ['sent', 'sent', 'skipped', 'skipped', 'skipped'],
+    );
   });
 
   it('keeps several plans per delegate, each with its own reminder window, and refuses bad preferences', async () => {

@@ -1,5 +1,6 @@
 import {
   defaultWaveWindow,
+  followUpInviteScheduleSchema,
   followUpScheduleRequestSchema,
   followUpWaveOf,
   waveLabel,
@@ -8,9 +9,14 @@ import {
   type FollowUpWaveView,
 } from '@mbc/shared';
 import { Router, type Response } from 'express';
+import type { z } from 'zod';
 
 import type { AuthConfig } from '../auth/config.js';
 import { clientOf, principalOf, type createAuthMiddleware } from '../auth/middleware.js';
+import type { Logger } from '../lib/logger.js';
+import type { MailConfig } from '../mail/config.js';
+import type { Mailer } from '../mail/mailer.js';
+import { sendFollowUpEmails } from '../reminders/follow-ups.js';
 import { canConfigureEvents, EVENT_SETUP_ROLES } from '../auth/policies.js';
 import type { PrismaClient } from '../db.js';
 import { audit } from '../lib/audit.js';
@@ -21,7 +27,10 @@ import { validate } from '../lib/validate.js';
 interface Deps {
   prisma: () => PrismaClient;
   config: AuthConfig;
+  mailConfig: () => MailConfig;
+  mailer: () => Mailer;
   middleware: ReturnType<typeof createAuthMiddleware>;
+  logger: Logger;
   now?: () => Date;
 }
 
@@ -41,7 +50,15 @@ const isoDate = (d: Date) => d.toISOString().slice(0, 10);
  * stage, and an enabled wave with no questions cannot be scheduled or opened. ITTEC's approved
  * follow-up wording is loaded into its waves by `db:seed` as that event's data.
  */
-export function followUpRouter({ prisma, middleware, now }: Deps): Router {
+export function followUpRouter({
+  prisma,
+  config,
+  mailConfig,
+  mailer,
+  middleware,
+  logger,
+  now,
+}: Deps): Router {
   const router = Router();
   const clock = now ?? (() => new Date());
   const guard = middleware.requireRole(...EVENT_SETUP_ROLES);
@@ -111,6 +128,8 @@ export function followUpRouter({ prisma, middleware, now }: Deps): Router {
       submitted: r._count.responses,
       reminderAfterDays: r.reminderAfterDays,
       reminderLimit: r.reminderLimit,
+      inviteAt: r.inviteAt?.toISOString() ?? null,
+      invitesSentAt: r.invitesSentAt?.toISOString() ?? null,
     }));
     return { waves, eligible: eligibleCount };
   }
@@ -181,6 +200,121 @@ export function followUpRouter({ prisma, middleware, now }: Deps): Router {
         created: create,
         generatedAt: clock().toISOString(),
       });
+    },
+  );
+
+  /**
+   * The organisers send a follow-up (decision 2026-11-09): the invitation to everyone eligible
+   * who has not had it, or a reminder to everyone invited who has not answered. Nothing is sent
+   * on its own; being sent the invitation is what shows the follow-up to a delegate. A draft,
+   * disabled or question-less wave cannot be sent.
+   */
+  for (const mode of ['invite', 'remind'] as const) {
+    router.post(
+      `/events/:eventId/assessments/follow-ups/:wave/${mode === 'invite' ? 'invitations' : 'reminders'}`,
+      guard,
+      async (req, res) => {
+        const principal = requireAdmin(res);
+        const event = await loadEvent(String(req.params.eventId), true);
+        const waveNumber = Number(req.params.wave);
+        const wave = Number.isInteger(waveNumber)
+          ? await prisma().assessmentStageConfig.findUnique({
+              where: {
+                eventId_stage_wave: { eventId: event.id, stage: 'follow_up', wave: waveNumber },
+              },
+              select: {
+                id: true,
+                enabled: true,
+                status: true,
+                _count: { select: { questions: { where: { retiredAt: null } } } },
+              },
+            })
+          : null;
+        if (!wave) throw new HttpError(404, 'not_found', 'Follow-up not found.');
+        if (
+          !wave.enabled ||
+          wave.status === 'draft' ||
+          wave.status === 'closed' ||
+          wave._count.questions === 0
+        ) {
+          throw new HttpError(
+            409,
+            'follow_up_not_ready',
+            'Enable the follow-up, give it questions and schedule or open it before sending it.',
+          );
+        }
+        const result = await sendFollowUpEmails(
+          {
+            prisma,
+            mailer: mailer(),
+            mailConfig: mailConfig(),
+            appUrl: config.appUrl,
+            logger,
+            now: clock,
+            allowTestRegistrations: config.allowTestRegistrations,
+          },
+          wave.id,
+          mode,
+        );
+        await audit(prisma(), {
+          action: mode === 'invite' ? 'follow_up.invitations_sent' : 'follow_up.reminders_sent',
+          entityType: 'assessment_stage_config',
+          entityId: wave.id,
+          eventId: event.id,
+          actorUserId: principal.userId,
+          newValue: { wave: waveNumber, ...result },
+          ...clientOf(res),
+        });
+        if (mode === 'invite' && result.sent > 0) {
+          await prisma().assessmentStageConfig.update({
+            where: { id: wave.id },
+            data: { invitesSentAt: clock() },
+          });
+        }
+        res.json({ ...result, ...(await scheduleOf(event.id)) });
+      },
+    );
+  }
+
+  /**
+   * When the invitation should go out by itself (2026-11-09): the worker job sends it once the
+   * time has passed and the wave is ready; null means by hand only. Changing the time after it
+   * was sent does not send again.
+   */
+  router.put(
+    '/events/:eventId/assessments/follow-ups/:wave/schedule',
+    guard,
+    validate(followUpInviteScheduleSchema),
+    async (req, res) => {
+      const principal = requireAdmin(res);
+      const event = await loadEvent(String(req.params.eventId), true);
+      const waveNumber = Number(req.params.wave);
+      const input = req.body as z.infer<typeof followUpInviteScheduleSchema>;
+      const wave = Number.isInteger(waveNumber)
+        ? await prisma().assessmentStageConfig.findUnique({
+            where: {
+              eventId_stage_wave: { eventId: event.id, stage: 'follow_up', wave: waveNumber },
+            },
+            select: { id: true },
+          })
+        : null;
+      if (!wave) throw new HttpError(404, 'not_found', 'Follow-up not found.');
+      await prisma().$transaction(async (tx) => {
+        await tx.assessmentStageConfig.update({
+          where: { id: wave.id },
+          data: { inviteAt: input.inviteAt ? new Date(input.inviteAt) : null },
+        });
+        await audit(tx, {
+          action: 'follow_up.invitation_scheduled',
+          entityType: 'assessment_stage_config',
+          entityId: wave.id,
+          eventId: event.id,
+          actorUserId: principal.userId,
+          newValue: { wave: waveNumber, inviteAt: input.inviteAt },
+          ...clientOf(res),
+        });
+      });
+      res.json(await scheduleOf(event.id));
     },
   );
 

@@ -1596,6 +1596,15 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
     return { correct: answer.correct, correctValue: right.value, correctLabel: right.label };
   }
 
+  /** The follow-up waves this delegate has been sent an invitation to. */
+  async function invitedWaveIds(delegateId: string): Promise<Set<string>> {
+    const rows = await prisma().assessmentInvitation.findMany({
+      where: { delegateId, kind: 'invitation', status: 'sent' },
+      select: { stageConfigId: true },
+    });
+    return new Set(rows.map((r) => r.stageConfigId));
+  }
+
   async function myAssessments(delegate: {
     id: string;
     eventId: string;
@@ -1604,6 +1613,9 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
     const at = clock();
     const { id: delegateId, eventId } = delegate;
     const context = await contextFor(eventId, delegateId);
+    // A follow-up exists for a delegate once the organisers have sent them its invitation
+    // (decision 2026-11-09); until then it is not listed and cannot be answered.
+    const invited = await invitedWaveIds(delegateId);
     const stages = await prisma().assessmentStageConfig.findMany({
       where: { eventId, enabled: true },
       include: {
@@ -1616,6 +1628,7 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
       },
     });
     return stages
+      .filter((s) => s.stage !== 'follow_up' || invited.has(s.id))
       .map((s) => ({ s, state: windowState(s, at) }))
       .filter((x) => x.state !== 'hidden')
       .sort((a, b) => stageOrder[a.s.stage] - stageOrder[b.s.stage] || a.s.wave - b.s.wave)
@@ -1750,6 +1763,9 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
       if (!config || !config.enabled || windowState(config, clock()) !== 'open') {
         throw new HttpError(409, 'assessment_not_open', 'This follow-up is not open right now.');
       }
+      if (!(await invitedWaveIds(delegate.id)).has(config.id)) {
+        throw new HttpError(409, 'not_invited', 'This follow-up has not been sent to you yet.');
+      }
       if (config.responses[0]?.submittedAt) {
         throw new HttpError(
           409,
@@ -1860,6 +1876,9 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
       });
       if (!config || !config.enabled || windowState(config, clock()) !== 'open') {
         throw new HttpError(409, 'assessment_not_open', 'This assessment is not open right now.');
+      }
+      if (config.stage === 'follow_up' && !(await invitedWaveIds(delegate.id)).has(config.id)) {
+        throw new HttpError(409, 'not_invited', 'This follow-up has not been sent to you yet.');
       }
       const existing = config.responses[0] ?? null;
       if (existing?.submittedAt) {

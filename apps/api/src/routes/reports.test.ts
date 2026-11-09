@@ -14,6 +14,7 @@ import {
   createRegisteredIdentity,
   deleteIdentity,
   hasDatabase,
+  inviteToFollowUp,
   testPrisma,
 } from '../db/test-helpers.js';
 import { MemoryMailer } from '../mail/mailer.js';
@@ -564,6 +565,13 @@ describe.skipIf(!hasDatabase)('event dashboards and reports', () => {
       required: false,
     });
     expect((await call('put', fup(), { enabled: true, status: 'open' })).status).toBe(200);
+    // The organisers send the follow-up before anyone can answer it (2026-11-09).
+    const fu1 = await prisma.assessmentStageConfig.findFirstOrThrow({
+      where: { eventId, stage: 'follow_up', wave: 1 },
+    });
+    for (const d of await prisma.delegate.findMany({ where: { eventId }, select: { id: true } })) {
+      await inviteToFollowUp(prisma, fu1.id, d.id);
+    }
     await tick('2026-12-15T10:00:00.000Z');
     // Progress is told in the follow-up (2026-11-08): where each action stands comes first.
     const deeStatuses = await call(

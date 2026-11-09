@@ -12,6 +12,7 @@ import {
   createRegisteredIdentity,
   deleteIdentity,
   hasDatabase,
+  inviteToFollowUp,
   testPrisma,
 } from '../db/test-helpers.js';
 import { mailConfigFromEnv } from '../mail/config.js';
@@ -230,6 +231,8 @@ describe.skipIf(!hasDatabase)('transfer support requests', () => {
         closesAt: null,
       },
     });
+    // The follow-up exists for Dee once the organisers have sent it (2026-11-09).
+    await inviteToFollowUp(prisma, stage.id, deeId);
     const barrierQ = await prisma.assessmentQuestion.create({
       data: {
         stageConfigId: stage.id,

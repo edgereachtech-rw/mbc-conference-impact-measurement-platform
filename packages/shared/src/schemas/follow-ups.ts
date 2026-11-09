@@ -158,8 +158,18 @@ export const followUpWaveViewSchema = z.object({
   submitted: z.number().int(),
   reminderAfterDays: z.number().int().nullable(),
   reminderLimit: z.number().int(),
+  /** When the invitation goes out automatically; null when the organisers send it by hand. */
+  inviteAt: z.string().nullable(),
+  /** When the scheduled or first manual invitation was sent; null until then. */
+  invitesSentAt: z.string().nullable(),
 });
 export type FollowUpWaveView = z.infer<typeof followUpWaveViewSchema>;
+
+/** The organisers schedule (or clear) the automatic sending of a wave's invitation. */
+export const followUpInviteScheduleSchema = z.object({
+  inviteAt: z.iso.datetime().nullable(),
+});
+export type FollowUpInviteSchedule = z.infer<typeof followUpInviteScheduleSchema>;
 
 export const followUpScheduleSchema = z.object({
   waves: z.array(followUpWaveViewSchema),

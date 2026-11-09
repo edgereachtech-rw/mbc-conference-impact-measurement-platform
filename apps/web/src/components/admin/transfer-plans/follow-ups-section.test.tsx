@@ -74,6 +74,10 @@ function stub(eventBack: EventDetail, overview: FollowUpOverview = { waves: [], 
         body: init?.body ? (JSON.parse(String(init.body)) as unknown) : undefined,
       });
       if (url.endsWith('/follow-up-responses')) return json(overview);
+      if (/\/follow-ups\/\d+\/(invitations|reminders)$/.test(url)) {
+        return json({ sent: 2, failed: 0, skipped: 0, waves: [], eligible: 0 });
+      }
+      if (/\/follow-ups\/\d+\/schedule$/.test(url)) return json({ waves: [], eligible: 0 });
       return json({ event: eventBack, waves: [], eligible: 0 });
     }),
   );
@@ -120,6 +124,8 @@ describe('FollowUpsSection', () => {
         submitted: n === 1 ? 1 : 0,
         reminderAfterDays: null,
         reminderLimit: 0,
+        inviteAt: null,
+        invitesSentAt: null,
       })),
       rows: [
         {
@@ -174,8 +180,30 @@ describe('FollowUpsSection', () => {
     expect(bo.textContent?.match(/Not answered/g)).toHaveLength(3);
     expect(screen.getByText(/1 of 2 submitted/)).toBeTruthy();
 
-    // Saving the 60-day card addresses wave 2, so enabling one wave never enables another.
+    // The organisers send a follow-up by hand (2026-11-09); the row says how it went.
     const user = userEvent.setup();
+    const sendRows = within(screen.getByRole('list', { name: 'Follow-ups to send' }));
+    await user.click(sendRows.getAllByRole('button', { name: 'Send the invitation' })[0]!);
+    expect(
+      calls.some(
+        (c) => c.method === 'POST' && c.url.endsWith('/assessments/follow-ups/1/invitations'),
+      ),
+    ).toBe(true);
+    expect((await screen.findByRole('status')).textContent).toMatch(
+      /Invitation sent to 2 delegates/,
+    );
+    // Or the sending is scheduled: the time is entered in the event's zone and stored as an instant.
+    await user.click(sendRows.getAllByRole('button', { name: 'Schedule the sending' })[0]!);
+    const when = sendRows.getByLabelText(/Send automatically on/) as HTMLInputElement;
+    await user.clear(when);
+    await user.type(when, '2026-11-14T09:00');
+    await user.click(sendRows.getByRole('button', { name: 'Save time' }));
+    const scheduled = calls.find(
+      (c) => c.method === 'PUT' && c.url.endsWith('/assessments/follow-ups/1/schedule'),
+    );
+    expect(scheduled?.body).toEqual({ inviteAt: '2026-11-14T08:00:00.000Z' });
+
+    // Saving the 60-day card addresses wave 2, so enabling one wave never enables another.
     await user.click(within(sixty).getByRole('button', { name: 'Save stage' }));
     expect(calls.some((c) => c.url.endsWith('/assessments/follow_up?wave=2'))).toBe(true);
     expect(calls.some((c) => c.url.endsWith('/assessments/follow_up?wave=1'))).toBe(false);

@@ -8,7 +8,7 @@ import { StageCard } from '@/components/admin/event-setup/assessment-config';
 import { FollowUpSchedule } from '@/components/admin/event-setup/follow-up-schedule';
 import { consoleButton, StatePanel } from '@/components/console/page';
 import { apiFetch } from '@/lib/api';
-import { formatInstant } from '@/lib/events';
+import { formatInstant, isoToZonedLocal, zonedLocalToIso } from '@/lib/events';
 import { describeError } from '@/lib/imports';
 
 /**
@@ -37,8 +37,8 @@ export function FollowUpsSection({
           Each follow-up asks every delegate where the actions of their Transfer Plan stand and what
           they have applied, then its own questions. Each covers a stretch of days after the event
           (by default days 1 to 30, 31 to 60, 61 to 90, then day 91 onwards); set when each one
-          starts and ends on its card. Delegates hear about the open follow-up through the reminders
-          they chose on their plan, plus one email from the platform when it opens.
+          starts and ends on its card. A follow-up reaches delegates only when you send it below;
+          their own plan reminders ask them to keep their action statuses up to date.
         </p>
       </div>
       <FollowUpSchedule event={event} onSaved={onSaved} />
@@ -64,6 +64,58 @@ function FollowUpsOverview({ event, refreshKey }: { event: EventDetail; refreshK
   const [data, setData] = useState<FollowUpOverview | null>(null);
   const [error, setError] = useState<{ message: string; requestId?: string } | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const [sending, setSending] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  /** The wave whose automatic send time is being edited, and the draft time in the event zone. */
+  const [scheduling, setScheduling] = useState<{ wave: number; at: string } | null>(null);
+
+  /** When a wave's invitation goes out by itself; null clears it (2026-11-09). */
+  async function schedule(wave: number, at: string | null) {
+    const inviteAt = at ? zonedLocalToIso(at, event.timezone) : null;
+    if (at && !inviteAt) {
+      setNotice('Enter a complete date and time.');
+      return;
+    }
+    setSending(`${wave}:schedule`);
+    setNotice(null);
+    try {
+      await apiFetch(`/events/${event.id}/assessments/follow-ups/${wave}/schedule`, {
+        method: 'PUT',
+        body: JSON.stringify({ inviteAt }),
+      });
+      setNotice(
+        inviteAt
+          ? `The invitation will be sent on ${formatInstant(inviteAt, event.timezone)}.`
+          : 'Automatic sending cleared; send it by hand when ready.',
+      );
+      setScheduling(null);
+      setAttempt((n) => n + 1);
+    } catch (e) {
+      setNotice(describeError(e, 'The sending time could not be saved.').message);
+    } finally {
+      setSending(null);
+    }
+  }
+
+  /** The organisers send a follow-up's invitation or reminder; nothing goes out otherwise. */
+  async function send(wave: number, mode: 'invitations' | 'reminders') {
+    setSending(`${wave}:${mode}`);
+    setNotice(null);
+    try {
+      const result = await apiFetch<{ sent: number; failed: number; skipped: number }>(
+        `/events/${event.id}/assessments/follow-ups/${wave}/${mode}`,
+        { method: 'POST' },
+      );
+      setNotice(
+        `${mode === 'invitations' ? 'Invitation' : 'Reminder'} sent to ${result.sent} delegate${result.sent === 1 ? '' : 's'}${result.failed ? `, ${result.failed} failed` : ''}.`,
+      );
+      setAttempt((n) => n + 1);
+    } catch (e) {
+      setNotice(describeError(e, 'The follow-up could not be sent.').message);
+    } finally {
+      setSending(null);
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -109,6 +161,121 @@ function FollowUpsOverview({ event, refreshKey }: { event: EventDetail; refreshK
 
   return (
     <section aria-labelledby="follow-up-responses-heading" className="space-y-3">
+      <div className="space-y-2">
+        <h3 className="font-semibold text-corp-ink">Send a follow-up</h3>
+        <p className="text-xs text-corp-muted">
+          Send the invitation when a follow-up is ready, or set a time and it is sent then by
+          itself. Delegates see a follow-up, and can answer it, only once they have been sent it.
+          Send a reminder to those who have not answered. Each send reaches only those not yet
+          reached.
+        </p>
+        {notice ? (
+          <p role="status" className="text-sm font-semibold text-corp-green-text">
+            {notice}
+          </p>
+        ) : null}
+        <ul aria-label="Follow-ups to send" className="divide-y divide-corp-line">
+          {waves.map((w) => {
+            const ready = w.enabled && w.status !== 'draft' && w.questions > 0;
+            return (
+              <li
+                key={w.id}
+                className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm"
+              >
+                <span className="min-w-0">
+                  <span className="font-semibold text-corp-ink">{w.label || 'Follow-up'}</span>
+                  <span className="block text-xs text-corp-muted">
+                    {ready
+                      ? `${w.invited} invited · ${w.submitted} submitted`
+                      : 'Enable it, add questions and schedule it before sending.'}
+                  </span>
+                  <span className="block text-xs text-corp-muted">
+                    {w.invitesSentAt
+                      ? `Invitation sent ${formatInstant(w.invitesSentAt, event.timezone)}.`
+                      : w.inviteAt
+                        ? `Sends automatically on ${formatInstant(w.inviteAt, event.timezone)}${ready ? '' : ' once it is ready'}.`
+                        : 'Not scheduled: sent by hand.'}
+                  </span>
+                  {scheduling?.wave === w.wave ? (
+                    <span className="mt-1 flex flex-wrap items-end gap-2">
+                      <label className="text-xs font-semibold text-corp-ink">
+                        Send automatically on ({event.timezone})
+                        <input
+                          type="datetime-local"
+                          value={scheduling.at}
+                          onChange={(e) => setScheduling({ wave: w.wave, at: e.target.value })}
+                          className="mt-1 block h-10 rounded-none border border-corp-line bg-white px-2 text-sm font-normal"
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        disabled={sending !== null}
+                        onClick={() => void schedule(w.wave, scheduling.at)}
+                        className={consoleButton({ variant: 'accent', size: 'sm' })}
+                      >
+                        Save time
+                      </button>
+                      <button
+                        type="button"
+                        disabled={sending !== null}
+                        onClick={() => setScheduling(null)}
+                        className={consoleButton({ variant: 'ghost', size: 'sm' })}
+                      >
+                        Cancel
+                      </button>
+                    </span>
+                  ) : null}
+                </span>
+                <span className="flex flex-wrap gap-1">
+                  {!w.invitesSentAt && scheduling?.wave !== w.wave ? (
+                    <button
+                      type="button"
+                      disabled={sending !== null}
+                      onClick={() =>
+                        setScheduling({
+                          wave: w.wave,
+                          at: isoToZonedLocal(w.inviteAt ?? w.opensAt, event.timezone),
+                        })
+                      }
+                      className={consoleButton({ variant: 'secondary', size: 'sm' })}
+                    >
+                      {w.inviteAt ? 'Change the time' : 'Schedule the sending'}
+                    </button>
+                  ) : null}
+                  {w.inviteAt && !w.invitesSentAt && scheduling?.wave !== w.wave ? (
+                    <button
+                      type="button"
+                      disabled={sending !== null}
+                      onClick={() => void schedule(w.wave, null)}
+                      className={consoleButton({ variant: 'ghost', size: 'sm' })}
+                    >
+                      Clear
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    disabled={!ready || sending !== null}
+                    onClick={() => void send(w.wave, 'invitations')}
+                    className={consoleButton({ variant: 'accent', size: 'sm' })}
+                  >
+                    {sending === `${w.wave}:invitations` ? 'Sending…' : 'Send the invitation'}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!ready || sending !== null || w.invited === 0}
+                    onClick={() => void send(w.wave, 'reminders')}
+                    className={consoleButton({ variant: 'secondary', size: 'sm' })}
+                  >
+                    {sending === `${w.wave}:reminders`
+                      ? 'Sending…'
+                      : 'Remind those who have not answered'}
+                  </button>
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
       <div className="flex flex-wrap items-end justify-between gap-2">
         <div>
           <h3 id="follow-up-responses-heading" className="font-semibold text-corp-ink">

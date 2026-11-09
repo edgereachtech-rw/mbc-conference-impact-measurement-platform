@@ -1,7 +1,9 @@
 'use client';
 
 import {
+  actionProgressDefinitions,
   actionProgressLabels,
+  actionProgressStatuses,
   appliedStatuses,
   actionSubmissionGaps,
   measurePlaceholders,
@@ -16,10 +18,15 @@ import {
   planOutcomeDescriptions,
   planOutcomeLabels,
   planTitleOf,
+  progressDateLabel,
+  progressNeedsDate,
+  progressNeedsDetail,
+  progressNoteLabel,
   reminderFrequencies,
   reminderFrequencyLabels,
   transferPlanStatusLabels,
   weekdays,
+  type ActionProgressStatus,
   type ImpactCheckAnswer,
   type MyAssessment,
   type MyTransferPlan,
@@ -464,6 +471,7 @@ function PlanEditor({
     | { kind: 'complete' }
     | { kind: 'measures'; action: PlanActionView }
     | { kind: 'evidence'; action: PlanActionView }
+    | { kind: 'progress'; action: PlanActionView }
   >(null);
   const id = useId();
   const submitted = plan.status === 'submitted';
@@ -753,6 +761,7 @@ function PlanEditor({
             dirty={dirty}
             onMeasures={(action) => setDialog({ kind: 'measures', action })}
             onEvidence={(action) => setDialog({ kind: 'evidence', action })}
+            onProgress={(action) => setDialog({ kind: 'progress', action })}
             timezone={timezone}
           />
         ))}
@@ -777,7 +786,7 @@ function PlanEditor({
         <p className="text-sm text-corp-muted">
           {locked
             ? 'This plan is completed, so its reminders have stopped.'
-            : 'When and how often would you like to be reminded about this plan? Reminders arrive by email at the times you choose. While a post-conference follow-up is open, the reminder asks you to answer it: the 30-day follow-up first, then the 60-day, 90-day and longer-term ones as the organisers schedule them. Once you have answered the open follow-up, nothing is sent until the next one opens. Reminders stop at the end date you set, so a follow-up that opens after that date is not announced by them. In the last week before they end, the email says so and you can extend them here.'}
+            : 'When and how often would you like to be reminded about this plan? Each reminder lists your actions with their current status and asks you to update them here. Nothing is sent when every status is up to date or every action is completed. Reminders stop at the end date you set; in the last week before they end, the email says so and you can extend them here.'}
         </p>
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="space-y-1">
@@ -883,7 +892,11 @@ function PlanEditor({
         ) : null}
         {data.reminders.length > 0 ? (
           <p className="text-xs text-corp-muted">
-            Last reminder {data.reminders[0]!.status === 'sent' ? 'sent' : 'attempted'}{' '}
+            {data.reminders[0]!.status === 'sent'
+              ? 'Last reminder sent'
+              : data.reminders[0]!.status === 'skipped'
+                ? 'Last reminder not needed, your statuses were up to date:'
+                : 'Last reminder attempted'}{' '}
             {formatInstant(data.reminders[0]!.sentAt ?? data.reminders[0]!.scheduledFor, timezone)}.
           </p>
         ) : null}
@@ -1297,6 +1310,18 @@ function PlanEditor({
           }}
         />
       ) : null}
+      {dialog?.kind === 'progress' ? (
+        <ProgressDialog
+          eventId={eventId}
+          planId={plan.id}
+          action={dialog.action}
+          onClose={() => setDialog(null)}
+          onSaved={(result) => {
+            setDialog(null);
+            onUpdated(result, 'Status recorded.');
+          }}
+        />
+      ) : null}
       {dialog?.kind === 'evidence' ? (
         <EvidenceDialog
           eventId={eventId}
@@ -1355,6 +1380,7 @@ function ActionCard({
   dirty,
   onMeasures,
   onEvidence,
+  onProgress,
   timezone,
 }: {
   draft: ActionDraft;
@@ -1370,6 +1396,7 @@ function ActionCard({
   dirty: boolean;
   onMeasures: (action: PlanActionView) => void;
   onEvidence: (action: PlanActionView) => void;
+  onProgress: (action: PlanActionView) => void;
   timezone: string;
 }) {
   const id = useId();
@@ -1589,17 +1616,34 @@ function ActionCard({
 
       {saved ? (
         <div className="space-y-2 border-t border-corp-line pt-3">
-          <p className="text-sm font-semibold text-corp-ink">Progress from your follow-ups</p>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm font-semibold text-corp-ink">Progress</p>
+            {!disabled ? (
+              <button
+                type="button"
+                disabled={dirty}
+                onClick={() => onProgress(saved)}
+                className={consoleButton({ variant: 'secondary', size: 'sm' })}
+              >
+                Update status
+              </button>
+            ) : null}
+          </div>
           <p className="text-xs text-corp-muted">
-            Each 30, 60, 90-day and longer-term follow-up asks where this action stands. What you
-            answer there is recorded here; nothing is recorded from this page.
+            Where this action stands now:{' '}
+            <span className="font-semibold text-corp-ink">
+              {actionProgressLabels[saved.progressStatus]}
+            </span>
+            . Update it here whenever something changes; each post-conference follow-up asks for it
+            too. Every entry is kept, with where it came from.
+            {dirty ? ' Save your plan first.' : ''}
           </p>
           {saved.progress.length > 0 ? (
-            <ul aria-label="Progress from follow-ups" className="space-y-2 text-sm text-corp-text">
-              {saved.progress.map((p) => (
+            <ul aria-label="Progress history" className="space-y-2 text-sm text-corp-text">
+              {[...saved.progress].reverse().map((p) => (
                 <li key={p.id} className="border-l-2 border-corp-line pl-3">
                   <p className="font-semibold text-corp-ink">
-                    {p.waveLabel || 'Recorded on the plan page'}
+                    {p.waveLabel || 'Plan page'}
                     <span className="ml-2 font-normal text-corp-muted">
                       {formatInstant(p.recordedAt, timezone)}
                     </span>
@@ -1621,9 +1665,7 @@ function ActionCard({
               ))}
             </ul>
           ) : (
-            <p className="text-xs text-corp-muted">
-              No follow-up has recorded progress on this action yet.
-            </p>
+            <p className="text-xs text-corp-muted">No status recorded on this action yet.</p>
           )}
         </div>
       ) : (
@@ -1639,6 +1681,170 @@ function ActionCard({
         />
       ) : null}
     </article>
+  );
+}
+
+// ------------------------------------------------------------------ status update
+
+/**
+ * One status recorded from the plan page (decision 2026-11-09): the same rules as a follow-up's
+ * status step. Changed and No longer applicable ask for a brief explanation; Applied and Applied
+ * consistently for an example and when it occurred; Completed for what was completed and when.
+ */
+function ProgressDialog({
+  eventId,
+  planId,
+  action,
+  onClose,
+  onSaved,
+}: {
+  eventId: string;
+  planId: string;
+  action: PlanActionView;
+  onClose: () => void;
+  onSaved: (data: MyTransferPlan) => void;
+}) {
+  const [status, setStatus] = useState<ActionProgressStatus>(action.progressStatus);
+  const [note, setNote] = useState('');
+  const [occurredOn, setOccurredOn] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const id = useId();
+  const meta = actionProgressDefinitions[status];
+  const noteLabel = progressNoteLabel[status];
+  const dateLabel = progressDateLabel[status];
+
+  async function save() {
+    if (progressNeedsDetail(status) && note.trim() === '') {
+      setProblem(noteLabel ?? 'Add a short note.');
+      return;
+    }
+    if (progressNeedsDate(status) && !occurredOn) {
+      setProblem(dateLabel ?? 'Give the date.');
+      return;
+    }
+    setBusy(true);
+    setProblem(null);
+    try {
+      const result = await apiFetch<MyTransferPlan>(
+        `/me/events/${eventId}/transfer-plans/${planId}/actions/${action.id}/progress`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ status, note: note.trim(), occurredOn: occurredOn || null }),
+        },
+      );
+      onSaved(result);
+    } catch (e) {
+      setProblem(describeError(e, 'The status could not be recorded.').message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Dialog
+      title="Update status"
+      description={action.title.trim() || action.action.trim() || 'Your action'}
+      onClose={onClose}
+      closeDisabled={busy}
+      footer={
+        <>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onClose}
+            className={consoleButton({ variant: 'ghost' })}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void save()}
+            className={consoleButton({ variant: 'accent' })}
+          >
+            {busy ? <Loader2Icon className="animate-spin" aria-hidden="true" /> : null}
+            Record status
+          </button>
+        </>
+      }
+    >
+      <div className="space-y-4 text-sm">
+        {problem ? (
+          <p role="alert" className="text-sm font-semibold text-brand-danger">
+            {problem}
+          </p>
+        ) : null}
+        <div className="space-y-1">
+          <label htmlFor={`${id}-status`} className="text-sm font-semibold text-corp-ink">
+            Where does this action stand?
+          </label>
+          <NativeSelect
+            id={`${id}-status`}
+            value={status}
+            disabled={busy}
+            onChange={(e) => setStatus(e.target.value as ActionProgressStatus)}
+            className="rounded-none border-corp-line"
+          >
+            {actionProgressStatuses.map((s) => (
+              <option key={s} value={s}>
+                {actionProgressLabels[s]}
+              </option>
+            ))}
+          </NativeSelect>
+          <p className="text-xs text-corp-muted">{meta.definition}</p>
+          <p className="text-xs text-corp-muted">Example: {meta.example}</p>
+        </div>
+        {noteLabel ? (
+          <div className="space-y-1">
+            <label htmlFor={`${id}-note`} className="text-sm font-semibold text-corp-ink">
+              {noteLabel}
+              {progressNeedsDetail(status) ? (
+                <span className="ml-1 text-xs font-normal text-corp-muted">(required)</span>
+              ) : null}
+            </label>
+            <textarea
+              id={`${id}-note`}
+              rows={3}
+              value={note}
+              disabled={busy}
+              onChange={(e) => setNote(e.target.value)}
+              className={textarea}
+            />
+          </div>
+        ) : (
+          <div className="space-y-1">
+            <label htmlFor={`${id}-note`} className="text-sm font-semibold text-corp-ink">
+              Note (optional)
+            </label>
+            <textarea
+              id={`${id}-note`}
+              rows={2}
+              value={note}
+              disabled={busy}
+              onChange={(e) => setNote(e.target.value)}
+              className={textarea}
+            />
+          </div>
+        )}
+        {dateLabel ? (
+          <div className="space-y-1">
+            <label htmlFor={`${id}-on`} className="text-sm font-semibold text-corp-ink">
+              {dateLabel}
+              <span className="ml-1 text-xs font-normal text-corp-muted">(required)</span>
+            </label>
+            <input
+              id={`${id}-on`}
+              type="date"
+              value={occurredOn}
+              disabled={busy}
+              onChange={(e) => setOccurredOn(e.target.value)}
+              className={input}
+            />
+          </div>
+        ) : null}
+      </div>
+    </Dialog>
   );
 }
 
@@ -1671,8 +1877,8 @@ function FollowUpsBlock({
       </h3>
       <p className="text-sm text-corp-muted">
         After the conference, each follow-up asks where every action of your plans stands and what
-        you have applied. What you answer is recorded under each action below. Your reminders point
-        you to the follow-up that is open.
+        you have applied. What you answer is recorded under each action below. The organisers send
+        you each follow-up when it is time; it appears here once they have.
       </p>
       <ul className="divide-y divide-corp-line">
         {ordered.map((f) => {

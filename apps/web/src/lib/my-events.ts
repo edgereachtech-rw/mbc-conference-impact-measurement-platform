@@ -123,7 +123,7 @@ export function journeyFor(event: Pick<MyEvent, 'startsOn' | 'endsOn'>): Journey
     {
       step: 'After',
       title: 'Transfer Plan follow-ups: 30, 60 and 90 days, then longer term',
-      note: 'Windows set by the organisers; your reminders point you to the open one',
+      note: 'Sent by the organisers when it is time',
     },
   ];
 }

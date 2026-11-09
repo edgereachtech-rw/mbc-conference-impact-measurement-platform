@@ -384,8 +384,8 @@ describe('TransferPlanPanel', () => {
     expect(screen.queryByText(/could not be loaded/)).toBeNull();
   });
 
-  it('shows the progress the follow-ups recorded and leaves recording to them', async () => {
-    stub(
+  it('shows the progress history and records a status from the plan page', async () => {
+    const calls = stub(
       plan({
         canSubmit: false,
         plan: {
@@ -418,11 +418,34 @@ describe('TransferPlanPanel', () => {
     );
     render(<Harness planId={PLAN} />);
     const card = await screen.findByRole('article', { name: 'Brief stakeholders' });
-    expect(within(card).queryByRole('button', { name: 'Record progress' })).toBeNull();
-    const list = within(card).getByRole('list', { name: 'Progress from follow-ups' });
+    const list = within(card).getByRole('list', { name: 'Progress history' });
     expect(list.textContent).toMatch(/30-day follow-up/);
     expect(list.textContent).toMatch(/Applied/);
     expect(list.textContent).toMatch(/Used it in the Q1 programme/);
+    // A status can be recorded from the plan page too (2026-11-09), with the detail it asks for.
+    const user = userEvent.setup();
+    await user.click(within(card).getByRole('button', { name: 'Update status' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Update status' });
+    await user.selectOptions(
+      within(dialog).getByLabelText('Where does this action stand?'),
+      'applied_consistently',
+    );
+    await user.click(within(dialog).getByRole('button', { name: 'Record status' }));
+    expect(within(dialog).getByRole('alert').textContent).toMatch(/example/i);
+    await user.type(
+      within(dialog).getByLabelText(/^An example of applying it/),
+      'Every programme since March',
+    );
+    await user.type(within(dialog).getByLabelText(/^When did an application occur/), '2027-03-05');
+    await user.click(within(dialog).getByRole('button', { name: 'Record status' }));
+    const post = calls.find(
+      (c) => c.init?.method === 'POST' && c.url.endsWith(`/actions/${ACTION}/progress`),
+    );
+    expect(post?.body).toEqual({
+      status: 'applied_consistently',
+      note: 'Every programme since March',
+      occurredOn: '2027-03-05',
+    });
     // A submitted plan says what completion still needs: evidence, now that the action is applied.
     expect(
       screen.getByRole('list', { name: 'Still needed before completion' }).textContent,

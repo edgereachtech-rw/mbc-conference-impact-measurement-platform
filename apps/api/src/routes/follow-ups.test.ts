@@ -13,19 +13,20 @@ import {
   createTestEvent,
   deleteIdentity,
   hasDatabase,
+  inviteToFollowUp,
   testPrisma,
 } from '../db/test-helpers.js';
-import { mailConfigFromEnv } from '../mail/config.js';
 import { MemoryMailer } from '../mail/mailer.js';
-import { sendDueFollowUpInvitations } from '../reminders/follow-ups.js';
+import { sendScheduledFollowUpInvitations } from '../reminders/follow-ups.js';
 
 const ORIGIN = 'http://localhost:3000';
 const silent = pino({ level: 'silent' });
 
 /**
- * The follow-up programme (backlog E12-1, E12-13, E12-14): the schedule an admin creates, and the
- * worker that invites and chases. The rule the tests lean hardest on is that a send happens once:
- * the invitation row is the lock, so a second pass over the same wave emails nobody again.
+ * The follow-up programme (backlog E12-1, E12-13, E12-14; decision 2026-11-09): the schedule an
+ * admin creates, and the invitations and reminders they send by hand. The rule the tests lean
+ * hardest on is that an invitation goes once: the invitation row is the lock, so a second click
+ * on the same wave emails nobody again, and a delegate sees a follow-up only once invited.
  */
 describe.skipIf(!hasDatabase)('follow-up waves and invitations (E12)', () => {
   let prisma: PrismaClient;
@@ -38,13 +39,23 @@ describe.skipIf(!hasDatabase)('follow-up waves and invitations (E12)', () => {
   let adminAccountId = '';
   const tag = randomUUID().slice(0, 8);
   let now = new Date('2026-11-20T09:00:00.000Z');
+  // One mailer for the whole suite, so the emails the organisers send can be read back.
+  const mailer = new MemoryMailer();
+  const mailConfig = {
+    transport: 'memory' as const,
+    from: 'Test <noreply@example.com>',
+    contactEmail: 'conference@mbryanconsultinggroup.com',
+    appUrl: ORIGIN,
+    smtp: { host: 'x', port: 25, secure: false },
+  };
 
   const app = () =>
     createApp({
       logger: silent,
       prisma: () => prisma,
-      mailer: () => new MemoryMailer(),
+      mailer: () => mailer,
       authConfig: authConfigFromEnv({ NODE_ENV: 'test', APP_URL: ORIGIN }),
+      mailConfig,
       allowedOrigins: [ORIGIN],
       now: () => now,
     });
@@ -86,23 +97,16 @@ describe.skipIf(!hasDatabase)('follow-up waves and invitations (E12)', () => {
   }
 
   /** Runs the worker with its own mailer so the test can count what went out. */
-  async function runWorker() {
-    const mailer = new MemoryMailer();
-    const result = await sendDueFollowUpInvitations({
-      prisma: () => prisma,
-      mailer,
-      mailConfig: mailConfigFromEnv({
-        MAIL_FROM: 'ITTEC <conference@example.com>',
-        MAIL_TRANSPORT: 'memory',
-        APP_URL: ORIGIN,
-        MAIL_CONTACT_EMAIL: 'conference@example.com',
-      }),
-      appUrl: ORIGIN,
-      logger: silent,
-      now: () => now,
-      allowTestRegistrations: true,
-    });
-    return { ...result, sent: mailer.sent };
+  /** The organisers send a wave's invitation or reminder; what went out is read back. */
+  async function sendWave(wave: number, mode: 'invitations' | 'reminders') {
+    const before = mailer.sent.length;
+    const r = await call('post', `/events/${eventId}/assessments/follow-ups/${wave}/${mode}`, {});
+    return {
+      status: r.status,
+      text: r.text,
+      body: r.body as { sent: number; failed: number; skipped: number },
+      mail: mailer.sent.slice(before),
+    };
   }
 
   beforeAll(async () => {
@@ -228,8 +232,8 @@ describe.skipIf(!hasDatabase)('follow-up waves and invitations (E12)', () => {
     expect(refused.body.error.code).toBe('stage_without_questions');
   });
 
-  it('invites every eligible delegate once a wave is open, and never twice', async () => {
-    // Give wave 1 a question and open it, as an admin would after reading the wording.
+  it("sends the invitation to every eligible delegate once, on the organisers' request, and only then shows the follow-up", async () => {
+    // Give wave 1 a question and schedule it, as an admin would after reading the wording.
     const wave1 = await prisma.assessmentStageConfig.findFirstOrThrow({
       where: { eventId, stage: 'follow_up', wave: 1 },
     });
@@ -238,8 +242,8 @@ describe.skipIf(!hasDatabase)('follow-up waves and invitations (E12)', () => {
         eventId,
         stageConfigId: wave1.id,
         order: 1,
-        prompt: 'Have you started the action in your Transfer Plan?',
-        type: 'yes_no',
+        prompt: 'What have you done so far?',
+        type: 'long_text',
         required: true,
       },
     });
@@ -247,35 +251,62 @@ describe.skipIf(!hasDatabase)('follow-up waves and invitations (E12)', () => {
       enabled: true,
       status: 'scheduled',
       target: 'all_delegates',
-      opensAt: '2026-12-13T08:00:00.000Z',
-      closesAt: '2027-01-03T08:00:00.000Z',
+      opensAt: '2026-11-13T23:00:00.000Z',
+      closesAt: '2026-12-13T23:00:00.000Z',
     });
+    // A draft wave cannot be sent.
+    expect((await sendWave(2, 'invitations')).status).toBe(409);
 
-    // Before the opening time nothing goes out.
-    expect(await runWorker()).toMatchObject({ invited: 0, reminded: 0 });
+    // Until the organisers send it, the follow-up does not exist for Bo.
+    now = new Date('2026-11-20T09:00:00.000Z');
+    const unseen = await call(
+      'get',
+      `/me/events/${eventId}/assessments`,
+      undefined,
+      await cookieFor(boAccountId),
+    );
+    expect(
+      (unseen.body.assessments as Array<{ stage: string }>).some((a) => a.stage === 'follow_up'),
+    ).toBe(false);
 
-    now = new Date('2026-12-13T09:00:00.000Z');
-    const first = await runWorker();
-    expect(first.invited).toBe(2);
-    expect(first.sent).toHaveLength(2);
-    expect(first.sent[0]!.subject).toContain('30-day follow-up');
+    const first = await sendWave(1, 'invitations');
+    expect(first.status, first.text).toBe(200);
+    expect(first.body.sent).toBe(2);
+    expect(first.mail).toHaveLength(2);
+    expect(first.mail[0]!.subject).toContain('30-day follow-up');
     // The cancelled registration is not among them.
-    expect(first.sent.map((m) => m.to).join(' ')).not.toContain('gone-fu-');
+    expect(first.mail.map((m) => m.to).join(' ')).not.toContain('gone-fu-');
+    // Now Bo sees it and may answer.
+    const seen = await call(
+      'get',
+      `/me/events/${eventId}/assessments`,
+      undefined,
+      await cookieFor(boAccountId),
+    );
+    expect(
+      (seen.body.assessments as Array<{ stage: string; wave: number }>).find(
+        (a) => a.stage === 'follow_up',
+      ),
+    ).toMatchObject({ wave: 1 });
 
-    // A second pass sends nothing: the invitation row is the lock (E12-14 idempotent).
-    const second = await runWorker();
-    expect(second).toMatchObject({ invited: 0, reminded: 0, failed: 0 });
-    expect(second.sent).toHaveLength(0);
+    // A second click sends nothing: the invitation row is the lock (E12-14 idempotent).
+    const second = await sendWave(1, 'invitations');
+    expect(second.body).toMatchObject({ sent: 0, failed: 0 });
+    expect(second.mail).toHaveLength(0);
     expect(await prisma.assessmentInvitation.count({ where: { stageConfigId: wave1.id } })).toBe(2);
+    // Delegates cannot send.
+    expect(
+      (
+        await request(app())
+          .post(`/api/v1/events/${eventId}/assessments/follow-ups/1/invitations`)
+          .set('Origin', ORIGIN)
+          .set('Cookie', await cookieFor(boAccountId))
+          .send({})
+      ).status,
+    ).toBe(403);
   });
 
-  it('chases only the delegate who has not submitted, up to the limit, when an admin configures chasers', async () => {
-    // Chasers are off by default since 2026-11-09 (the plan reminders do that); an admin may
-    // still switch them on for a wave.
-    await prisma.assessmentStageConfig.updateMany({
-      where: { eventId, stage: 'follow_up', wave: 1 },
-      data: { reminderAfterDays: 7, reminderLimit: 2 },
-    });
+  it('reminds only the delegates who have not submitted, each time the organisers ask', async () => {
     const wave1 = await prisma.assessmentStageConfig.findFirstOrThrow({
       where: { eventId, stage: 'follow_up', wave: 1 },
       include: { questions: true },
@@ -286,66 +317,23 @@ describe.skipIf(!hasDatabase)('follow-up waves and invitations (E12)', () => {
         stageConfigId: wave1.id,
         delegateId: delegateIds[0]!,
         submittedAt: now,
-        answers: { create: { questionId: wave1.questions[0]!.id, value: true } },
+        answers: { create: { questionId: wave1.questions[0]!.id, value: 'Started' } },
       },
     });
-
-    // Too early for a chaser: the interval is seven days.
-    now = new Date('2026-12-18T09:00:00.000Z');
-    expect(await runWorker()).toMatchObject({ reminded: 0 });
-
-    now = new Date('2026-12-20T09:00:00.000Z');
-    const chase = await runWorker();
-    expect(chase.reminded).toBe(1);
-    expect(chase.sent).toHaveLength(1);
-    expect(chase.sent[0]!.to).toContain('bo-fu-');
-    expect(chase.sent[0]!.subject).toMatch(/Still open/);
-
-    // The same pass again changes nothing.
-    expect(await runWorker()).toMatchObject({ reminded: 0 });
-
-    // The second chaser a week later, then the limit of two stops it.
-    now = new Date('2026-12-27T09:00:00.000Z');
-    expect(await runWorker()).toMatchObject({ reminded: 1 });
-    now = new Date('2027-01-05T09:00:00.000Z');
-    expect(await runWorker()).toMatchObject({ reminded: 0 });
+    const chase = await sendWave(1, 'reminders');
+    expect(chase.status, chase.text).toBe(200);
+    expect(chase.body.sent).toBe(1);
+    expect(chase.mail).toHaveLength(1);
+    expect(chase.mail[0]!.to).toContain('bo-fu-');
+    expect(chase.mail[0]!.subject).toMatch(/Still open/);
+    // Asking again sends another reminder to the same delegate: how often is the organisers'
+    // call, and each one is its own row.
+    expect((await sendWave(1, 'reminders')).body.sent).toBe(1);
     expect(
       await prisma.assessmentInvitation.count({
         where: { stageConfigId: wave1.id, kind: 'reminder' },
       }),
     ).toBe(2);
-  });
-
-  it('shows the organisers every delegate’s follow-up responses in one place', async () => {
-    const overview = await call(
-      'get',
-      `/events/${eventId}/follow-up-responses`,
-      undefined,
-      await cookieFor(adminAccountId),
-    );
-    expect(overview.status, overview.text).toBe(200);
-    const waves = overview.body.waves as Array<{ wave: number }>;
-    expect(waves.map((w) => w.wave)).toEqual([1, 2, 3, 4]);
-    const rows = overview.body.rows as Array<{
-      name: string;
-      responses: Record<string, { state: string; submittedAt: string | null }>;
-    }>;
-    // Two counted delegates (the cancelled one is not); Ada submitted wave 1, Bo did not start.
-    expect(rows.map((r) => r.name)).toEqual(['Ada Delegate', 'Bo Delegate']);
-    expect(rows[0]!.responses['1']).toMatchObject({ state: 'submitted' });
-    expect(rows[0]!.responses['1']!.submittedAt).not.toBeNull();
-    expect(rows[1]!.responses).toEqual({});
-    // Delegates get nothing here.
-    expect(
-      (
-        await call(
-          'get',
-          `/events/${eventId}/follow-up-responses`,
-          undefined,
-          await cookieFor(boAccountId),
-        )
-      ).status,
-    ).toBe(403);
   });
 
   it('reports the response rate per wave', async () => {
@@ -362,7 +350,74 @@ describe.skipIf(!hasDatabase)('follow-up waves and invitations (E12)', () => {
     expect(schedule.body.eligible).toBe(2);
   });
 
-  it('sends nothing for a wave that is closed, disabled or still a draft', async () => {
+  it('sends a scheduled invitation by itself once the time has passed, once', async () => {
+    // Wave 2 gets a question and is scheduled; its invitation is set to go out on 14 December.
+    const wave2 = await prisma.assessmentStageConfig.findFirstOrThrow({
+      where: { eventId, stage: 'follow_up', wave: 2 },
+    });
+    await prisma.assessmentQuestion.create({
+      data: {
+        eventId,
+        stageConfigId: wave2.id,
+        order: 1,
+        prompt: 'What have you applied?',
+        type: 'long_text',
+        required: true,
+      },
+    });
+    await prisma.assessmentStageConfig.update({
+      where: { id: wave2.id },
+      data: { enabled: true, status: 'scheduled' },
+    });
+    const planned = await call('put', `/events/${eventId}/assessments/follow-ups/2/schedule`, {
+      inviteAt: '2026-12-14T08:00:00.000Z',
+    });
+    expect(planned.status, planned.text).toBe(200);
+    expect(
+      (planned.body.waves as Array<{ wave: number; inviteAt: string | null }>).find(
+        (w) => w.wave === 2,
+      )?.inviteAt,
+    ).toBe('2026-12-14T08:00:00.000Z');
+
+    const job = (at: string) =>
+      sendScheduledFollowUpInvitations({
+        prisma: () => prisma,
+        mailer,
+        mailConfig,
+        appUrl: ORIGIN,
+        logger: silent,
+        now: () => new Date(at),
+        allowTestRegistrations: true,
+      });
+    // Not before the time.
+    const before = mailer.sent.length;
+    expect(await job('2026-12-14T07:00:00.000Z')).toMatchObject({ waves: 0, sent: 0 });
+    expect(mailer.sent.length).toBe(before);
+    // At the time: both eligible delegates, and the wave is stamped.
+    expect(await job('2026-12-14T08:05:00.000Z')).toMatchObject({ waves: 1, sent: 2 });
+    expect(
+      mailer.sent
+        .slice(before)
+        .map((m) => m.subject)
+        .join(' '),
+    ).toContain('60-day follow-up');
+    // Never twice.
+    expect(await job('2026-12-14T08:10:00.000Z')).toMatchObject({ waves: 0, sent: 0 });
+    const stamped = await prisma.assessmentStageConfig.findUniqueOrThrow({
+      where: { id: wave2.id },
+    });
+    expect(stamped.invitesSentAt).toEqual(new Date('2026-12-14T08:05:00.000Z'));
+    // Clearing the time is allowed; it changes nothing already sent.
+    expect(
+      (
+        await call('put', `/events/${eventId}/assessments/follow-ups/2/schedule`, {
+          inviteAt: null,
+        })
+      ).status,
+    ).toBe(200);
+  });
+
+  it('refuses to send a wave that is closed, disabled or still a draft', async () => {
     const wave1 = await prisma.assessmentStageConfig.findFirstOrThrow({
       where: { eventId, stage: 'follow_up', wave: 1 },
     });
@@ -370,14 +425,13 @@ describe.skipIf(!hasDatabase)('follow-up waves and invitations (E12)', () => {
       where: { id: wave1.id },
       data: { status: 'closed' },
     });
-    now = new Date('2026-12-14T09:00:00.000Z');
-    expect(await runWorker()).toMatchObject({ invited: 0, reminded: 0 });
-
+    expect((await sendWave(1, 'invitations')).status).toBe(409);
     await prisma.assessmentStageConfig.update({
       where: { id: wave1.id },
       data: { status: 'open', enabled: false },
     });
-    expect(await runWorker()).toMatchObject({ invited: 0, reminded: 0 });
+    expect((await sendWave(1, 'reminders')).status).toBe(409);
+    expect((await sendWave(9, 'invitations')).status).toBe(404);
   });
 
   it('reports every wave on the journey, not just the first', async () => {
@@ -411,6 +465,8 @@ describe.skipIf(!hasDatabase)('follow-up waves and invitations (E12)', () => {
           closesAt: null,
         },
       });
+      // A follow-up is on the journey only once sent to the delegate (2026-11-09).
+      await inviteToFollowUp(prisma, row.id, delegateIds[1]!);
     }
 
     const journey = await call(

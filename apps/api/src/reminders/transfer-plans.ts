@@ -1,12 +1,11 @@
 import {
-  currentFollowUpWave,
+  actionProgressLabels,
   dateIn,
   inFinalReminderWeek,
   nextReminderAfter,
   planOutcomeLabels,
   planTitleOf,
   reminderFrequencyLabels,
-  waveLabel,
   type ReminderPreference,
 } from '@mbc/shared';
 import type { PgBoss } from 'pg-boss';
@@ -40,13 +39,11 @@ const isoDate = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : null);
  * not repeat every minute. In the last seven days of a window the email says the reminders are
  * about to stop and asks the delegate to complete the plan or extend them (2026-11-06).
  *
- * Each reminder points at the post-conference follow-up that is current when it fires (decision
- * 2026-11-09): days 1-30 the 30-day follow-up, 31-60 the 60-day one, and so on, as the
- * organisers set the windows. A delegate who has already answered the current follow-up gets no
- * email at that occurrence (the pointer still moves); with no follow-up open the reminder is the
- * plain "look at your plan" one. Because reminders stop at the delegate's end date, a follow-up
- * whose window begins after it is never announced by them. Counts only in logs; never addresses
- * or plan text.
+ * Each reminder asks the delegate to update where each action stands, listing the actions
+ * with their current status and when it was last recorded (decision 2026-11-09). An occurrence
+ * sends nothing (the pointer still moves) when there is nothing to update: every action is
+ * completed or no longer applicable, or every action's status was recorded after the last
+ * reminder went out. Counts only in logs; never addresses or plan text.
  */
 export async function sendDueTransferPlanReminders(deps: ReminderDeps) {
   const at = (deps.now ?? (() => new Date()))();
@@ -79,67 +76,34 @@ export async function sendDueTransferPlanReminders(deps: ReminderDeps) {
         },
       },
       delegate: { select: { name: true, email: true } },
-      actions: { orderBy: { order: 'asc' }, select: { action: true, isPriority: true } },
+      actions: {
+        orderBy: { order: 'asc' },
+        select: {
+          title: true,
+          action: true,
+          isPriority: true,
+          progressStatus: true,
+          progress: { orderBy: { recordedAt: 'desc' }, take: 1, select: { recordedAt: true } },
+        },
+      },
+      // The last occurrence, sent or skipped: statuses recorded since then are fresh.
+      reminders: {
+        where: { status: { in: ['sent', 'skipped'] } },
+        orderBy: { scheduledFor: 'desc' },
+        take: 1,
+        select: { scheduledFor: true, sentAt: true },
+      },
     },
     take: 200,
   });
-  // The follow-up waves of every event with a due plan, and the delegates' answers to them.
-  const eventIds = [...new Set(due.map((p) => p.event.id))];
-  const waves = eventIds.length
-    ? await prisma.assessmentStageConfig.findMany({
-        where: { eventId: { in: eventIds }, stage: 'follow_up' },
-        select: {
-          id: true,
-          eventId: true,
-          wave: true,
-          dueAfterDays: true,
-          enabled: true,
-          status: true,
-          opensAt: true,
-          closesAt: true,
-          _count: { select: { questions: { where: { retiredAt: null } } } },
-        },
-      })
-    : [];
-  const answered = waves.length
-    ? await prisma.assessmentResponse.findMany({
-        where: {
-          stageConfigId: { in: waves.map((w) => w.id) },
-          delegateId: { in: due.map((p) => p.delegateId) },
-          submittedAt: { not: null },
-        },
-        select: { stageConfigId: true, delegateId: true },
-      })
-    : [];
-  const submitted = new Set(answered.map((a) => `${a.stageConfigId}:${a.delegateId}`));
   const appUrl = deps.appUrl.replace(/\/$/, '');
+  const daysBetween = (from: Date, to: Date) =>
+    Math.max(0, Math.floor((to.getTime() - from.getTime()) / 86_400_000));
   let sent = 0;
   let failed = 0;
   let skipped = 0;
   for (const plan of due) {
     const scheduledFor = plan.nextReminderAt ?? at;
-    const current = currentFollowUpWave(
-      waves
-        .filter((w) => w.eventId === plan.event.id)
-        .map((w) => ({ ...w, questions: w._count.questions })),
-      at,
-    );
-    if (current && submitted.has(`${current.id}:${plan.delegateId}`)) {
-      // Nothing to ask for at this occurrence: the follow-up is answered. Next time as usual.
-      const preference: ReminderPreference = {
-        frequency: plan.reminderFrequency,
-        startOn: isoDate(plan.reminderStartOn),
-        endOn: isoDate(plan.reminderEndOn),
-        time: plan.reminderTime,
-        days: plan.reminderDays,
-      };
-      await prisma.transferPlan.update({
-        where: { id: plan.id },
-        data: { nextReminderAt: nextReminderAfter(preference, at, plan.event.timezone) },
-      });
-      skipped += 1;
-      continue;
-    }
     const preference: ReminderPreference = {
       frequency: plan.reminderFrequency,
       startOn: isoDate(plan.reminderStartOn),
@@ -147,31 +111,53 @@ export async function sendDueTransferPlanReminders(deps: ReminderDeps) {
       time: plan.reminderTime,
       days: plan.reminderDays,
     };
+    const written = plan.actions.filter((a) => a.action.trim() !== '');
+    const last = plan.reminders[0];
+    const lastReminder = last ? (last.sentAt ?? last.scheduledFor) : null;
+    const nothingLeft =
+      written.length > 0 &&
+      written.every(
+        (a) => a.progressStatus === 'completed' || a.progressStatus === 'no_longer_applicable',
+      );
+    const allFresh =
+      lastReminder !== null &&
+      written.length > 0 &&
+      written.every((a) => (a.progress[0]?.recordedAt ?? new Date(0)) > lastReminder);
+    if (nothingLeft || allFresh) {
+      // Nothing to ask for at this occurrence: logged as skipped (so the next one knows what
+      // "since the last reminder" means), and the next one is scheduled as usual.
+      await prisma.transferPlan.update({
+        where: { id: plan.id },
+        data: { nextReminderAt: nextReminderAfter(preference, at, plan.event.timezone) },
+      });
+      await prisma.transferPlanReminderLog.create({
+        data: { planId: plan.id, scheduledFor, status: 'skipped', kind: 'reminder' },
+      });
+      skipped += 1;
+      continue;
+    }
     const finalWeek = inFinalReminderWeek(preference, at, plan.event.timezone);
     const branding = brandingForEvent(deps.mailConfig, plan.event);
-    const priority = plan.actions.find((a) => a.isPriority) ?? plan.actions[0];
     const rendered = renderTransferPlanReminder(branding, {
       recipientName: plan.delegate.name,
       planTitle: planTitleOf(plan),
-      priorityAction: priority?.action.trim() || undefined,
       planUrl: `${appUrl}/account/events/${plan.event.id}#transfer-plan`,
       frequency: reminderFrequencyLabels[plan.reminderFrequency].toLowerCase(),
-      followUp: current
-        ? {
-            label:
-              waveLabel('follow_up', current.wave, current.dueAfterDays) ||
-              'post-conference follow-up',
-            formUrl: `${appUrl}/account/events/${plan.event.id}#assessment-follow_up-${current.wave}`,
-            closesOn: current.closesAt
-              ? new Intl.DateTimeFormat('en-GB', {
-                  day: 'numeric',
-                  month: 'long',
-                  year: 'numeric',
-                  timeZone: plan.event.timezone,
-                }).format(current.closesAt)
-              : undefined,
-          }
-        : undefined,
+      actions: written.map((a) => {
+        const last = a.progress[0]?.recordedAt ?? null;
+        const days = last ? daysBetween(last, at) : null;
+        return {
+          name: a.title.trim() || a.action.trim(),
+          status: actionProgressLabels[a.progressStatus].toLowerCase(),
+          updated:
+            days === null
+              ? 'no status recorded yet'
+              : days === 0
+                ? 'updated today'
+                : `last updated ${days} day${days === 1 ? '' : 's'} ago`,
+          isPriority: a.isPriority,
+        };
+      }),
       finalWeek:
         finalWeek && preference.endOn
           ? {
