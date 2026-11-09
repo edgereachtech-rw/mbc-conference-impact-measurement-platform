@@ -63,13 +63,13 @@ export function renderOnboardingPack(
     <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;">
       <tr><td style="padding:6px 0;border-bottom:1px solid #eef2f6;font-size:15px;color:#1f2937;"><strong>Before</strong> &nbsp;A short check-in: where you are now and what you want to change.</td></tr>
       <tr><td style="padding:6px 0;border-bottom:1px solid #eef2f6;font-size:15px;color:#1f2937;"><strong>At the conference</strong> &nbsp;Check in each day with the code below, give feedback on sessions, and build your Transfer Plan.</td></tr>
-      <tr><td style="padding:6px 0;font-size:15px;color:#1f2937;"><strong>Afterwards</strong> &nbsp;Short follow-ups at 30, 60 and 90 days, and later on, asking what you have been able to apply.</td></tr>
+      <tr><td style="padding:6px 0;font-size:15px;color:#1f2937;"><strong>Afterwards</strong> &nbsp;Short follow-ups at 30, 60, 90 days, and beyond asking what you have been able to apply..</td></tr>
     </table>
 ${
   input.dates.length > 0
     ? `
     <p style="${H}">Your check-in codes</p>
-    <p style="${P}">Show this at the entrance on each day. Save this email or take a screenshot — the codes work without signal, and they are also in the platform under Attendance.</p>
+    <p style="${P}">Show this at the entrance on each day. Save this email or take a screenshot — the codes work without signal, and they are also on the platform under Attendance.</p>
     <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto;"><tr>${codes}</tr></table>
     <p style="margin:0 0 14px;font-size:13px;line-height:20px;color:#5b6b7f;">An organiser checks you in; holding the code is not attendance on its own. The code carries no personal details.</p>`
     : ''

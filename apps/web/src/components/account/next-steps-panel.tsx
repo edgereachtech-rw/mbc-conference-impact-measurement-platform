@@ -22,7 +22,7 @@ type State = { for: string } & (
 
 /** The verb on the one big button: what the delegate does when they tap it. */
 function callToAction(step: NextStep): string {
-  if (step.tab === 'attendance') return 'Enter your code';
+  if (step.tab === 'attendance') return 'Cclick to view your  QR codes';
   return step.started ? 'Continue' : 'Start now';
 }
 
