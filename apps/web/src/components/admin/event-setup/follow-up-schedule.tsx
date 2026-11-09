@@ -85,7 +85,7 @@ export function FollowUpSchedule({
 
       {!hasDefaults ? (
         <div className="space-y-2">
-          <h3 className="font-semibold text-corp-ink">Set up the follow-up schedule</h3>
+          <h3 className="font-semibold text-corp-ink">Create the follow-ups</h3>
           <p className="text-sm text-corp-text">
             Three follow-ups, each covering a stretch of days after the last day of the event:{' '}
             <strong className="font-semibold">days 1 to 30, 31 to 60 and 61 to 90</strong>. Each has
@@ -117,7 +117,9 @@ export function FollowUpSchedule({
 
       {!hasLongerTerm && longerTerm ? (
         <div className={`space-y-2${!hasDefaults ? ' border-t border-corp-line pt-4' : ''}`}>
-          <h3 className="font-semibold text-corp-ink">Longer-term follow-up (optional)</h3>
+          <h3 className="font-semibold text-corp-ink">
+            Add a longer-term follow-up (after day 90)
+          </h3>
           <p className="text-sm text-corp-text">
             A further follow-up from <strong className="font-semibold">day 91</strong> onwards
             {longerTermFrom ? `, which would open on ${longerTermFrom}` : ''}, with no end until you

@@ -214,5 +214,7 @@ export type FollowUpOverviewRow = z.infer<typeof followUpOverviewRowSchema>;
 export const followUpOverviewSchema = z.object({
   waves: z.array(followUpWaveViewSchema),
   rows: z.array(followUpOverviewRowSchema),
+  /** Delegates eligible to be invited: how many a first invitation would reach. */
+  eligible: z.number().int(),
 });
 export type FollowUpOverview = z.infer<typeof followUpOverviewSchema>;

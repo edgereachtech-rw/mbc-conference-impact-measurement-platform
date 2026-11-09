@@ -933,10 +933,15 @@ measures | evidence }`, the list replaced with ids kept; own actions only, 404 o
     follow-up's statuses are recorded and shown under each action on the plan page.
   - **Where it lives** (2026-11-09): for delegates, each follow-up is a tab of its own after the
     event and the Transfer plans tab lists them all with where each stands; for the organisers,
-    the schedule, each wave's card and every delegate's responses in one place
-    (`GET /events/:id/follow-up-responses`: one row per counted delegate, one entry per
-    wave started or submitted) sit on the Transfer plans tab under "Post-conference follow-ups".
-    The Assessment configuration tab keeps the three assessment stages only.
+    one card per follow-up on the Transfer plans tab under "Post-conference follow-ups": its
+    name, a one-line state (still being prepared / not sent yet / sends automatically on … /
+    open to delegates, sent … / closed), its questions, and its sending (schedule, send now,
+    remind, close or reopen). **Sending opens the follow-up** (`enabled`, status `open`, no
+    window); the card has no dates, status, audience or "enabled" setting of its own, and a
+    follow-up stays open until `POST .../follow-ups/:wave/close` (`/reopen` undoes it).
+    Below the cards, every delegate's responses in one place (`GET
+/events/:id/follow-up-responses`, with `eligible`). The Assessment configuration tab keeps
+    the three assessment stages only.
 - Privacy notice and consent (backlog E3-7, brief section 6.4; built 2026-11-03). The approved
   wording is **data, not code**: migration `20261103100000_consent_notice` creates
   `consent_notice` and seeds version `v1`, so M.Bryan revises it without a deploy and an

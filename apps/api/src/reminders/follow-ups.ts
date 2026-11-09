@@ -177,8 +177,8 @@ export async function sendFollowUpEmails(
 
 /**
  * Sends the invitations the organisers scheduled (decision 2026-11-09): every wave whose
- * `inviteAt` has passed and has not been sent yet, provided it is enabled, scheduled or open and
- * has questions; a wave not ready at the time waits until it is. The wave is stamped
+ * `inviteAt` has passed and has not been sent yet, provided it has questions and is not closed;
+ * a wave without questions at the time waits until it has them. Sending opens the wave. The wave is stamped
  * `invitesSentAt` before the emails go, so a crash cannot send it twice; a batch left over is
  * finished by the organisers' "Send the invitation", which reaches whoever has not been invited.
  */
@@ -190,8 +190,8 @@ export async function sendScheduledFollowUpInvitations(deps: FollowUpSendDeps) {
       stage: 'follow_up',
       inviteAt: { lte: at },
       invitesSentAt: null,
-      enabled: true,
-      status: { in: ['scheduled', 'open'] },
+      // A closed follow-up is not sent; a draft is, since sending is what opens it.
+      status: { not: 'closed' },
       questions: { some: { retiredAt: null } },
       event: { status: 'active' },
     },
@@ -202,7 +202,7 @@ export async function sendScheduledFollowUpInvitations(deps: FollowUpSendDeps) {
   for (const wave of due) {
     await prisma.assessmentStageConfig.update({
       where: { id: wave.id },
-      data: { invitesSentAt: at },
+      data: { invitesSentAt: at, enabled: true, status: 'open', opensAt: null, closesAt: null },
     });
     const result = await sendFollowUpEmails(deps, wave.id, 'invite');
     sent += result.sent;

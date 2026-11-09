@@ -224,23 +224,27 @@ export function followUpRouter({
               },
               select: {
                 id: true,
-                enabled: true,
                 status: true,
+                invitesSentAt: true,
                 _count: { select: { questions: { where: { retiredAt: null } } } },
               },
             })
           : null;
         if (!wave) throw new HttpError(404, 'not_found', 'Follow-up not found.');
-        if (
-          !wave.enabled ||
-          wave.status === 'draft' ||
-          wave.status === 'closed' ||
-          wave._count.questions === 0
-        ) {
+        // Sending is what opens a follow-up (card design of 2026-11-09): it only needs questions,
+        // and a follow-up the organisers closed stays closed until they reopen it.
+        if (wave._count.questions === 0) {
           throw new HttpError(
             409,
             'follow_up_not_ready',
-            'Enable the follow-up, give it questions and schedule or open it before sending it.',
+            'Add questions to the follow-up before sending it.',
+          );
+        }
+        if (wave.status === 'closed') {
+          throw new HttpError(
+            409,
+            'follow_up_closed',
+            'This follow-up is closed to delegates. Reopen it before sending.',
           );
         }
         const result = await sendFollowUpEmails(
@@ -265,13 +269,59 @@ export function followUpRouter({
           newValue: { wave: waveNumber, ...result },
           ...clientOf(res),
         });
-        if (mode === 'invite' && result.sent > 0) {
+        if (mode === 'invite') {
+          // Open to the delegates who were sent it, with no window of its own: it stays open
+          // until the organisers close it.
           await prisma().assessmentStageConfig.update({
             where: { id: wave.id },
-            data: { invitesSentAt: clock() },
+            data: {
+              enabled: true,
+              status: 'open',
+              opensAt: null,
+              closesAt: null,
+              ...(wave.invitesSentAt || result.sent === 0 ? {} : { invitesSentAt: clock() }),
+            },
           });
         }
         res.json({ ...result, ...(await scheduleOf(event.id)) });
+      },
+    );
+  }
+
+  /** The organisers close a sent follow-up to delegates, or reopen it (card design 2026-11-09). */
+  for (const action of ['close', 'reopen'] as const) {
+    router.post(
+      `/events/:eventId/assessments/follow-ups/:wave/${action}`,
+      guard,
+      async (req, res) => {
+        const principal = requireAdmin(res);
+        const event = await loadEvent(String(req.params.eventId), true);
+        const waveNumber = Number(req.params.wave);
+        const wave = Number.isInteger(waveNumber)
+          ? await prisma().assessmentStageConfig.findUnique({
+              where: {
+                eventId_stage_wave: { eventId: event.id, stage: 'follow_up', wave: waveNumber },
+              },
+              select: { id: true },
+            })
+          : null;
+        if (!wave) throw new HttpError(404, 'not_found', 'Follow-up not found.');
+        await prisma().$transaction(async (tx) => {
+          await tx.assessmentStageConfig.update({
+            where: { id: wave.id },
+            data: action === 'close' ? { status: 'closed' } : { status: 'open', enabled: true },
+          });
+          await audit(tx, {
+            action: action === 'close' ? 'follow_up.closed' : 'follow_up.reopened',
+            entityType: 'assessment_stage_config',
+            entityId: wave.id,
+            eventId: event.id,
+            actorUserId: principal.userId,
+            newValue: { wave: waveNumber },
+            ...clientOf(res),
+          });
+        });
+        res.json(await scheduleOf(event.id));
       },
     );
   }
@@ -326,7 +376,7 @@ export function followUpRouter({
   router.get('/events/:eventId/follow-up-responses', guard, async (req, res) => {
     requireAdmin(res);
     const event = await loadEvent(String(req.params.eventId), false);
-    const { waves } = await scheduleOf(event.id);
+    const { waves, eligible } = await scheduleOf(event.id);
     const flag = await prisma().event.findUnique({
       where: { id: event.id },
       select: { countTestDelegates: true },
@@ -377,7 +427,7 @@ export function followUpRouter({
       }
       return { delegateId: d.id, name: d.name, organisation: d.organisation, responses: mine };
     });
-    const overview: FollowUpOverview = { waves, rows };
+    const overview: FollowUpOverview = { waves, rows, eligible };
     res.json(overview);
   });
 

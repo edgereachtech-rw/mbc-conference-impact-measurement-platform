@@ -63,7 +63,10 @@ const json = (body: unknown) =>
     headers: { 'content-type': 'application/json' },
   });
 
-function stub(eventBack: EventDetail, overview: FollowUpOverview = { waves: [], rows: [] }) {
+function stub(
+  eventBack: EventDetail,
+  overview: FollowUpOverview = { waves: [], rows: [], eligible: 0 },
+) {
   const calls: Array<{ url: string; method?: string; body?: unknown }> = [];
   vi.stubGlobal(
     'fetch',
@@ -77,7 +80,9 @@ function stub(eventBack: EventDetail, overview: FollowUpOverview = { waves: [], 
       if (/\/follow-ups\/\d+\/(invitations|reminders)$/.test(url)) {
         return json({ sent: 2, failed: 0, skipped: 0, waves: [], eligible: 0 });
       }
-      if (/\/follow-ups\/\d+\/schedule$/.test(url)) return json({ waves: [], eligible: 0 });
+      if (/\/follow-ups\/\d+\/(schedule|close|reopen)$/.test(url)) {
+        return json({ waves: [], eligible: 0 });
+      }
       return json({ event: eventBack, waves: [], eligible: 0 });
     }),
   );
@@ -92,9 +97,7 @@ describe('FollowUpsSection', () => {
     const onSaved = vi.fn();
     render(<FollowUpsSection event={event} onSaved={onSaved} />);
 
-    // The existing round keeps its plain name: it is not the 30-day follow-up.
-    expect(screen.getByRole('form', { name: 'Post-conference follow-up' })).toBeTruthy();
-    expect(screen.queryByRole('form', { name: '30-day follow-up' })).toBeNull();
+    // The offer is there while the three follow-ups are missing.
     expect(screen.getByText(/one follow-up round from before the schedule/)).toBeTruthy();
 
     const user = userEvent.setup();
@@ -108,25 +111,39 @@ describe('FollowUpsSection', () => {
     expect(onSaved).toHaveBeenCalledWith(waved);
   });
 
-  it('shows each follow-up by its own name, acts on that wave alone, and lists every delegate once', async () => {
+  it('shows one card per follow-up with its state, sends or schedules from it, and lists every delegate once', async () => {
+    const wave = (n: number, extra: Partial<FollowUpOverview['waves'][number]> = {}) => ({
+      id: `00000000-0000-4000-8000-00000000000${n}`,
+      wave: n,
+      label: n === 4 ? 'Longer-term follow-up' : `${n * 30}-day follow-up`,
+      dueAfterDays: n === 4 ? 180 : n * 30,
+      enabled: false,
+      status: 'draft',
+      opensAt: '2026-11-13T23:00:00.000Z',
+      closesAt: null,
+      questions: 7,
+      invited: 0,
+      submitted: 0,
+      reminderAfterDays: null,
+      reminderLimit: 0,
+      inviteAt: null,
+      invitesSentAt: null,
+      ...extra,
+    });
     const overview: FollowUpOverview = {
-      waves: [1, 2, 3].map((n) => ({
-        id: `00000000-0000-4000-8000-00000000000${n}`,
-        wave: n,
-        label: `${n * 30}-day follow-up`,
-        dueAfterDays: n * 30,
-        enabled: true,
-        status: 'scheduled',
-        opensAt: '2026-11-13T23:00:00.000Z',
-        closesAt: '2026-12-13T23:00:00.000Z',
-        questions: 7,
-        invited: 2,
-        submitted: n === 1 ? 1 : 0,
-        reminderAfterDays: null,
-        reminderLimit: 0,
-        inviteAt: null,
-        invitesSentAt: null,
-      })),
+      eligible: 24,
+      waves: [
+        wave(1, {
+          enabled: true,
+          status: 'open',
+          invited: 22,
+          submitted: 9,
+          invitesSentAt: '2026-11-13T23:00:00.000Z',
+        }),
+        wave(2, { inviteAt: '2026-12-13T23:00:00.000Z' }),
+        wave(3),
+        wave(4, { questions: 0 }),
+      ],
       rows: [
         {
           delegateId: '11111111-1111-4111-8111-111111111111',
@@ -138,12 +155,6 @@ describe('FollowUpsSection', () => {
               submittedAt: '2026-11-20T10:00:00.000Z',
               updatedAt: '2026-11-20T10:00:00.000Z',
               statuses: 2,
-            },
-            '2': {
-              state: 'started',
-              submittedAt: null,
-              updatedAt: '2026-12-15T10:00:00.000Z',
-              statuses: 0,
             },
           },
         },
@@ -158,54 +169,71 @@ describe('FollowUpsSection', () => {
     const calls = stub(waved, overview);
     render(<FollowUpsSection event={waved} onSaved={vi.fn()} />);
 
-    // No schedule offer for the three; the longer-term one is still offered.
-    expect(screen.queryByRole('button', { name: /30, 60 and 90-day follow-ups/ })).toBeNull();
-    expect(screen.getByRole('button', { name: /Add the longer-term follow-up/ })).toBeTruthy();
-    // Three cards, three names: not "Post-conference follow-up" three times over.
-    for (const label of ['30-day follow-up', '60-day follow-up', '90-day follow-up']) {
-      expect(screen.getByRole('form', { name: label })).toBeTruthy();
-    }
-    const sixty = screen.getByRole('form', { name: '60-day follow-up' });
+    // Sent and open: who has answered, who to remind, who is new.
+    const thirty = await screen.findByRole('region', { name: '30-day follow-up' });
+    expect(thirty.textContent).toMatch(/Open to delegates · sent/);
+    expect(thirty.textContent).toMatch(/22 invited · 9 submitted · 13 have not answered/);
     expect(
-      within(sixty).getByRole('link', { name: 'Questions and submissions' }).getAttribute('href'),
-    ).toBe('/admin/events/e1/assessments/follow_up?wave=2');
+      within(thirty).getByRole('button', { name: 'Send the invitation to 2 new delegates' }),
+    ).toBeTruthy();
+    expect(within(thirty).getByRole('button', { name: 'Close to delegates' })).toBeTruthy();
+    expect(within(thirty).getByRole('link', { name: 'Edit questions' }).getAttribute('href')).toBe(
+      '/admin/events/e1/assessments/follow_up?wave=1',
+    );
+    // None of the removed settings is on a card.
+    expect(within(thirty).queryByLabelText('Enabled for this event')).toBeNull();
+    expect(within(thirty).queryByLabelText('Available from')).toBeNull();
+    expect(within(thirty).queryByLabelText('Status')).toBeNull();
 
-    // Every delegate once, one column per follow-up, with where each stands.
-    const table = await screen.findByRole('table', { name: 'Follow-up responses by delegate' });
+    // Scheduled: change or clear the time, or send now.
+    const sixty = screen.getByRole('region', { name: '60-day follow-up' });
+    expect(sixty.textContent).toMatch(/Sends automatically on/);
+    expect(within(sixty).getByRole('button', { name: 'Change the time' })).toBeTruthy();
+    expect(within(sixty).getByRole('button', { name: 'Clear' })).toBeTruthy();
+
+    // Not sent, ready: schedule it. The time is entered in the event's zone, stored as an instant.
+    const ninety = screen.getByRole('region', { name: '90-day follow-up' });
+    expect(ninety.textContent).toMatch(/Not sent yet/);
+    const user = userEvent.setup();
+    await user.click(within(ninety).getByRole('button', { name: 'Schedule the sending' }));
+    const when = within(ninety).getByLabelText(/Send the invitation automatically on/);
+    await user.clear(when);
+    await user.type(when, '2027-01-13T09:00');
+    await user.click(within(ninety).getByRole('button', { name: 'Save time' }));
+    const scheduled = calls.find(
+      (c) => c.method === 'PUT' && c.url.endsWith('/assessments/follow-ups/3/schedule'),
+    );
+    expect(scheduled?.body).toEqual({ inviteAt: '2027-01-13T08:00:00.000Z' });
+    expect((await screen.findByRole('status')).textContent).toMatch(
+      /90-day follow-up will be sent on/,
+    );
+
+    // No questions: nothing can be sent yet.
+    const longer = screen.getByRole('region', { name: 'Longer-term follow-up' });
+    expect(longer.textContent).toMatch(/Still being prepared/);
+    expect(longer.textContent).toMatch(/Add questions before sending/);
+    expect(
+      (within(longer).getByRole('button', { name: 'Send the invitation now' }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+
+    // Reminding from the sent card posts to that wave alone.
+    await user.click(
+      within(thirty).getByRole('button', { name: /Remind the 13 who have not answered/ }),
+    );
+    expect(
+      calls.some(
+        (c) => c.method === 'POST' && c.url.endsWith('/assessments/follow-ups/1/reminders'),
+      ),
+    ).toBe(true);
+
+    // Every delegate once, one column per follow-up.
+    const table = screen.getByRole('table', { name: 'Follow-up responses by delegate' });
     const ada = within(table).getByRole('row', { name: /Ada/ });
     expect(ada.textContent).toMatch(/Submitted/);
     expect(ada.textContent).toMatch(/2 action statuses/);
-    expect(ada.textContent).toMatch(/Started/);
     const bo = within(table).getByRole('row', { name: /Bo/ });
-    expect(bo.textContent?.match(/Not answered/g)).toHaveLength(3);
-    expect(screen.getByText(/1 of 2 submitted/)).toBeTruthy();
-
-    // The organisers send a follow-up by hand (2026-11-09); the row says how it went.
-    const user = userEvent.setup();
-    const sendRows = within(screen.getByRole('list', { name: 'Follow-ups to send' }));
-    await user.click(sendRows.getAllByRole('button', { name: 'Send the invitation' })[0]!);
-    expect(
-      calls.some(
-        (c) => c.method === 'POST' && c.url.endsWith('/assessments/follow-ups/1/invitations'),
-      ),
-    ).toBe(true);
-    expect((await screen.findByRole('status')).textContent).toMatch(
-      /Invitation sent to 2 delegates/,
-    );
-    // Or the sending is scheduled: the time is entered in the event's zone and stored as an instant.
-    await user.click(sendRows.getAllByRole('button', { name: 'Schedule the sending' })[0]!);
-    const when = sendRows.getByLabelText(/Send automatically on/) as HTMLInputElement;
-    await user.clear(when);
-    await user.type(when, '2026-11-14T09:00');
-    await user.click(sendRows.getByRole('button', { name: 'Save time' }));
-    const scheduled = calls.find(
-      (c) => c.method === 'PUT' && c.url.endsWith('/assessments/follow-ups/1/schedule'),
-    );
-    expect(scheduled?.body).toEqual({ inviteAt: '2026-11-14T08:00:00.000Z' });
-
-    // Saving the 60-day card addresses wave 2, so enabling one wave never enables another.
-    await user.click(within(sixty).getByRole('button', { name: 'Save stage' }));
-    expect(calls.some((c) => c.url.endsWith('/assessments/follow_up?wave=2'))).toBe(true);
-    expect(calls.some((c) => c.url.endsWith('/assessments/follow_up?wave=1'))).toBe(false);
+    expect(bo.textContent).toMatch(/Not answered/);
+    expect(bo.textContent?.match(/Not sent yet/g)?.length).toBe(3);
   });
 });

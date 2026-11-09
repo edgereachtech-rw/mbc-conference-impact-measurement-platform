@@ -254,7 +254,7 @@ describe.skipIf(!hasDatabase)('follow-up waves and invitations (E12)', () => {
       opensAt: '2026-11-13T23:00:00.000Z',
       closesAt: '2026-12-13T23:00:00.000Z',
     });
-    // A draft wave cannot be sent.
+    // A wave without questions cannot be sent.
     expect((await sendWave(2, 'invitations')).status).toBe(409);
 
     // Until the organisers send it, the follow-up does not exist for Bo.
@@ -276,6 +276,12 @@ describe.skipIf(!hasDatabase)('follow-up waves and invitations (E12)', () => {
     expect(first.mail[0]!.subject).toContain('30-day follow-up');
     // The cancelled registration is not among them.
     expect(first.mail.map((m) => m.to).join(' ')).not.toContain('gone-fu-');
+    // Sending opened it (card design 2026-11-09): no window of its own.
+    const opened = await prisma.assessmentStageConfig.findUniqueOrThrow({
+      where: { id: wave1.id },
+    });
+    expect(opened).toMatchObject({ enabled: true, status: 'open', opensAt: null, closesAt: null });
+    expect(opened.invitesSentAt).not.toBeNull();
     // Now Bo sees it and may answer.
     const seen = await call(
       'get',
@@ -334,6 +340,37 @@ describe.skipIf(!hasDatabase)('follow-up waves and invitations (E12)', () => {
         where: { stageConfigId: wave1.id, kind: 'reminder' },
       }),
     ).toBe(2);
+  });
+
+  it('shows the organisers every delegate’s follow-up responses in one place', async () => {
+    const overview = await call(
+      'get',
+      `/events/${eventId}/follow-up-responses`,
+      undefined,
+      await cookieFor(adminAccountId),
+    );
+    expect(overview.status, overview.text).toBe(200);
+    expect(overview.body.eligible).toBe(2);
+    const waves = overview.body.waves as Array<{ wave: number }>;
+    expect(waves.map((w) => w.wave)).toEqual([1, 2, 3, 4]);
+    const rows = overview.body.rows as Array<{
+      name: string;
+      responses: Record<string, { state: string; submittedAt: string | null }>;
+    }>;
+    // Two counted delegates (the cancelled one is not); Ada submitted wave 1, Bo did not start.
+    expect(rows.map((r) => r.name)).toEqual(['Ada Delegate', 'Bo Delegate']);
+    expect(rows[0]!.responses['1']).toMatchObject({ state: 'submitted' });
+    expect(rows[1]!.responses).toEqual({});
+    expect(
+      (
+        await call(
+          'get',
+          `/events/${eventId}/follow-up-responses`,
+          undefined,
+          await cookieFor(boAccountId),
+        )
+      ).status,
+    ).toBe(403);
   });
 
   it('reports the response rate per wave', async () => {
@@ -417,20 +454,21 @@ describe.skipIf(!hasDatabase)('follow-up waves and invitations (E12)', () => {
     ).toBe(200);
   });
 
-  it('refuses to send a wave that is closed, disabled or still a draft', async () => {
+  it('refuses to send a closed follow-up until it is reopened, and one without questions', async () => {
     const wave1 = await prisma.assessmentStageConfig.findFirstOrThrow({
       where: { eventId, stage: 'follow_up', wave: 1 },
     });
-    await prisma.assessmentStageConfig.update({
-      where: { id: wave1.id },
-      data: { status: 'closed' },
-    });
+    const closed = await call('post', `/events/${eventId}/assessments/follow-ups/1/close`, {});
+    expect(closed.status, closed.text).toBe(200);
     expect((await sendWave(1, 'invitations')).status).toBe(409);
-    await prisma.assessmentStageConfig.update({
-      where: { id: wave1.id },
-      data: { status: 'open', enabled: false },
-    });
     expect((await sendWave(1, 'reminders')).status).toBe(409);
+    const reopened = await call('post', `/events/${eventId}/assessments/follow-ups/1/reopen`, {});
+    expect(reopened.status, reopened.text).toBe(200);
+    expect(
+      (await prisma.assessmentStageConfig.findUniqueOrThrow({ where: { id: wave1.id } })).status,
+    ).toBe('open');
+    // The longer-term wave has no questions yet.
+    expect((await sendWave(4, 'invitations')).status).toBe(409);
     expect((await sendWave(9, 'invitations')).status).toBe(404);
   });
 
