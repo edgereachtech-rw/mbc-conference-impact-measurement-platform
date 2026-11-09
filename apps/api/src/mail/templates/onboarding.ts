@@ -87,7 +87,7 @@ ${input.firstStep ? `\n    <p style="${P}"><strong>Your first step:</strong> ${e
     'WHAT HAPPENS WHEN',
     'Before: a short check-in on where you are now and what you want to change.',
     'At the conference: check in each day with your code, give session feedback, build your Transfer Plan.',
-    'Afterwards: short follow-ups at 30, 60 and 90 days, and later on.',
+    'Afterwards: short follow-ups at 30, 60, 90 days, and beyond asking what you have been able to apply.',
     '',
     ...(input.dates.length > 0
       ? [
