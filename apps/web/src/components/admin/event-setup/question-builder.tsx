@@ -22,7 +22,10 @@ import {
   questionVisibilities,
   questionVisibilityLabels,
   stageOrder,
+  supportFlagLabels,
+  supportFlags,
   type QuestionVisibility,
+  type SupportFlag,
   type AssessmentQuestionView,
   type AssessmentSectionView,
   type AssessmentStage,
@@ -86,6 +89,8 @@ interface Draft {
   showReferenceAnswer: boolean;
   visibleWhen: QuestionVisibility;
   allowDecline: boolean;
+  /** How the answer feeds the Support page (follow-up questions, 2026-11-09). */
+  supportFlag: SupportFlag;
 }
 
 interface Lists {
@@ -122,6 +127,7 @@ const EMPTY: Draft = {
   showReferenceAnswer: false,
   visibleWhen: 'always',
   allowDecline: false,
+  supportFlag: 'none',
 };
 
 /** Starting points per stage, one per measurement area of the brief; the admin edits freely. */
@@ -145,6 +151,7 @@ function draftOf(q: AssessmentQuestionView | null, sectionId = ''): Draft {
     required: q.required,
     area: q.area ?? '',
     areaOther: false,
+    supportFlag: q.supportFlag ?? 'none',
     sectionId: q.sectionId ?? '',
     options: q.options?.length ? q.options.map(optionDraftOf) : [emptyOption(), emptyOption()],
     scaleMin: String(q.scale?.min ?? 1),
@@ -239,6 +246,7 @@ export function payloadOf(draft: Draft, marking: SectionMarking = 'none') {
     showReferenceAnswer: Boolean(draft.referenceQuestionKey) && draft.showReferenceAnswer,
     visibleWhen: draft.referenceQuestionKey ? draft.visibleWhen : 'always',
     allowDecline: draft.allowDecline,
+    supportFlag: draft.supportFlag,
     ...(isChoice ? { options: optionsPayload(draft.type, draft.options, marking) } : {}),
     ...(draft.type === 'rating'
       ? {
@@ -427,6 +435,7 @@ export function QuestionBuilder({
           helpText: parsed.data.helpText,
           required: parsed.data.required,
           area: parsed.data.area,
+          supportFlag: parsed.data.supportFlag,
           sectionId: editing.draft.sectionId || null,
         }
       : {
@@ -1040,6 +1049,33 @@ export function QuestionBuilder({
                   What this question measures, for your reports. Delegates never see it.
                 </p>
               </div>
+              {stage === 'follow_up' ? (
+                <div className="space-y-1">
+                  <label
+                    htmlFor={`${id}-support-flag`}
+                    className="text-sm font-semibold text-corp-ink"
+                  >
+                    Show answers on the Support page
+                  </label>
+                  <NativeSelect
+                    id={`${id}-support-flag`}
+                    value={editing.draft.supportFlag}
+                    onChange={(e) => set('supportFlag', e.target.value as SupportFlag)}
+                    className="rounded-none"
+                  >
+                    {supportFlags.map((f) => (
+                      <option key={f} value={f}>
+                        {supportFlagLabels[f]}
+                      </option>
+                    ))}
+                  </NativeSelect>
+                  <p className="text-xs text-corp-muted">
+                    “Support requested” raises a support request from every answer; “Barrier” lists
+                    every answer as a barrier. Both appear on the Support tab once the follow-up
+                    section is submitted, and can be marked addressed there.
+                  </p>
+                </div>
+              ) : null}
             </div>
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-1">

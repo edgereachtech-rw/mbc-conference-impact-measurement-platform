@@ -1,13 +1,31 @@
 import { z } from 'zod';
 
 /**
- * Transfer support (brief 11.7; backlog E13). A support request is a delegate asking M.Bryan, or
- * another stakeholder through M.Bryan, for help applying their learning. It is raised from a
- * follow-up answer (any follow-up question whose area names "support", once that section is
- * submitted) or by the delegate from their plan page, and tracked by the organisers until it is
- * addressed: who asked, what for, the barrier behind it, the action taken, and whether it is
- * still open.
+ * Transfer support (brief 11.7; backlog E13). The Support page holds two kinds of item: a
+ * support request (a delegate asking M.Bryan, or another stakeholder through M.Bryan, for help
+ * applying their learning) and a barrier (what stands in the way, in the delegate's words). Both
+ * are raised from follow-up answers, from the questions an admin flagged for the Support page
+ * (decision 2026-11-09), once the section holding them is submitted; a support request can also
+ * be raised by the delegate from their plan page. The organisers track every item until it is
+ * addressed: who, what, the action taken, and whether it is still open.
  */
+
+/** How a follow-up question feeds the Support page: not at all, as a request, or as a barrier. */
+export const supportFlags = ['none', 'support_requested', 'barrier'] as const;
+export type SupportFlag = (typeof supportFlags)[number];
+export const supportFlagLabels: Record<SupportFlag, string> = {
+  none: 'Not shown on the Support page',
+  support_requested: 'Support requested',
+  barrier: 'Barrier',
+};
+
+/** The two kinds of item on the Support page. */
+export const supportRequestKinds = ['support', 'barrier'] as const;
+export type SupportRequestKind = (typeof supportRequestKinds)[number];
+export const supportRequestKindLabels: Record<SupportRequestKind, string> = {
+  support: 'Support requested',
+  barrier: 'Barrier',
+};
 
 export const supportRequestSources = ['follow_up', 'delegate'] as const;
 export type SupportRequestSource = (typeof supportRequestSources)[number];
@@ -54,11 +72,15 @@ export const supportRequestViewSchema = z.object({
     organisation: z.string().nullable(),
   }),
   source: z.enum(supportRequestSources),
+  /** A request for support, or a barrier named (2026-11-09). */
+  kind: z.enum(supportRequestKinds),
   /** Where it came from in words: the wave ("30-day follow-up") or the plan page. */
   context: z.string(),
   /** The planned action it concerns, when it concerns one. */
   action: z.string().nullable(),
+  /** The support asked for, or, for a barrier item, the barrier as written. */
   request: z.string(),
+  /** On a support request: the barrier named in the same section, for context. */
   barrier: z.string(),
   status: z.enum(supportRequestStatuses),
   actionTaken: z.string(),
@@ -77,7 +99,13 @@ export type MySupportRequest = z.infer<typeof mySupportRequestSchema>;
 /** The organisers' view of an event's requests (E13-2, E13-4, E13-5). */
 export const supportRequestsSchema = z.object({
   requests: z.array(supportRequestViewSchema),
-  counts: z.object({ open: z.number().int(), addressed: z.number().int() }),
+  counts: z.object({
+    open: z.number().int(),
+    addressed: z.number().int(),
+    /** Open items of each kind (2026-11-09). */
+    openSupport: z.number().int(),
+    openBarriers: z.number().int(),
+  }),
   /**
    * The barriers named so far, as written, grouped where the wording is the same (case and
    * spacing aside), most frequent first. Tagging by category is for the organisers to add later.
@@ -101,8 +129,3 @@ export function groupBarriers(texts: readonly string[]): Array<{ text: string; c
   }
   return [...groups.values()].sort((a, b) => b.count - a.count || a.text.localeCompare(b.text));
 }
-
-/** A follow-up question raises a request when its area speaks of support. */
-export const isSupportArea = (area: string | null | undefined) => /support/i.test(area ?? '');
-/** A follow-up question names a barrier when its area speaks of barriers. */
-export const isBarrierArea = (area: string | null | undefined) => /barrier/i.test(area ?? '');

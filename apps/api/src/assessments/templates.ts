@@ -127,6 +127,7 @@ export async function loadTemplateInto(
           showReferenceAnswer: q.showReferenceAnswer ?? false,
           visibleWhen: q.visibleWhen ?? 'always',
           allowDecline: q.allowDecline ?? false,
+          supportFlag: q.supportFlag ?? 'none',
         },
       });
     }

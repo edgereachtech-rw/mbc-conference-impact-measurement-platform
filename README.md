@@ -530,15 +530,21 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   (migration `20261107194000_support_requests`): event, delegate, source (`follow_up` or
   `delegate`), the follow-up answer it came from (unique per answer), the planned action it
   concerns, the request, the barrier, status `open` or `addressed`, the action taken, who
-  addressed it and when. Requests are raised two ways: a delegate's "Need support to apply your
-  plan?" box on the plan page (`POST /me/events/:id/support-requests`, `GET` lists their own
-  with status), and automatically when a follow-up section is submitted, from every answered
-  question whose area names "support" (the seeded 30/60/90-day sets have one each), with the
-  answer to the section's "barrier" question beside it (`apps/api/src/support/requests.ts`).
-  Organisers: `GET /events/:id/support-requests` (requests, open/addressed counts, barriers as
-  written grouped by wording), `PATCH .../:requestId` `{ status, actionTaken }` (addressing
-  stamps who and when, reopening clears them; audited `support_request.updated`), shown on the
-  event settings "Support" tab. The journey reports `supportRequests.state` as `ok` once the
+  addressed it and when. Since 2026-11-09 an item has a `kind`, support or barrier, and a follow-up question carries
+  an explicit `support_flag` (none / support requested / barrier; migration
+  `20261109002500_support_flags`, which also set the flag on existing follow-up questions from
+  the word their area used). Items are raised three ways: a delegate's "Need support to apply
+  your plan?" box on the plan page (`POST /me/events/:id/support-requests`, `GET` lists their
+  own with status); and, when a follow-up section is submitted, a support request from every
+  answered question flagged "support requested" (with the answer to the section's question
+  flagged "barrier" beside it) and a barrier item from every answered question flagged "barrier"
+  (`apps/api/src/support/requests.ts`). The seeded 30/60/90-day sets carry the flags; the
+  30-day set no longer seeds "Have you started the action…", which the status step answers.
+  Organisers: `GET /events/:id/support-requests` (both kinds, open/addressed counts per kind,
+  barriers as written grouped by wording), `PATCH .../:requestId` `{ status, actionTaken }` on
+  either kind (addressing stamps who and when, reopening clears them; audited
+  `support_request.updated`), shown on the event settings "Support" tab with filters by kind and
+  status. The journey reports `supportRequests.state` as `ok` once the
   delegate has one.
 - Transfer Planning visibility (2026-11-08; migration `*_transfer_plan_visibility`): Event →
   Transfer Planning → "Transfer Planning for delegates" sets shown (default), hidden, or hidden

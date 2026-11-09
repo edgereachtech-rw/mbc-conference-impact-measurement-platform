@@ -103,6 +103,7 @@ export function questionViewOf(q: QuestionRow): AssessmentQuestionView {
     sourceQuestionKey: q.sourceQuestionKey,
     builtin: q.builtin,
     referenceQuestionKey: q.referenceQuestionKey,
+    supportFlag: q.supportFlag,
     showReferenceAnswer: q.showReferenceAnswer,
     visibleWhen: q.visibleWhen,
     allowDecline: q.allowDecline,
@@ -624,6 +625,7 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
             showReferenceAnswer: input.showReferenceAnswer,
             visibleWhen: input.visibleWhen,
             allowDecline: input.allowDecline,
+            supportFlag: input.supportFlag,
           },
           include: QUESTION_INCLUDE,
         });
@@ -730,6 +732,7 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
         showReferenceAnswer: patch.showReferenceAnswer ?? current.showReferenceAnswer,
         visibleWhen: patch.visibleWhen ?? current.visibleWhen,
         allowDecline: patch.allowDecline ?? current.allowDecline,
+        supportFlag: patch.supportFlag ?? current.supportFlag,
       });
       if (!merged.success) {
         const issue = merged.error.issues[0];
@@ -750,6 +753,7 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
         showReferenceAnswer: merged.data.showReferenceAnswer,
         visibleWhen: merged.data.visibleWhen,
         allowDecline: merged.data.allowDecline,
+        supportFlag: merged.data.supportFlag,
         options: merged.data.options
           ? (merged.data.options as Prisma.InputJsonValue)
           : Prisma.JsonNull,
@@ -2022,8 +2026,8 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
             })),
           });
         }
-        // A follow-up's support answers become support requests for the organisers (brief
-        // 11.7), once the section holding them is submitted.
+        // A follow-up's flagged answers become support requests and barriers for the organisers
+        // (brief 11.7; flags of 2026-11-09), once the section holding them is submitted.
         if (config.stage === 'follow_up' && newKeys.length) {
           await raiseFollowUpSupportRequests(tx, {
             eventId: delegate.eventId,
@@ -2036,7 +2040,7 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
               return {
                 questionId: k.questionId,
                 sectionKey: sectionKeyOf(question?.sectionId),
-                area: question?.area ?? null,
+                supportFlag: question?.supportFlag ?? 'none',
                 value: k.value,
               };
             }),

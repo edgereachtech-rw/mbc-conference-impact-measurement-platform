@@ -1191,6 +1191,8 @@ model AssessmentQuestion {
   visibleWhen          QuestionVisibility @default(always) @map("visible_when")
   /// Offer "I prefer not to answer" beside the question.
   allowDecline         Boolean            @default(false) @map("allow_decline")
+  /// How the answer feeds the Support page (2026-11-09): a request, a barrier, or nothing.
+  supportFlag          SupportFlag        @default(none) @map("support_flag")
   retiredAt            DateTime?          @map("retired_at") @db.Timestamptz(3)
   createdAt            DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt            DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
@@ -1754,6 +1756,23 @@ enum SupportRequestSource {
   @@map("support_request_source")
 }
 
+/// How a follow-up question feeds the Support page (2026-11-09).
+enum SupportFlag {
+  none
+  support_requested
+  barrier
+
+  @@map("support_flag")
+}
+
+/// What an item on the Support page is: a request for support, or a barrier named.
+enum SupportRequestKind {
+  support
+  barrier
+
+  @@map("support_request_kind")
+}
+
 enum SupportRequestStatus {
   open
   addressed
@@ -1769,6 +1788,8 @@ model SupportRequest {
   eventId           String               @map("event_id") @db.Uuid
   delegateId        String               @map("delegate_id") @db.Uuid
   source            SupportRequestSource @default(delegate)
+  /// A support request or a barrier (2026-11-09); a barrier's text is in `request`.
+  kind              SupportRequestKind   @default(support)
   /// The follow-up answer it was raised from, when it was.
   responseId        String?              @map("response_id") @db.Uuid
   questionId        String?              @map("question_id") @db.Uuid
@@ -1792,6 +1813,7 @@ model SupportRequest {
 
   @@unique([responseId, questionId])
   @@index([eventId, status])
+  @@index([eventId, kind])
   @@index([delegateId])
   @@map("support_request")
 }

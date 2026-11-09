@@ -174,7 +174,7 @@ describe.skipIf(!hasDatabase)('transfer support requests', () => {
 
     const list = await call('get', `/events/${eventId}/support-requests`);
     expect(list.status, list.text).toBe(200);
-    expect(list.body.counts).toEqual({ open: 1, addressed: 0 });
+    expect(list.body.counts).toEqual({ open: 1, addressed: 0, openSupport: 1, openBarriers: 0 });
     expect(list.body.barriers).toEqual([{ text: 'No one in my team has done it.', count: 1 }]);
     expect(list.body.requests[0]).toMatchObject({
       id: requestId,
@@ -195,7 +195,7 @@ describe.skipIf(!hasDatabase)('transfer support requests', () => {
       addressedBy: `admin-sr-${tag}@example.com`,
     });
     const after = await call('get', `/events/${eventId}/support-requests`);
-    expect(after.body.counts).toEqual({ open: 0, addressed: 1 });
+    expect(after.body.counts).toEqual({ open: 0, addressed: 1, openSupport: 0, openBarriers: 0 });
     // Reopening clears who addressed it; the note stays.
     const reopened = await call('patch', `/events/${eventId}/support-requests/${requestId}`, {
       status: 'open',
@@ -239,6 +239,7 @@ describe.skipIf(!hasDatabase)('transfer support requests', () => {
         type: 'long_text',
         required: false,
         area: 'Barriers',
+        supportFlag: 'barrier',
       },
     });
     const supportQ = await prisma.assessmentQuestion.create({
@@ -250,6 +251,7 @@ describe.skipIf(!hasDatabase)('transfer support requests', () => {
         type: 'long_text',
         required: false,
         area: 'Support needs',
+        supportFlag: 'support_requested',
       },
     });
     await tick('2026-12-15T09:00:00.000Z');
@@ -297,15 +299,30 @@ describe.skipIf(!hasDatabase)('transfer support requests', () => {
     expect(submitted.status, submitted.text).toBe(200);
     const list = await call('get', `/events/${eventId}/support-requests`);
     const raised = list.body.requests.filter((r: { source: string }) => r.source === 'follow_up');
-    expect(raised).toHaveLength(1);
-    expect(raised[0]).toMatchObject({
+    // The flagged answers (2026-11-09): one support request, with the barrier beside it, and the
+    // barrier as an item of its own, which can be addressed too.
+    expect(raised).toHaveLength(2);
+    expect(raised.find((r: { kind: string }) => r.kind === 'support')).toMatchObject({
       context: '30-day follow-up',
       request: 'An introduction to the HR director.',
       barrier: 'HR has not agreed the time.',
       status: 'open',
       delegate: { id: deeId },
     });
-    expect(list.body.counts.open).toBe(2);
+    const barrierItem = raised.find((r: { kind: string }) => r.kind === 'barrier');
+    expect(barrierItem).toMatchObject({
+      request: 'HR has not agreed the time.',
+      barrier: '',
+      status: 'open',
+    });
+    // The plan-page request of the earlier test was reopened; with these two, three are open.
+    expect(list.body.counts).toMatchObject({ open: 3, openSupport: 2, openBarriers: 1 });
+    const addressed = await call('patch', `/events/${eventId}/support-requests/${barrierItem.id}`, {
+      status: 'addressed',
+      actionTaken: 'Spoke to HR about the time.',
+    });
+    expect(addressed.status, addressed.text).toBe(200);
+    expect(addressed.body.request).toMatchObject({ kind: 'barrier', status: 'addressed' });
     expect(list.body.barriers.map((b: { text: string }) => b.text)).toContain(
       'HR has not agreed the time.',
     );

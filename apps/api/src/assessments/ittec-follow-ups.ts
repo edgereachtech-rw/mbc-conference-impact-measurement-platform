@@ -1,4 +1,4 @@
-import type { QuestionFieldsInput } from '@mbc/shared';
+import type { QuestionFieldsInput, SupportFlag } from '@mbc/shared';
 
 import type { AssessmentTemplate } from './ittec-pre-conference.js';
 
@@ -17,12 +17,18 @@ import type { AssessmentTemplate } from './ittec-pre-conference.js';
  * supplied, so that wave is created empty and cannot be opened until it has questions.
  */
 
-const long = (prompt: string, area: string, required = true): QuestionFieldsInput => ({
+const long = (
+  prompt: string,
+  area: string,
+  required = true,
+  supportFlag: SupportFlag = 'none',
+): QuestionFieldsInput => ({
   prompt,
   helpText: null,
   type: 'long_text',
   required,
   area,
+  supportFlag,
 });
 
 const yesNo = (prompt: string, area: string): QuestionFieldsInput => ({
@@ -43,16 +49,18 @@ export const ITTEC_FOLLOW_UP_30: AssessmentTemplate = {
       title: 'Your progress so far',
       description:
         'About a month on from ITTEC. Your Transfer Plan and what you said you would do differently are shown above, so you do not need to repeat them.',
+      // "Have you started the action in your Transfer Plan?" (Q-F30-1) is not seeded since
+      // 2026-11-09: every follow-up first asks one status per planned action, which answers it.
       questions: [
-        yesNo('Have you started the action in your Transfer Plan?', 'Action started'),
         long('What have you done so far?', 'Progress'),
         long('What has helped you make progress?', 'Enablers'),
-        long('What has delayed or prevented progress?', 'Barriers'),
+        long('What has delayed or prevented progress?', 'Barriers', true, 'barrier'),
         long('What is your next step, and when will you take it?', 'Next step'),
         long(
           'What support do you need from M.Bryan or another stakeholder?',
           'Support needs',
           false,
+          'support_requested',
         ),
         yesNo('Would you like to change your reminder preferences?', 'Reminder preferences'),
       ],
@@ -80,7 +88,12 @@ export const ITTEC_FOLLOW_UP_60: AssessmentTemplate = {
           'Change in practice',
         ),
         long('What evidence of application can you share or describe?', 'Evidence'),
-        long('What barriers or support needs remain?', 'Barriers and support needs', false),
+        long(
+          'What barriers or support needs remain?',
+          'Barriers and support needs',
+          false,
+          'support_requested',
+        ),
       ],
     },
   ],
@@ -109,7 +122,12 @@ export const ITTEC_FOLLOW_UP_90: AssessmentTemplate = {
           'Other contributing factors',
         ),
         long('To what extent have your expectations of ITTEC been met?', 'Expectations met'),
-        long('What further support or time do you need?', 'Support needs', false),
+        long(
+          'What further support or time do you need?',
+          'Support needs',
+          false,
+          'support_requested',
+        ),
       ],
     },
   ],

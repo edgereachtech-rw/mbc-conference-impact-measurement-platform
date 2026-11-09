@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { actionProgressStatuses, transferPlanStatuses } from './transfer-plans.js';
 
 import { assessmentStages, isoDateSchema, type AssessmentStage } from './events.js';
+import { supportFlags } from './support.js';
 
 /**
  * Assessment questions and responses (E1-4, E5/E11/E12 groundwork). Every enabled stage carries
@@ -93,6 +94,12 @@ export const questionFieldsSchema = z
     visibleWhen: z.enum(questionVisibilities).default('always'),
     /** Offer "I prefer not to answer" beside the question. */
     allowDecline: z.boolean().default(false),
+    /**
+     * How the answer feeds the Support page (decision 2026-11-09): a follow-up question flagged
+     * "support requested" raises a support request from each answer, one flagged "barrier"
+     * lists the answer as a barrier. Meaningful on the follow-up stage; stored on every question.
+     */
+    supportFlag: z.enum(supportFlags).default('none'),
   })
   .superRefine((q, ctx) => {
     const issue = (message: string, path: string[] = ['options']) =>
@@ -223,6 +230,7 @@ export const questionPatchSchema = z.object({
   showReferenceAnswer: z.boolean().optional(),
   visibleWhen: z.enum(questionVisibilities).optional(),
   allowDecline: z.boolean().optional(),
+  supportFlag: z.enum(supportFlags).optional(),
 });
 export type QuestionPatch = z.infer<typeof questionPatchSchema>;
 
@@ -268,6 +276,7 @@ const plainDisplay = {
   showReferenceAnswer: false,
   visibleWhen: 'always',
   allowDecline: false,
+  supportFlag: 'none',
 } satisfies Partial<QuestionFields>;
 const choice = (
   builtin: string,
@@ -370,6 +379,8 @@ export const assessmentQuestionViewSchema = z.object({
   showReferenceAnswer: z.boolean(),
   visibleWhen: z.enum(questionVisibilities),
   allowDecline: z.boolean(),
+  /** How the answer feeds the Support page (2026-11-09). */
+  supportFlag: z.enum(supportFlags),
   /** The earlier question's wording, for the builder; null when nothing is referenced. */
   referencePrompt: z.string().nullable().optional(),
 });
