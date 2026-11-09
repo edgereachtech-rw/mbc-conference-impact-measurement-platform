@@ -1,8 +1,7 @@
 import { escapeHtml, renderLayout, type EmailBranding, type RenderedEmail } from './layout.js';
 
 /**
- * The onboarding pack (task of 2026-11-03): what the platform is for, what happens when, the
- * delegate's attendance codes and their "I will be attending" card.
+ 
  *
  * Sent once an admin asks for it, after the delegate has their account. It is the only email that
  * carries the attendance codes, so it is written to be kept: the codes are inline images rather
@@ -75,7 +74,7 @@ ${
     : ''
 }
     <p style="${H}">Tell people you are coming</p>
-    <p style="${P}">There is a card with your name on it on your event page, ready to post or send to your team.</p>
+    <p style="${P}">Have you downloaded your "I will be attending" card? If not, you can still do so with the link sent to your email box earlier thanks.</p>
 ${input.firstStep ? `\n    <p style="${P}"><strong>Your first step:</strong> ${escapeHtml(input.firstStep)}</p>` : ''}
   `.trim();
 
