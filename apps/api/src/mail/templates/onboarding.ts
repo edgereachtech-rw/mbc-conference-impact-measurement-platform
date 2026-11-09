@@ -74,7 +74,7 @@ ${
     : ''
 }
     <p style="${H}">Tell people you are coming</p>
-    <p style="${P}">Have you downloaded your "I will be attending" card? If not, you can still do so with the link sent to your email box earlier thanks.</p>
+    <p style="${P}"> Have you downloaded your "I will be attending" card? If not, you can still do so with the link sent to your email box earlier thanks.</p>
 ${input.firstStep ? `\n    <p style="${P}"><strong>Your first step:</strong> ${escapeHtml(input.firstStep)}</p>` : ''}
   `.trim();
 
