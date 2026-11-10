@@ -1,8 +1,7 @@
 import { safeReturnPath } from '@mbc/shared';
 import { headers } from 'next/headers';
 
-/** The request header the proxy fills with the address asked for (path and query). */
-export const REQUEST_PATH_HEADER = 'x-mbc-path';
+import { REQUEST_PATH_HEADER } from '@/proxy';
 
 /**
  * The sign-in address that brings the visitor back to the page they asked for (2026-11-10):
