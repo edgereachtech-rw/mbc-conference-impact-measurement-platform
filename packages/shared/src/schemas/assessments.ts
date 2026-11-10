@@ -660,12 +660,41 @@ export function describeAnswer(
 
 export const myAssessmentStatuses = ['upcoming', 'open', 'closed'] as const;
 
+/**
+ * What a delegate learns about a knowledge answer: right or wrong, nothing more (decision
+ * 2026-11-10: the correct answer is never shown, so the question can be asked again later).
+ */
 export const knowledgeFeedbackSchema = z.object({
   correct: z.boolean(),
-  correctValue: z.string(),
-  correctLabel: z.string(),
 });
 export type KnowledgeFeedback = z.infer<typeof knowledgeFeedbackSchema>;
+
+/**
+ * A deterministic shuffle: the same seed always gives the same order, so a knowledge section
+ * asks its questions in a random order that stays put for one delegate across reloads
+ * (decision 2026-11-10). A Fisher–Yates pass over a small seeded generator; no cryptography.
+ */
+export function stableShuffle<T>(items: readonly T[], seed: string): T[] {
+  let h = 2166136261;
+  for (let i = 0; i < seed.length; i++) {
+    h ^= seed.charCodeAt(i);
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  let state = h || 1;
+  const next = () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let t = state;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  const out = [...items];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(next() * (i + 1));
+    [out[i], out[j]] = [out[j]!, out[i]!];
+  }
+  return out;
+}
 
 /**
  * The delegate's own plan, shown back inside a follow-up wave (E12-2, E12-3): they never re-enter

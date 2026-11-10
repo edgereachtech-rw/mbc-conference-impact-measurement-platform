@@ -501,11 +501,8 @@ describe.skipIf(!hasDatabase)('assessment questions and answers', () => {
       cookies.delegate,
     );
     expect(wrong.status, wrong.text).toBe(200);
-    expect(wrong.body.assessments[0].feedback[quizQ!.id]).toEqual({
-      correct: false,
-      correctValue: 'b',
-      correctLabel: 'Whether stakeholder expectations were met',
-    });
+    // Right or wrong only (2026-11-10): the correct answer never travels to the delegate.
+    expect(wrong.body.assessments[0].feedback[quizQ!.id]).toEqual({ correct: false });
     const retry = await call(
       'put',
       `${me}/pre_conference`,

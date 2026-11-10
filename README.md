@@ -412,7 +412,10 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   delegate's assessment view, one entry per submitted knowledge section (one point per knowledge
   question, computed by `sectionMarkOf` in `packages/shared`), shown in the submission popup
   and on the section. A rating-scale section is averaged in the reports and never marked for the
-  delegate.
+  delegate. Since 2026-11-10 a knowledge answer's feedback says only right or wrong (the
+  correct answer never reaches the delegate, so the question can be asked again later), and a
+  knowledge section asks its questions in a random order fixed per delegate (`stableShuffle`
+  seeded by delegate and section), so the order never changes between visits.
 - Session feedback (task of 2026-10-31; backlog E8): a questionnaire per session, reached by the
   session's link or QR code, answered after the session by delegates recorded as attending it
   (session attendance, E6), one response per delegate, recorded once (2026-11-07: no updating;

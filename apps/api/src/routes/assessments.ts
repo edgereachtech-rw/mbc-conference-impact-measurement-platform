@@ -14,6 +14,7 @@ import {
   isBlankAnswer,
   isKnowledgeQuestion,
   sectionMarkOf,
+  stableShuffle,
   markedOptions,
   questionCreateSchema,
   questionFieldsSchema,
@@ -1561,10 +1562,9 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
     question: AssessmentQuestionView,
     answer: { correct: boolean | null },
   ): KnowledgeFeedback | null {
+    // Right or wrong only (2026-11-10): the correct answer itself is never sent to the delegate.
     if (!question.isKnowledge || answer.correct === null) return null;
-    const right = (question.options ?? []).find((o) => o.correct);
-    if (!right) return null;
-    return { correct: answer.correct, correctValue: right.value, correctLabel: right.label };
+    return { correct: answer.correct };
   }
 
   async function myAssessments(delegate: {
@@ -1607,6 +1607,22 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
               ),
           )
           .map(questionViewOf);
+        // A knowledge section asks its questions in a random order, the same one for this
+        // delegate every time (2026-11-10); the other sections keep the organisers' order.
+        const knowledgeSections = new Set(
+          sections.filter((x) => x.marking === 'knowledge').map((x) => x.id),
+        );
+        const ordered = views.flatMap((q, index) => {
+          if (!q.sectionId || !knowledgeSections.has(q.sectionId)) return [q];
+          // The first question of each knowledge section stands for the whole section.
+          if (views.findIndex((x) => x.sectionId === q.sectionId) !== index) return [];
+          return stableShuffle(
+            views.filter((x) => x.sectionId === q.sectionId),
+            `${delegateId}:${q.sectionId}`,
+          );
+        });
+        views.length = 0;
+        views.push(...ordered);
         const byId = new Map(views.map((q) => [q.id, q]));
         const answers: Record<string, unknown> = {};
         const feedback: Record<string, KnowledgeFeedback> = {};

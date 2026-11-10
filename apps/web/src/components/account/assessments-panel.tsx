@@ -925,9 +925,6 @@ function QuestionField({
                 className="size-5 accent-corp-green"
               />
               {o.label}
-              {feedback && feedback.correctValue === o.value && o.value !== current ? (
-                <span className="text-xs text-corp-muted">(correct answer)</span>
-              ) : null}
             </label>
           ))}
           {knowledge && checking && !feedback ? (
@@ -949,11 +946,7 @@ function QuestionField({
               ) : (
                 <XCircleIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
               )}
-              <span>
-                {feedback.correct
-                  ? 'Correct.'
-                  : `Not quite. The correct answer is: ${feedback.correctLabel}`}
-              </span>
+              <span>{feedback.correct ? 'Correct.' : 'Not quite.'}</span>
             </p>
           ) : null}
           {error}

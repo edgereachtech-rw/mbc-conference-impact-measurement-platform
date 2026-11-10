@@ -76,7 +76,7 @@ const upcoming: MyAssessment = {
   canAnswer: false,
   context: noContext,
 };
-const CORRECT = { correct: true, correctValue: 'b', correctLabel: 'Examine the gap' };
+const CORRECT = { correct: true };
 const scored: MyAssessment = {
   ...open,
   stage: 'follow_up',
@@ -474,9 +474,10 @@ describe('AssessmentsPanel', () => {
 
     await user.click(within(card).getByLabelText('Enrol everyone'));
     expect(puts(calls)[0]).toEqual({ answers: { k: 'a' } });
-    expect((await within(card).findByRole('status')).textContent).toMatch(
-      /Not quite. The correct answer is: Examine the gap/,
-    );
+    // Right or wrong only: the correct answer is never shown (2026-11-10).
+    const verdict = (await within(card).findByRole('status')).textContent ?? '';
+    expect(verdict).toMatch(/Not quite\./);
+    expect(verdict).not.toMatch(/Examine the gap/);
     expect(within(card).getByLabelText('Enrol everyone')).toHaveProperty('disabled', true);
     expect(within(card).getByLabelText(/Examine the gap/)).toHaveProperty('disabled', true);
 
