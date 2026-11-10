@@ -26,6 +26,14 @@ type Stage = 'email' | 'sent';
  */
 export function SignInForm({ next, supportEmail, initialEmail }: SignInFormProps) {
   const router = useRouter();
+  // The `#tab` of the address the visitor asked for never reaches the server, but the browser
+  // keeps it across the redirect to this page (2026-11-10): it is added to `next` here, so the
+  // code sign-in, and the link the email carries, both return to the exact tab.
+  const [destination] = useState(() => {
+    if (typeof window === 'undefined' || !next || next.includes('#')) return next;
+    const hash = window.location.hash;
+    return hash ? `${next}${hash}` : next;
+  });
   const ids = { email: useId(), code: useId() };
   const [stage, setStage] = useState<Stage>('email');
   const [email, setEmail] = useState(initialEmail ?? '');
@@ -36,7 +44,7 @@ export function SignInForm({ next, supportEmail, initialEmail }: SignInFormProps
   async function requestLink(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
-    const parsed = magicLinkRequestSchema.safeParse({ email, next });
+    const parsed = magicLinkRequestSchema.safeParse({ email, next: destination });
     if (!parsed.success) {
       setError(parsed.error.issues[0]?.message ?? 'Enter a valid email address');
       return;
@@ -67,7 +75,7 @@ export function SignInForm({ next, supportEmail, initialEmail }: SignInFormProps
         method: 'POST',
         body: JSON.stringify(parsed.data),
       });
-      router.replace(next ?? result.next);
+      router.replace(destination ?? result.next);
       router.refresh();
     } catch (e) {
       setError(

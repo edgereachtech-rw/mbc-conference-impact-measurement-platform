@@ -5,6 +5,7 @@ import { ProfilePanel } from '@/components/account/profile-panel';
 import { AdminContent, AdminPageHeader } from '@/components/admin/page-header';
 import { platform } from '@/config/platform';
 import { loadMyEvents } from '@/lib/my-events-server';
+import { signInRedirect } from '@/lib/return-path';
 import { getSession } from '@/lib/session';
 
 export const metadata: Metadata = { title: 'Profile' };
@@ -15,7 +16,7 @@ export const metadata: Metadata = { title: 'Profile' };
  */
 export default async function ProfilePage() {
   const session = await getSession();
-  if (!session) redirect('/signin?next=/account/profile');
+  if (!session) redirect(await signInRedirect('/account/profile'));
   const initialEvents = await loadMyEvents();
   return (
     <>

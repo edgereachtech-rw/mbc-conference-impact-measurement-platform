@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 
 import { DelegateShell } from '@/components/account/delegate-shell';
 import { consentGate } from '@/lib/consent-server';
+import { signInRedirect } from '@/lib/return-path';
 import { getSession } from '@/lib/session';
 
 /**
@@ -12,7 +13,7 @@ import { getSession } from '@/lib/session';
  */
 export default async function AccountLayout({ children }: { children: ReactNode }) {
   const session = await getSession();
-  if (!session) redirect('/signin?next=/account');
+  if (!session) redirect(await signInRedirect('/account'));
   if (session.role !== 'delegate') redirect('/admin');
   // Nothing of theirs opens until they have read the privacy notice (E3-7, section 6.4).
   const gate = await consentGate('/account');

@@ -62,6 +62,26 @@ describe('SignInForm', () => {
     expect(calls).toHaveLength(0);
   });
 
+  it('carries the #tab of the address asked for into the link request and the code sign-in', async () => {
+    window.location.hash = '#attendance';
+    const calls = stubFetch([
+      { status: 202, body: { ok: true, message: 'sent' } },
+      { status: 200, body: { ok: true, next: '/admin', user: {} } },
+    ]);
+    const user = userEvent.setup();
+    render(<SignInForm supportEmail="help@example.com" next="/admin/events/e1" />);
+    await user.type(screen.getByLabelText(/email address/i), 'grace@example.com');
+    await user.click(screen.getByRole('button', { name: /email me a sign-in link/i }));
+    expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({
+      email: 'grace@example.com',
+      next: '/admin/events/e1#attendance',
+    });
+    await user.type(await screen.findByLabelText(/6-digit code/i), '123456');
+    await user.click(screen.getByRole('button', { name: /sign in with the code/i }));
+    expect(replace).toHaveBeenCalledWith('/admin/events/e1#attendance');
+    window.location.hash = '';
+  });
+
   it('signs in with the one-time code and navigates to the returned destination', async () => {
     const calls = stubFetch([
       { status: 202, body: { ok: true, message: 'sent' } },

@@ -6,6 +6,7 @@ import { AdminContent, AdminPageHeader } from '@/components/admin/page-header';
 import { platform } from '@/config/platform';
 import { countdownLine } from '@/lib/my-events';
 import { loadMyEvents } from '@/lib/my-events-server';
+import { signInRedirect } from '@/lib/return-path';
 import { getSession } from '@/lib/session';
 
 export const metadata: Metadata = { title: 'Dashboard' };
@@ -16,7 +17,7 @@ export const metadata: Metadata = { title: 'Dashboard' };
  */
 export default async function AccountPage() {
   const session = await getSession();
-  if (!session) redirect('/signin?next=/account');
+  if (!session) redirect(await signInRedirect('/account'));
   const initialEvents = await loadMyEvents();
   const nextEvent = initialEvents?.find((e) => e.period === 'upcoming') ?? null;
 

@@ -824,7 +824,11 @@ measures | evidence }`, the list replaced with ids kept; own actions only, 404 o
   marketing landing page was removed, and so were the bar above it and the footer below it, so
   the page carries its own contact and copyright line. `/signin` serves the same panel rather
   than redirecting, because invitation emails carry `/signin?invite=` and every protected page
-  redirects with `?next=`; both routes share `resolveSignIn` (session check, invitation lookup)
+  redirects with `?next=` (since 2026-11-10 the exact address asked for, path and query, read
+  from the `x-mbc-path` header that `apps/web/src/proxy.ts` sets; the `#tab` part, which never
+  reaches the server, is kept by the browser across the redirect and added to `next` by the
+  sign-in form, so a code or emailed link brings the visitor back to that tab); both routes share
+  `resolveSignIn` (session check, invitation lookup)
   and `SignInPanel`. The root layout renders the header and footer only for a signed-in session,
   so the console and delegate areas are unchanged and a visitor sees the sign-in page alone.
 - Staff accounts at `/admin/staff` (backlog E3-9, screen built 2026-11-02 on the existing API):
