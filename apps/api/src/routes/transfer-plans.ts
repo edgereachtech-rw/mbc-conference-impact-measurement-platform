@@ -428,7 +428,7 @@ export function transferPlanRouter({
       throw new HttpError(
         409,
         'plan_completed',
-        'This plan is completed and can no longer be changed. Start a new plan for further actions.',
+        'This plan is completed and can no longer be changed. What it records stands as your result.',
       );
     }
   }
