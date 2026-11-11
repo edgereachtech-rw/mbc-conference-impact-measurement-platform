@@ -293,6 +293,49 @@ describe('AttendanceManager', () => {
     );
   });
 
+  it('says why the camera cannot scan, and lets the admin try again once it is allowed', async () => {
+    stub();
+    const refusal = Object.assign(new Error('denied'), { name: 'NotAllowedError' });
+    const getUserMedia = vi.fn<() => Promise<MediaStream>>(() => Promise.reject(refusal));
+    vi.stubGlobal('navigator', { ...navigator, mediaDevices: { getUserMedia } });
+    vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    render(<AttendanceManager event={event} />);
+    await user.click(await screen.findByRole('button', { name: 'Scan QR code' }));
+    const scan = await screen.findByRole('dialog', { name: /Scan a code for 12 Nov 2026/ });
+
+    await user.click(within(scan).getByRole('button', { name: 'Use the camera' }));
+    expect((await within(scan).findByRole('alert')).textContent).toMatch(
+      /Camera access is blocked for this site/,
+    );
+    expect(getUserMedia).toHaveBeenCalledTimes(1);
+    expect(
+      (within(scan).getByRole('button', { name: 'Use the camera' }) as HTMLButtonElement).disabled,
+    ).toBe(false);
+
+    // Allowed in the browser since: the next press asks again, and the preview appears.
+    const track = { stop: vi.fn() };
+    getUserMedia.mockImplementation(() =>
+      Promise.resolve({ getTracks: () => [track] } as unknown as MediaStream),
+    );
+    await user.click(within(scan).getByRole('button', { name: 'Use the camera' }));
+    expect(await within(scan).findByLabelText('Camera preview')).toBeTruthy();
+    expect(within(scan).queryByRole('alert')).toBeNull();
+    await user.click(within(scan).getByRole('button', { name: 'Stop the camera' }));
+    expect(within(scan).queryByLabelText('Camera preview')).toBeNull();
+    expect(track.stop).toHaveBeenCalled();
+
+    // A plain http address is refused before any prompt, with the reason.
+    const descriptor = Object.getOwnPropertyDescriptor(window, 'isSecureContext');
+    Object.defineProperty(window, 'isSecureContext', { value: false, configurable: true });
+    await user.click(within(scan).getByRole('button', { name: 'Use the camera' }));
+    expect((await within(scan).findByRole('alert')).textContent).toMatch(
+      /secure \(https\) address/,
+    );
+    expect(getUserMedia).toHaveBeenCalledTimes(2);
+    if (descriptor) Object.defineProperty(window, 'isSecureContext', descriptor);
+  });
+
   it('records session attendance and asks for a reason when removing a presence', async () => {
     const calls = stub();
     const user = userEvent.setup();

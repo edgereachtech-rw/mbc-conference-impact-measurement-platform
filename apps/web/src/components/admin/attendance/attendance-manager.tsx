@@ -32,6 +32,13 @@ import { ApiError, apiFetch } from '@/lib/api';
 import { formatDateShort, formatInstant } from '@/lib/events';
 import { describeError } from '@/lib/imports';
 
+import {
+  cameraAvailability,
+  cameraProblemText,
+  startQrCamera,
+  type CameraProblem,
+} from './qr-camera';
+
 interface AttendanceManagerProps {
   event: EventDetail;
 }
@@ -55,12 +62,6 @@ type DialogState =
 const formatLabel = { physical: 'In person', virtual: 'Online' } as const;
 const dailyTone = (s: DailyAttendanceStatus) =>
   s === 'attended' || s === 'partial' ? 'positive' : s === 'absent' ? 'attention' : 'neutral';
-
-/** Minimal shape of the browser's BarcodeDetector, present on Android Chrome and recent desktops. */
-interface Detector {
-  detect(source: HTMLVideoElement): Promise<Array<{ rawValue: string }>>;
-}
-type DetectorCtor = new (options: { formats: string[] }) => Detector;
 
 /**
  * Attendance for one event, per event date (attendance requirements, 2026-10-30): the date's
@@ -603,9 +604,9 @@ function ScanDialog({
     delegate: AttendanceRow['delegate'];
     record: AttendanceRecordView | null;
   } | null>(null);
-  const [camera, setCamera] = useState<'off' | 'on' | 'unsupported'>('off');
+  const [camera, setCamera] = useState<'off' | 'on'>('off');
+  const [cameraProblem, setCameraProblem] = useState<CameraProblem | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
-  const streamRef = useRef<MediaStream | null>(null);
   const id = useId();
 
   const lookup = useCallback(
@@ -636,47 +637,21 @@ function ScanDialog({
     [eventId, date.id],
   );
 
+  // The camera runs only while the preview is on screen; closing the dialog or reading a code
+  // releases it. A failure says why, so the admin knows whether to allow the camera, open the
+  // https address, or just type the code.
   useEffect(() => {
-    if (camera !== 'on') return undefined;
-    const Ctor = (globalThis as { BarcodeDetector?: DetectorCtor }).BarcodeDetector;
-    if (!Ctor || !navigator.mediaDevices?.getUserMedia) return undefined; // checked on click
-    let stopped = false;
-    const detector = new Ctor({ formats: ['qr_code'] });
-    let timer: ReturnType<typeof setInterval> | undefined;
-    navigator.mediaDevices
-      .getUserMedia({ video: { facingMode: 'environment' } })
-      .then((stream) => {
-        if (stopped) {
-          stream.getTracks().forEach((t) => t.stop());
-          return;
-        }
-        streamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          void videoRef.current.play();
-        }
-        timer = setInterval(async () => {
-          if (!videoRef.current) return;
-          try {
-            const codes = await detector.detect(videoRef.current);
-            const value = codes[0]?.rawValue;
-            if (value) {
-              clearInterval(timer);
-              setCamera('off');
-              void lookup(value);
-            }
-          } catch {
-            // A frame that cannot be read is skipped; the next one is tried.
-          }
-        }, 500);
-      })
-      .catch(() => setCamera('unsupported'));
-    return () => {
-      stopped = true;
-      if (timer) clearInterval(timer);
-      streamRef.current?.getTracks().forEach((t) => t.stop());
-      streamRef.current = null;
-    };
+    if (camera !== 'on' || !videoRef.current) return undefined;
+    return startQrCamera(videoRef.current, {
+      onCode: (value) => {
+        setCamera('off');
+        void lookup(value);
+      },
+      onProblem: (problem) => {
+        setCamera('off');
+        setCameraProblem(problem);
+      },
+    });
   }, [camera, lookup]);
 
   async function confirm() {
@@ -790,24 +765,30 @@ function ScanDialog({
             <button
               type="button"
               disabled={busy || camera === 'on'}
-              onClick={() =>
-                setCamera(
-                  (globalThis as { BarcodeDetector?: DetectorCtor }).BarcodeDetector &&
-                    typeof navigator.mediaDevices?.getUserMedia === 'function'
-                    ? 'on'
-                    : 'unsupported',
-                )
-              }
+              onClick={() => {
+                const problem = cameraAvailability();
+                setCameraProblem(problem);
+                if (!problem) setCamera('on');
+              }}
               className={consoleButton({ variant: 'secondary' })}
             >
               <CameraIcon aria-hidden="true" /> Use the camera
             </button>
-            {camera === 'unsupported' ? (
-              <span className="text-xs text-corp-muted">
-                This browser cannot scan with the camera; type or paste the code instead.
-              </span>
+            {camera === 'on' ? (
+              <button
+                type="button"
+                onClick={() => setCamera('off')}
+                className={consoleButton({ variant: 'secondary' })}
+              >
+                Stop the camera
+              </button>
             ) : null}
           </div>
+          {cameraProblem ? (
+            <p role="alert" className="text-sm text-corp-text">
+              {cameraProblemText[cameraProblem]}
+            </p>
+          ) : null}
           <div className="space-y-1">
             <label htmlFor={`${id}-code`} className="text-sm font-semibold text-corp-ink">
               Code
