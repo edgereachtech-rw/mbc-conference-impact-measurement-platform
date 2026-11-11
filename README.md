@@ -1098,6 +1098,10 @@ measures | evidence }`, the list replaced with ids kept; own actions only, 404 o
   configuration. The event page's tabs are Event profile, Event dates, Sessions and schedule,
   Assessment configuration, Review and publication and Delegates (the delegate table and the
   messages sent to them).
+- Organisation shown and searched (2026-11-12): a delegate with no organisation on their
+  registration is listed, searched and addressed in messages under their nominating
+  organisation; one with an organisation of their own is never found through the nominating
+  one. The record is not changed (`apps/api/src/lib/organisation.ts`).
 - Export (E5-10, 2026-10-30): `GET .../assessments/:stage/responses.csv` downloads the
   submitted responses, one row per delegate (name, email, organisation, job title, country,
   attendance format, capacity, submitted at in UTC) and one column per active question with
@@ -1112,6 +1116,31 @@ measures | evidence }`, the list replaced with ids kept; own actions only, 404 o
 - Migrations `20261031120000_assessment_questions` (`assessment_question`,
   `assessment_response`, `assessment_answer`) and `20261031180000_question_scoring`
   (`assessment_answer.correct`, `score`).
+
+## Delegates added and corrected by hand (decision 2026-11-12, backlog E2-4)
+
+From the event's Delegates tab an admin can add one delegate without a file and edit any row.
+
+- `POST /api/v1/events/:eventId/delegates` (admin only; body: name, email, organisation,
+  nominating organisation, job title, country, attendance format, capacity, status active or
+  pending). The person is matched by normalised email under the import rules (D5): an unknown
+  address creates an identity and its current address (`identity.created`, evidence
+  `admin_decision`); a current address of a known person links the registration to them when
+  the name is theirs (`identity.linked`); a previous or provisional address, another name on a
+  known address, a deactivated account, a second registration of the person in the event and an
+  archived event are refused with 409 (`email_not_current`, `name_mismatch`,
+  `account_inactive`, `registration_exists`, `event_archived`). The registration carries
+  `registration_source = manual` and no external id, so a later import of the same address
+  updates it in place instead of duplicating it. `delegate.created` is audited with ids only.
+  Nothing is emailed: the invitation is sent from the tab as for an imported delegate.
+- `PATCH /api/v1/delegates/:id` (E2-4) now also takes `nominatingOrganisation`; the edit form
+  sends only the fields that changed and the audit entry keeps old and new values. The email is
+  not editable: it changes only through the identity email-change workflow (E2-12). Duplicate
+  and test statuses are shown read-only in the form; they are set by imports and the selection
+  bar.
+- Screens: "Add a delegate" above the table and a pencil on every row open one dialog
+  (`apps/web/src/components/admin/delegate-form.tsx`), phone-first, with the server's refusal
+  shown as written.
 
 ## Messages to delegates (Increment 1b, backlog E2-14)
 
