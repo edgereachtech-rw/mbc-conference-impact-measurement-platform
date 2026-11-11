@@ -472,6 +472,7 @@ describe.skipIf(!hasDatabase)('event dashboards and reports', () => {
             isPriority: true,
             support: 'Time from my manager',
             targetOn: '2026-11-20',
+            reminder: { frequency: 'weekly' },
           },
           {
             title: 'Error-rate baseline',
@@ -480,7 +481,6 @@ describe.skipIf(!hasDatabase)('event dashboards and reports', () => {
             barriers: 'Data access',
           },
         ],
-        reminder: { frequency: 'weekly' },
       },
       cookies.dee,
     );
@@ -552,7 +552,6 @@ describe.skipIf(!hasDatabase)('event dashboards and reports', () => {
             isPriority: true,
           },
         ],
-        reminder: { frequency: 'none' },
       },
       cookies.ada,
     );
@@ -715,7 +714,8 @@ describe.skipIf(!hasDatabase)('event dashboards and reports', () => {
       'Brief stakeholders',
       'Try the checklist',
     ]);
-    expect(t.reminders.byFrequency).toMatchObject({ weekly: 1, none: 1 });
+    // Reminders belong to actions (2026-11-11): one weekly, two without.
+    expect(t.reminders.byFrequency).toMatchObject({ weekly: 1, none: 2 });
     expect(t.application.appliedActions).toMatchObject({ count: 1, of: 3 });
     expect(t.application.appliedDelegates).toMatchObject({ count: 1, of: 2, percent: 50 });
     expect(t.application.followUp).toMatchObject({
@@ -956,7 +956,7 @@ describe.skipIf(!hasDatabase)('event dashboards and reports', () => {
         measures: 1,
         withResult: 0,
         evidence: 1,
-        reminder: 'weekly',
+        reminders: 1,
       },
       supportRequests: { state: 'no_response' },
     });

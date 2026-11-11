@@ -143,60 +143,48 @@ export function renderAdminMessage(
 
 export interface TransferPlanReminderInput {
   recipientName?: string;
-  /** Absolute link to the delegate's plan page. */
-  planUrl: string;
+  /** The action the reminder is about: its title or, failing that, its text. */
+  actionName: string;
+  /** The action's "what specifically will you do differently", when the title is separate. */
+  actionText?: string;
+  /** The first practical step and the dates, when the delegate wrote them. */
+  firstStep?: string;
+  targetOn?: string;
   /** How often the delegate chose to be reminded, in words ("every two weeks"). */
   frequency: string;
-  /** What the delegate calls the plan ("Plan 2", "Coaching rollout"). */
-  planTitle?: string;
-  /**
-   * Each written action with its current status and how long ago that status was recorded
-   * (decision 2026-11-09): the email shows what is stale and asks for an update.
-   */
-  actions: Array<{ name: string; status: string; updated: string; isPriority: boolean }>;
-  /**
-   * Set during the last seven days of the reminder window (2026-11-06): the email says the
-   * reminders are about to stop and asks the delegate to complete the plan or extend them.
-   */
-  finalWeek?: { endsOn: string };
+  /** Absolute link to the delegate's plan page. */
+  planUrl: string;
 }
 
 /**
- * A reminder the delegate asked for (decision 2026-11-09): update where each action of the plan
- * stands. It lists the actions with their current status and when it was last recorded, and its
- * button opens the plan page, where "Update status" records a new entry in the history.
+ * A reminder the delegate asked for about one planned action (decision 2026-11-11): it reminds,
+ * and asks for nothing. It names the action, its first step and target date, and says the
+ * delegate can go to the platform to update the plan whenever they wish.
  */
 export function renderTransferPlanReminder(
   branding: EmailBranding,
   input: TransferPlanReminderInput,
 ): RenderedEmail {
-  const plan = input.planTitle ? `your plan '${input.planTitle}'` : 'the plan you made';
   const paragraphs = [
     input.recipientName ? `Hello ${input.recipientName},` : 'Hello,',
-    `You asked to be reminded ${input.frequency} about ${plan} at ${branding.eventName}. Take two minutes to update where each action stands: not yet started, started, in progress, applied, applied consistently, completed, changed or no longer applicable.`,
-    ...input.actions.map(
-      (a) => `${a.isPriority ? 'First priority: ' : ''}${a.name} — ${a.status}, ${a.updated}.`,
-    ),
+    `A reminder you asked for, ${input.frequency}, about an action in your ${branding.eventName} Transfer Plan:`,
+    input.actionText ? `${input.actionName}: ${input.actionText}` : input.actionName,
   ];
-  if (input.finalWeek) {
-    paragraphs.push(
-      `These are the last days of your reminders: they stop after ${input.finalWeek.endsOn}. If the plan is done, record the evidence for each action and mark it completed. If you need more time, extend the reminders on your plan page.`,
-    );
-  }
+  if (input.firstStep) paragraphs.push(`First step: ${input.firstStep}`);
+  if (input.targetOn) paragraphs.push(`Target date: ${input.targetOn}`);
+  paragraphs.push(
+    'Nothing is needed from you now. Whenever you wish, you can go to the platform to update your plan: where the action stands, its measures and your evidence.',
+  );
   return renderLayout(branding, {
-    subject: input.finalWeek
-      ? `Last days of reminders for your ${branding.eventName} plan`
-      : `Where do your ${branding.eventName} actions stand?`,
-    preheader: input.finalWeek
-      ? 'Your reminders end soon: complete the plan or extend them.'
-      : 'A reminder you asked for: update the status of each action.',
+    subject: `Reminder: ${input.actionName}`,
+    preheader: `A reminder you asked for about your ${branding.eventName} Transfer Plan.`,
     eyebrow: 'Transfer plan',
-    title: input.finalWeek
-      ? 'Complete your plan, or extend your reminders'
-      : 'Update your application status',
+    title: 'A reminder about your action',
     paragraphs,
-    button: { label: 'Update my statuses', url: input.planUrl },
-    notes: ['You can change how often you hear from us, or stop reminders, on your plan page.'],
+    button: { label: 'Open my plan', url: input.planUrl },
+    notes: [
+      'You can change how often you hear about this action, or stop its reminders, on your plan page.',
+    ],
   });
 }
 

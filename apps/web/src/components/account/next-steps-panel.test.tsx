@@ -87,7 +87,7 @@ describe('NextStepsPanel', () => {
               measures: 0,
               withResult: 0,
               evidence: 0,
-              reminder: 'none',
+              reminders: 0,
               nextReminderAt: null,
               updatedAt: 'x',
             },

@@ -745,13 +745,14 @@ enforced until confirmed (OQ: confirm which of Q-TP-1, 2, 4, 5, 6, 13, 14 are ma
 save after submission keeps the plan's status; version 1 as submitted is kept as a snapshot and
 every later save and progress record is in the audit history.
 
-Revision of 2026-11-06 (task of that day): **E9-2 no longer holds as written.** A delegate may
-keep several plans for one event, numbered in order; the first is still created on first access
-and every delegate route takes the plan id. Reminder preferences (E10-1 to E10-3, E10-5 to E10-9)
-are built per plan: none, daily, every other day, twice a week on two chosen weekdays, weekly,
-every two weeks, monthly; a time of day in the event timezone; a start date and an end date; the
-worker stops at the end date and, in the last seven days, sends a "last days" email that asks the
-delegate to complete the plan or extend the reminders. "Once" and the channel (E10-4) stay open.
+Revision of 2026-11-06 (task of that day), **withdrawn 2026-11-11**: a delegate could keep
+several plans for one event, numbered in order. Since 2026-11-11 E9-2 holds again: one plan per
+delegate and event, created on first access; every delegate route still takes the plan id.
+Reminder preferences (E10-1 to E10-3, E10-5 to E10-9) were built per plan on 2026-11-06 and
+moved onto each action on 2026-11-11: none, daily, every other day, twice a week on two chosen
+weekdays, weekly, every two weeks, monthly; a time of day in the event timezone; a start date and
+an end date; the worker stops at the end date (the "last days" email of 2026-11-06 is gone).
+"Once" and the channel (E10-4) stay open.
 A submitted plan is **completed** only when every written action has a result and evidence;
 completion freezes it, stops its reminders, is audited and emails every active admin. E9-9's
 "completed meaning a submitted plan" is now "submitted or completed"; counts are per delegate.
@@ -770,15 +771,15 @@ aggregates the outcomes per delegate for organisers and sponsors.
 
 | ID | Story | Acceptance criteria | Pri | Inc |
 |---|---|---|---|---|
-| E10-1 | As a delegate, I want to set when reminders begin | **Done 2026-11-06.** Start date per plan | P0 | 4 |
-| E10-2 | As a delegate, I want to choose frequency | **Done 2026-11-06** except "once": daily; every other day; twice a week (two chosen weekdays); weekly; every two weeks; monthly | P0 | 4 |
+| E10-1 | As a delegate, I want to set when reminders begin | **Done 2026-11-06; per action since 2026-11-11.** Start date per planned action | P0 | 4 |
+| E10-2 | As a delegate, I want to choose frequency | **Done 2026-11-06** except "once": daily; every other day; twice a week (two chosen weekdays); weekly; every two weeks; monthly; chosen per planned action since 2026-11-11 | P0 | 4 |
 | E10-3 | As a delegate, I want a preferred day and time | **Done 2026-11-06.** Weekdays for twice a week, a time of day in the event timezone; the next send is stored in UTC | P0 | 4 |
 | E10-4 | As a delegate, I want to choose the channel | Email at launch; model supports further channels (SMS, WhatsApp) later | P0 | 4 |
-| E10-5 | As a delegate, I want to set an end date or stop reminders | **Done 2026-11-06.** Optional end date; frequency "none" stops them; a later end date extends them; completing the plan stops them for good | P0 | 4 |
+| E10-5 | As a delegate, I want to set an end date or stop reminders | **Done 2026-11-06.** Optional end date per action; frequency "none" stops them; a later end date extends them; an action recorded as completed, applied or applied consistently is no longer reminded (2026-11-11); completing the plan stops them for good | P0 | 4 |
 | E10-6 | As a delegate, I want to change my preferences from my account | Includes setting reminders at the end-of-conference stage (S4) and as part of follow-ups | P0 | 4 |
 | E10-7 | As the platform, I record preferences and each reminder sent | `reminder_preference` (with history) and `reminder_log` (time, channel, status, provider message ID) | P0 | 5 |
 | E10-8 | As the platform, I send reminders on schedule | Worker sends due reminders; **idempotent** (never sent twice, even if the worker restarts or overlaps); retries on failure; stops at end date or when stopped | P0 | 5 |
-| E10-9 | As a delegate, I want reminders to refer to my Transfer Plan | Email shows my first-priority action and next step and links to my plan; encourages progress (S6.3) | P0 | 5 |
+| E10-9 | As a delegate, I want reminders to refer to my Transfer Plan | **Done; revised 2026-11-11.** Each email names one planned action with its first step and target date, links to the plan and says the delegate can update it on the platform; it asks nothing and carries no form (S6.3) | P0 | 5 |
 | E10-10 | As M.Bryan, I want to see reminder preferences | Counts and breakdown by frequency and channel in the dashboard | P1 | 5 |
 | E10-11 | As the platform, I handle email bounces | Provider webhook marks bounced/complained addresses; admin sees affected delegates | P1 | 5 |
 | E10-12 | As a delegate, I want unsubscribe in every reminder | One-click link that pauses reminders | P0 | 5 |
@@ -901,6 +902,8 @@ That is enough for 10.5 and was not widened further.
 **Decision 2026-11-08 (product owner): progress is measured by the follow-ups.** The plan page records no progress. Each 30, 60, 90-day and longer-term follow-up asks, before its questions, for one current status per planned action, using the eight statuses with their definitions and examples; "changed" and "no longer applicable" ask for a brief explanation, "applied" and "applied consistently" for an example and when an application occurred, "completed" for what was completed and when. Every submitted follow-up's statuses are recorded and shown on the Transfer Plan as that action's progress; earlier records and explanations are kept. Started, in progress and completed do not mean the learning was applied. The dashboard counts each action once, in its latest status. The "Need support to apply your plan?" panel left the plan page; support needs come from the follow-up questions whose area names support.
 
 **Decision 2026-11-08 (product owner, later): a plan can be submitted at any time.** The final Transfer Planning session no longer gates submission; the sessions are still listed on the plan page. Drafts save as before, a submitted plan stays editable and the original submission is kept. The same day: the question "Can you identify a business measure for this action?" moved from the measures dialog onto the action card, under the action's other questions, and is saved with the plan; the "Add a measure" button appears only when the answer is yes.
+
+**Decision 2026-11-11 (product owner): one plan, reminders per action, no status from the plan page.** (1) One Transfer Plan is created per delegate and event, and no other: the "start another plan" route and screen left (the earlier revision of E9-2 is withdrawn; `sequence` stays at 1). (2) Each planned action carries its own reminder (frequency, days, time, start and end dates), set on the action card; the reminder only reminds: it names the action, asks nothing, has no form to fill, and says the delegate can go to the platform to update their plan. (3) The plan page records no progress: "Update status" and `POST .../actions/:actionId/progress` left; where an action stands is recorded by the post-conference follow-ups only. (4) A measure or evidence can be added to an action without saving the plan first: the plan is saved, then the dialog opens. (5) No reminder is sent for an action whose status is completed, applied or applied consistently.
 
 **Decision 2026-11-09 (product owner, evening, UI): one card per follow-up.** The organisers' follow-up card shows the name, a one-line state, the questions and the sending controls only; "Enabled", "Available from", "Deadline", "Target participants" and "Status" left it. Sending the invitation (by hand or at the scheduled time) is what opens a follow-up to the delegates sent it, with no window of its own; it stays open until the organisers close it, and can be reopened.
 

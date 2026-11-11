@@ -32,6 +32,7 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
   const tag = randomUUID().slice(0, 8);
   let now = new Date('2026-11-05T10:00:00.000Z');
   let deeId = '';
+  let adaId = '';
   let planId = '';
   let adaPlanId = '';
   const mailer = new MemoryMailer();
@@ -118,6 +119,7 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
     });
     identityIds.push(a.identity.id, b.identity.id);
     deeId = a.delegate.id;
+    adaId = b.delegate.id;
     // A pre-conference question Dee answered, to come back as a reference.
     const stage = await prisma.assessmentStageConfig.findUniqueOrThrow({
       where: { eventId_stage_wave: { eventId, stage: 'pre_conference', wave: 1 } },
@@ -252,6 +254,8 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
             action: 'Define measures before training',
             isPriority: true,
             startOn: '2026-11-20',
+            // Each action carries its own reminder (decision 2026-11-11).
+            reminder: { frequency: 'fortnightly', startOn: '2026-11-20' },
           },
           {
             title: 'Stakeholder briefing',
@@ -261,7 +265,6 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
           },
           { priorityLearning: 'only a learning, no action yet' },
         ],
-        reminder: { frequency: 'fortnightly', startOn: '2026-11-20' },
       },
       cookies.dee,
     );
@@ -273,7 +276,7 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
       false,
     ]);
     expect(first.body.plan.actions[0].startOn).toBe('2026-11-20');
-    expect(first.body.plan.reminder).toMatchObject({
+    expect(first.body.plan.actions[0].reminder).toEqual({
       frequency: 'fortnightly',
       startOn: '2026-11-20',
       nextReminderAt: '2026-11-20T08:00:00.000Z',
@@ -281,11 +284,16 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
       time: '09:00',
       days: [],
     });
+    expect(first.body.plan.actions[1].reminder).toMatchObject({
+      frequency: 'none',
+      nextReminderAt: null,
+    });
+    expect(first.body.plan).not.toHaveProperty('reminder');
     // The same old version again: refused, nothing overwritten.
     const stale = await call(
       'put',
       `/me/events/${eventId}/transfer-plans/${planId}`,
-      { version: 1, actions: [], reminder: { frequency: 'none' } },
+      { version: 1, actions: [] },
       cookies.dee,
     );
     expect(stale.status).toBe(409);
@@ -314,7 +322,6 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
             measureStatus: 'not_yet_known',
           },
         ],
-        reminder: { frequency: 'none' },
       },
       cookies.dee,
     );
@@ -325,7 +332,12 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
     expect(
       second.body.plan.actions.map((a: { measureStatus: string | null }) => a.measureStatus),
     ).toEqual([null, 'not_yet_known']);
-    expect(second.body.plan.reminder.nextReminderAt).toBeNull();
+    // A save without a reminder on an action switches that action's reminder off.
+    expect(
+      second.body.plan.actions.map(
+        (a: { reminder: { nextReminderAt: string | null } }) => a.reminder.nextReminderAt,
+      ),
+    ).toEqual([null, null]);
     const foreign = await call(
       'put',
       `/me/events/${eventId}/transfer-plans/${adaPlanId}`,
@@ -398,6 +410,7 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
       isPriority: boolean;
       startOn: string | null;
       targetOn: string | null;
+      reminder: { nextReminderAt: string | null } & Record<string, unknown>;
     };
     const pick = (a: Saved) => ({
       id: a.id,
@@ -407,6 +420,7 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
       isPriority: a.isPriority,
       startOn: a.startOn,
       targetOn: a.targetOn,
+      reminder: { ...a.reminder, nextReminderAt: undefined },
     });
     const withGap = await call(
       'put',
@@ -417,7 +431,6 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
           ...open.body.plan.actions.map(pick),
           { priorityLearning: 'only a learning, no action yet' },
         ],
-        reminder: open.body.plan.reminder,
       },
       cookies.dee,
     );
@@ -439,7 +452,6 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
       {
         version: withGap.body.plan.version,
         actions: withGap.body.plan.actions.slice(0, 2).map(pick),
-        reminder: withGap.body.plan.reminder,
       },
       cookies.dee,
     );
@@ -475,8 +487,8 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
           id: a.id,
           action: `${a.action} (revised)`,
           isPriority: a.id === submitted.body.plan.actions[0].id,
+          reminder: { frequency: 'weekly' },
         })),
-        reminder: { frequency: 'weekly' },
       },
       cookies.dee,
     );
@@ -516,18 +528,17 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
     const mine = await call('get', planUrl, undefined, cookies.dee);
     const [first, second] = mine.body.plan.actions as Array<{ id: string }>;
     const path = `/me/events/${eventId}/assessments/follow_up/plan-progress?wave=1`;
-    // The plan page records a status too (2026-11-09), under the same rules: "applied" needs
-    // the date an application occurred.
+    // The plan page records no status (decision 2026-11-11): only the follow-ups do.
     expect(
       (
         await call(
           'post',
           `${planUrl}/actions/${first!.id}/progress`,
-          { status: 'applied', note: 'x' },
+          { status: 'applied', note: 'x', occurredOn: '2026-12-10' },
           cookies.dee,
         )
       ).status,
-    ).toBe(422);
+    ).toBe(404);
 
     // Every action needs a status; "applied" needs an example and a date; "changed" a reason.
     const partial = await call(
@@ -662,7 +673,7 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
       status: 'submitted',
       actions: 2,
       priorityAction: 'Brief stakeholders (revised)',
-      reminderFrequency: 'weekly',
+      remindersOn: 2,
     });
     // Each action counted once, in its latest status.
     expect(dee.progress).toMatchObject({ applied_consistently: 1, started: 1 });
@@ -1045,7 +1056,7 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
     ).toBeGreaterThanOrEqual(3);
   });
 
-  it('sends the reminders delegates asked for, once per interval, and logs each attempt', async () => {
+  it('reminds each action on its own schedule, leaves applied actions alone, and only reminds', async () => {
     mailer.sent.length = 0;
     const deps = {
       prisma: () => prisma,
@@ -1060,9 +1071,18 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
       logger: silent,
       now: () => now,
     };
-    const plan = await prisma.transferPlan.findUniqueOrThrow({ where: { id: planId } });
-    // Weekly, chosen on the 18th at 10:00 Lagos with the default 09:00: next Wednesday at 09:00.
-    expect(plan.nextReminderAt).toEqual(new Date('2026-11-25T08:00:00.000Z'));
+    const actions = await prisma.transferPlanAction.findMany({
+      where: { planId },
+      orderBy: { order: 'asc' },
+    });
+    // Weekly on both, chosen on the 18th at 10:00 Lagos with the default 09:00: next Wednesday.
+    expect(actions.map((a) => a.nextReminderAt)).toEqual([
+      new Date('2026-11-25T08:00:00.000Z'),
+      new Date('2026-11-25T08:00:00.000Z'),
+    ]);
+    // The follow-up recorded the first action as applied consistently: it is never reminded
+    // again (decision 2026-11-11), whatever its schedule says.
+    expect(actions.map((a) => a.progressStatus)).toEqual(['applied_consistently', 'started']);
     now = new Date('2026-11-24T12:00:00.000Z');
     expect(await sendDueTransferPlanReminders(deps)).toMatchObject({ due: 0, sent: 0 });
     await tick('2026-11-25T09:05:00.000Z');
@@ -1078,14 +1098,26 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
     });
     expect(await sendDueTransferPlanReminders(deps)).toMatchObject({ due: 1, sent: 1, failed: 0 });
     expect(mailer.sent).toHaveLength(1);
-    expect(mailer.sent[0]!.subject).toMatch(/actions stand/);
-    expect(mailer.sent[0]!.subject).not.toMatch(/Last days/);
-    expect(mailer.sent[0]!.text).toContain('Brief stakeholders (revised)');
-    expect(mailer.sent[0]!.text).toContain(`${ORIGIN}/account/events/${eventId}#transfer-plan`);
+    const mail = mailer.sent[0]!;
+    // The reminder names the one action, asks for nothing and has no form: it only says the
+    // delegate can go to the platform to update the plan whenever they wish.
+    expect(mail.subject).toBe('Reminder: Define measures before training (revised)');
+    expect(mail.text).toContain('Define measures before training (revised)');
+    expect(mail.text).not.toContain('Brief stakeholders');
+    expect(mail.text).toMatch(/Nothing is needed from you now/);
+    expect(mail.text).toMatch(/go to the platform to update your plan/);
+    expect(mail.text).not.toMatch(/last updated|status recorded|fill/i);
+    expect(mail.text).toContain(`${ORIGIN}/account/events/${eventId}#transfer-plan`);
     expect(await sendDueTransferPlanReminders(deps)).toMatchObject({ due: 0 });
-    const after = await prisma.transferPlan.findUniqueOrThrow({ where: { id: plan.id } });
-    expect(after.nextReminderAt).toEqual(new Date('2026-12-02T08:00:00.000Z'));
-    expect(mailer.sent[0]!.text).toContain('Plan 1');
+    const after = await prisma.transferPlanAction.findMany({
+      where: { planId },
+      orderBy: { order: 'asc' },
+    });
+    // Only the reminded action's pointer moves on; the applied one is simply left where it is.
+    expect(after.map((a) => a.nextReminderAt)).toEqual([
+      new Date('2026-11-25T08:00:00.000Z'),
+      new Date('2026-12-02T08:00:00.000Z'),
+    ]);
     const mine = await call(
       'get',
       `/me/events/${eventId}/transfer-plans/${planId}`,
@@ -1094,93 +1126,78 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
     );
     expect(mine.body.reminders).toHaveLength(1);
     expect(mine.body.reminders[0]).toMatchObject({ status: 'sent' });
-
-    // The reminder lists each written action with its status and its age (decision 2026-11-09).
-    expect(mailer.sent[0]!.text).toMatch(
-      /(last updated d+ days? ago|updated today|no status recorded yet)/,
-    );
-
-    // Once every status is updated from the plan page, the next occurrence has nothing to ask:
-    // skipped, logged as such, the pointer moved on.
-    await tick('2026-11-26T10:00:00.000Z');
-    // The first action stays applied (the completion test later relies on it); the second
-    // is started.
-    for (const [index, a] of (mine.body.plan.actions as Array<{ id: string }>).entries()) {
-      const recorded = await call(
-        'post',
-        `/me/events/${eventId}/transfer-plans/${planId}/actions/${a.id}/progress`,
-        index === 0
-          ? { status: 'applied', note: 'Used it again this week', occurredOn: '2026-11-25' }
-          : { status: 'started', note: 'Got going' },
-        cookies.dee,
-      );
-      expect(recorded.status, recorded.text).toBe(200);
-    }
+    expect(
+      await prisma.transferPlanReminderLog.count({ where: { planId, actionId: after[1]!.id } }),
+    ).toBe(1);
+    // The next week it goes again, on the same schedule.
     mailer.sent.length = 0;
     await tick('2026-12-02T09:05:00.000Z');
-    expect(await sendDueTransferPlanReminders(deps)).toMatchObject({ due: 1, sent: 0, skipped: 1 });
-    expect(mailer.sent).toHaveLength(0);
-    let moved = await prisma.transferPlan.findUniqueOrThrow({ where: { id: plan.id } });
-    expect(moved.nextReminderAt).toEqual(new Date('2026-12-09T08:00:00.000Z'));
-    // The earlier follow-up test recorded statuses dated 15 December, so they stay fresh for
-    // the next two weekly occurrences; once older than the previous occurrence, the reminder is
-    // sent again, saying how old each status is.
-    await tick('2026-12-09T09:05:00.000Z');
-    expect(await sendDueTransferPlanReminders(deps)).toMatchObject({ due: 1, sent: 0, skipped: 1 });
-    await tick('2026-12-16T09:05:00.000Z');
-    expect(await sendDueTransferPlanReminders(deps)).toMatchObject({ due: 1, sent: 0, skipped: 1 });
-    await tick('2026-12-23T09:05:00.000Z');
-    expect(await sendDueTransferPlanReminders(deps)).toMatchObject({ due: 1, sent: 1, skipped: 0 });
-    expect(mailer.sent[0]!.text).toMatch(/last updated \d+ days ago/);
-    expect(mailer.sent[0]!.text).toContain(`${ORIGIN}/account/events/${eventId}#transfer-plan`);
-    moved = await prisma.transferPlan.findUniqueOrThrow({ where: { id: plan.id } });
-    expect(moved.nextReminderAt).toEqual(new Date('2026-12-30T08:00:00.000Z'));
-    const later = await call(
-      'get',
-      `/me/events/${eventId}/transfer-plans/${planId}`,
-      undefined,
-      cookies.dee,
-    );
-    // The skipped occurrence is on record beside the sent ones.
-    expect((later.body.reminders as Array<{ status: string }>).map((r) => r.status).sort()).toEqual(
-      ['sent', 'sent', 'skipped', 'skipped', 'skipped'],
-    );
+    expect(await sendDueTransferPlanReminders(deps)).toMatchObject({ due: 1, sent: 1 });
+    expect(mailer.sent[0]!.subject).toBe('Reminder: Define measures before training (revised)');
+    expect(
+      (await prisma.transferPlanAction.findUniqueOrThrow({ where: { id: after[1]!.id } }))
+        .nextReminderAt,
+    ).toEqual(new Date('2026-12-09T08:00:00.000Z'));
   });
 
-  it('keeps several plans per delegate, each with its own reminder window, and refuses bad preferences', async () => {
+  it('keeps one plan per delegate and refuses bad reminder preferences on an action', async () => {
     await tick('2026-12-03T10:00:00.000Z');
+    // There is no second plan (decision 2026-11-11): the route is gone.
     const created = await call(
       'post',
       `/me/events/${eventId}/transfer-plans`,
       { title: 'Coaching rollout' },
       cookies.dee,
     );
-    expect(created.status, created.text).toBe(201);
-    expect(created.body.plan).toMatchObject({
-      sequence: 2,
-      title: 'Coaching rollout',
-      status: 'draft',
-    });
-    const second = created.body.plan.id as string;
+    expect(created.status).toBe(404);
     const list = await call('get', `/me/events/${eventId}/transfer-plans`, undefined, cookies.dee);
-    expect(list.body.plans.map((p: { sequence: number }) => p.sequence)).toEqual([1, 2]);
+    expect(list.body.plans).toHaveLength(1);
     expect(list.body.plans[0].status).toBe('submitted');
 
+    const current = await call(
+      'get',
+      `/me/events/${eventId}/transfer-plans/${planId}`,
+      undefined,
+      cookies.dee,
+    );
+    type Stored = {
+      id: string;
+      title: string;
+      priorityLearning: string;
+      action: string;
+      isPriority: boolean;
+      reminder: Record<string, unknown>;
+    };
+    const keep = (a: Stored, reminder: object) => ({
+      id: a.id,
+      title: a.title,
+      priorityLearning: a.priorityLearning,
+      action: a.action,
+      isPriority: a.isPriority,
+      reminder,
+    });
+    const [first, second] = current.body.plan.actions as Stored[];
+    const unchanged = { ...first!.reminder, nextReminderAt: undefined };
     // Twice a week needs two different days; the window cannot end before it starts.
     const oneDay = await call(
       'put',
-      `/me/events/${eventId}/transfer-plans/${second}`,
-      { version: 1, actions: [], reminder: { frequency: 'twice_weekly', days: [2] } },
+      `/me/events/${eventId}/transfer-plans/${planId}`,
+      {
+        version: current.body.plan.version,
+        actions: [keep(first!, unchanged), keep(second!, { frequency: 'twice_weekly', days: [2] })],
+      },
       cookies.dee,
     );
     expect(oneDay.status).toBe(422);
     const backwards = await call(
       'put',
-      `/me/events/${eventId}/transfer-plans/${second}`,
+      `/me/events/${eventId}/transfer-plans/${planId}`,
       {
-        version: 1,
-        actions: [],
-        reminder: { frequency: 'daily', startOn: '2026-12-10', endOn: '2026-12-09' },
+        version: current.body.plan.version,
+        actions: [
+          keep(first!, unchanged),
+          keep(second!, { frequency: 'daily', startOn: '2026-12-10', endOn: '2026-12-09' }),
+        ],
       },
       cookies.dee,
     );
@@ -1188,29 +1205,24 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
     // Tuesdays and Fridays at 18:00 Lagos from 10 December: the first one is Friday the 11th.
     const saved = await call(
       'put',
-      `/me/events/${eventId}/transfer-plans/${second}`,
+      `/me/events/${eventId}/transfer-plans/${planId}`,
       {
-        version: 1,
+        version: current.body.plan.version,
         actions: [
-          {
-            title: 'Coaching rollout',
-            priorityLearning: 'Coaching conversations',
-            action: 'Coach two team leads',
-            isPriority: true,
-          },
+          keep(first!, unchanged),
+          keep(second!, {
+            frequency: 'twice_weekly',
+            days: [5, 2],
+            time: '18:00',
+            startOn: '2026-12-10',
+            endOn: '2027-01-31',
+          }),
         ],
-        reminder: {
-          frequency: 'twice_weekly',
-          days: [5, 2],
-          time: '18:00',
-          startOn: '2026-12-10',
-          endOn: '2027-01-31',
-        },
       },
       cookies.dee,
     );
     expect(saved.status, saved.text).toBe(200);
-    expect(saved.body.plan.reminder).toEqual({
+    expect(saved.body.plan.actions[1].reminder).toEqual({
       frequency: 'twice_weekly',
       days: [2, 5],
       time: '18:00',
@@ -1218,30 +1230,20 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
       endOn: '2027-01-31',
       nextReminderAt: '2026-12-11T17:00:00.000Z',
     });
-    // The first plan is untouched by the second; its weekly reminder stands.
-    const first = await call(
-      'get',
-      `/me/events/${eventId}/transfer-plans/${planId}`,
-      undefined,
-      cookies.dee,
-    );
-    expect(first.body.plan.reminder.frequency).toBe('weekly');
+    // The other action is untouched; its weekly reminder stands.
+    expect(saved.body.plan.actions[0].reminder.frequency).toBe('weekly');
+    expect(saved.body.plan.actions[0].id).toBe(first!.id);
+    expect(saved.body.plan.actions[0].progressStatus).toBe('applied_consistently');
 
-    // The organisers see one row per plan, and can open either.
+    // The organisers see one row per delegate, with how many actions carry a reminder.
     const admin = await call('get', `/events/${eventId}/transfer-plans`);
     const rows = admin.body.plans.filter(
       (p: { delegate: { id: string } }) => p.delegate.id === deeId,
     );
-    expect(rows.map((r: { sequence: number; title: string }) => [r.sequence, r.title])).toEqual(
-      expect.arrayContaining([
-        [1, ''],
-        [2, 'Coaching rollout'],
-      ]),
-    );
-    const latest = await call('get', `/events/${eventId}/transfer-plans/${deeId}`);
-    expect(latest.body.plan.plan.sequence).toBe(2);
-    const chosen = await call('get', `/events/${eventId}/transfer-plans/${deeId}?plan=${planId}`);
-    expect(chosen.body.plan.plan.sequence).toBe(1);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ sequence: 1, remindersOn: 2 });
+    const detail = await call(`get`, `/events/${eventId}/transfer-plans/${deeId}`);
+    expect(detail.body.plan.plan.actions[1].reminder.frequency).toBe('twice_weekly');
   });
 
   it('completes a plan only when every action has a result and evidence, then tells the organisers', async () => {
@@ -1266,14 +1268,6 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
       { actionId: second!.id, action: second!.action, missing: ['applied', 'evidence'] },
     ]);
     // The follow-up records the action as applied, and one evidence record closes the gaps.
-    // The follow-up covers every open plan (2026-11-09): the second plan's written actions
-    // need a status too, so they are read from the follow-up and reported as started.
-    const context = await call('get', `/me/events/${eventId}/assessments`, undefined, cookies.dee);
-    const everyAction = (
-      context.body.assessments.find((a: { stage: string }) => a.stage === 'follow_up') as {
-        context: { plan: { actions: Array<{ id: string; planId: string }> } };
-      }
-    ).context.plan.actions;
     const progressed = await call(
       'put',
       `/me/events/${eventId}/assessments/follow_up/plan-progress?wave=1`,
@@ -1291,9 +1285,6 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
             note: 'Agreed with the programme owners in December',
             occurredOn: '2026-12-20',
           },
-          ...everyAction
-            .filter((a) => a.planId !== planId)
-            .map((a) => ({ actionId: a.id, status: 'started' })),
         ],
       },
       cookies.dee,
@@ -1339,8 +1330,16 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
       completedAt: '2026-12-20T10:00:00.000Z',
       outcome: 'impact_demonstrated',
       outcomeNote: 'Turnaround is down from 12 to 9 days',
-      reminder: { frequency: 'none', nextReminderAt: null },
     });
+    // Completion switches every action's reminder off.
+    expect(
+      completed.body.plan.actions.map(
+        (a: { reminder: { frequency: string; nextReminderAt: string | null } }) => a.reminder,
+      ),
+    ).toEqual([
+      expect.objectContaining({ frequency: 'none', nextReminderAt: null }),
+      expect.objectContaining({ frequency: 'none', nextReminderAt: null }),
+    ]);
     // The first impact check falls due 90 days on; nothing is promoted by completion itself.
     expect(completed.body.plan.impactChecks).toEqual([
       expect.objectContaining({ round: 1, dueOn: '2027-03-20', answeredAt: null, answer: null }),
@@ -1353,11 +1352,11 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
     expect(notice!.text).toContain('Impact demonstrated');
     expect(notice!.text).not.toContain('Brief stakeholders');
     expect(notice!.text).toContain(`/admin/events/${eventId}#transfer-plans`);
-    // Finished means finished: no more saves, progress or completion; a new plan is the way on.
+    // Finished means finished: no more saves, progress or completion.
     const locked = await call(
       'put',
       `/me/events/${eventId}/transfer-plans/${planId}`,
-      { version: completed.body.plan.version, actions: [], reminder: { frequency: 'none' } },
+      { version: completed.body.plan.version, actions: [] },
       cookies.dee,
     );
     expect(locked.status).toBe(409);
@@ -1369,14 +1368,12 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
       cookies.dee,
     );
     expect(again.body.error.code).toBe('plan_completed');
-    // A draft cannot be completed; it has to be submitted first.
-    const draft = await call('get', `/me/events/${eventId}/transfer-plans`, undefined, cookies.dee);
-    const second2 = draft.body.plans.find((p: { sequence: number }) => p.sequence === 2);
+    // A draft cannot be completed; it has to be submitted first. Ada's plan is still a draft.
     const early = await call(
       'post',
-      `/me/events/${eventId}/transfer-plans/${second2.id}/complete`,
-      { version: 2, improvement: 'not_yet' },
-      cookies.dee,
+      `/me/events/${eventId}/transfer-plans/${adaPlanId}/complete`,
+      { version: 1, improvement: 'not_yet' },
+      cookies.ada,
     );
     expect(early.body.error.code).toBe('not_submitted');
     expect(
@@ -1392,7 +1389,7 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
     });
   });
 
-  it('warns in the last week of a reminder window, then stops at its end', async () => {
+  it("stops at the end of an action's reminder window, and never fires for a completed plan", async () => {
     const deps = {
       prisma: () => prisma,
       mailer,
@@ -1406,64 +1403,58 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
       logger: silent,
       now: () => now,
     };
-    const list = await call('get', `/me/events/${eventId}/transfer-plans`, undefined, cookies.dee);
-    const second = list.body.plans.find((p: { sequence: number }) => p.sequence === 2);
-    // Daily at 09:00 Lagos for three days at the end of December: every one is a last-days notice.
+    // Ada's draft: daily at 09:00 Lagos for three days at the end of December.
     await tick('2026-12-26T10:00:00.000Z');
-    const current = await call(
-      'get',
-      `/me/events/${eventId}/transfer-plans/${second.id}`,
-      undefined,
-      cookies.dee,
-    );
     const saved = await call(
       'put',
-      `/me/events/${eventId}/transfer-plans/${second.id}`,
+      `/me/events/${eventId}/transfer-plans/${adaPlanId}`,
       {
-        version: current.body.plan.version,
+        version: 1,
         actions: [
           {
             title: 'Coaching rollout',
             priorityLearning: 'Coaching conversations',
             action: 'Coach two team leads',
             isPriority: true,
+            reminder: { frequency: 'daily', startOn: '2026-12-27', endOn: '2026-12-29' },
           },
         ],
-        reminder: { frequency: 'daily', startOn: '2026-12-27', endOn: '2026-12-29' },
       },
-      cookies.dee,
+      cookies.ada,
     );
     expect(saved.status, saved.text).toBe(200);
-    expect(saved.body.plan.reminder.nextReminderAt).toBe('2026-12-27T08:00:00.000Z');
-    // The job is global, so only Dee's mail is counted: other runs may have left plans behind.
+    const actionId = saved.body.plan.actions[0].id as string;
+    expect(saved.body.plan.actions[0].reminder.nextReminderAt).toBe('2026-12-27T08:00:00.000Z');
+    // The job is global, so only Ada's mail is counted: other runs may have left plans behind.
+    const toAda = () => mailer.sent.filter((m) => m.to === `ada-tp-${tag}@example.com`);
     const toDee = () => mailer.sent.filter((m) => m.to === `dee-tp-${tag}@example.com`);
     mailer.sent.length = 0;
     now = new Date('2026-12-27T08:05:00.000Z');
     expect((await sendDueTransferPlanReminders(deps)).failed).toBe(0);
-    expect(toDee()).toHaveLength(1);
-    expect(toDee()[0]!.subject).toMatch(/Last days of reminders/);
-    expect(toDee()[0]!.text).toMatch(/extend/);
-    expect(toDee()[0]!.text).toContain('Coaching rollout');
-    let plan = await prisma.transferPlan.findUniqueOrThrow({ where: { id: second.id } });
-    expect(plan.nextReminderAt).toEqual(new Date('2026-12-28T08:00:00.000Z'));
+    expect(toAda()).toHaveLength(1);
+    expect(toAda()[0]!.subject).toBe('Reminder: Coaching rollout');
+    expect(toAda()[0]!.text).toContain('Coach two team leads');
+    expect(toAda()[0]!.text).toMatch(/Nothing is needed from you now/);
+    let action = await prisma.transferPlanAction.findUniqueOrThrow({ where: { id: actionId } });
+    expect(action.nextReminderAt).toEqual(new Date('2026-12-28T08:00:00.000Z'));
     expect(
-      (
-        await prisma.transferPlanReminderLog.findFirst({
-          where: { planId: second.id },
-          orderBy: { createdAt: 'desc' },
-        })
-      )?.kind,
-    ).toBe('final_week');
+      await prisma.transferPlanReminderLog.findFirst({
+        where: { planId: adaPlanId, actionId },
+        orderBy: { createdAt: 'desc' },
+      }),
+    ).toMatchObject({ kind: 'reminder', status: 'sent' });
     now = new Date('2026-12-29T08:05:00.000Z');
     mailer.sent.length = 0;
     expect((await sendDueTransferPlanReminders(deps)).failed).toBe(0);
-    expect(toDee()).toHaveLength(1);
-    // The 29th was the last day: nothing is scheduled after it and the completed first plan never fires.
-    plan = await prisma.transferPlan.findUniqueOrThrow({ where: { id: second.id } });
-    expect(plan.nextReminderAt).toBeNull();
+    expect(toAda()).toHaveLength(1);
+    // The 29th was the last day: nothing is scheduled after it.
+    action = await prisma.transferPlanAction.findUniqueOrThrow({ where: { id: actionId } });
+    expect(action.nextReminderAt).toBeNull();
     now = new Date('2026-12-31T08:05:00.000Z');
     mailer.sent.length = 0;
     await sendDueTransferPlanReminders(deps);
+    expect(toAda()).toHaveLength(0);
+    // Dee's plan is completed: none of its actions fires, whatever their pointers say.
     expect(toDee()).toHaveLength(0);
   });
 
@@ -1553,25 +1544,28 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
       ).body.error.code,
     ).toBe('already_answered');
 
-    // The second plan: completed with no improvement yet, then checked round by round.
-    const list = await call('get', `/me/events/${eventId}/transfer-plans`, undefined, cookies.dee);
-    const p2 = list.body.plans.find((p: { sequence: number }) => p.sequence === 2);
+    // Ada's plan: completed with no improvement yet, then checked round by round.
+    const p2 = { id: adaPlanId };
     const v = (
-      await call('get', `/me/events/${eventId}/transfer-plans/${p2.id}`, undefined, cookies.dee)
+      await call('get', `/me/events/${eventId}/transfer-plans/${p2.id}`, undefined, cookies.ada)
     ).body.plan;
     const submitted = await call(
       'post',
       `/me/events/${eventId}/transfer-plans/${p2.id}/submit`,
       { version: v.version },
-      cookies.dee,
+      cookies.ada,
     );
     expect(submitted.status, submitted.text).toBe(200);
     const a = submitted.body.plan.actions[0] as { id: string };
+    // The organisers send Ada the 30-day follow-up; it records the action as applied.
+    const wave1 = await prisma.assessmentStageConfig.findUniqueOrThrow({
+      where: { eventId_stage_wave: { eventId, stage: 'follow_up', wave: 1 } },
+    });
+    await inviteToFollowUp(prisma, wave1.id, adaId);
     const applied = await call(
       'put',
       `/me/events/${eventId}/assessments/follow_up/plan-progress?wave=1`,
       {
-        planId: p2.id,
         actions: [
           {
             actionId: a.id,
@@ -1581,14 +1575,14 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
           },
         ],
       },
-      cookies.dee,
+      cookies.ada,
     );
     expect(applied.status, applied.text).toBe(200);
     const p2Now = await call(
       'get',
       `/me/events/${eventId}/transfer-plans/${p2.id}`,
       undefined,
-      cookies.dee,
+      cookies.ada,
     );
     const withEvidence = await call(
       'put',
@@ -1597,7 +1591,7 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
         version: p2Now.body.plan.version,
         evidence: [{ type: 'example', description: 'Coaching notes from four sessions' }],
       },
-      cookies.dee,
+      cookies.ada,
     );
     expect(withEvidence.status, withEvidence.text).toBe(200);
     const done = await call(
@@ -1608,7 +1602,7 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
         improvement: 'not_yet',
         note: 'Too early to tell',
       },
-      cookies.dee,
+      cookies.ada,
     );
     expect(done.status, done.text).toBe(200);
     expect(done.body.plan.outcome).toBe('applied');
@@ -1619,7 +1613,7 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
       'post',
       `/me/events/${eventId}/transfer-plans/${p2.id}/impact-checks/${c1.id}`,
       { answer: 'not_yet', note: 'The team leads are still settling in' },
-      cookies.dee,
+      cookies.ada,
     );
     expect(still.status, still.text).toBe(200);
     expect(still.body.plan.outcome).toBe('applied');
@@ -1633,7 +1627,7 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
         answer: 'improved',
         evidence: 'Both team leads now run their own one-to-ones; retention up',
       },
-      cookies.dee,
+      cookies.ada,
     );
     expect(improved.status, improved.text).toBe(200);
     expect(improved.body.plan.outcome).toBe('impact_demonstrated');
@@ -1642,14 +1636,11 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
       await prisma.auditLog.count({ where: { eventId, action: 'transfer_plan.impact_check' } }),
     ).toBe(3);
     // The organisers' list carries the outcome of each plan.
-    const rows = (await call('get', `/events/${eventId}/transfer-plans`)).body.plans.filter(
-      (p: { delegate: { id: string } }) => p.delegate.id === deeId,
-    );
-    expect(rows.map((r: { sequence: number; outcome: string }) => [r.sequence, r.outcome])).toEqual(
-      expect.arrayContaining([
-        [1, 'sustained_impact'],
-        [2, 'impact_demonstrated'],
-      ]),
-    );
+    const rows = (await call('get', `/events/${eventId}/transfer-plans`)).body.plans as Array<{
+      delegate: { id: string };
+      outcome: string;
+    }>;
+    expect(rows.find((r) => r.delegate.id === deeId)?.outcome).toBe('sustained_impact');
+    expect(rows.find((r) => r.delegate.id === adaId)?.outcome).toBe('impact_demonstrated');
   });
 });

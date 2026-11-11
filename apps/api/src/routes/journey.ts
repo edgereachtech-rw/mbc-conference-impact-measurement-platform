@@ -135,6 +135,8 @@ export function journeyRouter({ prisma, config, middleware, now }: Deps): Router
                 action: true,
                 isPriority: true,
                 progressStatus: true,
+                reminderFrequency: true,
+                nextReminderAt: true,
                 measures: { select: { actualValue: true } },
                 _count: { select: { evidenceRecords: true } },
               },
@@ -231,8 +233,13 @@ export function journeyRouter({ prisma, config, middleware, now }: Deps): Router
                 0,
               ),
               evidence: plan.actions.reduce((n, a) => n + a._count.evidenceRecords, 0),
-              reminder: plan.reminderFrequency,
-              nextReminderAt: plan.nextReminderAt?.toISOString() ?? null,
+              reminders: plan.actions.filter((a) => a.reminderFrequency !== 'none').length,
+              nextReminderAt:
+                plan.actions
+                  .map((a) => a.nextReminderAt)
+                  .filter((d): d is Date => d !== null)
+                  .sort((a, b) => a.getTime() - b.getTime())[0]
+                  ?.toISOString() ?? null,
               updatedAt: plan.updatedAt.toISOString(),
             }
           : null,

@@ -844,21 +844,12 @@ model TransferPlan {
   submittedAt       DateTime?          @map("submitted_at") @db.Timestamptz(3)
   /// The plan exactly as submitted (TransferPlanView), never changed afterwards.
   submittedSnapshot Json?              @map("submitted_snapshot")
-  reminderFrequency ReminderFrequency  @default(none) @map("reminder_frequency")
-  reminderStartOn   DateTime?          @map("reminder_start_on") @db.Date
-  /// The reminder window ends here (inclusive); null runs until the plan is completed or stopped.
-  reminderEndOn     DateTime?          @map("reminder_end_on") @db.Date
-  /// Time of day the reminder goes out, HH:mm in the event timezone.
-  reminderTime      String             @default("09:00") @map("reminder_time")
-  /// ISO weekdays (1 = Monday … 7 = Sunday) for the twice-weekly frequency; empty otherwise.
-  reminderDays      Int[]              @default([]) @map("reminder_days") @db.SmallInt
-  /// Several plans per delegate (2026-11-06): the n-th plan they made for this event.
+  /// One plan per delegate (decision 2026-11-11); the column stays at 1.
   sequence          Int                @default(1)
   title             String             @default("")
   completedAt       DateTime?          @map("completed_at") @db.Timestamptz(3)
   outcome           PlanOutcome        @default(pending)
   outcomeNote       String             @default("") @map("outcome_note")
-  nextReminderAt    DateTime?          @map("next_reminder_at") @db.Timestamptz(3)
   updatedByUserId   String?            @map("updated_by_user_id") @db.Uuid
   createdAt         DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt         DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
@@ -871,44 +862,53 @@ model TransferPlan {
 
   @@unique([eventId, delegateId, sequence])
   @@index([eventId, delegateId])
-  @@index([nextReminderAt])
   @@map("transfer_plan")
 }
 
 model TransferPlanAction {
-  id               String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  planId           String               @map("plan_id") @db.Uuid
-  order            Int
-  isPriority       Boolean              @default(false) @map("is_priority")
+  id                String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  planId            String               @map("plan_id") @db.Uuid
+  order             Int
+  isPriority        Boolean              @default(false) @map("is_priority")
   /// A short name for the action (2026-11-08), used in the plan, dashboards and reports.
-  title            String               @default("")
-  priorityLearning String               @default("") @map("priority_learning")
-  action           String               @default("")
-  opportunity      String               @default("")
-  firstStep        String               @default("") @map("first_step")
-  startOn          DateTime?            @map("start_on") @db.Date
-  targetOn         DateTime?            @map("target_on") @db.Date
-  stakeholders     String               @default("")
-  support          String               @default("")
-  barriers         String               @default("")
-  evidence         String               @default("")
-  expectedResult   String               @default("") @map("expected_result")
-  measure          String               @default("")
-  baseline         String               @default("")
-  reviewOn         DateTime?            @map("review_on") @db.Date
-  progressStatus   ActionProgressStatus @default(not_started) @map("progress_status")
-  createdAt        DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt        DateTime             @updatedAt @map("updated_at") @db.Timestamptz(3)
+  title             String               @default("")
+  priorityLearning  String               @default("") @map("priority_learning")
+  action            String               @default("")
+  opportunity       String               @default("")
+  firstStep         String               @default("") @map("first_step")
+  startOn           DateTime?            @map("start_on") @db.Date
+  targetOn          DateTime?            @map("target_on") @db.Date
+  stakeholders      String               @default("")
+  support           String               @default("")
+  barriers          String               @default("")
+  evidence          String               @default("")
+  expectedResult    String               @default("") @map("expected_result")
+  measure           String               @default("")
+  baseline          String               @default("")
+  reviewOn          DateTime?            @map("review_on") @db.Date
+  progressStatus    ActionProgressStatus @default(not_started) @map("progress_status")
+  /// This action's own reminder (decision 2026-11-11): how often, on which days, at what time
+  /// in the event zone, and between which dates. A reminder only reminds; it asks for nothing.
+  reminderFrequency ReminderFrequency    @default(none) @map("reminder_frequency")
+  reminderStartOn   DateTime?            @map("reminder_start_on") @db.Date
+  reminderEndOn     DateTime?            @map("reminder_end_on") @db.Date
+  reminderTime      String               @default("09:00") @map("reminder_time")
+  reminderDays      Int[]                @default([]) @map("reminder_days") @db.SmallInt
+  nextReminderAt    DateTime?            @map("next_reminder_at") @db.Timestamptz(3)
+  createdAt         DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime             @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  plan            TransferPlan           @relation(fields: [planId], references: [id], onDelete: Cascade)
+  plan            TransferPlan              @relation(fields: [planId], references: [id], onDelete: Cascade)
   progress        TransferPlanProgress[]
+  reminders       TransferPlanReminderLog[]
   /// Whether the delegate can identify a business measure for this action (spec 2026-11-08);
   /// null until chosen. "identified" needs at least one measure record.
-  measureStatus   MeasureStatus?         @map("measure_status")
+  measureStatus   MeasureStatus?            @map("measure_status")
   measures        TransferPlanMeasure[]
   evidenceRecords TransferPlanEvidence[]
 
   @@index([planId])
+  @@index([nextReminderAt])
   @@map("transfer_plan_action")
 }
 
@@ -1039,6 +1039,8 @@ model TransferPlanProgress {
 model TransferPlanReminderLog {
   id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   planId       String    @map("plan_id") @db.Uuid
+  /// The action the reminder was about (reminders are per action since 2026-11-11).
+  actionId     String?   @map("action_id") @db.Uuid
   scheduledFor DateTime  @map("scheduled_for") @db.Timestamptz(3)
   sentAt       DateTime? @map("sent_at") @db.Timestamptz(3)
   status       String
@@ -1047,9 +1049,11 @@ model TransferPlanReminderLog {
   error        String?
   createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  plan TransferPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  plan   TransferPlan        @relation(fields: [planId], references: [id], onDelete: Cascade)
+  action TransferPlanAction? @relation(fields: [actionId], references: [id], onDelete: SetNull)
 
   @@index([planId])
+  @@index([actionId])
   @@map("transfer_plan_reminder_log")
 }
 

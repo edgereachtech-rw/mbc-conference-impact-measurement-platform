@@ -66,6 +66,14 @@ function action(partial: Partial<PlanActionView> = {}): PlanActionView {
     measureStatus: null,
     measures: [],
     evidenceRecords: [],
+    reminder: {
+      frequency: 'none',
+      startOn: null,
+      endOn: null,
+      time: '09:00',
+      days: [],
+      nextReminderAt: null,
+    },
     ...partial,
   };
 }
@@ -84,14 +92,6 @@ const planResponse = (): MyTransferPlan => ({
     impactChecks: [],
     submittedAt: '2026-11-13T13:30:00.000Z',
     updatedAt: '2026-11-24T09:00:00.000Z',
-    reminder: {
-      frequency: 'none',
-      startOn: null,
-      endOn: null,
-      time: '09:00',
-      days: [],
-      nextReminderAt: null,
-    },
     actions: [action()],
   },
   sessions: [],
@@ -150,13 +150,12 @@ describe('MeasureLine', () => {
 });
 
 describe('ActionMeasures', () => {
-  it('offers measures only once the action answers "yes", waits for unsaved plan edits, and shows the choice', () => {
+  it('offers measures only once the action answers "yes", and shows the choice', () => {
     // No answer yet: no way to add measures, only a pointer to the question on the card.
     const first = render(
       <ActionMeasures
         action={action()}
         disabled={false}
-        dirty={false}
         onMeasures={() => {}}
         onEvidence={() => {}}
       />,
@@ -170,7 +169,6 @@ describe('ActionMeasures', () => {
       <ActionMeasures
         action={action({ measureStatus: 'not_yet_known' })}
         disabled={false}
-        dirty={false}
         onMeasures={() => {}}
         onEvidence={() => {}}
       />,
@@ -178,28 +176,10 @@ describe('ActionMeasures', () => {
     expect(screen.getByText('Not yet known')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Add a measure' })).toBeNull();
     second.unmount();
-    const { unmount } = render(
-      <ActionMeasures
-        action={action({ measureStatus: 'identified' })}
-        disabled={false}
-        dirty
-        onMeasures={() => {}}
-        onEvidence={() => {}}
-      />,
-    );
-    expect(screen.getByRole('button', { name: 'Add a measure' }).hasAttribute('disabled')).toBe(
-      true,
-    );
-    expect(screen.getByRole('button', { name: 'Add evidence' }).hasAttribute('disabled')).toBe(
-      true,
-    );
-    expect(screen.getByText(/Save your plan first/)).toBeTruthy();
-    unmount();
     render(
       <ActionMeasures
         action={action({ measureStatus: 'identified', measures: [measure()] })}
         disabled={false}
-        dirty={false}
         onMeasures={() => {}}
         onEvidence={() => {}}
       />,

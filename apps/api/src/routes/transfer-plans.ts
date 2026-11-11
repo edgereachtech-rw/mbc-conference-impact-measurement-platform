@@ -4,7 +4,6 @@ import {
   evidenceSaveSchema,
   evidenceSupports,
   measureSummaries,
-  actionStatusUpdateSchema,
   measuresSaveSchema,
   addDaysTo,
   dateIn,
@@ -21,7 +20,6 @@ import {
   summariseMeasures,
   transferPlanVisible,
   transferPlanCompleteSchema,
-  transferPlanCreateSchema,
   transferPlanSaveSchema,
   transferPlanSubmitSchema,
   type ActionProgressStatus,
@@ -35,6 +33,7 @@ import {
   type MyTransferPlans,
   type PlanActionView,
   type PlanOutcome,
+  type ReminderPreference,
   type TransferPlanAdminDetail,
   type TransferPlanListItem,
   type TransferPlanSummary,
@@ -219,13 +218,33 @@ function actionViewOf(a: ActionRow): PlanActionView {
       recordedAt: p.recordedAt.toISOString(),
     })),
     measureStatus: a.measureStatus,
+    reminder: reminderViewOf(a),
     measures: a.measures.map(measureViewOf),
     evidenceRecords: a.evidenceRecords.map(evidenceViewOf),
   };
 }
 
+/** The columns an action's reminder preference becomes, with its next time from `at`. */
+function reminderDataOf(reminder: ReminderPreference, at: Date, timezone: string) {
+  const pref: ReminderPreference = {
+    ...reminder,
+    startOn: reminder.startOn ?? null,
+    endOn: reminder.endOn ?? null,
+    days: reminder.frequency === 'twice_weekly' ? [...reminder.days].sort() : [],
+  };
+  return {
+    reminderFrequency: pref.frequency,
+    reminderStartOn: dayOf(pref.startOn),
+    reminderEndOn: dayOf(pref.endOn),
+    reminderTime: pref.time,
+    reminderDays: pref.days,
+    nextReminderAt: nextReminderAfter(pref, at, timezone),
+  };
+}
+
+/** An action's reminder as the delegate set it, with when the next one goes out. */
 function reminderViewOf(p: {
-  reminderFrequency: PlanRow['reminderFrequency'];
+  reminderFrequency: ActionRow['reminderFrequency'];
   reminderStartOn: Date | null;
   reminderEndOn: Date | null;
   reminderTime: string;
@@ -256,7 +275,6 @@ export function planViewOf(p: PlanRow): TransferPlanView {
     outcomeNote: p.outcomeNote,
     impactChecks: p.impactChecks.map(impactCheckViewOf),
     updatedAt: p.updatedAt.toISOString(),
-    reminder: reminderViewOf(p),
     actions: p.actions.map(actionViewOf),
   };
 }
@@ -383,25 +401,14 @@ export function transferPlanRouter({
     referenceAnswersFor(prisma(), eventId, delegateId);
 
   /**
-   * A delegate may keep several plans for one event (2026-11-06). The first is created on first
-   * access, as before, so the plan page is never empty; further ones are created on request.
+   * One plan per delegate (decision 2026-11-11, back to section 9 of the brief): it is created
+   * on first access so the plan page is never empty, and no route creates another.
    */
   async function ensureFirstPlan(eventId: string, delegateId: string) {
     const count = await prisma().transferPlan.count({ where: { eventId, delegateId } });
     if (count === 0) {
       await prisma().transferPlan.create({ data: { eventId, delegateId, sequence: 1 } });
     }
-  }
-
-  async function createPlan(eventId: string, delegateId: string, title: string) {
-    const last = await prisma().transferPlan.aggregate({
-      where: { eventId, delegateId },
-      _max: { sequence: true },
-    });
-    return prisma().transferPlan.create({
-      data: { eventId, delegateId, sequence: (last._max.sequence ?? 0) + 1, title },
-      include: PLAN_INCLUDE,
-    });
   }
 
   /** One of the delegate's own plans; anyone else's id is simply "not found". */
@@ -439,7 +446,6 @@ export function transferPlanRouter({
       outcome: p.outcome,
       checkDue: checkDueOn(p, today),
       updatedAt: p.updatedAt.toISOString(),
-      reminder: reminderViewOf(p),
     };
   }
 
@@ -536,28 +542,6 @@ export function transferPlanRouter({
     res.json(await myPlans(delegate.eventId, delegate.id));
   });
 
-  router.post(
-    '/me/events/:eventId/transfer-plans',
-    middleware.requireAuth,
-    validated(transferPlanCreateSchema),
-    async (req, res) => {
-      const { principal, delegate } = await myRegistration(res, String(req.params.eventId));
-      const { title } = req.body as z.infer<typeof transferPlanCreateSchema>;
-      await ensureFirstPlan(delegate.eventId, delegate.id);
-      const plan = await createPlan(delegate.eventId, delegate.id, title);
-      await audit(prisma(), {
-        action: 'transfer_plan.created',
-        entityType: 'transfer_plan',
-        entityId: plan.id,
-        eventId: delegate.eventId,
-        actorUserId: principal.userId,
-        newValue: { sequence: plan.sequence },
-        ...clientOf(res),
-      });
-      res.status(201).json(await myView(delegate.eventId, delegate.id, plan.id));
-    },
-  );
-
   router.get(
     '/me/events/:eventId/transfer-plans/:planId',
     middleware.requireAuth,
@@ -607,13 +591,6 @@ export function transferPlanRouter({
         where: { id: delegate.eventId },
         select: { timezone: true },
       });
-      const reminder = {
-        ...input.reminder,
-        startOn: input.reminder.startOn ?? null,
-        endOn: input.reminder.endOn ?? null,
-        days: input.reminder.frequency === 'twice_weekly' ? [...input.reminder.days].sort() : [],
-      };
-      const nextReminderAt = nextReminderAfter(reminder, at, event.timezone);
       const saved = await prisma().$transaction(async (tx) => {
         if (removed.length) {
           await tx.transferPlanAction.deleteMany({
@@ -640,6 +617,8 @@ export function transferPlanRouter({
             baseline: a.baseline,
             reviewOn: dayOf(a.reviewOn),
             measureStatus: a.measureStatus,
+            // The action's own reminder (2026-11-11); its next time follows the preference.
+            ...reminderDataOf(a.reminder, at, event.timezone),
           };
           if (a.id) await tx.transferPlanAction.update({ where: { id: a.id }, data });
           else await tx.transferPlanAction.create({ data: { ...data, planId: plan.id } });
@@ -649,12 +628,6 @@ export function transferPlanRouter({
           data: {
             version: plan.version + 1,
             title: input.title,
-            reminderFrequency: reminder.frequency,
-            reminderStartOn: dayOf(reminder.startOn),
-            reminderEndOn: dayOf(reminder.endOn),
-            reminderTime: reminder.time,
-            reminderDays: reminder.days,
-            nextReminderAt,
             updatedByUserId: principal.userId,
           },
           include: PLAN_INCLUDE,
@@ -670,7 +643,7 @@ export function transferPlanRouter({
             status: row.status,
             actions: actions.length,
             removed: removed.length,
-            reminderFrequency: input.reminder.frequency,
+            remindersOn: actions.filter((a) => a.reminder.frequency !== 'none').length,
           },
           ...clientOf(res),
         });
@@ -770,60 +743,6 @@ export function transferPlanRouter({
       'stale_plan',
       'Your plan changed since you opened it, possibly in another tab. Reload it and apply your changes again.',
     );
-
-  /**
-   * Where one action stands, told from the plan page (decision 2026-11-09, E12-15): one history
-   * entry with the status, the explanation or example and the date the status asks for, marked
-   * as recorded on the plan page (no follow-up wave). The action's current status follows; the
-   * follow-ups keep writing their own entries, so the history says where each one came from.
-   */
-  router.post(
-    '/me/events/:eventId/transfer-plans/:planId/actions/:actionId/progress',
-    middleware.requireAuth,
-    validated(actionStatusUpdateSchema),
-    async (req, res) => {
-      const { principal, delegate, plan, action } = await myAction(
-        res,
-        String(req.params.eventId),
-        String(req.params.planId),
-        String(req.params.actionId),
-      );
-      const input = req.body as z.infer<typeof actionStatusUpdateSchema>;
-      const at = clock();
-      await prisma().$transaction(async (tx) => {
-        await tx.transferPlanProgress.create({
-          data: {
-            actionId: action.id,
-            status: input.status,
-            note: input.note || null,
-            occurredOn: input.occurredOn ? new Date(`${input.occurredOn}T00:00:00.000Z`) : null,
-            followUpWave: null,
-            waveLabel: '',
-            recordedAt: at,
-            recordedByUserId: principal.userId,
-          },
-        });
-        await tx.transferPlanAction.update({
-          where: { id: action.id },
-          data: { progressStatus: input.status },
-        });
-        await tx.transferPlan.update({
-          where: { id: plan.id },
-          data: { version: plan.version + 1, updatedByUserId: principal.userId },
-        });
-        await audit(tx, {
-          action: 'transfer_plan.progress_recorded',
-          entityType: 'transfer_plan_action',
-          entityId: action.id,
-          eventId: delegate.eventId,
-          actorUserId: principal.userId,
-          newValue: { from: action.progressStatus, to: input.status, source: 'plan_page' },
-          ...clientOf(res),
-        });
-      });
-      res.json(await myView(delegate.eventId, delegate.id, plan.id));
-    },
-  );
 
   // Business measures of one action (backlog E14-1, E14-2; spec of 2026-11-08): the action's
   // answer ("can you identify a measure?") and the measure definitions. The list is replaced and
@@ -1048,9 +967,11 @@ export function transferPlanRouter({
             outcome,
             outcomeNote: note,
             version: plan.version + 1,
-            reminderFrequency: 'none',
-            nextReminderAt: null,
             updatedByUserId: principal.userId,
+            // Completion stops every action's reminders for good.
+            actions: {
+              updateMany: { where: {}, data: { reminderFrequency: 'none', nextReminderAt: null } },
+            },
             // The first impact check: has the improvement appeared (or continued) since?
             impactChecks: {
               create: {
@@ -1199,6 +1120,7 @@ export function transferPlanRouter({
             isPriority: true,
             progressStatus: true,
             measureStatus: true,
+            reminderFrequency: true,
             measures: { select: { baselineValue: true, actualValue: true } },
             evidenceRecords: { select: { support: true } },
           },
@@ -1236,7 +1158,7 @@ export function transferPlanRouter({
         submittedAt: iso(p.submittedAt),
         updatedAt: p.updatedAt.toISOString(),
         progress,
-        reminderFrequency: p.reminderFrequency,
+        remindersOn: p.actions.filter((a) => a.reminderFrequency !== 'none').length,
         measures,
         evidence: evidenceCounts(p.actions.flatMap((a) => a.evidenceRecords)),
       };

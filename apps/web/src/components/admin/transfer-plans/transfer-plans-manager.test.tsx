@@ -83,7 +83,7 @@ const plans: TransferPlanListItem[] = [
     submittedAt: '2026-11-13T13:30:00.000Z',
     updatedAt: '2026-11-24T09:00:00.000Z',
     progress: { ...progress, applied: 1, not_started: 1 },
-    reminderFrequency: 'weekly',
+    remindersOn: 1,
     measures: { ...measureCounts, with_result: 1, none: 1 },
     evidence: { self_reported: 1, supported: 0 },
   },
@@ -106,7 +106,7 @@ const plans: TransferPlanListItem[] = [
     submittedAt: null,
     updatedAt: '2026-11-12T16:10:00.000Z',
     progress,
-    reminderFrequency: 'none',
+    remindersOn: 0,
     measures: measureCounts,
     evidence: { self_reported: 0, supported: 0 },
   },
@@ -127,17 +127,17 @@ const detail: TransferPlanAdminDetail = {
     outcomeNote: '',
     impactChecks: [],
     updatedAt: '2026-11-24T09:00:00.000Z',
-    reminder: {
-      frequency: 'weekly',
-      startOn: null,
-      endOn: null,
-      time: '09:00',
-      days: [],
-      nextReminderAt: '2026-12-01T09:00:00.000Z',
-    },
     actions: [
       {
         id: ACTION,
+        reminder: {
+          frequency: 'weekly',
+          startOn: null,
+          endOn: null,
+          time: '09:00',
+          days: [],
+          nextReminderAt: '2026-12-01T09:00:00.000Z',
+        },
         order: 1,
         isPriority: true,
         title: '',
@@ -288,7 +288,9 @@ describe('TransferPlansManager', () => {
     expect(dialog.textContent).toMatch(/How to measure transfer/);
     expect(dialog.textContent).toMatch(/Brief stakeholders \(revised\)/);
     expect(dialog.textContent).toMatch(/Not yet known/);
-    expect(dialog.textContent).toMatch(/Every week.*1 sent/);
+    // Each action's reminder is shown with the action; the plan counts what was sent.
+    expect(dialog.textContent).toMatch(/Reminder: Every week; next/);
+    expect(dialog.textContent).toMatch(/1 sent/);
     await user.click(within(dialog).getByRole('button', { name: 'As submitted' }));
     expect(dialog.textContent).not.toMatch(/\(revised\)/);
     expect(dialog.textContent).toMatch(/1\. Brief stakeholders/);

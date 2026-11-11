@@ -149,14 +149,12 @@ export function measureNameFor(action: PlanActionView, record: EvidenceView) {
 export function ActionMeasures({
   action,
   disabled,
-  dirty,
   onMeasures,
   onEvidence,
 }: {
   action: PlanActionView;
   disabled: boolean;
-  /** Unsaved plan edits: the dialogs would reload the plan and lose them. */
-  dirty: boolean;
+  /** Opens the measures dialog; unsaved plan edits are saved first by the caller (2026-11-11). */
   onMeasures: () => void;
   onEvidence: () => void;
 }) {
@@ -183,7 +181,7 @@ export function ActionMeasures({
           {status === 'identified' ? (
             <button
               type="button"
-              disabled={disabled || dirty}
+              disabled={disabled}
               onClick={onMeasures}
               className={consoleButton({ variant: 'secondary', size: 'sm' })}
             >
@@ -192,7 +190,7 @@ export function ActionMeasures({
           ) : null}
           <button
             type="button"
-            disabled={disabled || dirty}
+            disabled={disabled}
             onClick={onEvidence}
             className={consoleButton({ variant: 'secondary', size: 'sm' })}
           >
@@ -200,16 +198,10 @@ export function ActionMeasures({
           </button>
         </div>
       </div>
-      {dirty ? (
-        <p className="text-xs text-corp-muted">
-          Save your plan first, then add measures and evidence.
-        </p>
-      ) : null}
       {!status ? (
         <p className="text-xs text-corp-muted">
-          Answer “Can you identify a business measure for this action?” above and save the plan.
-          Measures can be added once the answer is yes; evidence of what you did can be added at any
-          time.
+          Answer “Can you identify a business measure for this action?” above. Measures can be added
+          once the answer is yes; evidence of what you did can be added at any time.
         </p>
       ) : status === 'identified' && measures.length === 0 ? (
         <p className="text-xs text-corp-muted">

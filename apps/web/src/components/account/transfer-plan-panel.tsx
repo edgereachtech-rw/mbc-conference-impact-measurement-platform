@@ -1,11 +1,10 @@
 'use client';
 
 import {
-  actionProgressDefinitions,
   actionProgressLabels,
-  actionProgressStatuses,
   appliedStatuses,
   actionSubmissionGaps,
+  completionStatuses,
   measurePlaceholders,
   measureStatuses,
   measureStatusLabels,
@@ -18,15 +17,10 @@ import {
   planOutcomeDescriptions,
   planOutcomeLabels,
   planTitleOf,
-  progressDateLabel,
-  progressNeedsDate,
-  progressNeedsDetail,
-  progressNoteLabel,
   reminderFrequencies,
   reminderFrequencyLabels,
   transferPlanStatusLabels,
   weekdays,
-  type ActionProgressStatus,
   type ImpactCheckAnswer,
   type MyAssessment,
   type MyTransferPlan,
@@ -122,17 +116,18 @@ interface TransferPlanPanelProps {
   plans: MyTransferPlansState;
   /** The list changed (a save, a submission, a completion): the tabs re-read it. */
   onPlansChanged: () => void;
-  /** A new plan was started: the page opens its tab. */
+  /** The plan shown no longer exists: the page opens the current one. */
   onOpenPlan: (planId: string) => void;
 }
 
 /**
- * One of the delegate's Individual Transfer Plans, as its own tab (task of 2026-11-07; before,
- * the plans sat as cards above one editor). Backlog E9, E10, E12-8 to 12-11: a plan is saved as
- * a draft in any Transfer Planning session, submitted once the final session has started, kept
- * open for changes and progress records, and marked completed once every action is applied with
- * evidence. Every save carries the version last seen so two tabs cannot overwrite each other.
- * "Start another plan" opens a new tab for the next plan.
+ * The delegate's Individual Transfer Plan, as its own tab (task of 2026-11-07). Backlog E9, E10,
+ * E12-8 to 12-11: the plan is saved as a draft, submitted when the delegate is ready, kept open
+ * for changes, and marked completed once every action is applied with evidence. Where each
+ * action stands is recorded through the post-conference follow-ups; each action carries its own
+ * reminder (decision 2026-11-11). A delegate has one plan per event: there is no "start another
+ * plan" (decision 2026-11-11). Every save carries the version last seen so two tabs cannot
+ * overwrite each other.
  */
 export function TransferPlanPanel({
   eventId,
@@ -147,9 +142,6 @@ export function TransferPlanPanel({
   // Kept outside the editor, which remounts on every new plan version.
   const [notice, setNotice] = useState<string | null>(null);
   const [done, setDone] = useState<'submitted' | 'completed' | null>(null);
-  const [starting, setStarting] = useState<{ title: string; busy: boolean; error?: string } | null>(
-    null,
-  );
 
   useEffect(() => {
     let cancelled = false;
@@ -207,93 +199,9 @@ export function TransferPlanPanel({
     onPlansChanged();
   }
 
-  async function startAnother() {
-    if (!starting) return;
-    setStarting({ ...starting, busy: true, error: undefined });
-    try {
-      const created = await apiFetch<MyTransferPlan>(`/me/events/${eventId}/transfer-plans`, {
-        method: 'POST',
-        body: JSON.stringify({ title: starting.title.trim() }),
-      });
-      setStarting(null);
-      setNotice(null);
-      onPlansChanged();
-      onOpenPlan(created.plan.id);
-    } catch (e) {
-      setStarting({
-        ...starting,
-        busy: false,
-        error: describeError(e, 'The plan could not be started.').message,
-      });
-    }
-  }
-
-  const count = plans.kind === 'ready' ? plans.plans.length : 0;
   const current = plan && plan.id === planId ? plan.state : null;
   return (
     <div className="space-y-6">
-      <section aria-label="Another plan" className="space-y-3">
-        {starting ? (
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              void startAnother();
-            }}
-            className="flex flex-col gap-2 border border-corp-line bg-white p-3 sm:flex-row sm:items-end"
-          >
-            <div className="flex-1 space-y-1">
-              <label htmlFor="new-plan-title" className="text-sm font-semibold text-corp-ink">
-                What is this plan about?
-              </label>
-              <input
-                id="new-plan-title"
-                value={starting.title}
-                maxLength={120}
-                disabled={starting.busy}
-                onChange={(e) => setStarting({ ...starting, title: e.target.value })}
-                placeholder={`Plan ${count + 1}`}
-                className="h-11 w-full rounded-none border border-corp-line bg-white px-3 text-base md:text-sm"
-              />
-              {starting.error ? (
-                <p role="alert" className="text-xs text-brand-danger">
-                  {starting.error}
-                </p>
-              ) : null}
-            </div>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                disabled={starting.busy}
-                onClick={() => setStarting(null)}
-                className={consoleButton({ variant: 'ghost' })}
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={starting.busy}
-                className={consoleButton({ variant: 'accent' })}
-              >
-                {starting.busy ? <Loader2Icon className="animate-spin" aria-hidden="true" /> : null}
-                Start this plan
-              </button>
-            </div>
-          </form>
-        ) : (
-          <p className="flex flex-wrap items-center justify-between gap-2 text-sm text-corp-muted">
-            <span>
-              Each of your plans has its own tab. Start another only for something new you take on.
-            </span>
-            <button
-              type="button"
-              onClick={() => setStarting({ title: '', busy: false })}
-              className={consoleButton({ variant: 'secondary', size: 'sm' })}
-            >
-              <PlusIcon aria-hidden="true" /> Start another plan
-            </button>
-          </p>
-        )}
-      </section>
       {!current || current.kind === 'loading' ? (
         <StatePanel kind="loading" title="Loading your plan…" />
       ) : current.kind === 'error' ? (
@@ -348,7 +256,7 @@ export function TransferPlanPanel({
         >
           <p className="text-sm text-corp-text">
             {done === 'completed'
-              ? 'Thank you. Your plan is completed: every action applied, with evidence, and the organisers have been told. Its reminders have stopped. Next comes impact assessment: in about three months we will ask whether the actions have made a measurable difference, and later whether that has lasted. Start another plan only if you take on something new.'
+              ? 'Thank you. Your plan is completed: every action applied, with evidence, and the organisers have been told. Its reminders have stopped. Next comes impact assessment: in about three months we will ask whether the actions have made a measurable difference, and later whether that has lasted.'
               : 'Thank you. Your plan is submitted. Your 30, 60, 90-day and longer-term follow-ups will ask where each action stands, and what you tell them is shown here as your progress. You can still adjust the plan as things change.'}
           </p>
         </Dialog>
@@ -389,6 +297,7 @@ function emptyAction(): ActionDraft {
     baseline: '',
     reviewOn: '',
     measureStatus: null,
+    reminder: { ...NO_REMINDERS },
   };
 }
 
@@ -413,17 +322,30 @@ function draftOf(a: PlanActionView): ActionDraft {
     baseline: a.baseline,
     reviewOn: a.reviewOn ?? '',
     measureStatus: a.measureStatus,
+    reminder: {
+      frequency: a.reminder.frequency,
+      startOn: a.reminder.startOn,
+      endOn: a.reminder.endOn,
+      time: a.reminder.time || NO_REMINDERS.time,
+      days: a.reminder.days,
+    },
   };
 }
 
 function payloadOf(actions: ActionDraft[]): PlanActionFields[] {
-  return actions.map(({ key, startOn, targetOn, reviewOn, ...rest }) => {
+  return actions.map(({ key, startOn, targetOn, reviewOn, reminder, ...rest }) => {
     void key;
     return {
       ...rest,
       startOn: startOn || null,
       targetOn: targetOn || null,
       reviewOn: reviewOn || null,
+      reminder: {
+        ...reminder,
+        startOn: reminder.startOn || null,
+        endOn: reminder.endOn || null,
+        days: reminder.frequency === 'twice_weekly' ? reminder.days : [],
+      },
     };
   });
 }
@@ -455,13 +377,6 @@ function PlanEditor({
   // The first plan is created without a name; it gets one here like any other (2026-11-08).
   const [title, setTitle] = useState(plan.title);
   const [actions, setActions] = useState<ActionDraft[]>(() => plan.actions.map(draftOf));
-  const [reminder, setReminder] = useState<ReminderPreference>({
-    frequency: plan.reminder.frequency,
-    startOn: plan.reminder.startOn,
-    endOn: plan.reminder.endOn,
-    time: plan.reminder.time || NO_REMINDERS.time,
-    days: plan.reminder.days,
-  });
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<{ message: string; stale?: boolean } | null>(null);
@@ -469,9 +384,8 @@ function PlanEditor({
     | null
     | { kind: 'review' }
     | { kind: 'complete' }
-    | { kind: 'measures'; action: PlanActionView }
-    | { kind: 'evidence'; action: PlanActionView }
-    | { kind: 'progress'; action: PlanActionView }
+    | { kind: 'measures'; action: PlanActionView; version: number; saved?: MyTransferPlan }
+    | { kind: 'evidence'; action: PlanActionView; version: number; saved?: MyTransferPlan }
   >(null);
   const id = useId();
   const submitted = plan.status === 'submitted';
@@ -492,17 +406,6 @@ function PlanEditor({
     ? (plan.impactChecks.find((c) => !c.answeredAt && c.dueOn <= today) ?? null)
     : null;
   const nextCheck = locked ? (plan.impactChecks.find((c) => !c.answeredAt) ?? null) : null;
-
-  function setPreference(patch: Partial<ReminderPreference>) {
-    setDirty(true);
-    setReminder((r) => ({ ...r, ...patch }));
-  }
-  function toggleDay(day: number) {
-    const days = reminder.days.includes(day)
-      ? reminder.days.filter((d) => d !== day)
-      : [...reminder.days, day].sort((a, b) => a - b);
-    setPreference({ days });
-  }
 
   function update(key: string, patch: Partial<ActionDraft>) {
     setDirty(true);
@@ -545,12 +448,6 @@ function PlanEditor({
             version: plan.version,
             title: title.trim(),
             actions: payloadOf(actions),
-            reminder: {
-              ...reminder,
-              startOn: reminder.startOn || null,
-              endOn: reminder.endOn || null,
-              days: reminder.frequency === 'twice_weekly' ? reminder.days : [],
-            },
           }),
         },
       );
@@ -568,9 +465,42 @@ function PlanEditor({
     }
   }
 
+  const savedMessage = submitted ? 'Your changes are saved.' : 'Draft saved.';
+
   async function saveDraft() {
     const saved = await save();
-    if (saved) onUpdated(saved, submitted ? 'Your changes are saved.' : 'Draft saved.');
+    if (saved) onUpdated(saved, savedMessage);
+  }
+
+  /**
+   * Opens the measures or evidence dialog of one action. Unsaved edits, or an action not stored
+   * yet, are saved first (decision 2026-11-11: no need to save the plan by hand before adding a
+   * measure), so the dialog opens on the action as it stands on screen. The saved plan is shown
+   * once the dialog closes, because the editor remounts on every new version.
+   */
+  async function openDialog(kind: 'measures' | 'evidence', key: string) {
+    const index = actions.findIndex((a) => a.key === key);
+    const draft = actions[index];
+    const stored = draft?.id ? (plan.actions.find((p) => p.id === draft.id) ?? null) : null;
+    if (stored && !dirty) {
+      setDialog({ kind, action: stored, version: plan.version });
+      return;
+    }
+    const saved = await save();
+    if (!saved) return;
+    // The server keeps the actions in the order they were sent.
+    const action = saved.plan.actions[index];
+    if (!action) {
+      onUpdated(saved, savedMessage);
+      return;
+    }
+    setDialog({ kind, action, version: saved.plan.version, saved });
+  }
+
+  function closeDialog() {
+    const current = dialog;
+    setDialog(null);
+    if (current && 'saved' in current && current.saved) onUpdated(current.saved, savedMessage);
   }
 
   async function submit() {
@@ -670,7 +600,7 @@ function PlanEditor({
         </StatusPill>
         <p className="text-sm text-corp-muted">
           {locked
-            ? `Completed ${formatInstant(plan.completedAt, timezone)}. This plan is finished and its reminders have stopped; it stays here to read. Start another plan for anything new.`
+            ? `Completed ${formatInstant(plan.completedAt, timezone)}. This plan is finished and its reminders have stopped; it stays here to read.`
             : submitted
               ? `Submitted ${formatInstant(plan.submittedAt, timezone)}. You can keep updating it; the organisers keep your original submission.`
               : 'Save as often as you like, then submit when your plan is ready. You can submit at any time, and keep updating the plan afterwards.'}
@@ -758,10 +688,8 @@ function PlanEditor({
             onPriority={() => setPriority(a.key)}
             onMove={(delta) => move(a.key, delta)}
             onRemove={() => setRemoving(a.key)}
-            dirty={dirty}
-            onMeasures={(action) => setDialog({ kind: 'measures', action })}
-            onEvidence={(action) => setDialog({ kind: 'evidence', action })}
-            onProgress={(action) => setDialog({ kind: 'progress', action })}
+            onMeasures={() => void openDialog('measures', a.key)}
+            onEvidence={() => void openDialog('evidence', a.key)}
             timezone={timezone}
           />
         ))}
@@ -775,132 +703,6 @@ function PlanEditor({
           <PlusIcon aria-hidden="true" /> Add an action
         </button>
       </div>
-
-      <section
-        aria-labelledby={`${id}-reminders`}
-        className="space-y-3 border border-corp-line bg-white p-4"
-      >
-        <h3 id={`${id}-reminders`} className="font-semibold text-corp-ink">
-          Reminders
-        </h3>
-        <p className="text-sm text-corp-muted">
-          {locked
-            ? 'This plan is completed, so its reminders have stopped.'
-            : 'When and how often would you like to be reminded about this plan? Each reminder lists your actions with their current status and asks you to update them here. Nothing is sent when every status is up to date or every action is completed. Reminders stop at the end date you set; in the last week before they end, the email says so and you can extend them here.'}
-        </p>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="space-y-1">
-            <label htmlFor={`${id}-frequency`} className="text-sm font-semibold text-corp-ink">
-              How often
-            </label>
-            <NativeSelect
-              id={`${id}-frequency`}
-              value={reminder.frequency}
-              disabled={busy || locked}
-              onChange={(e) => setPreference({ frequency: e.target.value as ReminderFrequency })}
-              className="rounded-none border-corp-line"
-            >
-              {reminderFrequencies.map((f) => (
-                <option key={f} value={f}>
-                  {reminderFrequencyLabels[f]}
-                </option>
-              ))}
-            </NativeSelect>
-          </div>
-          <div className="space-y-1">
-            <label htmlFor={`${id}-time`} className="text-sm font-semibold text-corp-ink">
-              At what time
-            </label>
-            <input
-              id={`${id}-time`}
-              type="time"
-              value={reminder.time}
-              disabled={busy || locked || reminder.frequency === 'none'}
-              onChange={(e) => setPreference({ time: e.target.value || NO_REMINDERS.time })}
-              className={input}
-            />
-            <p className="text-xs text-corp-muted">Event time ({timezone}).</p>
-          </div>
-          {reminder.frequency === 'twice_weekly' ? (
-            <fieldset className="space-y-1 sm:col-span-2">
-              <legend className="text-sm font-semibold text-corp-ink">Which two days</legend>
-              <div className="flex flex-wrap gap-2">
-                {weekdays.map((d) => {
-                  const on = reminder.days.includes(d.value);
-                  return (
-                    <label
-                      key={d.value}
-                      className={`inline-flex min-h-10 cursor-pointer items-center gap-2 border px-3 text-sm ${
-                        on
-                          ? 'border-corp-green bg-corp-green-soft text-corp-ink'
-                          : 'border-corp-line bg-white text-corp-text'
-                      }`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={on}
-                        disabled={busy || locked || (!on && reminder.days.length >= 2)}
-                        onChange={() => toggleDay(d.value)}
-                        className="size-4"
-                      />
-                      {d.label}
-                    </label>
-                  );
-                })}
-              </div>
-              {reminder.days.length !== 2 ? (
-                <p className="text-xs text-brand-danger">Choose two days.</p>
-              ) : null}
-            </fieldset>
-          ) : null}
-          <div className="space-y-1">
-            <label htmlFor={`${id}-start`} className="text-sm font-semibold text-corp-ink">
-              Start from
-            </label>
-            <input
-              id={`${id}-start`}
-              type="date"
-              value={reminder.startOn ?? ''}
-              disabled={busy || locked || reminder.frequency === 'none'}
-              onChange={(e) => setPreference({ startOn: e.target.value || null })}
-              className={input}
-            />
-            <p className="text-xs text-corp-muted">Leave empty to start right away.</p>
-          </div>
-          <div className="space-y-1">
-            <label htmlFor={`${id}-end`} className="text-sm font-semibold text-corp-ink">
-              Until
-            </label>
-            <input
-              id={`${id}-end`}
-              type="date"
-              value={reminder.endOn ?? ''}
-              min={reminder.startOn ?? undefined}
-              disabled={busy || locked || reminder.frequency === 'none'}
-              onChange={(e) => setPreference({ endOn: e.target.value || null })}
-              className={input}
-            />
-            <p className="text-xs text-corp-muted">
-              Leave empty to keep going until the plan is completed. To extend, pick a later date.
-            </p>
-          </div>
-        </div>
-        {plan.reminder.nextReminderAt ? (
-          <p className="text-xs text-corp-muted">
-            Next reminder {formatInstant(plan.reminder.nextReminderAt, timezone)}.
-          </p>
-        ) : null}
-        {data.reminders.length > 0 ? (
-          <p className="text-xs text-corp-muted">
-            {data.reminders[0]!.status === 'sent'
-              ? 'Last reminder sent'
-              : data.reminders[0]!.status === 'skipped'
-                ? 'Last reminder not needed, your statuses were up to date:'
-                : 'Last reminder attempted'}{' '}
-            {formatInstant(data.reminders[0]!.sentAt ?? data.reminders[0]!.scheduledFor, timezone)}.
-          </p>
-        ) : null}
-      </section>
 
       {submitted ? (
         <section
@@ -1198,19 +1000,16 @@ function PlanEditor({
                     {a.targetOn ? `Target ${formatDateShort(a.targetOn)}` : ''}
                   </p>
                 ) : null}
+                {a.reminder.frequency !== 'none' ? (
+                  <p className="text-corp-muted">
+                    Reminder: {reminderFrequencyLabels[a.reminder.frequency].toLowerCase()}
+                    {a.reminder.startOn ? ` from ${formatDateShort(a.reminder.startOn)}` : ''}
+                    {a.reminder.endOn ? ` until ${formatDateShort(a.reminder.endOn)}` : ''}.
+                  </p>
+                ) : null}
               </li>
             ))}
           </ol>
-          <p className="mt-4 text-sm text-corp-muted">
-            Reminders: {reminderFrequencyLabels[reminder.frequency].toLowerCase()}
-            {reminder.frequency !== 'none' && reminder.startOn
-              ? ` from ${formatDateShort(reminder.startOn)}`
-              : ''}
-            {reminder.frequency !== 'none' && reminder.endOn
-              ? ` until ${formatDateShort(reminder.endOn)}`
-              : ''}
-            .
-          </p>
         </Dialog>
       ) : null}
 
@@ -1298,8 +1097,8 @@ function PlanEditor({
           eventId={eventId}
           planId={plan.id}
           action={dialog.action}
-          version={plan.version}
-          onClose={() => setDialog(null)}
+          version={dialog.version}
+          onClose={closeDialog}
           onSaved={(result) => {
             setDialog(null);
             onUpdated(result, 'Measures saved.');
@@ -1310,25 +1109,13 @@ function PlanEditor({
           }}
         />
       ) : null}
-      {dialog?.kind === 'progress' ? (
-        <ProgressDialog
-          eventId={eventId}
-          planId={plan.id}
-          action={dialog.action}
-          onClose={() => setDialog(null)}
-          onSaved={(result) => {
-            setDialog(null);
-            onUpdated(result, 'Status recorded.');
-          }}
-        />
-      ) : null}
       {dialog?.kind === 'evidence' ? (
         <EvidenceDialog
           eventId={eventId}
           planId={plan.id}
           action={dialog.action}
-          version={plan.version}
-          onClose={() => setDialog(null)}
+          version={dialog.version}
+          onClose={closeDialog}
           onSaved={(result) => {
             setDialog(null);
             onUpdated(result, 'Evidence saved.');
@@ -1377,10 +1164,8 @@ function ActionCard({
   onPriority,
   onMove,
   onRemove,
-  dirty,
   onMeasures,
   onEvidence,
-  onProgress,
   timezone,
 }: {
   draft: ActionDraft;
@@ -1392,14 +1177,24 @@ function ActionCard({
   onPriority: () => void;
   onMove: (delta: -1 | 1) => void;
   onRemove: () => void;
-  /** Unsaved plan edits; the measure and evidence dialogs wait for a save. */
-  dirty: boolean;
-  onMeasures: (action: PlanActionView) => void;
-  onEvidence: (action: PlanActionView) => void;
-  onProgress: (action: PlanActionView) => void;
+  /** Opens the measures dialog; the plan is saved first when needed. */
+  onMeasures: () => void;
+  /** Opens the evidence dialog; the plan is saved first when needed. */
+  onEvidence: () => void;
   timezone: string;
 }) {
   const id = useId();
+  const reminder = draft.reminder;
+  /** An applied or completed action is no longer reminded (decision 2026-11-11). */
+  const finished = saved ? completionStatuses.includes(saved.progressStatus) : false;
+  const setReminder = (patch: Partial<ReminderPreference>) =>
+    onChange({ reminder: { ...reminder, ...patch } });
+  const toggleDay = (day: number) =>
+    setReminder({
+      days: reminder.days.includes(day)
+        ? reminder.days.filter((d) => d !== day)
+        : [...reminder.days, day].sort((a, b) => a - b),
+    });
   const title = draft.title.trim() || draft.action.trim() || `Action ${index + 1}`;
   const required = (field: 'title' | 'priorityLearning' | 'action') =>
     draft[field].trim() === '' ? (
@@ -1608,35 +1403,144 @@ function ActionCard({
           </NativeSelect>
           {draft.measureStatus === 'identified' ? (
             <p className="text-xs text-corp-muted">
-              Save the plan, then add the measure under “Business measures and evidence” below.
+              Add the measure under “Business measures and evidence” below.
             </p>
           ) : null}
         </div>
       </section>
 
+      <section aria-label="Reminder" className="space-y-3 border-t border-corp-line pt-3">
+        <h5 className="text-xs font-semibold tracking-[0.08em] text-corp-muted uppercase">
+          Reminder
+        </h5>
+        {finished && saved ? (
+          <p className="text-xs text-corp-muted">
+            This action is {actionProgressLabels[saved.progressStatus].toLowerCase()}, so it is no
+            longer reminded.
+          </p>
+        ) : (
+          <>
+            <p className="text-xs text-corp-muted">
+              An email that reminds you of this action, and nothing more: it asks nothing of you and
+              has no form to fill. Whenever you wish, you can come back here to update where the
+              action stands, its measures and your evidence.
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1">
+                <label htmlFor={`${id}-frequency`} className="text-sm font-semibold text-corp-ink">
+                  How often
+                </label>
+                <NativeSelect
+                  id={`${id}-frequency`}
+                  value={reminder.frequency}
+                  disabled={disabled}
+                  onChange={(e) => setReminder({ frequency: e.target.value as ReminderFrequency })}
+                  className="rounded-none border-corp-line"
+                >
+                  {reminderFrequencies.map((f) => (
+                    <option key={f} value={f}>
+                      {reminderFrequencyLabels[f]}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </div>
+              <div className="space-y-1">
+                <label htmlFor={`${id}-time`} className="text-sm font-semibold text-corp-ink">
+                  At what time
+                </label>
+                <input
+                  id={`${id}-time`}
+                  type="time"
+                  value={reminder.time}
+                  disabled={disabled || reminder.frequency === 'none'}
+                  onChange={(e) => setReminder({ time: e.target.value || NO_REMINDERS.time })}
+                  className={input}
+                />
+                <p className="text-xs text-corp-muted">Event time ({timezone}).</p>
+              </div>
+              {reminder.frequency === 'twice_weekly' ? (
+                <fieldset className="space-y-1 sm:col-span-2">
+                  <legend className="text-sm font-semibold text-corp-ink">Which two days</legend>
+                  <div className="flex flex-wrap gap-2">
+                    {weekdays.map((d) => {
+                      const on = reminder.days.includes(d.value);
+                      return (
+                        <label
+                          key={d.value}
+                          className={`inline-flex min-h-10 cursor-pointer items-center gap-2 border px-3 text-sm ${
+                            on
+                              ? 'border-corp-green bg-corp-green-soft text-corp-ink'
+                              : 'border-corp-line bg-white text-corp-text'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={on}
+                            disabled={disabled || (!on && reminder.days.length >= 2)}
+                            onChange={() => toggleDay(d.value)}
+                            className="size-4"
+                          />
+                          {d.label}
+                        </label>
+                      );
+                    })}
+                  </div>
+                  {reminder.days.length !== 2 ? (
+                    <p className="text-xs text-brand-danger">Choose two days.</p>
+                  ) : null}
+                </fieldset>
+              ) : null}
+              <div className="space-y-1">
+                <label htmlFor={`${id}-start`} className="text-sm font-semibold text-corp-ink">
+                  Start from
+                </label>
+                <input
+                  id={`${id}-start`}
+                  type="date"
+                  value={reminder.startOn ?? ''}
+                  disabled={disabled || reminder.frequency === 'none'}
+                  onChange={(e) => setReminder({ startOn: e.target.value || null })}
+                  className={input}
+                />
+                <p className="text-xs text-corp-muted">Leave empty to start right away.</p>
+              </div>
+              <div className="space-y-1">
+                <label htmlFor={`${id}-end`} className="text-sm font-semibold text-corp-ink">
+                  Until
+                </label>
+                <input
+                  id={`${id}-end`}
+                  type="date"
+                  value={reminder.endOn ?? ''}
+                  min={reminder.startOn ?? undefined}
+                  disabled={disabled || reminder.frequency === 'none'}
+                  onChange={(e) => setReminder({ endOn: e.target.value || null })}
+                  className={input}
+                />
+                <p className="text-xs text-corp-muted">
+                  Leave empty to keep going until the action is applied or the plan is completed.
+                </p>
+              </div>
+            </div>
+            {saved?.reminder.nextReminderAt ? (
+              <p className="text-xs text-corp-muted">
+                Next reminder {formatInstant(saved.reminder.nextReminderAt, timezone)}.
+              </p>
+            ) : null}
+          </>
+        )}
+      </section>
+
       {saved ? (
         <div className="space-y-2 border-t border-corp-line pt-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-sm font-semibold text-corp-ink">Progress</p>
-            {!disabled ? (
-              <button
-                type="button"
-                disabled={dirty}
-                onClick={() => onProgress(saved)}
-                className={consoleButton({ variant: 'secondary', size: 'sm' })}
-              >
-                Update status
-              </button>
-            ) : null}
-          </div>
+          <p className="text-sm font-semibold text-corp-ink">Progress</p>
           <p className="text-xs text-corp-muted">
             Where this action stands now:{' '}
             <span className="font-semibold text-corp-ink">
               {actionProgressLabels[saved.progressStatus]}
             </span>
-            . Update it here whenever something changes; each post-conference follow-up asks for it
-            too. Every entry is kept, with where it came from.
-            {dirty ? ' Save your plan first.' : ''}
+            . Each post-conference follow-up asks for it; every answer is kept here, with where it
+            came from.
           </p>
           {saved.progress.length > 0 ? (
             <ul aria-label="Progress history" className="space-y-2 text-sm text-corp-text">
@@ -1665,186 +1569,55 @@ function ActionCard({
               ))}
             </ul>
           ) : (
-            <p className="text-xs text-corp-muted">No status recorded on this action yet.</p>
+            <p className="text-xs text-corp-muted">
+              No status recorded on this action yet. The first follow-up will ask for it.
+            </p>
           )}
         </div>
-      ) : (
-        <p className="text-xs text-corp-muted">Save the plan to see progress on this action.</p>
-      )}
+      ) : null}
       {saved ? (
         <ActionMeasures
           action={saved}
           disabled={disabled}
-          dirty={dirty}
-          onMeasures={() => onMeasures(saved)}
-          onEvidence={() => onEvidence(saved)}
+          onMeasures={onMeasures}
+          onEvidence={onEvidence}
         />
-      ) : null}
-    </article>
-  );
-}
-
-// ------------------------------------------------------------------ status update
-
-/**
- * One status recorded from the plan page (decision 2026-11-09): the same rules as a follow-up's
- * status step. Changed and No longer applicable ask for a brief explanation; Applied and Applied
- * consistently for an example and when it occurred; Completed for what was completed and when.
- */
-function ProgressDialog({
-  eventId,
-  planId,
-  action,
-  onClose,
-  onSaved,
-}: {
-  eventId: string;
-  planId: string;
-  action: PlanActionView;
-  onClose: () => void;
-  onSaved: (data: MyTransferPlan) => void;
-}) {
-  const [status, setStatus] = useState<ActionProgressStatus>(action.progressStatus);
-  const [note, setNote] = useState('');
-  const [occurredOn, setOccurredOn] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [problem, setProblem] = useState<string | null>(null);
-  const id = useId();
-  const meta = actionProgressDefinitions[status];
-  const noteLabel = progressNoteLabel[status];
-  const dateLabel = progressDateLabel[status];
-
-  async function save() {
-    if (progressNeedsDetail(status) && note.trim() === '') {
-      setProblem(noteLabel ?? 'Add a short note.');
-      return;
-    }
-    if (progressNeedsDate(status) && !occurredOn) {
-      setProblem(dateLabel ?? 'Give the date.');
-      return;
-    }
-    setBusy(true);
-    setProblem(null);
-    try {
-      const result = await apiFetch<MyTransferPlan>(
-        `/me/events/${eventId}/transfer-plans/${planId}/actions/${action.id}/progress`,
-        {
-          method: 'POST',
-          body: JSON.stringify({ status, note: note.trim(), occurredOn: occurredOn || null }),
-        },
-      );
-      onSaved(result);
-    } catch (e) {
-      setProblem(describeError(e, 'The status could not be recorded.').message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <Dialog
-      title="Update status"
-      description={action.title.trim() || action.action.trim() || 'Your action'}
-      onClose={onClose}
-      closeDisabled={busy}
-      footer={
-        <>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={onClose}
-            className={consoleButton({ variant: 'ghost' })}
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => void save()}
-            className={consoleButton({ variant: 'accent' })}
-          >
-            {busy ? <Loader2Icon className="animate-spin" aria-hidden="true" /> : null}
-            Record status
-          </button>
-        </>
-      }
-    >
-      <div className="space-y-4 text-sm">
-        {problem ? (
-          <p role="alert" className="text-sm font-semibold text-brand-danger">
-            {problem}
-          </p>
-        ) : null}
-        <div className="space-y-1">
-          <label htmlFor={`${id}-status`} className="text-sm font-semibold text-corp-ink">
-            Where does this action stand?
-          </label>
-          <NativeSelect
-            id={`${id}-status`}
-            value={status}
-            disabled={busy}
-            onChange={(e) => setStatus(e.target.value as ActionProgressStatus)}
-            className="rounded-none border-corp-line"
-          >
-            {actionProgressStatuses.map((s) => (
-              <option key={s} value={s}>
-                {actionProgressLabels[s]}
-              </option>
-            ))}
-          </NativeSelect>
-          <p className="text-xs text-corp-muted">{meta.definition}</p>
-          <p className="text-xs text-corp-muted">Example: {meta.example}</p>
-        </div>
-        {noteLabel ? (
-          <div className="space-y-1">
-            <label htmlFor={`${id}-note`} className="text-sm font-semibold text-corp-ink">
-              {noteLabel}
-              {progressNeedsDetail(status) ? (
-                <span className="ml-1 text-xs font-normal text-corp-muted">(required)</span>
+      ) : (
+        <section
+          aria-label="Business measures and evidence"
+          className="space-y-2 border-t border-corp-line pt-3"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm font-semibold text-corp-ink">Business measures and evidence</p>
+            <div className="flex flex-wrap gap-1">
+              {draft.measureStatus === 'identified' ? (
+                <button
+                  type="button"
+                  disabled={disabled}
+                  onClick={onMeasures}
+                  className={consoleButton({ variant: 'secondary', size: 'sm' })}
+                >
+                  Add a measure
+                </button>
               ) : null}
-            </label>
-            <textarea
-              id={`${id}-note`}
-              rows={3}
-              value={note}
-              disabled={busy}
-              onChange={(e) => setNote(e.target.value)}
-              className={textarea}
-            />
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={onEvidence}
+                className={consoleButton({ variant: 'secondary', size: 'sm' })}
+              >
+                Add evidence
+              </button>
+            </div>
           </div>
-        ) : (
-          <div className="space-y-1">
-            <label htmlFor={`${id}-note`} className="text-sm font-semibold text-corp-ink">
-              Note (optional)
-            </label>
-            <textarea
-              id={`${id}-note`}
-              rows={2}
-              value={note}
-              disabled={busy}
-              onChange={(e) => setNote(e.target.value)}
-              className={textarea}
-            />
-          </div>
-        )}
-        {dateLabel ? (
-          <div className="space-y-1">
-            <label htmlFor={`${id}-on`} className="text-sm font-semibold text-corp-ink">
-              {dateLabel}
-              <span className="ml-1 text-xs font-normal text-corp-muted">(required)</span>
-            </label>
-            <input
-              id={`${id}-on`}
-              type="date"
-              value={occurredOn}
-              disabled={busy}
-              onChange={(e) => setOccurredOn(e.target.value)}
-              className={input}
-            />
-          </div>
-        ) : null}
-      </div>
-    </Dialog>
+          <p className="text-xs text-corp-muted">
+            {draft.measureStatus === 'identified'
+              ? 'Your plan is saved first, then the measure or evidence is added to this action.'
+              : 'Answer “Can you identify a business measure for this action?” above; measures can be added once the answer is yes. Evidence of what you did can be added at any time: your plan is saved first.'}
+          </p>
+        </section>
+      )}
+    </article>
   );
 }
 

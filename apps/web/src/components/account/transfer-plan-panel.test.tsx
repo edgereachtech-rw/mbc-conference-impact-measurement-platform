@@ -7,8 +7,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TransferPlanPanel, useMyTransferPlans } from './transfer-plan-panel';
 
 /**
- * Loads the list as the event page does and shows one plan, as its tab would; starting another
- * plan opens it, as the page switches tabs.
+ * Loads the list as the event page does and shows the delegate's plan, as its tab would; a plan
+ * that no longer exists makes the page open the current one.
  */
 function Harness({ planId: initial }: { planId: string }) {
   const plans = useMyTransferPlans(EVENT);
@@ -61,6 +61,7 @@ function action(partial: Partial<PlanActionView> = {}): PlanActionView {
     measureStatus: null,
     measures: [],
     evidenceRecords: [],
+    reminder: NO_REMINDER,
     ...partial,
   };
 }
@@ -89,7 +90,6 @@ function plan(partial: Partial<MyTransferPlan> = {}): MyTransferPlan {
       outcomeNote: '',
       impactChecks: [],
       updatedAt: '2026-11-12T10:00:00.000Z',
-      reminder: NO_REMINDER,
       actions: [],
     },
     sessions: [
@@ -135,13 +135,12 @@ function summaryOf(p: MyTransferPlan): TransferPlanSummary {
     outcome: p.plan.outcome,
     checkDue: p.plan.impactChecks.some((c) => !c.answeredAt),
     updatedAt: p.plan.updatedAt,
-    reminder: p.plan.reminder,
   };
 }
 
 /**
- * Fakes the API for one delegate: the list, each plan by id, saves, submission, progress,
- * completion and starting another plan (2026-11-06).
+ * Fakes the API for one delegate: the list, the plan by id, saves, submission and completion.
+ * There is no creating a second plan: a delegate has one plan per event (2026-11-11).
  */
 function stub(initial: MyTransferPlan) {
   const calls: Array<{ url: string; init?: RequestInit; body?: unknown }> = [];
@@ -151,18 +150,6 @@ function stub(initial: MyTransferPlan) {
     vi.fn(async (url: string, init?: RequestInit) => {
       const body = init?.body ? (JSON.parse(String(init.body)) as unknown) : undefined;
       calls.push({ url, init, body });
-      if (url.endsWith('/transfer-plans') && init?.method === 'POST') {
-        const created = plan({
-          plan: {
-            ...plan().plan,
-            id: PLAN2,
-            sequence: plans.size + 1,
-            title: (body as { title: string }).title,
-          },
-        });
-        plans.set(PLAN2, created);
-        return json(created, 201);
-      }
       if (url.endsWith('/transfer-plans')) {
         return json({ plans: [...plans.values()].map(summaryOf) });
       }
@@ -184,8 +171,8 @@ function stub(initial: MyTransferPlan) {
             action: string;
             isPriority: boolean;
             measureStatus?: 'identified' | 'not_yet_known' | 'not_applicable' | null;
+            reminder: Omit<PlanActionView['reminder'], 'nextReminderAt'>;
           }>;
-          reminder: MyTransferPlan['plan']['reminder'];
         };
         if (input.version !== current.plan.version) {
           return json(
@@ -205,7 +192,6 @@ function stub(initial: MyTransferPlan) {
             ...current.plan,
             version: current.plan.version + 1,
             title: input.title,
-            reminder: { ...current.plan.reminder, ...input.reminder },
             actions: input.actions.map((a, i) =>
               action({
                 id: `${ACTION.slice(0, -1)}${i}`,
@@ -216,6 +202,11 @@ function stub(initial: MyTransferPlan) {
                 measureStatus: a.measureStatus ?? null,
                 startOn: null,
                 firstStep: '',
+                reminder: {
+                  ...a.reminder,
+                  nextReminderAt:
+                    a.reminder.frequency === 'none' ? null : '2026-12-10T17:00:00.000Z',
+                },
               }),
             ),
           },
@@ -262,7 +253,6 @@ function stub(initial: MyTransferPlan) {
               },
             ],
             version: current.plan.version + 1,
-            reminder: NO_REMINDER,
           },
         };
         plans.set(id, current);
@@ -320,9 +310,9 @@ describe('TransferPlanPanel', () => {
           isPriority: true,
           startOn: null,
           measureStatus: 'identified',
+          reminder: { frequency: 'none', startOn: null, endOn: null, time: '09:00', days: [] },
         },
       ],
-      reminder: { frequency: 'none', startOn: null, endOn: null, time: '09:00', days: [] },
     });
     expect(await screen.findByText('Draft saved.')).toBeTruthy();
     // Only a "yes" shows the way to the measures themselves.
@@ -384,8 +374,8 @@ describe('TransferPlanPanel', () => {
     expect(screen.queryByText(/could not be loaded/)).toBeNull();
   });
 
-  it('shows the progress history and records a status from the plan page', async () => {
-    const calls = stub(
+  it('shows the progress history from the follow-ups and asks for no status on the plan page', async () => {
+    stub(
       plan({
         canSubmit: false,
         plan: {
@@ -422,30 +412,13 @@ describe('TransferPlanPanel', () => {
     expect(list.textContent).toMatch(/30-day follow-up/);
     expect(list.textContent).toMatch(/Applied/);
     expect(list.textContent).toMatch(/Used it in the Q1 programme/);
-    // A status can be recorded from the plan page too (2026-11-09), with the detail it asks for.
-    const user = userEvent.setup();
-    await user.click(within(card).getByRole('button', { name: 'Update status' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Update status' });
-    await user.selectOptions(
-      within(dialog).getByLabelText('Where does this action stand?'),
-      'applied_consistently',
-    );
-    await user.click(within(dialog).getByRole('button', { name: 'Record status' }));
-    expect(within(dialog).getByRole('alert').textContent).toMatch(/example/i);
-    await user.type(
-      within(dialog).getByLabelText(/^An example of applying it/),
-      'Every programme since March',
-    );
-    await user.type(within(dialog).getByLabelText(/^When did an application occur/), '2027-03-05');
-    await user.click(within(dialog).getByRole('button', { name: 'Record status' }));
-    const post = calls.find(
-      (c) => c.init?.method === 'POST' && c.url.endsWith(`/actions/${ACTION}/progress`),
-    );
-    expect(post?.body).toEqual({
-      status: 'applied_consistently',
-      note: 'Every programme since March',
-      occurredOn: '2027-03-05',
-    });
+    // The status is recorded through the follow-ups only (decision 2026-11-11).
+    expect(within(card).queryByRole('button', { name: 'Update status' })).toBeNull();
+    // An applied action is no longer reminded: its reminder is not offered.
+    expect(
+      within(card).getByText(/This action is applied, so it is no longer reminded/),
+    ).toBeTruthy();
+    expect(within(card).queryByLabelText('How often')).toBeNull();
     // A submitted plan says what completion still needs: evidence, now that the action is applied.
     expect(
       screen.getByRole('list', { name: 'Still needed before completion' }).textContent,
@@ -455,6 +428,8 @@ describe('TransferPlanPanel', () => {
     ).toBe(true);
     // Support is no longer asked from the plan page.
     expect(screen.queryByText(/Need support to apply your plan/)).toBeNull();
+    // One plan per delegate: nothing offers a second one.
+    expect(screen.queryByRole('button', { name: 'Start another plan' })).toBeNull();
   });
 
   it('completes a submitted plan once every action is applied with evidence, asks about impact, then runs the checks', async () => {
@@ -545,55 +520,87 @@ describe('TransferPlanPanel', () => {
     expect(screen.getByText(/We will ask you on 21 May 2027 whether/)).toBeTruthy();
   });
 
-  it('lets the delegate start another plan and choose twice-weekly reminders with a window', async () => {
+  it('saves a twice-weekly reminder with a window on one action, and keeps the other without', async () => {
     const calls = stub(
-      plan({ plan: { ...plan().plan, status: 'submitted', version: 2, actions: [action()] } }),
+      plan({
+        plan: { ...plan().plan, status: 'submitted', version: 2, actions: [action()] },
+      }),
     );
     const user = userEvent.setup();
     render(<Harness planId={PLAN} />);
-    await screen.findByRole('article', { name: 'Brief stakeholders' });
-    await user.click(screen.getByRole('button', { name: 'Start another plan' }));
-    await user.type(screen.getByLabelText('What is this plan about?'), 'Coaching rollout');
-    await user.click(screen.getByRole('button', { name: 'Start this plan' }));
-    const created = calls.find(
-      (c) => c.init?.method === 'POST' && c.url.endsWith('/transfer-plans'),
-    );
-    expect(created?.body).toEqual({ title: 'Coaching rollout' });
-    // The new plan opens on its own, empty.
-    await vi.waitFor(() =>
-      expect(screen.queryByRole('article', { name: 'Brief stakeholders' })).toBeNull(),
-    );
-
+    const card = await screen.findByRole('article', { name: 'Brief stakeholders' });
+    // The reminder only reminds: it asks nothing and has no form to fill.
+    expect(within(card).getByText(/asks nothing of you and has no form to fill/)).toBeTruthy();
     // Twice a week: the days appear and exactly two can be chosen; the window and time are saved.
-    await user.selectOptions(await screen.findByLabelText('How often'), 'twice_weekly');
-    const days = screen.getByRole('group', { name: 'Which two days' });
+    await user.selectOptions(within(card).getByLabelText('How often'), 'twice_weekly');
+    const days = within(card).getByRole('group', { name: 'Which two days' });
     expect(within(days).getByText('Choose two days.')).toBeTruthy();
     await user.click(within(days).getByLabelText('Tuesday'));
     await user.click(within(days).getByLabelText('Friday'));
     expect((within(days).getByLabelText('Monday') as HTMLInputElement).disabled).toBe(true);
     expect(within(days).queryByText('Choose two days.')).toBeNull();
     // A time input takes its value by change event: typing into it is not reliable in jsdom.
-    fireEvent.change(screen.getByLabelText('At what time'), { target: { value: '18:00' } });
-    await user.type(screen.getByLabelText('Start from'), '2026-12-10');
-    await user.type(screen.getByLabelText('Until'), '2027-01-31');
+    fireEvent.change(within(card).getByLabelText('At what time'), { target: { value: '18:00' } });
+    await user.type(within(card).getByLabelText('Start from'), '2026-12-10');
+    await user.type(within(card).getByLabelText('Until'), '2027-01-31');
+    // A second action keeps its own, empty, reminder.
     await user.click(screen.getByRole('button', { name: 'Add an action' }));
+    const second = screen.getByRole('article', { name: 'Action 2' });
     await user.type(
-      within(screen.getByRole('article', { name: 'Action 1' })).getByLabelText(
-        /^What specifically will you do differently?/,
-      ),
+      within(second).getByLabelText(/^What specifically will you do differently?/),
       'Coach two team leads',
     );
-    await user.click(screen.getByRole('button', { name: 'Save draft' }));
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
     const put = calls.find((c) => c.init?.method === 'PUT');
-    expect(put?.url).toBe(`/api/v1/me/events/${EVENT}/transfer-plans/${PLAN2}`);
+    expect(put?.url).toBe(`/api/v1/me/events/${EVENT}/transfer-plans/${PLAN}`);
     expect(put?.body).toMatchObject({
-      reminder: {
-        frequency: 'twice_weekly',
-        days: [2, 5],
-        time: '18:00',
-        startOn: '2026-12-10',
-        endOn: '2027-01-31',
-      },
+      actions: [
+        {
+          action: 'Brief stakeholders',
+          reminder: {
+            frequency: 'twice_weekly',
+            days: [2, 5],
+            time: '18:00',
+            startOn: '2026-12-10',
+            endOn: '2027-01-31',
+          },
+        },
+        {
+          action: 'Coach two team leads',
+          reminder: { frequency: 'none', days: [], startOn: null, endOn: null },
+        },
+      ],
     });
+    // The saved plan shows when the next reminder goes out.
+    expect(await screen.findByText(/Next reminder/)).toBeTruthy();
+  });
+
+  it('saves the plan on its own when a measure is added to an action not stored yet', async () => {
+    const calls = stub(plan());
+    const user = userEvent.setup();
+    render(<Harness planId={PLAN} />);
+    await screen.findByText('How to measure transfer');
+    await user.click(screen.getByRole('button', { name: 'Add an action' }));
+    const card = screen.getByRole('article', { name: 'Action 1' });
+    await user.type(
+      within(card).getByLabelText(/^What specifically will you do differently?/),
+      'Define measures first',
+    );
+    // Measures are offered as soon as the answer is yes, before any save (2026-11-11).
+    expect(within(card).queryByRole('button', { name: 'Add a measure' })).toBeNull();
+    await user.selectOptions(
+      within(card).getByLabelText('Can you identify a business measure for this action?'),
+      'identified',
+    );
+    await user.click(within(card).getByRole('button', { name: 'Add a measure' }));
+    // The plan was saved first, then the dialog opened on the stored action.
+    const put = calls.find((c) => c.init?.method === 'PUT');
+    expect(put?.body).toMatchObject({
+      version: 1,
+      actions: [{ action: 'Define measures first', measureStatus: 'identified' }],
+    });
+    expect(
+      await screen.findByRole('dialog', { name: 'Business measures for this action' }),
+    ).toBeTruthy();
   });
 });
