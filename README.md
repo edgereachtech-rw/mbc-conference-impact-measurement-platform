@@ -1090,9 +1090,17 @@ measures | evidence }`, the list replaced with ids kept; own actions only, 404 o
   gives the delegate their codes and recorded statuses. Overall status per delegate: attended
   every date, pending while a date is open without presence, partially attended, else absent
   (`overallAttendance` in `@mbc/shared`); `MyEvent.attendance.status` now carries it. Admin
-  screen: the event page's Attendance tab (per-date lists, QR scan with the camera where the
-  browser supports it or a typed code, manual and bulk marking, corrections, closure, session
-  attendance, delegate profiles); the dashboard shows the attendance counts.
+  screen: the event page's Attendance tab (per-date lists, QR scan with the camera or a typed
+  code, manual and bulk marking, corrections, closure, session attendance, delegate profiles);
+  the dashboard shows the attendance counts.
+- Camera scanning (2026-11-12, apps/web/src/components/admin/attendance/qr-camera.ts): the
+  browser's BarcodeDetector where it exists (Chrome and Edge on Android and desktops), and the
+  jsQR decoder (pinned 1.4.0) on a canvas everywhere else, so Safari on iPhone and iPad and
+  Firefox scan too. The camera needs a secure (https) address: a plain http address other than
+  localhost is refused before any prompt. A refusal names its cause on screen (blocked for the
+  site, no secure address, no camera, camera in use), the Use the camera button stays usable so
+  a press works once the cause is fixed, and Stop the camera releases it. Browsers remember a
+  Block answer: it is undone from the address bar or the site settings, not by the page.
 - Event dashboard (2026-10-30): `/admin/events/:id/dashboard`, from the "Dashboard" button on
   the event page, shows `GET /api/v1/events/:id/dashboard` (admin only, counts only): registered
   delegates (active, plus test where allowed) with signed-up and invited counts and the
