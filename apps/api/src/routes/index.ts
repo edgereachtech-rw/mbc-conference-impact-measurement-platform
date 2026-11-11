@@ -131,7 +131,15 @@ export function apiRouter(deps: ApiDeps): Router {
     badgeRouter({ prisma: deps.prisma, config: deps.config, middleware, logger: deps.logger }),
   );
   router.use(
-    followUpRouter({ prisma: deps.prisma, config: deps.config, middleware, now: deps.now }),
+    followUpRouter({
+      prisma: deps.prisma,
+      config: deps.config,
+      mailConfig: deps.mailConfig,
+      mailer: deps.mailer,
+      middleware,
+      logger: deps.logger,
+      now: deps.now,
+    }),
   );
   router.use(
     consentRouter({ prisma: deps.prisma, config: deps.config, middleware, now: deps.now }),

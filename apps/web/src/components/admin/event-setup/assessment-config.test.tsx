@@ -66,7 +66,8 @@ describe('AssessmentConfig', () => {
     );
     const user = userEvent.setup();
     render(<AssessmentConfig event={event} onSaved={vi.fn()} />);
-    expect(screen.getAllByRole('form')).toHaveLength(3);
+    // The follow-up stage is configured on the Transfer plans tab (2026-11-09): two cards here.
+    expect(screen.getAllByRole('form')).toHaveLength(2);
     const pre = screen.getByRole('form', { name: 'Pre-conference assessment' });
     expect(within(pre).getByLabelText('Available from')).toHaveProperty('disabled', true);
     await user.click(within(pre).getByLabelText('Enabled for this event'));
@@ -91,12 +92,13 @@ describe('AssessmentConfig', () => {
       status: 'scheduled',
     });
     expect((await within(pre).findByRole('status')).textContent).toBe('Saved.');
-    // The other stages were not touched.
-    const follow = screen.getByRole('form', { name: 'Follow-up assessment' });
-    expect(within(follow).getByLabelText('Enabled for this event')).toHaveProperty(
+    // The other stages were not touched; the follow-ups are not here at all (2026-11-09).
+    const during = screen.getByRole('form', { name: 'During-conference assessment' });
+    expect(within(during).getByLabelText('Enabled for this event')).toHaveProperty(
       'checked',
       false,
     );
+    expect(screen.queryByRole('form', { name: 'Post-conference follow-up' })).toBeNull();
   });
 
   it('shows what delegates see, the response counts and the link to the stage page', async () => {
@@ -149,112 +151,5 @@ describe('AssessmentConfig', () => {
     expect(
       within(pre).getByRole('link', { name: 'Questions and submissions' }).getAttribute('href'),
     ).toBe('/admin/events/e1/assessments/pre_conference?wave=1');
-  });
-
-  it('offers the schedule while the waves are missing, and keeps the old round as it is', async () => {
-    // An event from before the schedule existed: one follow-up round, no interval.
-    const legacy: EventDetail = {
-      ...event,
-      assessmentStages: [stage('pre_conference'), stage('follow_up')],
-    };
-    const calls: Array<{ url: string; method?: string; body?: unknown }> = [];
-    const waved: EventDetail = {
-      ...legacy,
-      assessmentStages: [
-        stage('pre_conference'),
-        stage('follow_up'),
-        { ...stage('follow_up', 2, '30-day follow-up'), dueAfterDays: 30 },
-        { ...stage('follow_up', 3, '60-day follow-up'), dueAfterDays: 60 },
-        { ...stage('follow_up', 4, '90-day follow-up'), dueAfterDays: 90 },
-      ],
-    };
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (url: string, init?: RequestInit) => {
-        calls.push({
-          url,
-          method: init?.method,
-          body: init?.body ? (JSON.parse(String(init.body)) as unknown) : undefined,
-        });
-        return new Response(JSON.stringify({ event: waved, waves: [], eligible: 0 }), {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        });
-      }),
-    );
-    const onSaved = vi.fn();
-    render(<AssessmentConfig event={legacy} onSaved={onSaved} />);
-
-    // The existing round keeps its plain name: it is not the 30-day wave.
-    expect(screen.getByRole('form', { name: 'Follow-up assessment' })).toBeTruthy();
-    expect(screen.queryByRole('form', { name: '30-day follow-up' })).toBeNull();
-    expect(screen.getByText(/one follow-up round from before the schedule/)).toBeTruthy();
-
-    const user = userEvent.setup();
-    await user.click(screen.getByRole('button', { name: /Create the 30, 60 and 90-day waves/ }));
-    const post = calls.find((c) => c.method === 'POST')!;
-    expect(post.url).toBe('/api/v1/events/e1/assessments/follow-ups');
-    expect(post.body).toEqual({ waves: [1, 2, 3] });
-    // The event is read again so the cards appear without a reload.
-    expect(onSaved).toHaveBeenCalledWith(waved);
-  });
-
-  it('stops offering the schedule once the waves exist', () => {
-    const scheduled: EventDetail = {
-      ...event,
-      assessmentStages: [
-        { ...stage('follow_up', 1, '30-day follow-up'), dueAfterDays: 30 },
-        { ...stage('follow_up', 2, '60-day follow-up'), dueAfterDays: 60 },
-        { ...stage('follow_up', 3, '90-day follow-up'), dueAfterDays: 90 },
-      ],
-    };
-    vi.stubGlobal('fetch', vi.fn());
-    render(<AssessmentConfig event={scheduled} onSaved={vi.fn()} />);
-    expect(screen.queryByRole('button', { name: /Create the 30, 60 and 90-day waves/ })).toBeNull();
-  });
-
-  it('shows each follow-up wave by its own name and acts on that wave alone', async () => {
-    // Three waves of one stage, as the schedule creates them (E12-1).
-    const waved: EventDetail = {
-      ...event,
-      assessmentStages: [
-        stage('pre_conference'),
-        { ...stage('follow_up', 1, '30-day follow-up'), dueAfterDays: 30 },
-        { ...stage('follow_up', 2, '60-day follow-up'), dueAfterDays: 60 },
-        { ...stage('follow_up', 3, '90-day follow-up'), dueAfterDays: 90 },
-      ],
-    };
-    const calls: string[] = [];
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (url: string) => {
-        calls.push(url);
-        return new Response(JSON.stringify({ event: waved }), {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        });
-      }),
-    );
-    render(<AssessmentConfig event={waved} onSaved={vi.fn()} />);
-
-    // Three cards, three names: not "Follow-up assessment" three times over.
-    for (const label of ['30-day follow-up', '60-day follow-up', '90-day follow-up']) {
-      expect(screen.getByRole('form', { name: label })).toBeTruthy();
-    }
-    // Each card's question editor opens its own wave.
-    const sixty = screen.getByRole('form', { name: '60-day follow-up' });
-    expect(
-      within(sixty).getByRole('link', { name: 'Questions and submissions' }).getAttribute('href'),
-    ).toBe('/admin/events/e1/assessments/follow_up?wave=2');
-    const ninety = screen.getByRole('form', { name: '90-day follow-up' });
-    expect(
-      within(ninety).getByRole('link', { name: 'Questions and submissions' }).getAttribute('href'),
-    ).toBe('/admin/events/e1/assessments/follow_up?wave=3');
-
-    // Saving the 60-day card addresses wave 2, so enabling one wave never enables another.
-    const user = userEvent.setup();
-    await user.click(within(sixty).getByRole('button', { name: 'Save stage' }));
-    expect(calls.some((u) => u.endsWith('/assessments/follow_up?wave=2'))).toBe(true);
-    expect(calls.some((u) => u.endsWith('/assessments/follow_up?wave=1'))).toBe(false);
   });
 });

@@ -3,11 +3,8 @@ import {
   actionSubmissionGaps,
   evidenceSaveSchema,
   evidenceSupports,
-  measureResultsSaveSchema,
   measureSummaries,
   measuresSaveSchema,
-  isNumericValue,
-  resultSourceLabels,
   addDaysTo,
   dateIn,
   IMPACT_CHECK_DAYS,
@@ -17,14 +14,12 @@ import {
   nextReminderAfter,
   planCompletionGaps,
   planHasContent,
-  planHasResult,
   planOutcomeLabels,
   planTitleOf,
   referenceQuestionsSaveSchema,
   summariseMeasures,
   transferPlanVisible,
   transferPlanCompleteSchema,
-  transferPlanCreateSchema,
   transferPlanSaveSchema,
   transferPlanSubmitSchema,
   type ActionProgressStatus,
@@ -38,6 +33,7 @@ import {
   type MyTransferPlans,
   type PlanActionView,
   type PlanOutcome,
+  type ReminderPreference,
   type TransferPlanAdminDetail,
   type TransferPlanListItem,
   type TransferPlanSummary,
@@ -222,13 +218,33 @@ function actionViewOf(a: ActionRow): PlanActionView {
       recordedAt: p.recordedAt.toISOString(),
     })),
     measureStatus: a.measureStatus,
+    reminder: reminderViewOf(a),
     measures: a.measures.map(measureViewOf),
     evidenceRecords: a.evidenceRecords.map(evidenceViewOf),
   };
 }
 
+/** The columns an action's reminder preference becomes, with its next time from `at`. */
+function reminderDataOf(reminder: ReminderPreference, at: Date, timezone: string) {
+  const pref: ReminderPreference = {
+    ...reminder,
+    startOn: reminder.startOn ?? null,
+    endOn: reminder.endOn ?? null,
+    days: reminder.frequency === 'twice_weekly' ? [...reminder.days].sort() : [],
+  };
+  return {
+    reminderFrequency: pref.frequency,
+    reminderStartOn: dayOf(pref.startOn),
+    reminderEndOn: dayOf(pref.endOn),
+    reminderTime: pref.time,
+    reminderDays: pref.days,
+    nextReminderAt: nextReminderAfter(pref, at, timezone),
+  };
+}
+
+/** An action's reminder as the delegate set it, with when the next one goes out. */
 function reminderViewOf(p: {
-  reminderFrequency: PlanRow['reminderFrequency'];
+  reminderFrequency: ActionRow['reminderFrequency'];
   reminderStartOn: Date | null;
   reminderEndOn: Date | null;
   reminderTime: string;
@@ -259,7 +275,6 @@ export function planViewOf(p: PlanRow): TransferPlanView {
     outcomeNote: p.outcomeNote,
     impactChecks: p.impactChecks.map(impactCheckViewOf),
     updatedAt: p.updatedAt.toISOString(),
-    reminder: reminderViewOf(p),
     actions: p.actions.map(actionViewOf),
   };
 }
@@ -372,33 +387,13 @@ export function transferPlanRouter({
     }));
   }
 
-  /** Submission opens with the start of the last planning session (any time when none is scheduled). */
-  async function canSubmitAt(eventId: string, timezone: string, at: Date) {
-    const sessions = await planningSessions(eventId);
-    const final = sessions.find((s) => s.isFinal);
-    if (!final) return { sessions, canSubmit: true };
-    // The session's wall-clock start in the event's zone, compared as an instant.
-    const startLocal = new Date(`${final.date}T${final.startTime}:00`);
-    const offsetMinutes = (() => {
-      const parts = new Intl.DateTimeFormat('en-GB', {
-        timeZone: timezone,
-        timeZoneName: 'longOffset',
-      }).formatToParts(startLocal);
-      const name = parts.find((p) => p.type === 'timeZoneName')?.value ?? 'GMT';
-      const m = /GMT([+-])(\d{2}):?(\d{2})?/.exec(name);
-      return m ? (m[1] === '-' ? -1 : 1) * (Number(m[2]) * 60 + Number(m[3] ?? 0)) : 0;
-    })();
-    const start = new Date(
-      Date.UTC(
-        Number(final.date.slice(0, 4)),
-        Number(final.date.slice(5, 7)) - 1,
-        Number(final.date.slice(8, 10)),
-        Number(final.startTime.slice(0, 2)),
-        Number(final.startTime.slice(3, 5)),
-      ) -
-        offsetMinutes * 60_000,
-    );
-    return { sessions, canSubmit: at >= start };
+  /**
+   * A draft can be submitted at any time (decision 2026-11-08). Until then submission opened
+   * with the start of the last Transfer Planning session; the sessions are still listed so the
+   * delegate knows when the plan is worked on together.
+   */
+  async function canSubmitAt(eventId: string) {
+    return { sessions: await planningSessions(eventId), canSubmit: true };
   }
 
   /** The delegate's pre-event answers to the event's reference questions. */
@@ -406,25 +401,14 @@ export function transferPlanRouter({
     referenceAnswersFor(prisma(), eventId, delegateId);
 
   /**
-   * A delegate may keep several plans for one event (2026-11-06). The first is created on first
-   * access, as before, so the plan page is never empty; further ones are created on request.
+   * One plan per delegate (decision 2026-11-11, back to section 9 of the brief): it is created
+   * on first access so the plan page is never empty, and no route creates another.
    */
   async function ensureFirstPlan(eventId: string, delegateId: string) {
     const count = await prisma().transferPlan.count({ where: { eventId, delegateId } });
     if (count === 0) {
       await prisma().transferPlan.create({ data: { eventId, delegateId, sequence: 1 } });
     }
-  }
-
-  async function createPlan(eventId: string, delegateId: string, title: string) {
-    const last = await prisma().transferPlan.aggregate({
-      where: { eventId, delegateId },
-      _max: { sequence: true },
-    });
-    return prisma().transferPlan.create({
-      data: { eventId, delegateId, sequence: (last._max.sequence ?? 0) + 1, title },
-      include: PLAN_INCLUDE,
-    });
   }
 
   /** One of the delegate's own plans; anyone else's id is simply "not found". */
@@ -444,7 +428,7 @@ export function transferPlanRouter({
       throw new HttpError(
         409,
         'plan_completed',
-        'This plan is completed and can no longer be changed. Start a new plan for further actions.',
+        'This plan is completed and can no longer be changed. What it records stands as your result.',
       );
     }
   }
@@ -462,7 +446,6 @@ export function transferPlanRouter({
       outcome: p.outcome,
       checkDue: checkDueOn(p, today),
       updatedAt: p.updatedAt.toISOString(),
-      reminder: reminderViewOf(p),
     };
   }
 
@@ -485,11 +468,10 @@ export function transferPlanRouter({
     delegateId: string,
     planId: string,
   ): Promise<MyTransferPlan> {
-    const [plan, event] = await Promise.all([
+    const [plan, { sessions, canSubmit }] = await Promise.all([
       loadPlan(eventId, delegateId, planId),
-      prisma().event.findUniqueOrThrow({ where: { id: eventId }, select: { timezone: true } }),
+      canSubmitAt(eventId),
     ]);
-    const { sessions, canSubmit } = await canSubmitAt(eventId, event.timezone, clock());
     return {
       plan: planViewOf(plan),
       sessions,
@@ -560,28 +542,6 @@ export function transferPlanRouter({
     res.json(await myPlans(delegate.eventId, delegate.id));
   });
 
-  router.post(
-    '/me/events/:eventId/transfer-plans',
-    middleware.requireAuth,
-    validated(transferPlanCreateSchema),
-    async (req, res) => {
-      const { principal, delegate } = await myRegistration(res, String(req.params.eventId));
-      const { title } = req.body as z.infer<typeof transferPlanCreateSchema>;
-      await ensureFirstPlan(delegate.eventId, delegate.id);
-      const plan = await createPlan(delegate.eventId, delegate.id, title);
-      await audit(prisma(), {
-        action: 'transfer_plan.created',
-        entityType: 'transfer_plan',
-        entityId: plan.id,
-        eventId: delegate.eventId,
-        actorUserId: principal.userId,
-        newValue: { sequence: plan.sequence },
-        ...clientOf(res),
-      });
-      res.status(201).json(await myView(delegate.eventId, delegate.id, plan.id));
-    },
-  );
-
   router.get(
     '/me/events/:eventId/transfer-plans/:planId',
     middleware.requireAuth,
@@ -631,13 +591,6 @@ export function transferPlanRouter({
         where: { id: delegate.eventId },
         select: { timezone: true },
       });
-      const reminder = {
-        ...input.reminder,
-        startOn: input.reminder.startOn ?? null,
-        endOn: input.reminder.endOn ?? null,
-        days: input.reminder.frequency === 'twice_weekly' ? [...input.reminder.days].sort() : [],
-      };
-      const nextReminderAt = nextReminderAfter(reminder, at, event.timezone);
       const saved = await prisma().$transaction(async (tx) => {
         if (removed.length) {
           await tx.transferPlanAction.deleteMany({
@@ -663,6 +616,9 @@ export function transferPlanRouter({
             measure: a.measure,
             baseline: a.baseline,
             reviewOn: dayOf(a.reviewOn),
+            measureStatus: a.measureStatus,
+            // The action's own reminder (2026-11-11); its next time follows the preference.
+            ...reminderDataOf(a.reminder, at, event.timezone),
           };
           if (a.id) await tx.transferPlanAction.update({ where: { id: a.id }, data });
           else await tx.transferPlanAction.create({ data: { ...data, planId: plan.id } });
@@ -672,12 +628,6 @@ export function transferPlanRouter({
           data: {
             version: plan.version + 1,
             title: input.title,
-            reminderFrequency: reminder.frequency,
-            reminderStartOn: dayOf(reminder.startOn),
-            reminderEndOn: dayOf(reminder.endOn),
-            reminderTime: reminder.time,
-            reminderDays: reminder.days,
-            nextReminderAt,
             updatedByUserId: principal.userId,
           },
           include: PLAN_INCLUDE,
@@ -693,7 +643,7 @@ export function transferPlanRouter({
             status: row.status,
             actions: actions.length,
             removed: removed.length,
-            reminderFrequency: input.reminder.frequency,
+            remindersOn: actions.filter((a) => a.reminder.frequency !== 'none').length,
           },
           ...clientOf(res),
         });
@@ -746,19 +696,8 @@ export function transferPlanRouter({
         });
         return;
       }
-      const event = await prisma().event.findUniqueOrThrow({
-        where: { id: delegate.eventId },
-        select: { timezone: true },
-      });
+      // Submission is open at any time (decision 2026-11-08).
       const at = clock();
-      const { canSubmit } = await canSubmitAt(delegate.eventId, event.timezone, at);
-      if (!canSubmit) {
-        throw new HttpError(
-          409,
-          'not_yet',
-          'Plans are submitted during the final Transfer Planning session; keep saving your draft until then.',
-        );
-      }
       await prisma().$transaction(async (tx) => {
         await tx.transferPlan.update({
           where: { id: plan.id },
@@ -895,136 +834,6 @@ export function transferPlanRouter({
     },
   );
 
-  /**
-   * Actual results of one measure (spec of 2026-11-08, sections C and D): dated records that
-   * are kept, never overwritten. The list is replaced and ids are kept, so the delegate can
-   * correct a record; a new one is simply added. Each record remembers the measure's name, kind
-   * and unit as they were when it was recorded, and the measure keeps a copy of the latest
-   * result for the lists and reports. A quantitative measure takes numbers only.
-   */
-  router.put(
-    '/me/events/:eventId/transfer-plans/:planId/actions/:actionId/measures/:measureId/results',
-    middleware.requireAuth,
-    validated(measureResultsSaveSchema),
-    async (req, res) => {
-      const { principal, delegate, plan, action } = await myAction(
-        res,
-        String(req.params.eventId),
-        String(req.params.planId),
-        String(req.params.actionId),
-      );
-      const measureId = String(req.params.measureId);
-      const measure = UUID.test(measureId) ? action.measures.find((m) => m.id === measureId) : null;
-      if (!measure) throw new HttpError(404, 'not_found', 'Measure not found.');
-      const input = req.body as z.infer<typeof measureResultsSaveSchema>;
-      if (input.version !== plan.version) throw stale();
-      const known = new Map(measure.results.map((r) => [r.id, r]));
-      for (const [index, r] of input.results.entries()) {
-        if (r.id && !known.has(r.id)) {
-          throw new HttpError(
-            422,
-            'validation_failed',
-            'results: an id does not belong to this measure.',
-          );
-        }
-        if (measure.kind === 'quantitative' && !isNumericValue(r.value)) {
-          throw new HttpError(
-            422,
-            'validation_failed',
-            `results.${index}.value: enter a number such as 30 or 2.5; the unit is ${measure.unit || 'the measure\u2019s unit'}.`,
-          );
-        }
-      }
-      const keepIds = new Set(input.results.filter((r) => r.id).map((r) => r.id!));
-      const removed = measure.results.filter((r) => !keepIds.has(r.id)).map((r) => r.id);
-      // The latest result by its date, then by when it was recorded, becomes the measure's copy.
-      const ordered = [...input.results].sort((a, b) => {
-        if (a.resultOn !== b.resultOn) return a.resultOn < b.resultOn ? 1 : -1;
-        const ra = a.id ? (known.get(a.id)?.recordedAt.getTime() ?? Infinity) : Infinity;
-        const rb = b.id ? (known.get(b.id)?.recordedAt.getTime() ?? Infinity) : Infinity;
-        return rb - ra;
-      });
-      const latest = ordered[0] ?? null;
-      await prisma().$transaction(async (tx) => {
-        if (removed.length) {
-          await tx.transferPlanMeasureResult.deleteMany({
-            where: { id: { in: removed }, measureId: measure.id },
-          });
-        }
-        for (const r of input.results) {
-          const data = {
-            value: r.value,
-            resultOn: dayOf(r.resultOn),
-            method: r.method,
-            meaning: r.meaning,
-            isFinal: r.isFinal,
-            sourceType: r.sourceType,
-            source: r.sourceType === 'other' || r.source ? r.source : '',
-            hasInfluences: r.hasInfluences,
-            influences: r.hasInfluences ? r.influences : '',
-            support: r.support,
-          };
-          if (r.id) {
-            await tx.transferPlanMeasureResult.update({ where: { id: r.id }, data });
-          } else {
-            await tx.transferPlanMeasureResult.create({
-              data: {
-                ...data,
-                measureId: measure.id,
-                measureName: measure.name,
-                measureKind: measure.kind,
-                unit: measure.unit,
-              },
-            });
-          }
-        }
-        await tx.transferPlanMeasure.update({
-          where: { id: measure.id },
-          data: latest
-            ? {
-                actualValue: latest.value,
-                actualOn: dayOf(latest.resultOn),
-                source: latest.source
-                  ? `${resultSourceLabels[latest.sourceType]}: ${latest.source}`
-                  : resultSourceLabels[latest.sourceType],
-                influences: latest.hasInfluences ? latest.influences : '',
-                support: latest.support,
-              }
-            : {
-                actualValue: '',
-                actualOn: null,
-                source: '',
-                influences: '',
-                support: 'self_reported',
-              },
-        });
-        await tx.transferPlan.update({
-          where: { id: plan.id },
-          data: { version: plan.version + 1, updatedByUserId: principal.userId },
-        });
-        await audit(tx, {
-          action: 'transfer_plan.results_saved',
-          entityType: 'transfer_plan_action',
-          entityId: action.id,
-          eventId: delegate.eventId,
-          actorUserId: principal.userId,
-          newValue: {
-            measureId: measure.id,
-            results: input.results.length,
-            added: input.results.filter((r) => !r.id).length,
-            removed: removed.length,
-            final: input.results.some((r) => r.isFinal),
-            support: Object.fromEntries(
-              evidenceSupports.map((s) => [s, input.results.filter((r) => r.support === s).length]),
-            ),
-          },
-          ...clientOf(res),
-        });
-      });
-      res.json(await myView(delegate.eventId, delegate.id, plan.id));
-    },
-  );
-
   // Evidence of application on one action (backlog E14-3 to E14-5): descriptions, their type,
   // date and whether each is self-reported or supported by another source. No file is taken.
   router.put(
@@ -1140,15 +949,9 @@ export function transferPlanRouter({
         });
         return;
       }
-      // Impact is the delegate's own report, never read off completion. A claimed improvement
-      // needs a recorded result somewhere on the plan to stand on.
-      if (improvement === 'seen' && !planHasResult(plan.actions)) {
-        throw new HttpError(
-          422,
-          'result_missing',
-          'To report a measurable improvement, record the result on at least one action first (a measure with an actual value, or results on a progress record).',
-        );
-      }
+      // Impact is the delegate's own report, never read off completion, and the reports label
+      // it as self-reported. It stands on the evidence recorded on the actions; no separate
+      // results are recorded (decision 2026-11-09).
       const outcome: PlanOutcome = improvement === 'seen' ? 'impact_demonstrated' : 'applied';
       const at = clock();
       const event = await prisma().event.findUniqueOrThrow({
@@ -1164,9 +967,11 @@ export function transferPlanRouter({
             outcome,
             outcomeNote: note,
             version: plan.version + 1,
-            reminderFrequency: 'none',
-            nextReminderAt: null,
             updatedByUserId: principal.userId,
+            // Completion stops every action's reminders for good.
+            actions: {
+              updateMany: { where: {}, data: { reminderFrequency: 'none', nextReminderAt: null } },
+            },
             // The first impact check: has the improvement appeared (or continued) since?
             impactChecks: {
               create: {
@@ -1315,6 +1120,7 @@ export function transferPlanRouter({
             isPriority: true,
             progressStatus: true,
             measureStatus: true,
+            reminderFrequency: true,
             measures: { select: { baselineValue: true, actualValue: true } },
             evidenceRecords: { select: { support: true } },
           },
@@ -1352,7 +1158,7 @@ export function transferPlanRouter({
         submittedAt: iso(p.submittedAt),
         updatedAt: p.updatedAt.toISOString(),
         progress,
-        reminderFrequency: p.reminderFrequency,
+        remindersOn: p.actions.filter((a) => a.reminderFrequency !== 'none').length,
         measures,
         evidence: evidenceCounts(p.actions.flatMap((a) => a.evidenceRecords)),
       };

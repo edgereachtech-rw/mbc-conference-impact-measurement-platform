@@ -218,58 +218,14 @@ const text = (max: number) => z.string().trim().max(max).default('');
 const optionalDay = isoDay.nullable().optional();
 
 /** The fields of a planned action, before the date rule (views derive from this shape). */
-export const planActionFieldsBase = z.object({
-  id: z.uuid().optional(),
-  isPriority: z.boolean().default(false),
-  /** A short name for the action, shown in the plan, the dashboards and the reports. */
-  title: z.string().trim().max(120).default(''),
-  priorityLearning: text(2_000),
-  action: text(2_000),
-  opportunity: text(2_000),
-  firstStep: text(2_000),
-  startOn: optionalDay,
-  targetOn: optionalDay,
-  stakeholders: text(2_000),
-  support: text(2_000),
-  barriers: text(2_000),
-  evidence: text(2_000),
-  expectedResult: text(2_000),
-  measure: text(2_000),
-  baseline: text(2_000),
-  reviewOn: optionalDay,
-});
-export const planActionFieldsSchema = planActionFieldsBase.superRefine((a, ctx) => {
-  // When both dates are given, the target comes no earlier than the start.
-  if (a.startOn && a.targetOn && a.targetOn < a.startOn) {
-    ctx.addIssue({
-      code: 'custom',
-      path: ['targetOn'],
-      message: 'The target date cannot be earlier than the start date.',
-    });
-  }
-});
-export type PlanActionFields = z.infer<typeof planActionFieldsSchema>;
-
-/** The fields every planned action needs before the plan can be submitted (spec 2026-11-08). */
-export const actionRequiredFields = ['title', 'priorityLearning', 'action'] as const;
-export type ActionRequiredField = (typeof actionRequiredFields)[number];
-
-/**
- * What still stands between a plan and submission: for each action, the required fields left
- * blank. Drafts save with anything missing; submission waits for every action to carry a title,
- * its priority learning and the specific workplace action.
- */
-export function actionSubmissionGaps(
-  actions: ReadonlyArray<{ id?: string; title: string; priorityLearning: string; action: string }>,
-): Array<{ index: number; id: string | null; missing: ActionRequiredField[] }> {
-  return actions
-    .map((a, index) => ({
-      index,
-      id: a.id ?? null,
-      missing: actionRequiredFields.filter((f) => a[f].trim() === ''),
-    }))
-    .filter((g) => g.missing.length > 0);
-}
+/** The action's answer to the business-measure question (spec 2026-11-08, section A). */
+export const measureStatuses = ['identified', 'not_yet_known', 'not_applicable'] as const;
+export type MeasureStatus = (typeof measureStatuses)[number];
+export const measureStatusLabels: Record<MeasureStatus, string> = {
+  identified: 'Yes, I can identify a measure',
+  not_yet_known: 'Not yet known',
+  not_applicable: 'Not applicable',
+};
 
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 
@@ -313,20 +269,78 @@ export const NO_REMINDERS: ReminderPreference = {
   days: [],
 };
 
+export const planActionFieldsBase = z.object({
+  id: z.uuid().optional(),
+  isPriority: z.boolean().default(false),
+  /** A short name for the action, shown in the plan, the dashboards and the reports. */
+  title: z.string().trim().max(120).default(''),
+  priorityLearning: text(2_000),
+  action: text(2_000),
+  opportunity: text(2_000),
+  firstStep: text(2_000),
+  startOn: optionalDay,
+  targetOn: optionalDay,
+  stakeholders: text(2_000),
+  support: text(2_000),
+  barriers: text(2_000),
+  evidence: text(2_000),
+  expectedResult: text(2_000),
+  measure: text(2_000),
+  baseline: text(2_000),
+  reviewOn: optionalDay,
+  /**
+   * The answer to "Can you identify a business measure for this action?", asked with the
+   * action's other questions (2026-11-08) and saved with the plan; null until answered. The
+   * measures themselves are added separately, and only when the answer is "yes".
+   */
+  measureStatus: z.enum(measureStatuses).nullable().default(null),
+  /**
+   * This action's own reminder (decision 2026-11-11): when and how often the delegate wants an
+   * email that reminds them of the action, nothing more. None for a finished action.
+   */
+  reminder: reminderPreferenceSchema.default(NO_REMINDERS),
+});
+export const planActionFieldsSchema = planActionFieldsBase.superRefine((a, ctx) => {
+  // When both dates are given, the target comes no earlier than the start.
+  if (a.startOn && a.targetOn && a.targetOn < a.startOn) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['targetOn'],
+      message: 'The target date cannot be earlier than the start date.',
+    });
+  }
+});
+export type PlanActionFields = z.infer<typeof planActionFieldsSchema>;
+
+/** The fields every planned action needs before the plan can be submitted (spec 2026-11-08). */
+export const actionRequiredFields = ['title', 'priorityLearning', 'action'] as const;
+export type ActionRequiredField = (typeof actionRequiredFields)[number];
+
+/**
+ * What still stands between a plan and submission: for each action, the required fields left
+ * blank. Drafts save with anything missing; submission waits for every action to carry a title,
+ * its priority learning and the specific workplace action.
+ */
+export function actionSubmissionGaps(
+  actions: ReadonlyArray<{ id?: string; title: string; priorityLearning: string; action: string }>,
+): Array<{ index: number; id: string | null; missing: ActionRequiredField[] }> {
+  return actions
+    .map((a, index) => ({
+      index,
+      id: a.id ?? null,
+      missing: actionRequiredFields.filter((f) => a[f].trim() === ''),
+    }))
+    .filter((g) => g.missing.length > 0);
+}
+
 export const transferPlanSaveSchema = z.object({
   /** The version the client last saw; a save against an older version is refused. */
   version: z.number().int().min(1),
   /** What the delegate calls this plan; empty means "Plan n"; left out, it is unchanged. */
   title: z.string().trim().max(120).optional(),
   actions: z.array(planActionFieldsSchema).max(50),
-  reminder: reminderPreferenceSchema.default(NO_REMINDERS),
 });
 export type TransferPlanSave = z.infer<typeof transferPlanSaveSchema>;
-
-/** A further plan for the same event (2026-11-06): a delegate may keep several. */
-export const transferPlanCreateSchema = z.object({
-  title: z.string().trim().max(120).default(''),
-});
 
 export const transferPlanSubmitSchema = z.object({ version: z.number().int().min(1) });
 /**
@@ -364,6 +378,27 @@ export type ImpactCheckAnswerInput = z.infer<typeof impactCheckAnswerSchema>;
  * explanation or example the status asks for, and the date of the application or completion
  * when it asks for one.
  */
+/** The rules every status record follows: an explanation or example, and a date, where the status asks. */
+function refineStatusDetail(
+  value: { status: ActionProgressStatus; note: string; occurredOn?: string | null },
+  ctx: z.RefinementCtx,
+) {
+  if (progressNeedsDetail(value.status) && value.note.trim() === '') {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['note'],
+      message: progressDetailPrompt[value.status] ?? 'Add a short note.',
+    });
+  }
+  if (progressNeedsDate(value.status) && !value.occurredOn) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['occurredOn'],
+      message: progressDateLabel[value.status] ?? 'Give the date.',
+    });
+  }
+}
+
 export const followUpProgressItemSchema = z
   .object({
     actionId: z.uuid(),
@@ -371,24 +406,9 @@ export const followUpProgressItemSchema = z
     note: text(2_000),
     occurredOn: optionalDay,
   })
-  .superRefine((value, ctx) => {
-    if (progressNeedsDetail(value.status) && value.note.trim() === '') {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['note'],
-        message: progressDetailPrompt[value.status] ?? 'Add a short note.',
-      });
-    }
-    if (progressNeedsDate(value.status) && !value.occurredOn) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['occurredOn'],
-        message: progressDateLabel[value.status] ?? 'Give the date.',
-      });
-    }
-  });
+  .superRefine(refineStatusDetail);
 export const followUpProgressSchema = z.object({
-  /** The plan the statuses belong to; the delegate's latest plan when left out. */
+  /** Accepted for older clients and ignored: a follow-up covers every open plan (2026-11-09). */
   planId: z.uuid().optional(),
   actions: z.array(followUpProgressItemSchema).min(1).max(50),
 });
@@ -396,7 +416,7 @@ export type FollowUpProgressInput = z.infer<typeof followUpProgressSchema>;
 
 /** The 14 plan fields of backlog Appendix A5 (Q-TP-1 to 13 per action; Q-TP-14 is the reminder). */
 export const planActionFieldLabels: Record<
-  Exclude<keyof PlanActionFields, 'id' | 'isPriority'>,
+  Exclude<keyof PlanActionFields, 'id' | 'isPriority' | 'reminder'>,
   { label: string; prompt: string }
 > = {
   title: { label: 'Action title', prompt: 'A brief name for the planned action.' },
@@ -450,6 +470,11 @@ export const planActionFieldLabels: Record<
     prompt: 'What is its current starting point? "Not yet known" and "Not applicable" are fine.',
   },
   reviewOn: { label: 'Review date', prompt: 'When will you review your progress?' },
+  measureStatus: {
+    label: 'Can you identify a business measure for this action?',
+    prompt:
+      'A result or change that can show whether your action is making a difference: a number such as time saved or errors reduced, or something qualitative such as better teamwork or customer experience. “Not yet known” and “Not applicable” are answers too.',
+  },
 };
 /** Accepted in place of a measure or baseline (backlog E9-5). */
 export const measurePlaceholders = ['Not yet known', 'Not applicable'] as const;
@@ -474,13 +499,6 @@ export const referenceQuestionsSaveSchema = z.object({
  * 2026-11-08, section 5). "identified" needs at least one measure record; the other two stand
  * on their own and are never counted as missing or as zero.
  */
-export const measureStatuses = ['identified', 'not_yet_known', 'not_applicable'] as const;
-export type MeasureStatus = (typeof measureStatuses)[number];
-export const measureStatusLabels: Record<MeasureStatus, string> = {
-  identified: 'Yes, I can identify a measure',
-  not_yet_known: 'Not yet known',
-  not_applicable: 'Not applicable',
-};
 
 export const measureKinds = ['quantitative', 'qualitative'] as const;
 export type MeasureKind = (typeof measureKinds)[number];
@@ -543,32 +561,35 @@ export const evidenceSupportLabels: Record<EvidenceSupport, string> = {
   self_reported: 'Self-reported',
   supported: 'Supported by another source',
 };
+/**
+ * Hints for the delegate (E14-4). The reports keep the two labels apart and never call either
+ * "independently verified"; that caveat is theirs to state, not the form's.
+ */
 export const evidenceSupportHints: Record<EvidenceSupport, string> = {
-  self_reported: 'You describe your own application or result.',
+  self_reported: 'You are describing what you did or what happened, in your own words.',
   supported:
-    'You identify information or confirmation from another source. An attachment or a name does not make it independently verified.',
+    'Someone or something else confirms it, for example your manager, a colleague, a customer, a report or a system figure. Say who or what in the description.',
 };
 
+/**
+ * What a piece of evidence is: the five kinds the brief names (E14-3), in its order, and nothing
+ * else (decision 2026-11-08). The earlier "process", "customer feedback" and "other" entries were
+ * folded in by migration 20261108211500_evidence_types_brief.
+ */
 export const evidenceTypes = [
+  'example',
   'work_product',
-  'process',
   'confirmation',
   'organisational_measure',
-  'customer_feedback',
   'case_example',
-  'example',
-  'other',
 ] as const;
 export type EvidenceType = (typeof evidenceTypes)[number];
 export const evidenceTypeLabels: Record<EvidenceType, string> = {
-  work_product: 'Example of work completed',
-  process: 'New or improved workplace process',
-  confirmation: 'Manager or stakeholder confirmation',
-  organisational_measure: 'Organisational performance information',
-  customer_feedback: 'Customer or client feedback',
-  case_example: 'Case example',
-  example: 'Example of what I did differently',
-  other: 'Other',
+  example: 'An example of what I did differently',
+  work_product: 'A completed work product or process',
+  confirmation: 'A manager’s or stakeholder’s confirmation',
+  organisational_measure: 'A relevant organisational measure',
+  case_example: 'A case example',
 };
 
 /** Shown as suggestions only; the measure itself is free text (backlog E14-1). */
@@ -841,11 +862,23 @@ export const evidenceViewSchema = evidenceFieldsBase.omit({ id: true, evidenceOn
 });
 export type EvidenceView = z.infer<typeof evidenceViewSchema>;
 
+export const reminderViewSchema = z.object({
+  frequency: z.enum(reminderFrequencies),
+  startOn: z.string().nullable(),
+  endOn: z.string().nullable(),
+  time: z.string(),
+  days: z.array(z.number().int()),
+  nextReminderAt: z.string().nullable(),
+});
+export type ReminderView = z.infer<typeof reminderViewSchema>;
+
 export const planActionViewSchema = planActionFieldsBase
-  .omit({ id: true, startOn: true, targetOn: true, reviewOn: true })
+  .omit({ id: true, startOn: true, targetOn: true, reviewOn: true, reminder: true })
   .extend({
     id: z.uuid(),
     order: z.number().int(),
+    /** This action's reminder, with when the next one goes out (2026-11-11). */
+    reminder: reminderViewSchema,
     startOn: z.string().nullable(),
     targetOn: z.string().nullable(),
     reviewOn: z.string().nullable(),
@@ -869,16 +902,6 @@ export const transferPlanningSessionSchema = z.object({
   order: z.number().int(),
   isFinal: z.boolean(),
 });
-
-export const reminderViewSchema = z.object({
-  frequency: z.enum(reminderFrequencies),
-  startOn: z.string().nullable(),
-  endOn: z.string().nullable(),
-  time: z.string(),
-  days: z.array(z.number().int()),
-  nextReminderAt: z.string().nullable(),
-});
-export type ReminderView = z.infer<typeof reminderViewSchema>;
 
 export const impactCheckViewSchema = z.object({
   id: z.uuid(),
@@ -909,7 +932,6 @@ export const transferPlanViewSchema = z.object({
   /** The impact checks after completion, in order; empty before completion. */
   impactChecks: z.array(impactCheckViewSchema),
   updatedAt: z.string(),
-  reminder: reminderViewSchema,
   actions: z.array(planActionViewSchema),
 });
 export type TransferPlanView = z.infer<typeof transferPlanViewSchema>;
@@ -932,7 +954,6 @@ export const transferPlanSummarySchema = z.object({
   /** An impact check is waiting for the delegate's answer. */
   checkDue: z.boolean(),
   updatedAt: z.string(),
-  reminder: reminderViewSchema,
 });
 export type TransferPlanSummary = z.infer<typeof transferPlanSummarySchema>;
 
@@ -977,7 +998,8 @@ export const transferPlanListItemSchema = z.object({
   updatedAt: z.string(),
   /** Progress of the actions, counted by latest status. */
   progress: z.record(z.enum(actionProgressStatuses), z.number().int()),
-  reminderFrequency: z.enum(reminderFrequencies),
+  /** Actions with a reminder switched on (reminders are per action since 2026-11-11). */
+  remindersOn: z.number().int(),
   /** The actions by what their measures say (see summariseMeasures). */
   measures: z.record(z.enum(measureSummaries), z.number().int()),
   /** Evidence records on the plan's actions, by how they are supported. */

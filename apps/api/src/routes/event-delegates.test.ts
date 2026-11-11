@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { delegateListResponseSchema } from '@mbc/shared';
+import { delegateCreateResultSchema, delegateListResponseSchema } from '@mbc/shared';
 import { pino } from 'pino';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -9,7 +9,12 @@ import { createApp } from '../app.js';
 import { authConfigFromEnv } from '../auth/config.js';
 import { generateToken, hashToken } from '../auth/tokens.js';
 import type { PrismaClient } from '../db.js';
-import { createTestEvent, hasDatabase, testPrisma } from '../db/test-helpers.js';
+import {
+  createRegisteredIdentity,
+  createTestEvent,
+  hasDatabase,
+  testPrisma,
+} from '../db/test-helpers.js';
 import { MemoryMailer } from '../mail/mailer.js';
 
 const ORIGIN = 'http://localhost:3000';
@@ -57,11 +62,12 @@ describe.skipIf(!hasDatabase)('GET /events/:eventId/delegates (admin listing)', 
     otherEventId = (await createTestEvent(prisma)).id;
     for (const role of ['admin', 'delegate', 'speaker', 'support'] as const) await signedIn(role);
     const people = [
-      ['Zara Zed', 'zara', 'Acme', 'physical', 'active', 'Z1'],
-      ['Adam Able', 'adam', 'Beta', 'virtual', 'active', 'A1'],
-      ['Mia Mid', 'mia', 'Acme', 'virtual', 'pending', 'M1'],
-      ['Cal Cancel', 'cal', null, 'physical', 'cancelled', null],
-      ['Tess Test', 'tess', 'Gamma', 'physical', 'test', null],
+      // [name, email local part, organisation, format, status, registration id, nominating org]
+      ['Zara Zed', 'zara', 'Acme', 'physical', 'active', 'Z1', null],
+      ['Adam Able', 'adam', 'Beta', 'virtual', 'active', 'A1', 'Acme'],
+      ['Mia Mid', 'mia', 'Acme', 'virtual', 'pending', 'M1', null],
+      ['Cal Cancel', 'cal', null, 'physical', 'cancelled', null, 'Delta Nominees'],
+      ['Tess Test', 'tess', 'Gamma', 'physical', 'test', null, null],
     ] as const;
     for (const [
       name,
@@ -70,6 +76,7 @@ describe.skipIf(!hasDatabase)('GET /events/:eventId/delegates (admin listing)', 
       attendanceFormat,
       registrationStatus,
       externalRegistrationId,
+      nominatingOrganisation,
     ] of people) {
       await prisma.delegate.create({
         data: {
@@ -77,6 +84,7 @@ describe.skipIf(!hasDatabase)('GET /events/:eventId/delegates (admin listing)', 
           name,
           email: `${local}-${tag}@example.com`,
           organisation,
+          nominatingOrganisation,
           attendanceFormat,
           registrationStatus,
           externalRegistrationId,
@@ -131,6 +139,14 @@ describe.skipIf(!hasDatabase)('GET /events/:eventId/delegates (admin listing)', 
       'Zara Zed',
     ]);
     expect(search.body.counts.active).toBe(2); // counts stay event-wide
+    // A delegate without an organisation is listed and found under the nominating organisation;
+    // one with an organisation of their own (Adam, nominated by Acme) is not found through it.
+    const nominated = await list('?q=delta');
+    expect(nominated.body.delegates.map((d: { name: string }) => d.name)).toEqual(['Cal Cancel']);
+    expect(nominated.body.delegates[0].organisation).toBe('Delta Nominees');
+    expect(nominated.body.delegates[0]).not.toHaveProperty('nominatingOrganisation');
+    const own = await list('?q=beta');
+    expect(own.body.delegates[0]).toMatchObject({ name: 'Adam Able', organisation: 'Beta' });
     const byId = await list('?q=A1');
     expect(byId.body.delegates.map((d: { name: string }) => d.name)).toEqual(['Adam Able']);
     const pending = await list('?status=pending');
@@ -142,5 +158,170 @@ describe.skipIf(!hasDatabase)('GET /events/:eventId/delegates (admin listing)', 
     expect(page2.body.total).toBe(5);
     expect((await list('?pageSize=5000')).status).toBe(422);
     expect((await list('?status=ghost')).status).toBe(422);
+  });
+
+  it('adds a delegate by hand: a new person gets an identity, a known person is linked, the rest is refused', async () => {
+    const post = (body: unknown, cookie = cookies.admin, target = eventId) =>
+      request(app())
+        .post(`/api/v1/events/${target}/delegates`)
+        .set('Origin', ORIGIN)
+        .set('Cookie', cookie ?? '')
+        .send(body);
+    const nia = {
+      name: 'Nia New',
+      email: `Nia-${tag}@Example.com`,
+      nominatingOrganisation: 'Delta Nominees',
+      attendanceFormat: 'physical',
+    };
+    expect((await post(nia, cookies.delegate)).status).toBe(403);
+    expect((await post({})).status).toBe(422);
+    expect((await post({ ...nia, registrationStatus: 'test' })).status).toBe(422);
+    expect((await post(nia, cookies.admin, randomUUID())).status).toBe(404);
+
+    // A new address: identity and current address created, registration by hand, all audited.
+    const created = await post(nia);
+    expect(created.status, created.text).toBe(201);
+    expect(delegateCreateResultSchema.safeParse(created.body).success).toBe(true);
+    expect(created.body.identity).toBe('created');
+    expect(created.body.delegate).toMatchObject({
+      name: 'Nia New',
+      email: `nia-${tag}@example.com`,
+      organisation: 'Delta Nominees',
+      registrationSource: 'manual',
+      externalRegistrationId: null,
+      registrationStatus: 'active',
+      capacity: 'individual',
+    });
+    const niaId = created.body.delegate.id as string;
+    const identityId = created.body.delegate.identityId as string;
+    expect(identityId).toBeTruthy();
+    const address = await prisma.identityEmail.findUnique({
+      where: { emailNormalised: `nia-${tag}@example.com` },
+    });
+    expect(address).toMatchObject({ identityId, kind: 'current', evidence: 'admin_decision' });
+    expect(address?.auditLogId).toBeTruthy();
+    const actions = await prisma.auditLog.findMany({
+      where: { entityId: { in: [niaId, identityId] } },
+      select: { action: true, newValue: true },
+    });
+    expect(actions.map((a) => a.action).sort()).toEqual(['delegate.created', 'identity.created']);
+    expect(JSON.stringify(actions)).not.toContain('example.com');
+    expect((await list('?q=nia')).body.delegates[0]).toMatchObject({
+      id: niaId,
+      organisation: 'Delta Nominees',
+    });
+
+    // The same person again: refused, nothing written.
+    const again = await post({ ...nia, name: 'Nia New' });
+    expect(again.status).toBe(409);
+    expect(again.body.error.code).toBe('registration_exists');
+
+    // A person known from another event: linked to their identity, whatever the letter case.
+    const known = await createRegisteredIdentity(prisma, otherEventId, `known-${tag}@example.com`, {
+      name: 'Kofi Known',
+    });
+    const linked = await post({
+      name: 'kofi known',
+      email: `known-${tag}@example.com`,
+      attendanceFormat: 'virtual',
+      capacity: 'nominee',
+      registrationStatus: 'pending',
+    });
+    expect(linked.status, linked.text).toBe(201);
+    expect(linked.body.identity).toBe('linked');
+    expect(linked.body.delegate.identityId).toBe(known.identity.id);
+    expect(linked.body.delegate.registrationStatus).toBe('pending');
+    expect(
+      await prisma.auditLog.count({
+        where: { action: 'identity.linked', entityId: known.identity.id, eventId },
+      }),
+    ).toBe(1);
+
+    // Another name on a known address is another person: refused.
+    const mismatch = await post({
+      name: 'Someone Else',
+      email: `known-${tag}@example.com`,
+      attendanceFormat: 'physical',
+    });
+    expect(mismatch.status).toBe(409);
+    expect(mismatch.body.error.code).toBe('name_mismatch');
+
+    // A previous address of a person is never used for a new registration.
+    await prisma.delegateIdentity.create({
+      data: {
+        displayName: 'Old Addr',
+        emails: {
+          create: {
+            emailNormalised: `old-${tag}@example.com`,
+            kind: 'historical',
+            evidence: 'admin_decision',
+          },
+        },
+      },
+    });
+    const old = await post({
+      name: 'Old Addr',
+      email: `old-${tag}@example.com`,
+      attendanceFormat: 'physical',
+    });
+    expect(old.status).toBe(409);
+    expect(old.body.error.code).toBe('email_not_current');
+
+    // A deactivated account: refused until reactivated.
+    const inactive = await prisma.userAccount.create({
+      data: { email: `ina-${tag}@example.com`, role: 'delegate', status: 'inactive' },
+    });
+    accountIds.push(inactive.id);
+    await createRegisteredIdentity(prisma, otherEventId, `ina-${tag}@example.com`, {
+      name: 'Ina Inactive',
+      userAccountId: inactive.id,
+    });
+    const deactivated = await post({
+      name: 'Ina Inactive',
+      email: `ina-${tag}@example.com`,
+      attendanceFormat: 'physical',
+    });
+    expect(deactivated.status).toBe(409);
+    expect(deactivated.body.error.code).toBe('account_inactive');
+
+    // An archived event takes no new delegates.
+    const archived = await createTestEvent(prisma);
+    await prisma.event.update({ where: { id: archived.id }, data: { status: 'archived' } });
+    const late = await post(
+      { name: 'Late Lu', email: `late-${tag}@example.com`, attendanceFormat: 'physical' },
+      cookies.admin,
+      archived.id,
+    );
+    expect(late.status).toBe(409);
+    expect(late.body.error.code).toBe('event_archived');
+    await prisma.event.delete({ where: { id: archived.id } });
+
+    // The correction route now carries the nominating organisation too, audited like the rest.
+    const corrected = await request(app())
+      .patch(`/api/v1/delegates/${niaId}`)
+      .set('Origin', ORIGIN)
+      .set('Cookie', cookies.admin)
+      .send({ organisation: 'Nia Ltd', nominatingOrganisation: null, country: 'Ghana' });
+    expect(corrected.status, corrected.text).toBe(200);
+    expect(corrected.body.delegate).toMatchObject({
+      organisation: 'Nia Ltd',
+      nominatingOrganisation: null,
+      country: 'Ghana',
+    });
+    const change = await prisma.auditLog.findFirst({
+      where: { action: 'delegate.updated', entityId: niaId },
+      orderBy: { occurredAt: 'desc' },
+    });
+    expect(change?.oldValue).toEqual({
+      organisation: null,
+      nominatingOrganisation: 'Delta Nominees',
+      country: null,
+    });
+    expect(change?.newValue).toEqual({
+      organisation: 'Nia Ltd',
+      nominatingOrganisation: null,
+      country: 'Ghana',
+    });
+    expect((await list('?q=nia')).body.delegates[0].organisation).toBe('Nia Ltd');
   });
 });

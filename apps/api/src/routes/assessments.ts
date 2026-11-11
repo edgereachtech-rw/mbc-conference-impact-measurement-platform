@@ -1,4 +1,5 @@
 import {
+  planTitleOf,
   waveLabel,
   answerIssue,
   answerScore,
@@ -104,6 +105,7 @@ export function questionViewOf(q: QuestionRow): AssessmentQuestionView {
     sourceQuestionKey: q.sourceQuestionKey,
     builtin: q.builtin,
     referenceQuestionKey: q.referenceQuestionKey,
+    supportFlag: q.supportFlag,
     showReferenceAnswer: q.showReferenceAnswer,
     visibleWhen: q.visibleWhen,
     allowDecline: q.allowDecline,
@@ -625,6 +627,7 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
             showReferenceAnswer: input.showReferenceAnswer,
             visibleWhen: input.visibleWhen,
             allowDecline: input.allowDecline,
+            supportFlag: input.supportFlag,
           },
           include: QUESTION_INCLUDE,
         });
@@ -731,6 +734,7 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
         showReferenceAnswer: patch.showReferenceAnswer ?? current.showReferenceAnswer,
         visibleWhen: patch.visibleWhen ?? current.visibleWhen,
         allowDecline: patch.allowDecline ?? current.allowDecline,
+        supportFlag: patch.supportFlag ?? current.supportFlag,
       });
       if (!merged.success) {
         const issue = merged.error.issues[0];
@@ -751,6 +755,7 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
         showReferenceAnswer: merged.data.showReferenceAnswer,
         visibleWhen: merged.data.visibleWhen,
         allowDecline: merged.data.allowDecline,
+        supportFlag: merged.data.supportFlag,
         options: merged.data.options
           ? (merged.data.options as Prisma.InputJsonValue)
           : Prisma.JsonNull,
@@ -1440,69 +1445,93 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
     return !event || !transferPlanVisible(event, clock());
   }
 
-  async function contextFor(eventId: string, delegateId: string) {
-    const [references, planStatus, plan, planHidden] = await Promise.all([
-      referenceAnswersFor(prisma(), eventId, delegateId),
-      planStatusFor(prisma(), eventId, delegateId),
-      // The plan itself, so a follow-up wave shows it beside its questions and the delegate
-      // never retypes it (E12-2). Loaded once per request, whichever stages are on screen.
-      prisma().transferPlan.findFirst({
-        where: { eventId, delegateId },
-        orderBy: { sequence: 'desc' },
-        select: {
-          id: true,
-          status: true,
-          actions: {
-            orderBy: { order: 'asc' },
-            select: {
-              id: true,
-              order: true,
-              title: true,
-              action: true,
-              isPriority: true,
-              progressStatus: true,
-              targetOn: true,
-              progress: {
-                where: { followUpWave: { not: null } },
-                orderBy: [{ followUpWave: 'asc' }, { recordedAt: 'asc' }],
-                select: {
-                  followUpWave: true,
-                  waveLabel: true,
-                  status: true,
-                  note: true,
-                  occurredOn: true,
-                  recordedAt: true,
-                },
+  /**
+   * The plans a follow-up asks about (2026-11-09): every plan of the delegate that is not
+   * completed (a completed plan is finished and read-only), oldest first, with the actions
+   * something has been written in. An empty action card has nothing to report on.
+   */
+  async function followUpPlans(eventId: string, delegateId: string) {
+    const plans = await prisma().transferPlan.findMany({
+      where: { eventId, delegateId, status: { not: 'completed' } },
+      orderBy: { sequence: 'asc' },
+      select: {
+        id: true,
+        sequence: true,
+        title: true,
+        status: true,
+        version: true,
+        actions: {
+          orderBy: { order: 'asc' },
+          select: {
+            id: true,
+            order: true,
+            title: true,
+            action: true,
+            isPriority: true,
+            progressStatus: true,
+            targetOn: true,
+            progress: {
+              where: { followUpWave: { not: null } },
+              orderBy: [{ followUpWave: 'asc' }, { recordedAt: 'asc' }],
+              select: {
+                followUpWave: true,
+                waveLabel: true,
+                status: true,
+                note: true,
+                occurredOn: true,
+                recordedAt: true,
               },
             },
           },
         },
-      }),
+      },
+    });
+    return plans.map((p) => ({ ...p, actions: p.actions.filter((a) => a.action.trim() !== '') }));
+  }
+
+  async function contextFor(eventId: string, delegateId: string) {
+    const [references, planStatus, plans, planHidden] = await Promise.all([
+      referenceAnswersFor(prisma(), eventId, delegateId),
+      planStatusFor(prisma(), eventId, delegateId),
+      // The plans themselves, so a follow-up wave shows them beside its questions and the
+      // delegate never retypes them (E12-2). Loaded once per request.
+      followUpPlans(eventId, delegateId),
       planHiddenFor(eventId),
     ]);
     const hasPreAnswer = Boolean(references[0]?.answer);
+    const latest = plans.at(-1);
     const planSummary =
-      plan && !planHidden
+      latest && !planHidden
         ? {
-            id: plan.id,
-            status: plan.status,
-            actions: plan.actions.map((a) => ({
-              id: a.id,
-              order: a.order,
-              title: a.title,
-              action: a.action,
-              isPriority: a.isPriority,
-              progressStatus: a.progressStatus,
-              targetDate: a.targetOn ? a.targetOn.toISOString().slice(0, 10) : null,
-              followUps: a.progress.map((p) => ({
-                wave: p.followUpWave!,
-                waveLabel: p.waveLabel,
-                status: p.status,
-                note: p.note ?? '',
-                occurredOn: p.occurredOn ? p.occurredOn.toISOString().slice(0, 10) : null,
-                recordedAt: p.recordedAt.toISOString(),
-              })),
+            id: latest.id,
+            status: latest.status,
+            plans: plans.map((p) => ({
+              id: p.id,
+              sequence: p.sequence,
+              title: planTitleOf(p),
+              status: p.status,
             })),
+            actions: plans.flatMap((p) =>
+              p.actions.map((a) => ({
+                id: a.id,
+                planId: p.id,
+                planTitle: planTitleOf(p),
+                order: a.order,
+                title: a.title,
+                action: a.action,
+                isPriority: a.isPriority,
+                progressStatus: a.progressStatus,
+                targetDate: a.targetOn ? a.targetOn.toISOString().slice(0, 10) : null,
+                followUps: a.progress.map((pr) => ({
+                  wave: pr.followUpWave!,
+                  waveLabel: pr.waveLabel,
+                  status: pr.status,
+                  note: pr.note ?? '',
+                  occurredOn: pr.occurredOn ? pr.occurredOn.toISOString().slice(0, 10) : null,
+                  recordedAt: pr.recordedAt.toISOString(),
+                })),
+              })),
+            ),
           }
         : null;
     // Every question key this delegate's stages may refer to, answered once per request: which
@@ -1567,6 +1596,15 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
     return { correct: answer.correct };
   }
 
+  /** The follow-up waves this delegate has been sent an invitation to. */
+  async function invitedWaveIds(delegateId: string): Promise<Set<string>> {
+    const rows = await prisma().assessmentInvitation.findMany({
+      where: { delegateId, kind: 'invitation', status: 'sent' },
+      select: { stageConfigId: true },
+    });
+    return new Set(rows.map((r) => r.stageConfigId));
+  }
+
   async function myAssessments(delegate: {
     id: string;
     eventId: string;
@@ -1575,6 +1613,9 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
     const at = clock();
     const { id: delegateId, eventId } = delegate;
     const context = await contextFor(eventId, delegateId);
+    // A follow-up exists for a delegate once the organisers have sent them its invitation
+    // (decision 2026-11-09); until then it is not listed and cannot be answered.
+    const invited = await invitedWaveIds(delegateId);
     const stages = await prisma().assessmentStageConfig.findMany({
       where: { eventId, enabled: true },
       include: {
@@ -1587,6 +1628,7 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
       },
     });
     return stages
+      .filter((s) => s.stage !== 'follow_up' || invited.has(s.id))
       .map((s) => ({ s, state: windowState(s, at) }))
       .filter((x) => x.state !== 'hidden')
       .sort((a, b) => stageOrder[a.s.stage] - stageOrder[b.s.stage] || a.s.wave - b.s.wave)
@@ -1701,17 +1743,10 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
     wave: number,
   ): Promise<number> {
     if (await planHiddenFor(eventId)) return 0;
-    const plan = await prisma().transferPlan.findFirst({
-      where: { eventId, delegateId },
-      orderBy: { sequence: 'desc' },
-      select: {
-        actions: {
-          select: { id: true, progress: { where: { followUpWave: wave }, select: { id: true } } },
-        },
-      },
-    });
-    if (!plan) return 0;
-    return plan.actions.filter((a) => a.progress.length === 0).length;
+    const plans = await followUpPlans(eventId, delegateId);
+    return plans
+      .flatMap((p) => p.actions)
+      .filter((a) => !a.progress.some((pr) => pr.followUpWave === wave)).length;
   }
 
   /**
@@ -1744,6 +1779,9 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
       if (!config || !config.enabled || windowState(config, clock()) !== 'open') {
         throw new HttpError(409, 'assessment_not_open', 'This follow-up is not open right now.');
       }
+      if (!(await invitedWaveIds(delegate.id)).has(config.id)) {
+        throw new HttpError(409, 'not_invited', 'This follow-up has not been sent to you yet.');
+      }
       if (config.responses[0]?.submittedAt) {
         throw new HttpError(
           409,
@@ -1751,37 +1789,29 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
           'You have already submitted this follow-up; its statuses are kept as they were.',
         );
       }
-      const plan = await prisma().transferPlan.findFirst({
-        where: {
-          eventId: delegate.eventId,
-          delegateId: delegate.id,
-          ...(input.planId ? { id: input.planId } : {}),
-        },
-        orderBy: { sequence: 'desc' },
-        select: {
-          id: true,
-          version: true,
-          status: true,
-          actions: { select: { id: true, progressStatus: true } },
-        },
-      });
-      if (!plan) throw new HttpError(404, 'not_found', 'You have no Transfer Plan for this event.');
-      const known = new Map(plan.actions.map((a) => [a.id, a]));
+      // Every open plan of the delegate, and every written action of each (2026-11-09).
+      const plans = await followUpPlans(delegate.eventId, delegate.id);
+      if (plans.length === 0) {
+        throw new HttpError(404, 'not_found', 'You have no Transfer Plan for this event.');
+      }
+      const known = new Map(
+        plans.flatMap((p) => p.actions.map((a) => [a.id, { ...a, planId: p.id }] as const)),
+      );
       for (const item of input.actions) {
         if (!known.has(item.actionId)) {
           throw new HttpError(
             422,
             'validation_failed',
-            'actions: an id does not belong to your plan.',
+            'actions: an id does not belong to your plans.',
           );
         }
       }
       const covered = new Set(input.actions.map((a) => a.actionId));
-      if (plan.actions.some((a) => !covered.has(a.id))) {
+      if ([...known.keys()].some((id) => !covered.has(id))) {
         throw new HttpError(
           422,
           'validation_failed',
-          'actions: every action of your plan needs a status in this follow-up.',
+          'actions: every action of your plans needs a status in this follow-up.',
         );
       }
       const label = waveLabel('follow_up', wave, config.dueAfterDays);
@@ -1807,18 +1837,21 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
             data: { progressStatus: item.status },
           });
         }
-        await tx.transferPlan.update({
-          where: { id: plan.id },
-          data: { version: plan.version + 1, updatedByUserId: principal.userId },
-        });
+        for (const plan of plans) {
+          await tx.transferPlan.update({
+            where: { id: plan.id },
+            data: { version: plan.version + 1, updatedByUserId: principal.userId },
+          });
+        }
         await audit(tx, {
           action: 'transfer_plan.follow_up_progress_recorded',
           entityType: 'transfer_plan',
-          entityId: plan.id,
+          entityId: plans[plans.length - 1]!.id,
           eventId: delegate.eventId,
           actorUserId: principal.userId,
           newValue: {
             wave,
+            plans: plans.map((p) => p.id),
             actions: input.actions.length,
             statuses: Object.fromEntries(
               input.actions.map((a) => [
@@ -1859,6 +1892,9 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
       });
       if (!config || !config.enabled || windowState(config, clock()) !== 'open') {
         throw new HttpError(409, 'assessment_not_open', 'This assessment is not open right now.');
+      }
+      if (config.stage === 'follow_up' && !(await invitedWaveIds(delegate.id)).has(config.id)) {
+        throw new HttpError(409, 'not_invited', 'This follow-up has not been sent to you yet.');
       }
       const existing = config.responses[0] ?? null;
       if (existing?.submittedAt) {
@@ -2038,8 +2074,8 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
             })),
           });
         }
-        // A follow-up's support answers become support requests for the organisers (brief
-        // 11.7), once the section holding them is submitted.
+        // A follow-up's flagged answers become support requests and barriers for the organisers
+        // (brief 11.7; flags of 2026-11-09), once the section holding them is submitted.
         if (config.stage === 'follow_up' && newKeys.length) {
           await raiseFollowUpSupportRequests(tx, {
             eventId: delegate.eventId,
@@ -2052,7 +2088,7 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
               return {
                 questionId: k.questionId,
                 sectionKey: sectionKeyOf(question?.sectionId),
-                area: question?.area ?? null,
+                supportFlag: question?.supportFlag ?? 'none',
                 value: k.value,
               };
             }),

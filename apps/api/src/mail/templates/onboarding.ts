@@ -1,7 +1,8 @@
 import { escapeHtml, renderLayout, type EmailBranding, type RenderedEmail } from './layout.js';
 
 /**
- 
+ * The onboarding pack (task of 2026-11-03): what the platform is for, what happens when, the
+
  *
  * Sent once an admin asks for it, after the delegate has their account. It is the only email that
  * carries the attendance codes, so it is written to be kept: the codes are inline images rather
@@ -25,7 +26,7 @@ export interface OnboardingPackInput {
   venue?: string;
   /** Absolute link to the delegate's own dashboard. */
   dashboardUrl: string;
-  /** Absolute link to the delegate's event page, where the card is. */
+  /** Absolute link to the delegate's event page,  */
   badgeUrl: string;
   dates: OnboardingDate[];
   /** What the pre-conference assessment is called and whether it is open yet. */
@@ -98,7 +99,7 @@ ${input.firstStep ? `\n    <p style="${P}"><strong>Your first step:</strong> ${e
         ]
       : []),
     'TELL PEOPLE YOU ARE COMING',
-    `A card with your name on it is on your event page: ${input.badgeUrl}`,
+    `Have you downloaded your "I will be attending" card? If not, you can still do so with the link sent to your email box earlier thanks.`,
     '',
     ...(input.firstStep ? [`Your first step: ${input.firstStep}`, ''] : []),
     `Open your dashboard: ${input.dashboardUrl}`,

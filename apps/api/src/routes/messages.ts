@@ -18,6 +18,7 @@ import type { PrismaClient } from '../db.js';
 import type { Prisma } from '../generated/prisma/client.js';
 import { audit } from '../lib/audit.js';
 import { HttpError } from '../lib/errors.js';
+import { delegateSearchFilter, displayOrganisation } from '../lib/organisation.js';
 import type { Logger } from '../lib/logger.js';
 import { brandingForEvent } from '../mail/branding.js';
 import type { MailConfig } from '../mail/config.js';
@@ -168,21 +169,18 @@ export function messageRouter({
           eventId: event.id,
           registrationStatus: status ? status : { not: 'duplicate' },
           ...(attendanceFormat ? { attendanceFormat } : {}),
-          ...(q
-            ? {
-                OR: [
-                  { name: { contains: q, mode: 'insensitive' } },
-                  { email: { contains: q, mode: 'insensitive' } },
-                  { organisation: { contains: q, mode: 'insensitive' } },
-                  { externalRegistrationId: { contains: q, mode: 'insensitive' } },
-                ],
-              }
-            : {}),
+          ...(q ? delegateSearchFilter(q) : {}),
         };
       }
       const candidates = await prisma().delegate.findMany({
         where,
-        select: { id: true, name: true, email: true, organisation: true },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          organisation: true,
+          nominatingOrganisation: true,
+        },
         orderBy: [{ name: 'asc' }, { id: 'asc' }],
         take: delegateMessageMaxRecipients + 1,
       });
@@ -231,7 +229,11 @@ export function messageRouter({
       let sent = 0;
       let failed = 0;
       for (const delegate of targets) {
-        const values = placeholderValuesFor({ ...delegate, eventName: branding.eventName });
+        const values = placeholderValuesFor({
+          ...delegate,
+          organisation: displayOrganisation(delegate),
+          eventName: branding.eventName,
+        });
         const rendered = renderAdminMessage(branding, {
           subject: substitutePlaceholders(subject, values),
           body: renderMessageBody(body, values),

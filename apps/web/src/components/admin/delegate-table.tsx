@@ -6,7 +6,7 @@ import type {
   DelegateListStatus,
   DelegateTestMarkResult,
 } from '@mbc/shared';
-import { Loader2Icon, MailIcon, SearchIcon } from 'lucide-react';
+import { Loader2Icon, MailIcon, PencilIcon, SearchIcon, UserPlusIcon } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 import { NativeSelect } from '@/components/imports/native-select';
@@ -21,6 +21,7 @@ import type {
 
 import { consoleButton, StatTile, StatusPill, TablePagination } from '@/components/console/page';
 
+import { DelegateFormDialog, type DelegateFormMode } from './delegate-form';
 import { MessageComposer } from './message-composer';
 
 const STATUS_LABEL: Record<DelegateListStatus, string> = {
@@ -65,9 +66,9 @@ interface Props {
 
 /**
  * Delegates of one event (E2-6 subset): search, status chips, sortable paged table, inline status
- * change through the audited correction route, and selection by checkbox to email the chosen
- * delegates (E2-14). Everything is read from and written through admin-only routes; the table
- * decides nothing itself.
+ * change and a full edit form through the audited correction route (E2-4), adding a delegate by
+ * hand (decision 2026-11-12), and selection by checkbox to email the chosen delegates (E2-14).
+ * Everything is read from and written through admin-only routes; the table decides nothing itself.
  */
 export function DelegateTable({ eventId, eventName = 'this event', onMessageSent }: Props) {
   const [q, setQ] = useState('');
@@ -91,6 +92,7 @@ export function DelegateTable({ eventId, eventName = 'this event', onMessageSent
   const [allMatching, setAllMatching] = useState(false);
   const [marking, setMarking] = useState(false);
   const [composer, setComposer] = useState<Composer | null>(null);
+  const [form, setForm] = useState<DelegateFormMode | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const headerCheckbox = useRef<HTMLInputElement>(null);
 
@@ -256,7 +258,7 @@ export function DelegateTable({ eventId, eventName = 'this event', onMessageSent
 
   return (
     <div className="space-y-6">
-      <div className="grid gap-3">
+      <div className="grid gap-3 md:grid-cols-[1fr_auto] md:items-end">
         <form
           className="space-y-1"
           onSubmit={(e) => {
@@ -284,6 +286,16 @@ export function DelegateTable({ eventId, eventName = 'this event', onMessageSent
             </button>
           </div>
         </form>
+        <button
+          type="button"
+          onClick={() => {
+            setNotice(null);
+            setForm({ kind: 'create' });
+          }}
+          className={consoleButton({ variant: 'accent' })}
+        >
+          <UserPlusIcon className="size-4" aria-hidden="true" /> Add a delegate
+        </button>
       </div>
 
       {counts ? (
@@ -444,7 +456,7 @@ export function DelegateTable({ eventId, eventName = 'this event', onMessageSent
         <p className="rounded-none border border-dashed border-corp-line bg-white p-5 text-sm text-corp-text">
           {search || status
             ? 'No delegates match this search or filter.'
-            : 'No delegates have been imported for this event yet.'}
+            : 'No delegates yet. Import a registration file, or add a delegate by hand.'}
         </p>
       ) : (
         <div className="overflow-hidden border border-corp-line bg-white" aria-busy={loading}>
@@ -507,7 +519,21 @@ export function DelegateTable({ eventId, eventName = 'this event', onMessageSent
                     />
                   </td>
                   <td className="px-4 py-3">
-                    <p className="font-semibold text-corp-ink">{d.name}</p>
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="font-semibold text-corp-ink">{d.name}</p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNotice(null);
+                          setForm({ kind: 'edit', delegateId: d.id });
+                        }}
+                        aria-label={`Edit ${d.name}`}
+                        title="Edit"
+                        className="inline-flex size-8 shrink-0 items-center justify-center rounded-none border border-corp-line bg-white text-corp-ink hover:bg-corp-surface"
+                      >
+                        <PencilIcon className="size-3.5" aria-hidden="true" />
+                      </button>
+                    </div>
                     <p className="truncate text-xs text-corp-muted">{d.email}</p>
                     <p className="text-xs text-corp-muted md:hidden">{d.organisation ?? ''}</p>
                     {rowMessage?.id === d.id ? (
@@ -582,6 +608,19 @@ export function DelegateTable({ eventId, eventName = 'this event', onMessageSent
           />
         </div>
       )}
+
+      {form ? (
+        <DelegateFormDialog
+          eventId={eventId}
+          mode={form}
+          onClose={() => setForm(null)}
+          onSaved={(message) => {
+            setForm(null);
+            setNotice(message);
+            setReload((n) => n + 1);
+          }}
+        />
+      ) : null}
 
       {composer ? (
         <MessageComposer

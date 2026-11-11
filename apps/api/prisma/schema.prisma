@@ -249,15 +249,13 @@ enum EvidenceSupport {
   @@map("evidence_support")
 }
 
+/// The five kinds of evidence the brief names (E14-3); nothing else since 2026-11-08.
 enum EvidenceType {
   example
   work_product
-  process
   confirmation
   organisational_measure
-  customer_feedback
   case_example
-  other
 
   @@map("evidence_type")
 }
@@ -497,33 +495,33 @@ enum ImportResolution {
 // ------------------------------------------------------------------ event setup (E1)
 
 model Event {
-  id                 String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  slug               String      @unique
-  name               String
-  theme              String?
-  startsOn           DateTime    @map("starts_on") @db.Date
-  endsOn             DateTime    @map("ends_on") @db.Date
-  timezone           String      @default("Africa/Lagos")
-  location           String?
-  format             EventFormat @default(hybrid)
-  status             EventStatus @default(draft)
+  id                     String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  slug                   String                 @unique
+  name                   String
+  theme                  String?
+  startsOn               DateTime               @map("starts_on") @db.Date
+  endsOn                 DateTime               @map("ends_on") @db.Date
+  timezone               String                 @default("Africa/Lagos")
+  location               String?
+  format                 EventFormat            @default(hybrid)
+  status                 EventStatus            @default(draft)
   /// Whether registrations with status `test` count in this event's reports, dashboards and
   /// summaries. Off by default; never affects whether a test delegate may sign in.
-  countTestDelegates Boolean     @default(false) @map("count_test_delegates")
+  countTestDelegates     Boolean                @default(false) @map("count_test_delegates")
   /// Whether delegates see Transfer Planning (2026-11-08): shown, hidden, or shown from
   /// transferPlanShownFrom. Hidden means no tab, no next step, no reminders and no status step
   /// in the follow-ups; the plans and their data stay and come back when shown again.
   transferPlanVisibility TransferPlanVisibility @default(shown) @map("transfer_plan_visibility")
   transferPlanShownFrom  DateTime?              @map("transfer_plan_shown_from") @db.Timestamptz(3)
   /// Structured profile (E1 brief, section 3). The slug is the unique event code.
-  description        String      @default("")
-  eventType          EventType   @default(conference) @map("event_type")
-  organiser          String      @default("")
-  website            String?
-  imageUrl           String?     @map("image_url")
-  additionalInfo     String?     @map("additional_info")
-  createdAt          DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt          DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+  description            String                 @default("")
+  eventType              EventType              @default(conference) @map("event_type")
+  organiser              String                 @default("")
+  website                String?
+  imageUrl               String?                @map("image_url")
+  additionalInfo         String?                @map("additional_info")
+  createdAt              DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt              DateTime               @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   participationCategories ParticipationCategory[]
   delegates               Delegate[]
@@ -846,21 +844,12 @@ model TransferPlan {
   submittedAt       DateTime?          @map("submitted_at") @db.Timestamptz(3)
   /// The plan exactly as submitted (TransferPlanView), never changed afterwards.
   submittedSnapshot Json?              @map("submitted_snapshot")
-  reminderFrequency ReminderFrequency  @default(none) @map("reminder_frequency")
-  reminderStartOn   DateTime?          @map("reminder_start_on") @db.Date
-  /// The reminder window ends here (inclusive); null runs until the plan is completed or stopped.
-  reminderEndOn     DateTime?          @map("reminder_end_on") @db.Date
-  /// Time of day the reminder goes out, HH:mm in the event timezone.
-  reminderTime      String             @default("09:00") @map("reminder_time")
-  /// ISO weekdays (1 = Monday … 7 = Sunday) for the twice-weekly frequency; empty otherwise.
-  reminderDays      Int[]              @default([]) @map("reminder_days") @db.SmallInt
-  /// Several plans per delegate (2026-11-06): the n-th plan they made for this event.
+  /// One plan per delegate (decision 2026-11-11); the column stays at 1.
   sequence          Int                @default(1)
   title             String             @default("")
   completedAt       DateTime?          @map("completed_at") @db.Timestamptz(3)
   outcome           PlanOutcome        @default(pending)
   outcomeNote       String             @default("") @map("outcome_note")
-  nextReminderAt    DateTime?          @map("next_reminder_at") @db.Timestamptz(3)
   updatedByUserId   String?            @map("updated_by_user_id") @db.Uuid
   createdAt         DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt         DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
@@ -873,44 +862,53 @@ model TransferPlan {
 
   @@unique([eventId, delegateId, sequence])
   @@index([eventId, delegateId])
-  @@index([nextReminderAt])
   @@map("transfer_plan")
 }
 
 model TransferPlanAction {
-  id               String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  planId           String               @map("plan_id") @db.Uuid
-  order            Int
-  isPriority       Boolean              @default(false) @map("is_priority")
+  id                String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  planId            String               @map("plan_id") @db.Uuid
+  order             Int
+  isPriority        Boolean              @default(false) @map("is_priority")
   /// A short name for the action (2026-11-08), used in the plan, dashboards and reports.
-  title            String               @default("")
-  priorityLearning String               @default("") @map("priority_learning")
-  action           String               @default("")
-  opportunity      String               @default("")
-  firstStep        String               @default("") @map("first_step")
-  startOn          DateTime?            @map("start_on") @db.Date
-  targetOn         DateTime?            @map("target_on") @db.Date
-  stakeholders     String               @default("")
-  support          String               @default("")
-  barriers         String               @default("")
-  evidence         String               @default("")
-  expectedResult   String               @default("") @map("expected_result")
-  measure          String               @default("")
-  baseline         String               @default("")
-  reviewOn         DateTime?            @map("review_on") @db.Date
-  progressStatus   ActionProgressStatus @default(not_started) @map("progress_status")
-  createdAt        DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt        DateTime             @updatedAt @map("updated_at") @db.Timestamptz(3)
+  title             String               @default("")
+  priorityLearning  String               @default("") @map("priority_learning")
+  action            String               @default("")
+  opportunity       String               @default("")
+  firstStep         String               @default("") @map("first_step")
+  startOn           DateTime?            @map("start_on") @db.Date
+  targetOn          DateTime?            @map("target_on") @db.Date
+  stakeholders      String               @default("")
+  support           String               @default("")
+  barriers          String               @default("")
+  evidence          String               @default("")
+  expectedResult    String               @default("") @map("expected_result")
+  measure           String               @default("")
+  baseline          String               @default("")
+  reviewOn          DateTime?            @map("review_on") @db.Date
+  progressStatus    ActionProgressStatus @default(not_started) @map("progress_status")
+  /// This action's own reminder (decision 2026-11-11): how often, on which days, at what time
+  /// in the event zone, and between which dates. A reminder only reminds; it asks for nothing.
+  reminderFrequency ReminderFrequency    @default(none) @map("reminder_frequency")
+  reminderStartOn   DateTime?            @map("reminder_start_on") @db.Date
+  reminderEndOn     DateTime?            @map("reminder_end_on") @db.Date
+  reminderTime      String               @default("09:00") @map("reminder_time")
+  reminderDays      Int[]                @default([]) @map("reminder_days") @db.SmallInt
+  nextReminderAt    DateTime?            @map("next_reminder_at") @db.Timestamptz(3)
+  createdAt         DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime             @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  plan            TransferPlan           @relation(fields: [planId], references: [id], onDelete: Cascade)
+  plan            TransferPlan              @relation(fields: [planId], references: [id], onDelete: Cascade)
   progress        TransferPlanProgress[]
+  reminders       TransferPlanReminderLog[]
   /// Whether the delegate can identify a business measure for this action (spec 2026-11-08);
   /// null until chosen. "identified" needs at least one measure record.
-  measureStatus   MeasureStatus?       @map("measure_status")
+  measureStatus   MeasureStatus?            @map("measure_status")
   measures        TransferPlanMeasure[]
   evidenceRecords TransferPlanEvidence[]
 
   @@index([planId])
+  @@index([nextReminderAt])
   @@map("transfer_plan_action")
 }
 
@@ -1041,6 +1039,8 @@ model TransferPlanProgress {
 model TransferPlanReminderLog {
   id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   planId       String    @map("plan_id") @db.Uuid
+  /// The action the reminder was about (reminders are per action since 2026-11-11).
+  actionId     String?   @map("action_id") @db.Uuid
   scheduledFor DateTime  @map("scheduled_for") @db.Timestamptz(3)
   sentAt       DateTime? @map("sent_at") @db.Timestamptz(3)
   status       String
@@ -1049,9 +1049,11 @@ model TransferPlanReminderLog {
   error        String?
   createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  plan TransferPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  plan   TransferPlan        @relation(fields: [planId], references: [id], onDelete: Cascade)
+  action TransferPlanAction? @relation(fields: [actionId], references: [id], onDelete: SetNull)
 
   @@index([planId])
+  @@index([actionId])
   @@map("transfer_plan_reminder_log")
 }
 
@@ -1112,6 +1114,10 @@ model AssessmentStageConfig {
   /// Days after the event's last date this wave is due. Names the wave ("30-day follow-up") and
   /// gives the default opening date; null for the single-round stages.
   dueAfterDays      Int?                  @map("due_after_days")
+  /// When the organisers want the invitation sent automatically (2026-11-09); null means by hand
+  /// only. The worker sends it once the time has passed and stamps invitesSentAt.
+  inviteAt          DateTime?             @map("invite_at") @db.Timestamptz(3)
+  invitesSentAt     DateTime?             @map("invites_sent_at") @db.Timestamptz(3)
   /// Chase a delegate who has not submitted this many days after their invitation, up to
   /// reminderLimit times. Null means no chasing (E12-14: configurable intervals).
   reminderAfterDays Int?                  @map("reminder_after_days")
@@ -1193,6 +1199,8 @@ model AssessmentQuestion {
   visibleWhen          QuestionVisibility @default(always) @map("visible_when")
   /// Offer "I prefer not to answer" beside the question.
   allowDecline         Boolean            @default(false) @map("allow_decline")
+  /// How the answer feeds the Support page (2026-11-09): a request, a barrier, or nothing.
+  supportFlag          SupportFlag        @default(none) @map("support_flag")
   retiredAt            DateTime?          @map("retired_at") @db.Timestamptz(3)
   createdAt            DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt            DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
@@ -1756,6 +1764,23 @@ enum SupportRequestSource {
   @@map("support_request_source")
 }
 
+/// How a follow-up question feeds the Support page (2026-11-09).
+enum SupportFlag {
+  none
+  support_requested
+  barrier
+
+  @@map("support_flag")
+}
+
+/// What an item on the Support page is: a request for support, or a barrier named.
+enum SupportRequestKind {
+  support
+  barrier
+
+  @@map("support_request_kind")
+}
+
 enum SupportRequestStatus {
   open
   addressed
@@ -1771,6 +1796,8 @@ model SupportRequest {
   eventId           String               @map("event_id") @db.Uuid
   delegateId        String               @map("delegate_id") @db.Uuid
   source            SupportRequestSource @default(delegate)
+  /// A support request or a barrier (2026-11-09); a barrier's text is in `request`.
+  kind              SupportRequestKind   @default(support)
   /// The follow-up answer it was raised from, when it was.
   responseId        String?              @map("response_id") @db.Uuid
   questionId        String?              @map("question_id") @db.Uuid
@@ -1794,6 +1821,7 @@ model SupportRequest {
 
   @@unique([responseId, questionId])
   @@index([eventId, status])
+  @@index([eventId, kind])
   @@index([delegateId])
   @@map("support_request")
 }

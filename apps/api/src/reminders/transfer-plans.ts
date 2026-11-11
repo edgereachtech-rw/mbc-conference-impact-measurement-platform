@@ -1,6 +1,5 @@
 import {
   dateIn,
-  inFinalReminderWeek,
   nextReminderAfter,
   planOutcomeLabels,
   planTitleOf,
@@ -30,106 +29,125 @@ export const TRANSFER_PLAN_REMINDER_JOB = 'transfer-plan-reminders';
 
 const isoDate = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : null);
 
+const formatDay = (d: Date | null) =>
+  d
+    ? new Intl.DateTimeFormat('en-GB', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+        timeZone: 'UTC',
+      }).format(d)
+    : undefined;
+
 /**
- * Sends every transfer plan reminder that is due: plans with a frequency other than "none"
- * whose next_reminder_at has passed, not yet completed, for delegates still registered, in
- * active events. Each attempt is logged on the plan and the next time is computed from the
- * delegate's preference (frequency, chosen days, time of day, window), so a failed send does
- * not repeat every minute. In the last seven days of a window the email says the reminders are
- * about to stop and asks the delegate to complete the plan or extend them (2026-11-06). Counts
- * only in logs; never addresses or plan text.
+ * Sends every action reminder that is due (decision 2026-11-11: reminders belong to each
+ * planned action, and only remind). An action is due when its frequency is not "none" and its
+ * next time has passed; it is skipped for good once it is completed, applied or applied
+ * consistently, and while its plan is completed, Transfer Planning is hidden, the event is not
+ * active or the delegate is no longer registered. Each attempt is logged on the action and the
+ * next time is computed from the delegate's preference (frequency, chosen days, time of day,
+ * window), so a failed send does not repeat every minute. Counts only in logs; never addresses
+ * or plan text.
  */
 export async function sendDueTransferPlanReminders(deps: ReminderDeps) {
   const at = (deps.now ?? (() => new Date()))();
   const prisma = deps.prisma();
-  const due = await prisma.transferPlan.findMany({
+  const due = await prisma.transferPlanAction.findMany({
     where: {
       reminderFrequency: { not: 'none' },
       nextReminderAt: { lte: at },
-      status: { not: 'completed' },
-      // No reminder while the organisers hide Transfer Planning (2026-11-08); the schedule
-      // stands, so reminders resume at the next interval once it is shown.
-      event: {
-        status: 'active',
-        OR: [
-          { transferPlanVisibility: 'shown' },
-          { transferPlanVisibility: 'scheduled', transferPlanShownFrom: { lte: at } },
-        ],
+      progressStatus: { notIn: ['completed', 'applied', 'applied_consistently'] },
+      plan: {
+        status: { not: 'completed' },
+        // No reminder while the organisers hide Transfer Planning (2026-11-08); the schedule
+        // stands, so reminders resume at the next interval once it is shown.
+        event: {
+          status: 'active',
+          OR: [
+            { transferPlanVisibility: 'shown' },
+            { transferPlanVisibility: 'scheduled', transferPlanShownFrom: { lte: at } },
+          ],
+        },
+        delegate: { registrationStatus: { in: ['active', 'test'] } },
       },
-      delegate: { registrationStatus: { in: ['active', 'test'] } },
     },
     include: {
-      event: {
+      plan: {
         select: {
           id: true,
-          name: true,
-          startsOn: true,
-          endsOn: true,
-          timezone: true,
-          location: true,
+          event: {
+            select: {
+              id: true,
+              name: true,
+              startsOn: true,
+              endsOn: true,
+              timezone: true,
+              location: true,
+            },
+          },
+          delegate: { select: { name: true, email: true } },
         },
       },
-      delegate: { select: { name: true, email: true } },
-      actions: { orderBy: { order: 'asc' }, select: { action: true, isPriority: true } },
     },
     take: 200,
   });
+  const appUrl = deps.appUrl.replace(/\/$/, '');
   let sent = 0;
   let failed = 0;
-  for (const plan of due) {
-    const scheduledFor = plan.nextReminderAt ?? at;
+  for (const action of due) {
+    const scheduledFor = action.nextReminderAt ?? at;
     const preference: ReminderPreference = {
-      frequency: plan.reminderFrequency,
-      startOn: isoDate(plan.reminderStartOn),
-      endOn: isoDate(plan.reminderEndOn),
-      time: plan.reminderTime,
-      days: plan.reminderDays,
+      frequency: action.reminderFrequency,
+      startOn: isoDate(action.reminderStartOn),
+      endOn: isoDate(action.reminderEndOn),
+      time: action.reminderTime,
+      days: action.reminderDays,
     };
-    const finalWeek = inFinalReminderWeek(preference, at, plan.event.timezone);
-    const branding = brandingForEvent(deps.mailConfig, plan.event);
-    const priority = plan.actions.find((a) => a.isPriority) ?? plan.actions[0];
+    const { event, delegate } = action.plan;
+    const branding = brandingForEvent(deps.mailConfig, event);
     const rendered = renderTransferPlanReminder(branding, {
-      recipientName: plan.delegate.name,
-      planTitle: planTitleOf(plan),
-      priorityAction: priority?.action.trim() || undefined,
-      planUrl: `${deps.appUrl.replace(/\/$/, '')}/account/events/${plan.event.id}#transfer-plan`,
-      frequency: reminderFrequencyLabels[plan.reminderFrequency].toLowerCase(),
-      finalWeek:
-        finalWeek && preference.endOn
-          ? {
-              endsOn: new Intl.DateTimeFormat('en-GB', {
-                day: 'numeric',
-                month: 'long',
-                year: 'numeric',
-                timeZone: 'UTC',
-              }).format(new Date(`${preference.endOn}T00:00:00.000Z`)),
-            }
-          : undefined,
+      recipientName: delegate.name,
+      actionName: action.title.trim() || action.action.trim() || 'Your planned action',
+      actionText: action.title.trim() && action.action.trim() ? action.action.trim() : undefined,
+      firstStep: action.firstStep.trim() || undefined,
+      targetOn: formatDay(action.targetOn),
+      frequency: reminderFrequencyLabels[action.reminderFrequency].toLowerCase(),
+      planUrl: `${appUrl}/account/events/${event.id}#transfer-plan`,
     });
     // Move the pointer first so a crash mid-send cannot resend the same reminder. Null once
     // the window has closed: the reminders stop by themselves.
-    const next = nextReminderAfter(preference, at, plan.event.timezone);
-    await prisma.transferPlan.update({ where: { id: plan.id }, data: { nextReminderAt: next } });
-    const kind = finalWeek ? 'final_week' : 'reminder';
+    const next = nextReminderAfter(preference, at, event.timezone);
+    await prisma.transferPlanAction.update({
+      where: { id: action.id },
+      data: { nextReminderAt: next },
+    });
     try {
       await deps.mailer.send({
-        to: plan.delegate.email,
+        to: delegate.email,
         subject: rendered.subject,
         html: rendered.html,
         text: rendered.text,
       });
       await prisma.transferPlanReminderLog.create({
-        data: { planId: plan.id, scheduledFor, sentAt: at, status: 'sent', kind },
+        data: {
+          planId: action.plan.id,
+          actionId: action.id,
+          scheduledFor,
+          sentAt: at,
+          status: 'sent',
+          kind: 'reminder',
+        },
       });
       sent += 1;
     } catch (error) {
       failed += 1;
       await prisma.transferPlanReminderLog.create({
         data: {
-          planId: plan.id,
+          planId: action.plan.id,
+          actionId: action.id,
           scheduledFor,
           status: 'failed',
-          kind,
+          kind: 'reminder',
           error: error instanceof Error ? error.message.slice(0, 500) : 'send failed',
         },
       });

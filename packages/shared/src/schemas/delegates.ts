@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { participationModes } from './auth.js';
+import { emailSchema, participationModes } from './auth.js';
 
 /**
  * Admin delegate listing (E2-6 subset for Increment 1b: list and filter by registration status;
@@ -63,6 +63,61 @@ export const delegateListResponseSchema = z.object({
   counts: z.record(z.enum(delegateListStatuses), z.number().int()),
 });
 export type DelegateListResponse = z.infer<typeof delegateListResponseSchema>;
+
+const optionalText = (max: number) =>
+  z
+    .string()
+    .trim()
+    .max(max)
+    .nullable()
+    .optional()
+    .transform((v) => (v ? v : null));
+
+/**
+ * A delegate added by hand by an admin (decision 2026-11-12): a registration that came by no
+ * file, with the fields an import takes minus the registration id. The server finds or creates
+ * the person's identity by address exactly as an import would, and emails nobody.
+ */
+export const delegateCreateSchema = z.object({
+  name: z.string().trim().min(1, 'Enter the delegate’s name.').max(200),
+  email: emailSchema,
+  organisation: optionalText(200),
+  nominatingOrganisation: optionalText(200),
+  jobTitle: optionalText(200),
+  country: optionalText(100),
+  attendanceFormat: z.enum(participationModes),
+  capacity: z.enum(['individual', 'nominee', 'other']).default('individual'),
+  /** Active or pending; duplicate and test are never set by hand. */
+  registrationStatus: z.enum(['active', 'pending']).default('active'),
+});
+export type DelegateCreate = z.infer<typeof delegateCreateSchema>;
+export type DelegateCreateInput = z.input<typeof delegateCreateSchema>;
+
+export const delegateCreateResultSchema = z.object({
+  delegate: delegateListItemSchema,
+  /** Whether the address was new to the platform or already belonged to a known person. */
+  identity: z.enum(['created', 'linked']),
+});
+export type DelegateCreateResult = z.infer<typeof delegateCreateResultSchema>;
+
+/** One delegate record as the staff route `GET /delegates/:id` returns it, for the edit form. */
+export const delegateRecordSchema = z.object({
+  id: z.uuid(),
+  eventId: z.uuid(),
+  name: z.string(),
+  email: z.string(),
+  organisation: z.string().nullable(),
+  nominatingOrganisation: z.string().nullable(),
+  jobTitle: z.string().nullable(),
+  country: z.string().nullable(),
+  attendanceFormat: z.enum(participationModes),
+  capacity: z.enum(['individual', 'nominee', 'other']),
+  registrationStatus: z.enum(delegateListStatuses),
+  signedUpAt: z.string().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+export type DelegateRecord = z.infer<typeof delegateRecordSchema>;
 
 /**
  * Marking registrations as test delegates, or back to real ones (decision of 2026-11-05). A test

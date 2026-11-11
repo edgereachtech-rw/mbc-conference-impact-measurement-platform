@@ -14,6 +14,7 @@ import {
   createRegisteredIdentity,
   deleteIdentity,
   hasDatabase,
+  inviteToFollowUp,
   testPrisma,
 } from '../db/test-helpers.js';
 import { MemoryMailer } from '../mail/mailer.js';
@@ -471,6 +472,7 @@ describe.skipIf(!hasDatabase)('event dashboards and reports', () => {
             isPriority: true,
             support: 'Time from my manager',
             targetOn: '2026-11-20',
+            reminder: { frequency: 'weekly' },
           },
           {
             title: 'Error-rate baseline',
@@ -479,7 +481,6 @@ describe.skipIf(!hasDatabase)('event dashboards and reports', () => {
             barriers: 'Data access',
           },
         ],
-        reminder: { frequency: 'weekly' },
       },
       cookies.dee,
     );
@@ -519,31 +520,13 @@ describe.skipIf(!hasDatabase)('event dashboards and reports', () => {
         measures: Array<{ id: string }>;
       }
     ).measures[0]!.id;
-    const result = await call(
-      'put',
-      `/me/events/${eventId}/transfer-plans/${deePlanId}/actions/${a2!.id}/measures/${measureId}/results`,
-      {
-        version: measures.body.plan.version,
-        results: [
-          {
-            value: '9',
-            resultOn: '2027-01-15',
-            method: 'Counted from the QA log',
-            sourceType: 'workplace_records',
-            support: 'supported',
-            hasInfluences: true,
-            influences: 'New checklist too',
-          },
-        ],
-      },
-      cookies.dee,
-    );
-    expect(result.status, result.text).toBe(200);
+    // No actual results are recorded (2026-11-09); the measure stands with its baseline.
+    void measureId;
     const evidence = await call(
       'put',
       `/me/events/${eventId}/transfer-plans/${deePlanId}/actions/${a1!.id}/evidence`,
       {
-        version: result.body.plan.version,
+        version: measures.body.plan.version,
         evidence: [
           {
             type: 'confirmation',
@@ -569,7 +552,6 @@ describe.skipIf(!hasDatabase)('event dashboards and reports', () => {
             isPriority: true,
           },
         ],
-        reminder: { frequency: 'none' },
       },
       cookies.ada,
     );
@@ -582,6 +564,13 @@ describe.skipIf(!hasDatabase)('event dashboards and reports', () => {
       required: false,
     });
     expect((await call('put', fup(), { enabled: true, status: 'open' })).status).toBe(200);
+    // The organisers send the follow-up before anyone can answer it (2026-11-09).
+    const fu1 = await prisma.assessmentStageConfig.findFirstOrThrow({
+      where: { eventId, stage: 'follow_up', wave: 1 },
+    });
+    for (const d of await prisma.delegate.findMany({ where: { eventId }, select: { id: true } })) {
+      await inviteToFollowUp(prisma, fu1.id, d.id);
+    }
     await tick('2026-12-15T10:00:00.000Z');
     // Progress is told in the follow-up (2026-11-08): where each action stands comes first.
     const deeStatuses = await call(
@@ -725,7 +714,8 @@ describe.skipIf(!hasDatabase)('event dashboards and reports', () => {
       'Brief stakeholders',
       'Try the checklist',
     ]);
-    expect(t.reminders.byFrequency).toMatchObject({ weekly: 1, none: 1 });
+    // Reminders belong to actions (2026-11-11): one weekly, two without.
+    expect(t.reminders.byFrequency).toMatchObject({ weekly: 1, none: 2 });
     expect(t.application.appliedActions).toMatchObject({ count: 1, of: 3 });
     expect(t.application.appliedDelegates).toMatchObject({ count: 1, of: 2, percent: 50 });
     expect(t.application.followUp).toMatchObject({
@@ -739,23 +729,24 @@ describe.skipIf(!hasDatabase)('event dashboards and reports', () => {
     });
     // Challenges are no longer recorded with progress (2026-11-08): the row stays, at zero.
     expect(t.application.barriers[1]).toMatchObject({ key: 'progress.challenges', responses: 0 });
-    expect(t.application.measures).toMatchObject({ with_result: 1, none: 2 });
+    expect(t.application.measures).toMatchObject({ baseline_only: 1, none: 2 });
     expect(t.application.evidence).toEqual({ self_reported: 0, supported: 1 });
-    // Results: a lower error rate is an improvement; the result is marked supported, nothing is verified.
+    // No actual results are recorded (2026-11-09): the outcome counts stay at zero and the
+    // measure is listed by its definition; nothing is verified.
     const res = d.results!;
     expect(res.measures.outcomes).toEqual({
-      improved: 1,
+      improved: 0,
       declined: 0,
       unchanged: 0,
       not_comparable: 0,
     });
-    expect(res.measures.resultSupport).toEqual({ self_reported: 0, supported: 1 });
+    expect(res.measures.resultSupport).toEqual({ self_reported: 0, supported: 0 });
     expect(res.measures.rows[0]!.measures.map((m) => m.name)).toEqual(['Error rate']);
     expect(res.evidence.examples[0]).toMatchObject({
       support: 'supported',
       description: 'Manager confirmed the briefing',
     });
-    expect(res.influences).toEqual(['New checklist too']);
+    expect(res.influences).toEqual([]);
     expect(res.expectations.state).toBe('not_configured');
     // "Verified" appears only where the report denies verification, never as a label on data.
     expect(d.limitations.join(' ')).toMatch(/neither label means independently verified/);
@@ -963,9 +954,9 @@ describe.skipIf(!hasDatabase)('event dashboards and reports', () => {
         priority: 'Brief stakeholders',
         applied: 1,
         measures: 1,
-        withResult: 1,
+        withResult: 0,
         evidence: 1,
-        reminder: 'weekly',
+        reminders: 1,
       },
       supportRequests: { state: 'no_response' },
     });

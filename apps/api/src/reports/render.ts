@@ -35,7 +35,7 @@ const stageNames: Record<string, string> = {
   pre_conference: 'Pre-conference assessment',
   during_conference: 'During-conference assessment',
   end_of_conference: 'End-of-conference evaluation',
-  follow_up: 'Follow-up assessment',
+  follow_up: 'Post-conference follow-ups (Transfer Plan)',
 };
 
 const cell = (v: string | number | null | undefined) =>
@@ -376,7 +376,7 @@ export function renderMarkdown(report: EventReport): string {
       );
       for (const d of f.choices) lines.push('', distribution(d));
       for (const tx of f.texts) lines.push('', texts(tx));
-    } else lines.push('- **Follow-up assessment:** not configured.');
+    } else lines.push('- **Post-conference follow-ups:** not configured.');
     for (const tx of t.application.supportNeeds) lines.push('', texts(tx));
     for (const tx of t.application.barriers) lines.push('', texts(tx));
     for (const tx of t.application.changes) lines.push('', texts(tx));

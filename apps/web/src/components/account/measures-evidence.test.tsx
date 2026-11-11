@@ -3,13 +3,7 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import {
-  ActionMeasures,
-  EvidenceDialog,
-  MeasureLine,
-  MeasuresDialog,
-  ResultsDialog,
-} from './measures-evidence';
+import { ActionMeasures, EvidenceDialog, MeasureLine, MeasuresDialog } from './measures-evidence';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -47,25 +41,6 @@ function measure(partial: Partial<MeasureView> = {}): MeasureView {
   };
 }
 
-const result = (id: string, value: string, resultOn: string) => ({
-  id,
-  value,
-  resultOn,
-  method: 'Average from the tracker',
-  meaning: '',
-  isFinal: false,
-  sourceType: 'workplace_records' as const,
-  source: '',
-  hasInfluences: false,
-  influences: '',
-  support: 'self_reported' as const,
-  measureName: 'Turnaround time',
-  measureKind: 'quantitative' as const,
-  unit: 'days',
-  recordedAt: `${resultOn}T10:00:00.000Z`,
-  updatedAt: `${resultOn}T10:00:00.000Z`,
-});
-
 function action(partial: Partial<PlanActionView> = {}): PlanActionView {
   return {
     id: ACTION,
@@ -91,6 +66,14 @@ function action(partial: Partial<PlanActionView> = {}): PlanActionView {
     measureStatus: null,
     measures: [],
     evidenceRecords: [],
+    reminder: {
+      frequency: 'none',
+      startOn: null,
+      endOn: null,
+      time: '09:00',
+      days: [],
+      nextReminderAt: null,
+    },
     ...partial,
   };
 }
@@ -109,14 +92,6 @@ const planResponse = (): MyTransferPlan => ({
     impactChecks: [],
     submittedAt: '2026-11-13T13:30:00.000Z',
     updatedAt: '2026-11-24T09:00:00.000Z',
-    reminder: {
-      frequency: 'none',
-      startOn: null,
-      endOn: null,
-      time: '09:00',
-      days: [],
-      nextReminderAt: null,
-    },
     actions: [action()],
   },
   sessions: [],
@@ -150,33 +125,16 @@ const dialogProps = {
 };
 
 describe('MeasureLine', () => {
-  it('reads a drop as an improvement when lower is better and counts the kept results', () => {
-    render(
-      <MeasureLine
-        measure={measure({
-          actualValue: '9',
-          actualOn: '2027-02-15',
-          support: 'supported',
-          source: 'Other: Monthly operations report',
-          results: [result('r2', '9', '2027-02-15'), result('r1', '10', '2027-01-15')],
-        })}
-      />,
-    );
-    expect(screen.getByText('Improved')).toBeTruthy();
-    expect(screen.getByText(/Change -3 days · target not yet reached/)).toBeTruthy();
-    expect(screen.getByText('· Supported by another source')).toBeTruthy();
-    expect(screen.getByText(/2 results recorded; earlier ones are kept/)).toBeTruthy();
+  it('shows the definition: direction, why it matters, how it is measured, baseline and target', () => {
+    render(<MeasureLine measure={measure({ source: 'Other: Monthly operations report' })} />);
     expect(screen.getByText('Lower is better')).toBeTruthy();
     expect(screen.getByText(/Measured by: Days from request/)).toBeTruthy();
+    expect(screen.getByText(/Baseline 12 days/)).toBeTruthy();
+    // Nothing about results: none are recorded (2026-11-09).
+    expect(screen.queryByText(/result/i)).toBeNull();
   });
 
-  it('shows an unknown baseline and a not-applicable target as answers, and never calls an increase an improvement without a direction', () => {
-    const { unmount } = render(
-      <MeasureLine measure={measure({ direction: 'unspecified', actualValue: '14' })} />,
-    );
-    expect(screen.getByText('Not comparable')).toBeTruthy();
-    expect(screen.getByText(/Direction of improvement not stated/)).toBeTruthy();
-    unmount();
+  it('shows an unknown baseline and a not-applicable target as answers', () => {
     render(
       <MeasureLine
         measure={measure({
@@ -188,45 +146,47 @@ describe('MeasureLine', () => {
       />,
     );
     expect(screen.getByText(/Baseline Not yet known · Target Not applicable/)).toBeTruthy();
-    expect(screen.getByText('No actual result recorded yet.')).toBeTruthy();
   });
 });
 
 describe('ActionMeasures', () => {
-  it('waits for unsaved plan edits before opening any dialog, and shows the action’s choice', () => {
-    const { unmount } = render(
+  it('offers measures only once the action answers "yes", and shows the choice', () => {
+    // No answer yet: no way to add measures, only a pointer to the question on the card.
+    const first = render(
       <ActionMeasures
         action={action()}
         disabled={false}
-        dirty
         onMeasures={() => {}}
         onEvidence={() => {}}
-        onResults={() => {}}
       />,
     );
-    expect(screen.getByRole('button', { name: 'Add a measure' }).hasAttribute('disabled')).toBe(
-      true,
+    expect(screen.queryByRole('button', { name: 'Add a measure' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Add evidence' })).toBeTruthy();
+    expect(screen.getByText(/Answer “Can you identify a business measure/)).toBeTruthy();
+    first.unmount();
+    // "Not yet known": the answer is shown, still no measures button.
+    const second = render(
+      <ActionMeasures
+        action={action({ measureStatus: 'not_yet_known' })}
+        disabled={false}
+        onMeasures={() => {}}
+        onEvidence={() => {}}
+      />,
     );
-    expect(screen.getByRole('button', { name: 'Add evidence' }).hasAttribute('disabled')).toBe(
-      true,
-    );
-    expect(screen.getByText(/Save your plan first/)).toBeTruthy();
-    unmount();
-    const onResults = vi.fn();
+    expect(screen.getByText('Not yet known')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Add a measure' })).toBeNull();
+    second.unmount();
     render(
       <ActionMeasures
         action={action({ measureStatus: 'identified', measures: [measure()] })}
         disabled={false}
-        dirty={false}
         onMeasures={() => {}}
         onEvidence={() => {}}
-        onResults={onResults}
       />,
     );
     expect(screen.getByText('1 measure')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Edit measures' })).toBeTruthy();
-    screen.getByRole('button', { name: 'Record a result' }).click();
-    expect(onResults).toHaveBeenCalledWith(expect.objectContaining({ id: MEASURE }));
+    expect(screen.getByRole('button', { name: 'Update measures' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Record a result' })).toBeNull();
   });
 });
 
@@ -235,15 +195,18 @@ describe('MeasuresDialog', () => {
     const calls = stub();
     const onSaved = vi.fn();
     const user = userEvent.setup();
-    render(<MeasuresDialog {...dialogProps} action={action()} onSaved={onSaved} />);
+    render(
+      <MeasuresDialog
+        {...dialogProps}
+        action={action({ measureStatus: 'identified' })}
+        onSaved={onSaved}
+      />,
+    );
     expect(screen.getByText(/Do not enter confidential/)).toBeTruthy();
+    // The question itself is answered on the action card, not here (2026-11-08).
     expect(
-      (
-        screen.getByLabelText(
-          'Can you identify a business measure for this action?',
-        ) as HTMLSelectElement
-      ).value,
-    ).toBe('identified');
+      screen.queryByLabelText('Can you identify a business measure for this action?'),
+    ).toBeNull();
     await user.click(screen.getByRole('button', { name: 'Save measures' }));
     expect(screen.getByRole('alert').textContent).toMatch(/Add at least one measure/);
 
@@ -264,13 +227,17 @@ describe('MeasuresDialog', () => {
       within(form).getByLabelText('Do you know the current starting value (baseline)?'),
       'known',
     );
-    await user.type(within(form).getByLabelText(/^Baseline value/), '12 %');
+    // A quantitative value is a number field: letters and symbols are not taken (2026-11-08).
+    const baseline = within(form).getByLabelText(/^Baseline value/) as HTMLInputElement;
+    expect(baseline.type).toBe('number');
+    await user.type(baseline, '12 %');
+    expect(baseline.value).not.toBe('12 %');
+    await user.clear(baseline);
     await user.click(screen.getByRole('button', { name: 'Save measures' }));
-    expect(screen.getByRole('alert').textContent).toMatch(/must be a number/);
+    expect(screen.getByRole('alert').textContent).toMatch(/give the current value/);
     expect(calls).toHaveLength(0);
 
-    await user.clear(within(form).getByLabelText(/^Baseline value/));
-    await user.type(within(form).getByLabelText(/^Baseline value/), '12');
+    await user.type(baseline, '12');
     await user.selectOptions(within(form).getByLabelText('Which way is better?'), 'lower');
     await user.click(screen.getByRole('button', { name: 'Save measures' }));
     expect(calls).toHaveLength(1);
@@ -301,7 +268,7 @@ describe('MeasuresDialog', () => {
     expect(onSaved).toHaveBeenCalledTimes(1);
   });
 
-  it('lets the measure be not yet known with nothing else, keeps existing ids, and reports a stale plan', async () => {
+  it('keeps existing ids and reports a stale plan', async () => {
     const calls = stub(409, {
       error: { code: 'stale_plan', message: 'Your plan changed since you opened it.' },
     });
@@ -316,108 +283,13 @@ describe('MeasuresDialog', () => {
       />,
     );
     expect(screen.getByRole('group', { name: 'Turnaround time' })).toBeTruthy();
-    await user.selectOptions(
-      screen.getByLabelText('Can you identify a business measure for this action?'),
-      'not_yet_known',
-    );
-    expect(screen.queryByRole('group', { name: 'Turnaround time' })).toBeNull();
-    expect(screen.getByText(/Your 1 recorded measure stays as it is/)).toBeTruthy();
     await user.click(screen.getByRole('button', { name: 'Save measures' }));
     expect(calls[0]!.body).toEqual({
       version: 7,
-      measureStatus: 'not_yet_known',
+      measureStatus: 'identified',
       measures: [expect.objectContaining({ id: MEASURE, name: 'Turnaround time' })],
     });
     expect(onStale).toHaveBeenCalledWith('Your plan changed since you opened it.');
-  });
-});
-
-describe('ResultsDialog', () => {
-  it('needs the value, date, method and source, asks what "other" means, and keeps earlier results in the payload', async () => {
-    const calls = stub();
-    const onSaved = vi.fn();
-    const user = userEvent.setup();
-    const m = measure({
-      actualValue: '10',
-      actualOn: '2027-01-15',
-      results: [result('r1', '10', '2027-01-15')],
-    });
-    render(
-      <ResultsDialog
-        {...dialogProps}
-        action={action({ measureStatus: 'identified', measures: [m] })}
-        measure={m}
-        onSaved={onSaved}
-      />,
-    );
-    expect(screen.getByText(/never overwritten/)).toBeTruthy();
-    // The earlier result is listed, closed, and stays untouched.
-    expect(screen.getByRole('group', { name: 'Result 1' }).textContent).toMatch(/10 days/);
-
-    await user.click(screen.getByRole('button', { name: 'Record a result' }));
-    const form = screen.getByRole('group', { name: 'Result 1' });
-    await user.click(screen.getByRole('button', { name: 'Save results' }));
-    expect(screen.getByRole('alert').textContent).toMatch(/record the actual result/);
-    await user.type(within(form).getByLabelText(/^Actual result/), 'nine');
-    await user.click(screen.getByRole('button', { name: 'Save results' }));
-    expect(screen.getByRole('alert').textContent).toMatch(/enter a number/);
-    await user.clear(within(form).getByLabelText(/^Actual result/));
-    await user.type(within(form).getByLabelText(/^Actual result/), '9');
-    await user.type(within(form).getByLabelText(/^Date of result/), '2027-02-15');
-    await user.type(
-      within(form).getByLabelText(/^How was this result obtained/),
-      'Monthly operations report',
-    );
-    await user.click(screen.getByRole('button', { name: 'Save results' }));
-    expect(screen.getByRole('alert').textContent).toMatch(/source of this information/);
-    await user.selectOptions(
-      within(form).getByLabelText(/^What is the source of this information/),
-      'other',
-    );
-    await user.click(screen.getByRole('button', { name: 'Save results' }));
-    expect(screen.getByRole('alert').textContent).toMatch(/specify the source/);
-    await user.type(
-      within(form).getByLabelText(/^Please describe the source/),
-      'Operations report',
-    );
-    const factors = within(form).getByRole('group', {
-      name: 'Were there other factors that influenced this result?',
-    });
-    await user.click(within(factors).getByLabelText('Yes'));
-    await user.type(
-      within(form).getByLabelText(/^Describe the other influencing factors/),
-      'Two colleagues joined',
-    );
-    await user.click(within(form).getByRole('radio', { name: /^Supported by another source/ }));
-    const final = within(form).getByRole('group', { name: 'Is this result final?' });
-    await user.click(within(final).getByLabelText('Yes'));
-    expect(calls).toHaveLength(0);
-    await user.click(screen.getByRole('button', { name: 'Save results' }));
-    expect(calls).toHaveLength(1);
-    expect(calls[0]!.url).toMatch(
-      new RegExp(
-        `/me/events/${EVENT}/transfer-plans/p1/actions/${ACTION}/measures/${MEASURE}/results$`,
-      ),
-    );
-    expect(calls[0]!.body).toEqual({
-      version: 7,
-      results: [
-        {
-          value: '9',
-          resultOn: '2027-02-15',
-          method: 'Monthly operations report',
-          meaning: '',
-          isFinal: true,
-          sourceType: 'other',
-          source: 'Operations report',
-          hasInfluences: true,
-          influences: 'Two colleagues joined',
-          support: 'supported',
-        },
-        expect.objectContaining({ id: 'r1', value: '10', resultOn: '2027-01-15' }),
-      ],
-    });
-    expect(onSaved).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -78,9 +78,9 @@ describe('FollowUpSchedule', () => {
     render(<FollowUpSchedule event={event} onSaved={() => {}} />);
 
     // The default schedule is done, so only the longer-term offer is left.
-    expect(screen.queryByRole('button', { name: /30, 60 and 90-day waves/ })).toBeNull();
-    // 13 November 2026 + 180 days.
-    expect(screen.getByText(/12 May 2027/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /30, 60 and 90-day follow-ups/ })).toBeNull();
+    // From day 91: 13 November 2026 + 91 days.
+    expect(screen.getByText(/12 February 2027/)).toBeTruthy();
     // The selectivity of requirement 11.5 is not built, so the card says so rather than implying it.
     expect(screen.getByRole('note').textContent).toMatch(/every delegate/i);
 
@@ -95,7 +95,7 @@ describe('FollowUpSchedule', () => {
     stubFetch(calls, event);
     render(<FollowUpSchedule event={event} onSaved={() => {}} />);
 
-    await userEvent.click(screen.getByRole('button', { name: /30, 60 and 90-day waves/ }));
+    await userEvent.click(screen.getByRole('button', { name: /30, 60 and 90-day follow-ups/ }));
     expect(calls[0]?.body).toEqual({ waves: [...DEFAULT_FOLLOW_UP_WAVES] });
   });
 

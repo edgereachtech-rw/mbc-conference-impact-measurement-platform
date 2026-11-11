@@ -98,6 +98,7 @@ export function supportRouter({ prisma, config, middleware, now }: Deps): Router
       eventId: r.eventId,
       delegate: r.delegate,
       source: r.source,
+      kind: r.kind,
       context: r.context,
       action: r.actionId ? (actionOf.get(r.actionId) ?? null) : null,
       request: r.request,
@@ -128,8 +129,17 @@ export function supportRouter({ prisma, config, middleware, now }: Deps): Router
       counts: {
         open: requests.filter((r) => r.status === 'open').length,
         addressed: requests.filter((r) => r.status === 'addressed').length,
+        openSupport: requests.filter((r) => r.status === 'open' && r.kind === 'support').length,
+        openBarriers: requests.filter((r) => r.status === 'open' && r.kind === 'barrier').length,
       },
-      barriers: groupBarriers(requests.map((r) => r.barrier)),
+      // Every barrier named: the barrier items, plus what a delegate wrote in the "what is in
+      // the way" box of a request asked from the plan page (a follow-up's barrier beside a
+      // request is already its own item).
+      barriers: groupBarriers(
+        requests.map((r) =>
+          r.kind === 'barrier' ? r.request : r.source === 'delegate' ? r.barrier : '',
+        ),
+      ),
     };
     res.json(body);
   });

@@ -928,7 +928,8 @@ export async function buildReport(input: BuildInput): Promise<BuiltReport> {
       ReminderFrequency,
       number
     >;
-    for (const p of plans) byFrequency[p.reminderFrequency] += 1;
+    // Reminders are per action since 2026-11-11: the actions by their reminder frequency.
+    for (const { action } of allActions) byFrequency[action.reminderFrequency] += 1;
     const applied = allActions.filter(({ action }) =>
       appliedStatuses.includes(action.progressStatus),
     );
@@ -1022,7 +1023,7 @@ export async function buildReport(input: BuildInput): Promise<BuiltReport> {
       },
       reminders: {
         byFrequency,
-        scheduled: plans.filter((p) => p.nextReminderAt).length,
+        scheduled: allActions.filter(({ action }) => action.nextReminderAt).length,
         sent: plans.reduce((n, p) => n + p.reminders.filter((r) => r.status === 'sent').length, 0),
         failed: plans.reduce(
           (n, p) => n + p.reminders.filter((r) => r.status !== 'sent').length,

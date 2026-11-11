@@ -19,6 +19,7 @@ const q = (id: string, prompt: string, extra: Record<string, unknown> = {}) => (
   scale: { min: 1, max: 5, minLabel: null, maxLabel: null },
   isKnowledge: false,
   responseCount: 0,
+  supportFlag: 'none',
   ...extra,
 });
 const json = (body: unknown, status = 200) =>

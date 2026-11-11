@@ -190,6 +190,56 @@ describe('DelegateTable', () => {
     expect(screen.getByRole('region', { name: 'Selection' }).textContent).toMatch(/1 selected/);
   });
 
+  it('adds a delegate by hand and opens the edit form for a row', async () => {
+    let listed = [row('d1', 'Zara Zed', 'active')];
+    const calls = stub((url, init) => {
+      if (init?.method === 'POST' && url.endsWith('/delegates')) {
+        listed = [...listed, row('d2', 'Nia New', 'active', 'Delta Nominees')];
+        return { status: 201, body: { delegate: listed[1], identity: 'created' } };
+      }
+      if (url === '/api/v1/delegates/d1') {
+        return {
+          status: 200,
+          body: {
+            delegate: {
+              ...row('d1', 'Zara Zed', 'active'),
+              eventId: 'e1',
+              nominatingOrganisation: null,
+              updatedAt: '2026-10-30T10:00:00Z',
+            },
+          },
+        };
+      }
+      return {
+        status: 200,
+        body: { delegates: listed, page: 1, pageSize: 10, total: listed.length, counts: COUNTS },
+      };
+    });
+    const user = userEvent.setup();
+    render(<DelegateTable eventId="e1" />);
+    await screen.findByRole('table', { name: 'Delegates' });
+
+    await user.click(screen.getByRole('button', { name: 'Add a delegate' }));
+    const dialog = screen.getByRole('dialog', { name: 'Add a delegate' });
+    await user.type(within(dialog).getByLabelText('Full name'), 'Nia New');
+    await user.type(within(dialog).getByLabelText('Email address'), 'nia@example.com');
+    await user.click(within(dialog).getByRole('button', { name: 'Add delegate' }));
+    expect((await screen.findByRole('status')).textContent).toMatch(/Nia New added/);
+    expect(await screen.findByText('Nia New')).toBeTruthy();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    const post = calls.find((c) => c.init?.method === 'POST');
+    expect(JSON.parse(String(post?.init?.body))).toMatchObject({
+      name: 'Nia New',
+      email: 'nia@example.com',
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Edit Zara Zed' }));
+    const edit = await screen.findByRole('dialog', { name: 'Edit delegate' });
+    expect(((await within(edit).findByLabelText('Full name')) as HTMLInputElement).value).toBe(
+      'Zara Zed',
+    );
+  });
+
   it('shows empty and error states safely', async () => {
     stub(() => ({
       status: 200,
@@ -202,7 +252,7 @@ describe('DelegateTable', () => {
       },
     }));
     const { unmount } = render(<DelegateTable eventId="e1" />);
-    expect(await screen.findByText(/No delegates have been imported/)).toBeTruthy();
+    expect(await screen.findByText(/No delegates yet. Import a registration file/)).toBeTruthy();
     unmount();
     vi.unstubAllGlobals();
     stub(() => ({

@@ -43,7 +43,9 @@ describe('my-events helpers', () => {
     expect(steps.map((s) => s.step)).toEqual(['Before', 'Day 1', 'Day 2', 'After']);
     expect(steps[1]?.note).toBe('12 November 2026');
     expect(steps[2]?.note).toBe('13 November 2026');
-    expect(steps[3]?.title).toMatch(/30, 60, 90 and 180 days/);
+    expect(steps[3]?.title).toMatch(
+      /Transfer Plan follow-ups: 30, 60 and 90 days, then longer term/,
+    );
     expect(journeyFor({ startsOn: '2026-05-05', endsOn: '2026-05-05' })).toHaveLength(3);
     expect(journeyFor({ startsOn: '2026-05-05', endsOn: '2026-05-08' })[1]?.note).toBe(
       '5-8 May 2026',

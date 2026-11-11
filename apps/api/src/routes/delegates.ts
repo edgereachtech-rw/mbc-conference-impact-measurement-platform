@@ -27,6 +27,7 @@ const DELEGATE_FIELDS = {
   name: true,
   email: true,
   organisation: true,
+  nominatingOrganisation: true,
   jobTitle: true,
   country: true,
   attendanceFormat: true,
@@ -40,6 +41,7 @@ const DELEGATE_FIELDS = {
 const EDITABLE = [
   'name',
   'organisation',
+  'nominatingOrganisation',
   'jobTitle',
   'country',
   'attendanceFormat',

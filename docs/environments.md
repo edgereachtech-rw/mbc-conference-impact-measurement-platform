@@ -1,7 +1,10 @@
 # Environments
 
 Two long-lived environments exist (backlog E0-5). They run the same Docker Compose stack
-(`deploy/docker-compose.yml`), the same image tags, and differ only in where they run and in their
+(`deploy/docker-compose.yml`) and the same image tags. Staging adds the overlay
+`deploy/docker-compose.staging.yml` (project name `mbc-impact-staging`, `NODE_ENV=staging`, Sentry
+environment `staging`, test-data switches on, shorter backup retention) and starts from
+`deploy/.env.staging.example`; otherwise the two differ only in where they run and in their
 configuration.
 
 | Aspect            | Staging                                                     | Production                                                  |

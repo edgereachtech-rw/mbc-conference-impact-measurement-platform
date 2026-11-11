@@ -1,9 +1,11 @@
 'use client';
 
 import {
+  supportRequestKindLabels,
   supportRequestSourceLabels,
   supportRequestStatusLabels,
   type EventDetail,
+  type SupportRequestKind,
   type SupportRequestStatus,
   type SupportRequestView,
   type SupportRequests,
@@ -32,6 +34,7 @@ type Filter = 'open' | 'addressed' | 'all';
 export function SupportManager({ event }: { event: EventDetail }) {
   const [state, setState] = useState<State>({ kind: 'loading' });
   const [filter, setFilter] = useState<Filter>('open');
+  const [kind, setKind] = useState<'all' | SupportRequestKind>('all');
   const [editing, setEditing] = useState<SupportRequestView | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -78,14 +81,16 @@ export function SupportManager({ event }: { event: EventDetail }) {
     );
   }
   const { data } = state;
-  const shown = data.requests.filter((r) => filter === 'all' || r.status === filter);
+  const shown = data.requests.filter(
+    (r) => (filter === 'all' || r.status === filter) && (kind === 'all' || r.kind === kind),
+  );
 
   return (
     <div className="space-y-6">
       <p className="text-sm text-corp-text">
-        Delegates ask for support in their follow-ups and from their transfer plan page. Record what
-        was done and mark each request addressed; reopen it if it comes back. Barriers are listed as
-        the delegates wrote them.
+        Support requests and barriers come from the follow-up questions flagged for this page, and
+        requests also from the Transfer Plan page. Record what was done and mark each item
+        addressed; reopen it if it comes back. Barriers are listed as the delegates wrote them.
       </p>
       {notice ? (
         <p role="status" className="text-sm font-semibold text-corp-green-text">
@@ -94,17 +99,39 @@ export function SupportManager({ event }: { event: EventDetail }) {
       ) : null}
       <div className="grid gap-3 sm:grid-cols-3">
         <StatTile
-          label="Open requests"
-          value={data.counts.open}
-          tone={data.counts.open ? 'attention' : 'neutral'}
+          label="Open support requests"
+          value={data.counts.openSupport}
+          tone={data.counts.openSupport ? 'attention' : 'neutral'}
+        />
+        <StatTile
+          label="Open barriers"
+          value={data.counts.openBarriers}
+          tone={data.counts.openBarriers ? 'attention' : 'neutral'}
         />
         <StatTile label="Addressed" value={data.counts.addressed} tone="positive" />
-        <StatTile label="Barriers named" value={data.barriers.length} />
       </div>
 
       <Panel>
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h3 className="font-corporate text-base font-semibold text-corp-ink">Requests</h3>
+          <h3 className="font-corporate text-base font-semibold text-corp-ink">
+            Requests and barriers
+          </h3>
+          <div role="group" aria-label="Kind" className="flex gap-1">
+            {(['all', 'support', 'barrier'] as const).map((k) => (
+              <button
+                key={k}
+                type="button"
+                aria-pressed={kind === k}
+                onClick={() => setKind(k)}
+                className={consoleButton({
+                  variant: kind === k ? 'secondary' : 'ghost',
+                  size: 'sm',
+                })}
+              >
+                {k === 'all' ? 'Both kinds' : k === 'support' ? 'Support requests' : 'Barriers'}
+              </button>
+            ))}
+          </div>
           <div role="group" aria-label="Show" className="flex gap-1">
             {(['open', 'addressed', 'all'] as const).map((f) => (
               <button
@@ -124,8 +151,8 @@ export function SupportManager({ event }: { event: EventDetail }) {
         </div>
         {shown.length === 0 ? (
           <p className="mt-3 text-sm text-corp-muted">
-            {filter === 'open' ? 'No open request. ' : 'Nothing here yet. '}
-            Requests appear as delegates submit their follow-ups or ask from their plan page.
+            {filter === 'open' ? 'Nothing open. ' : 'Nothing here yet. '}
+            Items appear as delegates submit their follow-ups or ask from their plan page.
           </p>
         ) : (
           <ul aria-label="Support requests" className="mt-3 divide-y divide-corp-line">
@@ -143,17 +170,22 @@ export function SupportManager({ event }: { event: EventDetail }) {
                       {r.action ? ` · Action: ${r.action}` : ''}
                     </p>
                   </div>
-                  <StatusPill tone={r.status === 'open' ? 'attention' : 'positive'}>
-                    {supportRequestStatusLabels[r.status]}
-                  </StatusPill>
+                  <span className="flex flex-wrap gap-1">
+                    <StatusPill tone="neutral">{supportRequestKindLabels[r.kind]}</StatusPill>
+                    <StatusPill tone={r.status === 'open' ? 'attention' : 'positive'}>
+                      {supportRequestStatusLabels[r.status]}
+                    </StatusPill>
+                  </span>
                 </div>
                 <p className="text-sm text-corp-text">
-                  <span className="font-semibold text-corp-ink">Support requested: </span>
+                  <span className="font-semibold text-corp-ink">
+                    {r.kind === 'barrier' ? 'Barrier: ' : 'Support requested: '}
+                  </span>
                   {r.request}
                 </p>
-                {r.barrier ? (
+                {r.kind === 'support' && r.barrier ? (
                   <p className="text-sm text-corp-text">
-                    <span className="font-semibold text-corp-ink">Barrier: </span>
+                    <span className="font-semibold text-corp-ink">Barrier named with it: </span>
                     {r.barrier}
                   </p>
                 ) : null}

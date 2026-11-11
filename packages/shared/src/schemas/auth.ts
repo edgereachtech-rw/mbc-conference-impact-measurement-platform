@@ -93,6 +93,7 @@ export const delegatePatchSchema = z
   .object({
     name: z.string().trim().min(1).max(200),
     organisation: z.string().trim().max(200).nullable(),
+    nominatingOrganisation: z.string().trim().max(200).nullable(),
     jobTitle: z.string().trim().max(200).nullable(),
     country: z.string().trim().max(100).nullable(),
     attendanceFormat: z.enum(participationModes),

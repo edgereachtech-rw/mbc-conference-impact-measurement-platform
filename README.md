@@ -501,9 +501,10 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   `20261102100000_drop_transfer_planning_final` drops the column. Tables:
   `transfer_plan` (status draft/submitted, `version` bumped on every save so a save carrying an
   older version is refused with 409 `stale_plan`, `submitted_snapshot` = the plan exactly as
-  submitted, reminder frequency none/weekly/fortnightly/monthly, start date, next reminder
-  time), `transfer_plan_action` (order, first-priority flag, the 13 per-action fields of
-  Appendix A5, latest progress status), `transfer_plan_progress` (every status change with its
+  submitted), `transfer_plan_action` (order, first-priority flag, the 13 per-action fields of
+  Appendix A5, latest progress status, and since 2026-11-11 the action's own reminder:
+  frequency, start and end dates, time, weekdays, next reminder time),
+  `transfer_plan_progress` (every status change with its
   note, evidence, results, challenges and new target date: Appendix B statuses; applied,
   applied consistently, completed, changed and no longer applicable require a note),
   `transfer_plan_reminder_log` (one row per reminder attempt) and `event_reference_question`
@@ -513,35 +514,42 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   migration `20261031270000_reference_question_list`). `event_session.transfer_planning_final` marks the final session. Migration
   `20261031250000_transfer_plans`. Delegate routes: `GET /me/events/:id/transfer-plan` (the
   plan, the planning sessions, whether submission is open, the reference answers, reminder
-  attempts), `PUT` (replace the actions, keep ids, one first priority, reminder preferences),
-  `POST .../submit` (`{ version }`; 422 `plan_empty` without an action, 409 `not_yet`
-  before the final session starts, 409 `already_submitted`), `POST
-.../actions/:actionId/progress`. Admin routes: `GET /events/:id/transfer-plans` (every plan
+  attempts), `PUT` (replace the actions, keep ids, one first priority, each action's reminder
+  preference), `POST .../submit` (`{ version }`; open at any time since 2026-11-08; 422
+  `plan_empty` without an action, 409 `already_submitted`). Admin routes: `GET
+/events/:id/transfer-plans` (every plan
   with actions counted once in their latest status, plus the sessions), `GET
 .../transfer-plans/:delegateId` (current plan, the snapshot, references, audit history,
   reminders; viewing audited), `GET/PUT /events/:id/reference-questions`. The worker runs
   `transfer-plan-reminders` every 15 minutes (`apps/api/src/reminders/transfer-plans.ts`):
-  due plans of active events get the branded reminder with the first-priority action and a link
-  to the plan; the next time is moved before sending so a restart never sends twice; each
-  attempt is logged. Screens: "Your transfer plan" on the delegate's event page (actions with
-  the grouped fields, first priority, "Not yet known"/"Not applicable" shortcuts for measure and
-  baseline, reminders, review popup before submitting, progress popup per action, stale-save
-  warning with reload) and the event page's "Transfer plans" tab (counts, sessions, reference
+  every due action of an active event gets its own branded reminder naming the action, its
+  first step and target date, with a link to the plan; the next time is moved before sending so
+  a restart never sends twice; each attempt is logged on the action. Screens: "Your transfer
+  plan" on the delegate's event page (actions with the grouped fields, first priority, "Not yet
+  known"/"Not applicable" shortcuts for measure and baseline, a reminder per action, review
+  popup before submitting, stale-save warning with reload) and the event page's "Transfer
+  plans" tab (counts, sessions, reference
   questions, searchable list with status and action-status filters, CSV export, one plan in full
   with "Current" and "As submitted" views and its history).
 - Transfer support (brief 11.7; backlog E13; task of 2026-11-07): table `support_request`
   (migration `20261107194000_support_requests`): event, delegate, source (`follow_up` or
   `delegate`), the follow-up answer it came from (unique per answer), the planned action it
   concerns, the request, the barrier, status `open` or `addressed`, the action taken, who
-  addressed it and when. Requests are raised two ways: a delegate's "Need support to apply your
-  plan?" box on the plan page (`POST /me/events/:id/support-requests`, `GET` lists their own
-  with status), and automatically when a follow-up section is submitted, from every answered
-  question whose area names "support" (the seeded 30/60/90-day sets have one each), with the
-  answer to the section's "barrier" question beside it (`apps/api/src/support/requests.ts`).
-  Organisers: `GET /events/:id/support-requests` (requests, open/addressed counts, barriers as
-  written grouped by wording), `PATCH .../:requestId` `{ status, actionTaken }` (addressing
-  stamps who and when, reopening clears them; audited `support_request.updated`), shown on the
-  event settings "Support" tab. The journey reports `supportRequests.state` as `ok` once the
+  addressed it and when. Since 2026-11-09 an item has a `kind`, support or barrier, and a follow-up question carries
+  an explicit `support_flag` (none / support requested / barrier; migration
+  `20261109002500_support_flags`, which also set the flag on existing follow-up questions from
+  the word their area used). Items are raised three ways: a delegate's "Need support to apply
+  your plan?" box on the plan page (`POST /me/events/:id/support-requests`, `GET` lists their
+  own with status); and, when a follow-up section is submitted, a support request from every
+  answered question flagged "support requested" (with the answer to the section's question
+  flagged "barrier" beside it) and a barrier item from every answered question flagged "barrier"
+  (`apps/api/src/support/requests.ts`). The seeded 30/60/90-day sets carry the flags; the
+  30-day set no longer seeds "Have you started the action…", which the status step answers.
+  Organisers: `GET /events/:id/support-requests` (both kinds, open/addressed counts per kind,
+  barriers as written grouped by wording), `PATCH .../:requestId` `{ status, actionTaken }` on
+  either kind (addressing stamps who and when, reopening clears them; audited
+  `support_request.updated`), shown on the event settings "Support" tab with filters by kind and
+  status. The journey reports `supportRequests.state` as `ok` once the
   delegate has one.
 - Transfer Planning visibility (2026-11-08; migration `*_transfer_plan_visibility`): Event →
   Transfer Planning → "Transfer Planning for delegates" sets shown (default), hidden, or hidden
@@ -560,9 +568,9 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   it again (unchanged). Assessment stages: setting the status back to Open after Closed brings
   the same questions and answers back; a deadline that has already passed is refused with 422
   `deadline_passed`, and the stage card clears it for the admin when they choose Open.
-- Progress through the follow-ups (rules of 2026-11-08; migration
-  `20261108001700_follow_up_progress`): the plan page no longer records progress. Each 30, 60,
-  90-day and longer-term follow-up first asks where every action of the Transfer Plan stands,
+- Progress through the follow-ups and from the plan page (rules of 2026-11-08; migration
+  `20261108001700_follow_up_progress`; plan page again since 2026-11-09): each 30, 60, 90-day
+  and longer-term follow-up first asks where every action of the Transfer Plan stands,
   with one current status per action (not yet started, started, in progress, applied, applied
   consistently, completed, changed, no longer applicable; definitions and examples in
   `actionProgressDefinitions`). "Changed" and "no longer applicable" need a brief explanation;
@@ -571,15 +579,22 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   `PUT /me/events/:eventId/assessments/follow_up/plan-progress?wave=n` (one record per action
   per wave in `transfer_plan_progress`, replaceable until the wave is submitted, kept as history
   afterwards); a wave's sections cannot be submitted before they are in (422
-  `plan_progress_missing`). The plan page and the organisers' plan detail show each follow-up's
-  record under the action; the organisers' list and the reports count each action once, in its
-  latest status. Started, in progress and completed are not application. The delegate support
+  `plan_progress_missing`). From 2026-11-09 to 2026-11-11 the delegate could also record a
+  status from the plan page ("Update status", `POST .../actions/:actionId/progress`); **decision
+  2026-11-11: the plan page records no status**, the route and dialog left, and only the
+  follow-ups record where an action stands (entries recorded in between keep reading "Plan
+  page"). The plan page and the organisers' plan detail show the whole history under the action
+  with where each entry came from; the
+  organisers' list and the reports count each action once, in its latest status. Started, in progress and completed are not application. The delegate support
   panel left the plan page the same day: support needs are collected by the follow-up questions
   whose area names support (brief 11.7), and the organisers' Support tab stays.
 - Business measures (spec of 2026-11-08; migration `20261107232000_business_measures`): per
-  planned action the delegate first answers "Can you identify a business measure?" (identified /
-  not yet known / not applicable, `transfer_plan_action.measure_status`; "identified" needs at
-  least one measure, and the other two are answers, never missing values). A measure (sections A
+  planned action the delegate first answers "Can you identify a business measure for this
+  action?" (identified / not yet known / not applicable, `transfer_plan_action.measure_status`;
+  "identified" needs at least one measure, and the other two are answers, never missing values).
+  Since 2026-11-08 the question is asked on the action card, under the action's other questions,
+  and saved with the plan (`PUT .../transfer-plans/:planId`, `actions[].measureStatus`); the
+  "Add a measure" button appears only when the answer is yes. A measure (sections A
   and B of the spec) has a name, why it matters, how it is measured, a type (quantitative with a
   unit and a direction of improvement, or qualitative), an explicit baseline state (known / not
   yet known) and target state (set / not yet known / not applicable) with values and dates.
@@ -588,9 +603,16 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   type (plus a description when "other"), other influencing factors, self-reported or supported.
   Earlier results are kept, each with the measure's name, kind and unit as they were, and the
   measure carries a copy of the latest for lists and reports. Evidence may name the measure it
-  supports (`transfer_plan_evidence.measure_id`); the evidence types follow the spec (two
-  added). Routes: `PUT …/actions/:id/measures` (choice plus definitions) and
-  `PUT …/actions/:id/measures/:measureId/results`; every save is audited. Admin: Event →
+  supports (`transfer_plan_evidence.measure_id`). Since 2026-11-08 the evidence types are
+  exactly the five the brief names (an example of what I did differently, a completed work
+  product or process, a manager's or stakeholder's confirmation, a relevant organisational
+  measure, a case example; migration `20261108211500_evidence_types_brief` folded the earlier
+  "process", "customer feedback" and "other" rows into the nearest of them), and each item says
+  whether it is self-reported or supported by another source. Routes: `PUT …/actions/:id/measures` (choice plus definitions); every save is audited.
+  **Decision 2026-11-09: no actual results are recorded.** The "Record a result" button, its
+  dialog and the results route left; what happened is told by the evidence and the follow-ups.
+  The result records and the measure's latest-result columns stay in the schema, empty, until a
+  decision to drop them. Admin: Event →
   Transfer Planning → "Business measures" shows overview tiles, a register with one row per
   measure (and one per action without a measure), the detail of a measure with every result in
   date order and its evidence, and filters for no result / result / updated results / supported
@@ -608,34 +630,40 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   (`actionSubmissionGaps`; 422 `plan_incomplete` with the gaps by action; the form lists them
   under the submit button). The measure, baseline, evidence description and review date columns
   stay in the data but left the card: measures and evidence have their own records.
-- Several Transfer Plans per delegate, reminder windows and completion (task of 2026-11-06;
-  backlog E9-2 revised, E10-1 to E10-5, E10-8, E10-9): a delegate may keep more than one plan for
-  an event. The first is created on first access; `POST /me/events/:id/transfer-plans`
-  (optional title) adds the next, numbered in order, and every delegate route takes the plan id
-  (`/me/events/:id/transfer-plans/:planId...`). **Decision 2026-11-07 (evening): the delegate's
-  screens follow section 9 of the brief, one Individual Transfer Plan per delegate**, begun on
-  Day 1, reopened on Day 2 and submitted once the final Transfer Planning session has started;
-  "more" means more actions in that plan, with one first priority among them. The "Start another
-  plan" entry was removed from the delegate's page; the route stays for the organisers' tooling.
-  A per-day model built earlier that day (one plan per conference day, then any number per day,
-  submitted together on the last day with a priority plan) was taken out again the same evening
-  before it reached any database but the test one; its two migrations were deleted rather than
-  reversed. Reminders are
-  set per plan: frequency none / daily / every other day / twice a week (two chosen weekdays) /
-  weekly / every two weeks / monthly, a time of day in the event's timezone, a start date and an
-  end date. `nextReminderAfter` in `packages/shared` works the next send out from the start date
-  (so a weekly reminder keeps its weekday), never after the end date; the worker job sends what is
-  due every 15 minutes, logs each attempt with its `kind`, and in the last seven days of a window
-  sends the "last days" variant that asks the delegate to complete the plan or extend the
-  reminders (a later end date). A submitted plan is **completed** (`POST .../complete`) only when
+- One Transfer Plan per delegate, reminders per action and completion (task of 2026-11-06,
+  revised 2026-11-11; backlog E9-2, E10-1 to E10-5, E10-8, E10-9): the plan is created on first
+  access and every delegate route takes its id (`/me/events/:id/transfer-plans/:planId...`).
+  Between 2026-11-06 and 2026-11-11 a delegate could add further plans
+  (`POST /me/events/:id/transfer-plans`); **decision 2026-11-11: one plan per delegate and
+  event, no other is created**, the route left, `sequence` stays at 1 and the organisers' list
+  shows one row per delegate. (Decision 2026-11-07 (evening) had already taken "Start another
+  plan" off the delegate's page: section 9 of the brief, one Individual Transfer Plan, begun on
+  Day 1, reopened on Day 2 and submitted when the delegate is ready; "more" means more actions
+  in that plan, with one first priority among them. A per-day model built earlier that day was
+  taken out the same evening before it reached any database but the test one; its two migrations
+  were deleted rather than reversed.) **Reminders belong to each action (decision 2026-11-11)**:
+  on every action card the delegate sets frequency none / daily / every other day / twice a week
+  (two chosen weekdays) / weekly / every two weeks / monthly, a time of day in the event's
+  timezone, a start date and an end date (`transfer_plan_action.reminder_*` and
+  `next_reminder_at`; migration `20261111080000_reminders_per_action` moves the plan-level
+  preference onto the unfinished actions and drops the plan columns). A reminder only reminds:
+  the email names the action, its first step and target date, asks for nothing, carries no form,
+  and says the delegate can go to the platform to update where the action stands, its measures
+  and evidence whenever they wish. No reminder is sent for an action recorded as completed,
+  applied or applied consistently, nor for a completed plan. `nextReminderAfter` in
+  `packages/shared` works the next send out from the start date (so a weekly reminder keeps its
+  weekday), never after the end date; the worker job sends what is due every 15 minutes and logs
+  each attempt against the action (`transfer_plan_reminder_log.action_id`); the "last days"
+  variant and the skipped occurrences of 2026-11-09 are gone. A submitted plan is **completed**
+  (`POST .../complete`) only when
   every written action has a result (a measure with an actual value, or results on a progress
   record) and at least one evidence record; `planCompletionGaps` lists what is missing and the
   delegate page shows it. Completion freezes the plan (saves, progress, measures and evidence are
   refused with 409 `plan_completed`), stops its reminders, is audited as `transfer_plan.completed`
   and emails every active admin (`renderTransferPlanCompleted`: delegate, plan name, action
-  count, link; never the plan's text). Reports count delegates, not plans: a delegate with any
-  submitted or completed plan counts as submitted. The organisers' list shows one row per plan
-  with its name; the detail takes `?plan=<id>` and otherwise shows the delegate's latest.
+  count, link; never the plan's text). Reports count delegates, not plans. The organisers' list
+  shows one row per delegate with the plan's name and how many actions carry a reminder; the
+  detail takes `?plan=<id>` and otherwise shows the delegate's plan.
   Migration `20261106200223_transfer_plans_many_and_reminder_window` adds `sequence`, `title`,
   `completed_at`, `reminder_end_on`, `reminder_time`, `reminder_days` and the status
   `completed`, and replaces the one-plan-per-delegate key with (event, delegate, sequence).
@@ -644,8 +672,8 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   not impact. `POST .../complete` now needs every written action recorded as applied, applied
   consistently or completed, with evidence (`planCompletionGaps`); an action marked no longer
   applicable is left out. The delegate says at the same time whether a measurable improvement has
-  been seen (`improvement: seen | not_yet`, plus a note); "seen" is refused with 422
-  `result_missing` unless some action carries a recorded result (`planHasResult`). The plan's
+  been seen (`improvement: seen | not_yet`, plus a note); since 2026-11-09 "seen" stands on the
+  evidence recorded on the actions and is labelled self-reported (no result is recorded). The plan's
   `outcome` becomes `applied` (no measurable improvement yet) or `impact_demonstrated`; the
   platform never promotes a plan on its own. An impact check (`transfer_plan_impact_check`) falls
   due `IMPACT_CHECK_DAYS` (90) later: the worker emails the delegate once
@@ -678,8 +706,8 @@ Every enabled assessment stage carries questions that delegates answer (decided 
 - One Transfer plans tab, the plans as tabs inside it (task of 2026-11-07): the delegate event
   page keeps a single "Transfer plans" tab after Session feedback; within it a second strip
   names each plan as the delegate named it ("Plan 1", "Coaching rollout") with its status or a
-  waiting impact check, and the chosen plan's page sits beneath (`TransferPlansTabs`). "Start
-  another plan" creates the next and selects it. The address names the chosen plan
+  waiting impact check, and the chosen plan's page sits beneath (`TransferPlansTabs`). Since
+  2026-11-11 there is one plan, so the strip has one entry. The address names the chosen plan
   (`#transfer-plan-<id>`) so a reload keeps it; plain `#transfer-plan` (reminder emails, the
   dashboard, the QR code) lands on the plan to act on: the first not completed, else the latest.
   The plan list is loaded once by the page (`useMyTransferPlans`) and each plan page shows one
@@ -693,9 +721,10 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   measures, 1 with a result", "No evidence yet"), a tick once answered well enough to count,
   and the one button that answers it; the progress history, measures and evidence are listed
   beneath. The
-  completion gap list carries a button per gap that opens the right dialog on that action, the
-  "measurable improvement" warning offers "Record a result", and the reminders block says they
-  are for after the conference and send nothing until the start date.
+  completion gap list carries a button per gap that opens the right dialog on that action, and
+  each action's reminder block says it only reminds and sends nothing until the start date.
+  Since 2026-11-11 "Add a measure" and "Add evidence" are offered on an action before the plan
+  is saved: the plan is saved first, then the dialog opens on the stored action.
 - Session feedback follows the day's attendance (task of 2026-11-07): a delegate may answer a
   session's feedback when their attendance record for that session's date is attended or
   partial. A per-session check-in is no longer required; session attendance stays a separate
@@ -872,39 +901,66 @@ measures | evidence }`, the list replaced with ids kept; own actions only, 404 o
     https only, public addresses only (private, loopback, link-local, CGNAT and IPv4-mapped IPv6
     ranges all refused), image content types only, 2 MB cap, 4 s timeout, and every redirect hop
     re-checked. A logo that fails any of it is simply left out and the card falls back to type.
-- The follow-up programme (backlog E12; built 2026-11-03). The follow-up assessment now runs in
-  **waves**: 30, 60 and 90 days after the event's last day, with a longer-term one at about 180
-  days. A wave is a row of the same stage — `assessment_stage_config` gained `wave` and its key
-  widened to (event, stage, wave), migration `20261103200000_followup_waves` — so the question
-  engine, versioning, drafts, section-by-section submission, reports and the delegate journey all
-  serve a wave with no second form engine. Every URL that addressed a stage still works: the wave
-  is an optional `?wave=` and defaults to 1, which is what the three single-round stages are.
-  - **Schedule** (E12-1): `POST /events/:id/assessments/follow-ups` creates the waves asked for,
-    each dated `dueAfterDays` after the last day at 09:00 **in the event's zone**, open for 21
-    days, chasing non-responders weekly up to twice. Dates are a default, not a rule — an admin
-    moves any wave with the stage's own PUT. Waves are created **drafts and empty**: creating a
-    schedule emails nobody, and an enabled wave with no questions still cannot be opened. Repeating
-    the request adds nothing and changes nothing. `GET` returns each wave with its questions,
-    invitations sent and submissions — the response rate of E12-13.
-  - **Questions** (E12-4 to E12-6): ITTEC's approved Appendix A7 wording is seeded by `db:seed` as
-    that event's own editable data, 7 questions per wave. Another event enters its own, as for
-    every stage. **Not seeded:** the structured application question proposed for the reported
-    application rate ("Have you applied learning from ITTEC at least once in a real work
-    situation?"), because Appendix A7 marks it _proposed, confirm with M.Bryan_; and the 180-day
-    wave's questions, which the appendix says M.Bryan has still to supply. That wave is created
-    empty and cannot open until it has them (E12-7 is P2 by design).
-  - **Invitations** (E12-14): the worker job `follow-up-invitations` runs every 15 minutes. Once a
-    wave's opening time has passed it invites every eligible delegate once, then chases whoever has
-    not submitted every `reminder_after_days` up to `reminder_limit` times. Each send is a row in
-    `assessment_invitation`, written **before** the email: that row is the lock, so a crash
-    part-way through a batch cannot email anyone twice. A wave that is a draft, disabled, closed or
-    without questions sends nothing. 200 emails a pass, so a large event spreads over several runs;
-    logs carry counts only, never an address.
-  - **The plan, shown not asked** (E12-2, E12-3): a follow-up wave carries the delegate's Transfer
-    Plan and their pre-conference "do differently" answer above its questions, read-only, with a
-    link to the plan tab to update progress. They answer about them; they never retype them.
-  - Still to come in E12: nothing of the three waves. The longer-term wave waits on its questions,
-    and the application-rate question waits on confirmation.
+- The Transfer Plan post-conference follow-ups (backlog E12; built 2026-11-03, reshaped
+  2026-11-09). They are not a further assessment: each follow-up asks the delegate where every
+  action of their Transfer Plan stands and what they have applied. They run in **waves**, each a
+  row of the `follow_up` stage (`assessment_stage_config.wave`, key (event, stage, wave),
+  migration `20261103200000_followup_waves`), so the question engine, versioning, drafts,
+  section-by-section submission, reports and the delegate journey all serve a wave with no second
+  form engine. Every URL that addressed a stage still works: the wave is an optional `?wave=` and
+  defaults to 1.
+  - **Windows** (E12-1; decision 2026-11-09): `POST /events/:id/assessments/follow-ups` creates
+    the waves asked for, each with a default window in the event's zone: the 30-day follow-up
+    covers days 1 to 30 after the last day, the 60-day one days 31 to 60, the 90-day one days 61
+    to 90, and the longer-term one day 91 onwards with no end (`defaultWaveWindow`). The windows
+    are a default: the organisers set when each follow-up starts and ends on its card (the
+    stage's own PUT with `?wave=`). Waves are created **drafts and empty**: creating a schedule
+    emails nobody, and an enabled wave with no questions cannot be opened. Repeating the request
+    adds nothing and changes nothing. `GET` returns each wave with its questions, invitations
+    sent and submissions (E12-13).
+  - **Sent by the organisers, by hand or at a time they set** (decision 2026-11-09, later the
+    same day): nothing about a follow-up is sent until the organisers decide. On the Transfer
+    plans tab each wave has "Schedule the sending" (`PUT
+/events/:id/assessments/follow-ups/:wave/schedule` `{ inviteAt }`, migration
+    `20261109075500_follow_up_invite_at`; the worker job `follow-up-invitations`, every five
+    minutes, sends the invitation once the time has passed and the wave is enabled, scheduled or
+    open with questions, stamping `invites_sent_at` first so it never sends twice), "Send the
+    invitation" (`POST
+/events/:id/assessments/follow-ups/:wave/invitations`: every eligible delegate not yet
+    invited, once, idempotent through `assessment_invitation`) and "Remind those who have not
+    answered" (`.../reminders`: every invited delegate without a submission, one more reminder
+    each click). A draft, disabled, closed or question-less wave cannot be sent (409
+    `follow_up_not_ready`). **A delegate sees a follow-up only once sent it:** `GET
+/me/events/:id/assessments` and the journey list it only with a sent invitation, and the
+    answer and status routes refuse otherwise (409 `not_invited`).
+  - **Reminders** (decision 2026-11-09, revised 2026-11-11): the delegate's Transfer Plan
+    reminders carry no follow-up and ask for nothing. Since 2026-11-11 each action has its own
+    reminder, which names the action and says the delegate can go to the platform to update it;
+    it is never sent for an action recorded as completed, applied or applied consistently, and
+    stops at the action's end date. (Between 2026-11-09 and 2026-11-11 one reminder per plan
+    listed every action with its status and age and skipped an occurrence when every status was
+    fresh.)
+  - **Questions** (E12-4 to E12-6): ITTEC's approved Appendix A7 wording is seeded by `db:seed`
+    as that event's own editable data, 7 questions per wave. Another event enters its own.
+    **Not seeded:** the proposed application-rate question (Appendix A7 marks it _confirm with
+    M.Bryan_) and the longer-term wave's questions, which M.Bryan has still to supply (E12-7).
+  - **The plans, shown not asked** (E12-2, E12-3): a wave shows every open plan of the delegate
+    (not completed ones; 2026-11-09, before that only the latest plan) and their pre-conference
+    "do differently" answer above its questions, then asks one status per written action across
+    those plans (see "Progress through the follow-ups"), then its questions. Empty action cards
+    are left out. `context.plan` carries `plans` and each action's `planId`/`planTitle`. Every submitted
+    follow-up's statuses are recorded and shown under each action on the plan page.
+  - **Where it lives** (2026-11-09): for delegates, each follow-up is a tab of its own after the
+    event and the Transfer plans tab lists them all with where each stands; for the organisers,
+    one card per follow-up on the Transfer plans tab under "Post-conference follow-ups": its
+    name, a one-line state (still being prepared / not sent yet / sends automatically on … /
+    open to delegates, sent … / closed), its questions, and its sending (schedule, send now,
+    remind, close or reopen). **Sending opens the follow-up** (`enabled`, status `open`, no
+    window); the card has no dates, status, audience or "enabled" setting of its own, and a
+    follow-up stays open until `POST .../follow-ups/:wave/close` (`/reopen` undoes it).
+    Below the cards, every delegate's responses in one place (`GET
+/events/:id/follow-up-responses`, with `eligible`). The Assessment configuration tab keeps
+    the three assessment stages only.
 - Privacy notice and consent (backlog E3-7, brief section 6.4; built 2026-11-03). The approved
   wording is **data, not code**: migration `20261103100000_consent_notice` creates
   `consent_notice` and seeds version `v1`, so M.Bryan revises it without a deploy and an
@@ -1051,6 +1107,10 @@ measures | evidence }`, the list replaced with ids kept; own actions only, 404 o
   configuration. The event page's tabs are Event profile, Event dates, Sessions and schedule,
   Assessment configuration, Review and publication and Delegates (the delegate table and the
   messages sent to them).
+- Organisation shown and searched (2026-11-12): a delegate with no organisation on their
+  registration is listed, searched and addressed in messages under their nominating
+  organisation; one with an organisation of their own is never found through the nominating
+  one. The record is not changed (`apps/api/src/lib/organisation.ts`).
 - Export (E5-10, 2026-10-30): `GET .../assessments/:stage/responses.csv` downloads the
   submitted responses, one row per delegate (name, email, organisation, job title, country,
   attendance format, capacity, submitted at in UTC) and one column per active question with
@@ -1065,6 +1125,31 @@ measures | evidence }`, the list replaced with ids kept; own actions only, 404 o
 - Migrations `20261031120000_assessment_questions` (`assessment_question`,
   `assessment_response`, `assessment_answer`) and `20261031180000_question_scoring`
   (`assessment_answer.correct`, `score`).
+
+## Delegates added and corrected by hand (decision 2026-11-12, backlog E2-4)
+
+From the event's Delegates tab an admin can add one delegate without a file and edit any row.
+
+- `POST /api/v1/events/:eventId/delegates` (admin only; body: name, email, organisation,
+  nominating organisation, job title, country, attendance format, capacity, status active or
+  pending). The person is matched by normalised email under the import rules (D5): an unknown
+  address creates an identity and its current address (`identity.created`, evidence
+  `admin_decision`); a current address of a known person links the registration to them when
+  the name is theirs (`identity.linked`); a previous or provisional address, another name on a
+  known address, a deactivated account, a second registration of the person in the event and an
+  archived event are refused with 409 (`email_not_current`, `name_mismatch`,
+  `account_inactive`, `registration_exists`, `event_archived`). The registration carries
+  `registration_source = manual` and no external id, so a later import of the same address
+  updates it in place instead of duplicating it. `delegate.created` is audited with ids only.
+  Nothing is emailed: the invitation is sent from the tab as for an imported delegate.
+- `PATCH /api/v1/delegates/:id` (E2-4) now also takes `nominatingOrganisation`; the edit form
+  sends only the fields that changed and the audit entry keeps old and new values. The email is
+  not editable: it changes only through the identity email-change workflow (E2-12). Duplicate
+  and test statuses are shown read-only in the form; they are set by imports and the selection
+  bar.
+- Screens: "Add a delegate" above the table and a pencil on every row open one dialog
+  (`apps/web/src/components/admin/delegate-form.tsx`), phone-first, with the server's refusal
+  shown as written.
 
 ## Messages to delegates (Increment 1b, backlog E2-14)
 

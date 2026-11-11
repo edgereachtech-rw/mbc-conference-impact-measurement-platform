@@ -23,6 +23,7 @@ function request(partial: Partial<SupportRequestView> = {}): SupportRequestView 
       organisation: 'First City Monument Bank',
     },
     source: 'follow_up',
+    kind: 'support',
     context: '30-day follow-up',
     action: 'Introduce a tracking process',
     request: 'An introduction to the HR director.',
@@ -55,7 +56,7 @@ describe('SupportManager', () => {
           addressedAt: '2026-12-16T10:00:00.000Z',
         }),
       ],
-      counts: { open: 1, addressed: 1 },
+      counts: { open: 1, addressed: 1, openSupport: 1, openBarriers: 0 },
       barriers: [{ text: 'HR has not agreed the time.', count: 2 }],
     };
     const calls: Array<{ url: string; init?: RequestInit }> = [];
@@ -78,7 +79,7 @@ describe('SupportManager', () => {
                   }
                 : r,
             ),
-            counts: { open: 0, addressed: 2 },
+            counts: { open: 0, addressed: 2, openSupport: 0, openBarriers: 0 },
           };
           return json({ request: current.requests[0] });
         }
@@ -95,8 +96,8 @@ describe('SupportManager', () => {
     expect(items[0]!.textContent).toMatch(/Dee Legate · First City Monument Bank/);
     expect(items[0]!.textContent).toMatch(/30-day follow-up · From a follow-up answer/);
     expect(items[0]!.textContent).toMatch(/Action: Introduce a tracking process/);
-    expect(items[0]!.textContent).toMatch(/Barrier: HR has not agreed the time\./);
-    expect(screen.getByText('Open requests').parentElement?.textContent).toMatch(/1/);
+    expect(items[0]!.textContent).toMatch(/Barrier named with it: HR has not agreed the time\./);
+    expect(screen.getByText('Open support requests').parentElement?.textContent).toMatch(/1/);
     expect(
       within(screen.getByRole('list', { name: 'Barriers' })).getByText(/2 delegates/),
     ).toBeTruthy();
@@ -121,6 +122,6 @@ describe('SupportManager', () => {
       actionTaken: 'Call arranged for Friday.',
     });
     expect((await screen.findByRole('status')).textContent).toMatch(/marked addressed/);
-    await vi.waitFor(() => expect(screen.getByText(/No open request/)).toBeTruthy());
+    await vi.waitFor(() => expect(screen.getByText(/Nothing open/)).toBeTruthy());
   });
 });

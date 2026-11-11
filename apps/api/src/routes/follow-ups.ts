@@ -1,17 +1,22 @@
 import {
-  defaultWaveOpensAt,
+  defaultWaveWindow,
+  followUpInviteScheduleSchema,
   followUpScheduleRequestSchema,
   followUpWaveOf,
-  FOLLOW_UP_OPEN_DAYS,
-  FOLLOW_UP_REMINDER_AFTER_DAYS,
-  FOLLOW_UP_REMINDER_LIMIT,
   waveLabel,
+  type FollowUpOverview,
+  type FollowUpOverviewRow,
   type FollowUpWaveView,
 } from '@mbc/shared';
 import { Router, type Response } from 'express';
+import type { z } from 'zod';
 
 import type { AuthConfig } from '../auth/config.js';
 import { clientOf, principalOf, type createAuthMiddleware } from '../auth/middleware.js';
+import type { Logger } from '../lib/logger.js';
+import type { MailConfig } from '../mail/config.js';
+import type { Mailer } from '../mail/mailer.js';
+import { sendFollowUpEmails } from '../reminders/follow-ups.js';
 import { canConfigureEvents, EVENT_SETUP_ROLES } from '../auth/policies.js';
 import type { PrismaClient } from '../db.js';
 import { audit } from '../lib/audit.js';
@@ -22,26 +27,38 @@ import { validate } from '../lib/validate.js';
 interface Deps {
   prisma: () => PrismaClient;
   config: AuthConfig;
+  mailConfig: () => MailConfig;
+  mailer: () => Mailer;
   middleware: ReturnType<typeof createAuthMiddleware>;
+  logger: Logger;
   now?: () => Date;
 }
 
 const isoDate = (d: Date) => d.toISOString().slice(0, 10);
 
 /**
- * The follow-up schedule (backlog E12-1, E12-13).
+ * The Transfer Plan post-conference follow-ups (backlog E12-1, E12-13; decision 2026-11-09).
  *
- * A follow-up wave is a round of the follow-up assessment: one row of the stage with its own
- * dates, its own questions and its own invitations. Creating the schedule gives each wave a
- * default opening date — 30, 60 and 90 days after the event's last day, at 09:00 in the event's
- * zone — and leaves it a draft for the admin to review and move; the dates are a default, never
- * a rule.
+ * A follow-up wave is one row of the `follow_up` stage with its own window, questions,
+ * invitations and answers. Creating the schedule gives each wave a default window — days 1 to
+ * 30, 31 to 60 and 61 to 90 after the event's last day, the longer-term one from day 91 with no
+ * end — and leaves it a draft for the admin to review and move; the windows are a default, never
+ * a rule. The delegate's own Transfer Plan reminders point at whichever wave is current, so no
+ * chaser is configured by default; an admin may still add one on the wave's card.
  *
  * Waves are created **empty**: the questions are the event's own content, as for every other
  * stage, and an enabled wave with no questions cannot be scheduled or opened. ITTEC's approved
  * follow-up wording is loaded into its waves by `db:seed` as that event's data.
  */
-export function followUpRouter({ prisma, middleware, now }: Deps): Router {
+export function followUpRouter({
+  prisma,
+  config,
+  mailConfig,
+  mailer,
+  middleware,
+  logger,
+  now,
+}: Deps): Router {
   const router = Router();
   const clock = now ?? (() => new Date());
   const guard = middleware.requireRole(...EVENT_SETUP_ROLES);
@@ -111,6 +128,8 @@ export function followUpRouter({ prisma, middleware, now }: Deps): Router {
       submitted: r._count.responses,
       reminderAfterDays: r.reminderAfterDays,
       reminderLimit: r.reminderLimit,
+      inviteAt: r.inviteAt?.toISOString() ?? null,
+      invitesSentAt: r.invitesSentAt?.toISOString() ?? null,
     }));
     return { waves, eligible: eligibleCount };
   }
@@ -141,12 +160,11 @@ export function followUpRouter({ prisma, middleware, now }: Deps): Router {
           for (const wave of create) {
             const definition = followUpWaveOf(wave);
             if (!definition) throw new HttpError(422, 'unknown_wave', 'Unknown follow-up wave.');
-            const opensAt = defaultWaveOpensAt(
+            const { opensAt, closesAt } = defaultWaveWindow(
               isoDate(event.endsOn),
-              definition.dueAfterDays,
+              wave,
               event.timezone,
             );
-            const closesAt = new Date(opensAt.getTime() + FOLLOW_UP_OPEN_DAYS * 86_400_000);
             await tx.assessmentStageConfig.create({
               data: {
                 eventId: event.id,
@@ -159,8 +177,9 @@ export function followUpRouter({ prisma, middleware, now }: Deps): Router {
                 status: 'draft',
                 opensAt,
                 closesAt,
-                reminderAfterDays: FOLLOW_UP_REMINDER_AFTER_DAYS,
-                reminderLimit: FOLLOW_UP_REMINDER_LIMIT,
+                // The delegate's own plan reminders do the chasing (2026-11-09).
+                reminderAfterDays: null,
+                reminderLimit: 0,
               },
             });
           }
@@ -170,7 +189,7 @@ export function followUpRouter({ prisma, middleware, now }: Deps): Router {
             entityId: event.id,
             eventId: event.id,
             actorUserId: principal.userId,
-            newValue: { waves: create, defaultOpenDays: FOLLOW_UP_OPEN_DAYS },
+            newValue: { waves: create },
             ...clientOf(res),
           });
         });
@@ -183,6 +202,234 @@ export function followUpRouter({ prisma, middleware, now }: Deps): Router {
       });
     },
   );
+
+  /**
+   * The organisers send a follow-up (decision 2026-11-09): the invitation to everyone eligible
+   * who has not had it, or a reminder to everyone invited who has not answered. Nothing is sent
+   * on its own; being sent the invitation is what shows the follow-up to a delegate. A draft,
+   * disabled or question-less wave cannot be sent.
+   */
+  for (const mode of ['invite', 'remind'] as const) {
+    router.post(
+      `/events/:eventId/assessments/follow-ups/:wave/${mode === 'invite' ? 'invitations' : 'reminders'}`,
+      guard,
+      async (req, res) => {
+        const principal = requireAdmin(res);
+        const event = await loadEvent(String(req.params.eventId), true);
+        const waveNumber = Number(req.params.wave);
+        const wave = Number.isInteger(waveNumber)
+          ? await prisma().assessmentStageConfig.findUnique({
+              where: {
+                eventId_stage_wave: { eventId: event.id, stage: 'follow_up', wave: waveNumber },
+              },
+              select: {
+                id: true,
+                status: true,
+                invitesSentAt: true,
+                _count: { select: { questions: { where: { retiredAt: null } } } },
+              },
+            })
+          : null;
+        if (!wave) throw new HttpError(404, 'not_found', 'Follow-up not found.');
+        // Sending is what opens a follow-up (card design of 2026-11-09): it only needs questions,
+        // and a follow-up the organisers closed stays closed until they reopen it.
+        if (wave._count.questions === 0) {
+          throw new HttpError(
+            409,
+            'follow_up_not_ready',
+            'Add questions to the follow-up before sending it.',
+          );
+        }
+        if (wave.status === 'closed') {
+          throw new HttpError(
+            409,
+            'follow_up_closed',
+            'This follow-up is closed to delegates. Reopen it before sending.',
+          );
+        }
+        const result = await sendFollowUpEmails(
+          {
+            prisma,
+            mailer: mailer(),
+            mailConfig: mailConfig(),
+            appUrl: config.appUrl,
+            logger,
+            now: clock,
+            allowTestRegistrations: config.allowTestRegistrations,
+          },
+          wave.id,
+          mode,
+        );
+        await audit(prisma(), {
+          action: mode === 'invite' ? 'follow_up.invitations_sent' : 'follow_up.reminders_sent',
+          entityType: 'assessment_stage_config',
+          entityId: wave.id,
+          eventId: event.id,
+          actorUserId: principal.userId,
+          newValue: { wave: waveNumber, ...result },
+          ...clientOf(res),
+        });
+        if (mode === 'invite') {
+          // Open to the delegates who were sent it, with no window of its own: it stays open
+          // until the organisers close it.
+          await prisma().assessmentStageConfig.update({
+            where: { id: wave.id },
+            data: {
+              enabled: true,
+              status: 'open',
+              opensAt: null,
+              closesAt: null,
+              ...(wave.invitesSentAt || result.sent === 0 ? {} : { invitesSentAt: clock() }),
+            },
+          });
+        }
+        res.json({ ...result, ...(await scheduleOf(event.id)) });
+      },
+    );
+  }
+
+  /** The organisers close a sent follow-up to delegates, or reopen it (card design 2026-11-09). */
+  for (const action of ['close', 'reopen'] as const) {
+    router.post(
+      `/events/:eventId/assessments/follow-ups/:wave/${action}`,
+      guard,
+      async (req, res) => {
+        const principal = requireAdmin(res);
+        const event = await loadEvent(String(req.params.eventId), true);
+        const waveNumber = Number(req.params.wave);
+        const wave = Number.isInteger(waveNumber)
+          ? await prisma().assessmentStageConfig.findUnique({
+              where: {
+                eventId_stage_wave: { eventId: event.id, stage: 'follow_up', wave: waveNumber },
+              },
+              select: { id: true },
+            })
+          : null;
+        if (!wave) throw new HttpError(404, 'not_found', 'Follow-up not found.');
+        await prisma().$transaction(async (tx) => {
+          await tx.assessmentStageConfig.update({
+            where: { id: wave.id },
+            data: action === 'close' ? { status: 'closed' } : { status: 'open', enabled: true },
+          });
+          await audit(tx, {
+            action: action === 'close' ? 'follow_up.closed' : 'follow_up.reopened',
+            entityType: 'assessment_stage_config',
+            entityId: wave.id,
+            eventId: event.id,
+            actorUserId: principal.userId,
+            newValue: { wave: waveNumber },
+            ...clientOf(res),
+          });
+        });
+        res.json(await scheduleOf(event.id));
+      },
+    );
+  }
+
+  /**
+   * When the invitation should go out by itself (2026-11-09): the worker job sends it once the
+   * time has passed and the wave is ready; null means by hand only. Changing the time after it
+   * was sent does not send again.
+   */
+  router.put(
+    '/events/:eventId/assessments/follow-ups/:wave/schedule',
+    guard,
+    validate(followUpInviteScheduleSchema),
+    async (req, res) => {
+      const principal = requireAdmin(res);
+      const event = await loadEvent(String(req.params.eventId), true);
+      const waveNumber = Number(req.params.wave);
+      const input = req.body as z.infer<typeof followUpInviteScheduleSchema>;
+      const wave = Number.isInteger(waveNumber)
+        ? await prisma().assessmentStageConfig.findUnique({
+            where: {
+              eventId_stage_wave: { eventId: event.id, stage: 'follow_up', wave: waveNumber },
+            },
+            select: { id: true },
+          })
+        : null;
+      if (!wave) throw new HttpError(404, 'not_found', 'Follow-up not found.');
+      await prisma().$transaction(async (tx) => {
+        await tx.assessmentStageConfig.update({
+          where: { id: wave.id },
+          data: { inviteAt: input.inviteAt ? new Date(input.inviteAt) : null },
+        });
+        await audit(tx, {
+          action: 'follow_up.invitation_scheduled',
+          entityType: 'assessment_stage_config',
+          entityId: wave.id,
+          eventId: event.id,
+          actorUserId: principal.userId,
+          newValue: { wave: waveNumber, inviteAt: input.inviteAt },
+          ...clientOf(res),
+        });
+      });
+      res.json(await scheduleOf(event.id));
+    },
+  );
+
+  /**
+   * Every delegate's follow-up responses in one place (decision 2026-11-09): one row per counted
+   * delegate, one entry per wave they have started or submitted, with the number of planned
+   * actions whose status that wave recorded. Answers themselves stay on each wave's page.
+   */
+  router.get('/events/:eventId/follow-up-responses', guard, async (req, res) => {
+    requireAdmin(res);
+    const event = await loadEvent(String(req.params.eventId), false);
+    const { waves, eligible } = await scheduleOf(event.id);
+    const flag = await prisma().event.findUnique({
+      where: { id: event.id },
+      select: { countTestDelegates: true },
+    });
+    const counted = figureStatuses(flag ?? { countTestDelegates: false });
+    const waveById = new Map(waves.map((w) => [w.id, w.wave]));
+    const [delegates, responses, statuses] = await Promise.all([
+      prisma().delegate.findMany({
+        where: { eventId: event.id, registrationStatus: { in: [...counted] } },
+        select: { id: true, name: true, organisation: true },
+        orderBy: { name: 'asc' },
+      }),
+      prisma().assessmentResponse.findMany({
+        where: { stageConfigId: { in: waves.map((w) => w.id) } },
+        select: { stageConfigId: true, delegateId: true, submittedAt: true, updatedAt: true },
+      }),
+      prisma().transferPlanProgress.groupBy({
+        by: ['followUpWave', 'actionId'],
+        where: { followUpWave: { not: null }, action: { plan: { eventId: event.id } } },
+        _count: { _all: true },
+      }),
+    ]);
+    // Statuses recorded per wave per plan owner: joined through the action's plan.
+    const actionOwners = await prisma().transferPlanAction.findMany({
+      where: { id: { in: statuses.map((s) => s.actionId) } },
+      select: { id: true, plan: { select: { delegateId: true } } },
+    });
+    const ownerOf = new Map(actionOwners.map((a) => [a.id, a.plan.delegateId]));
+    const statusCount = new Map<string, number>();
+    for (const s of statuses) {
+      const owner = ownerOf.get(s.actionId);
+      if (!owner || s.followUpWave === null) continue;
+      const key = `${owner}:${s.followUpWave}`;
+      statusCount.set(key, (statusCount.get(key) ?? 0) + 1);
+    }
+    const rows: FollowUpOverviewRow[] = delegates.map((d) => {
+      const mine: FollowUpOverviewRow['responses'] = {};
+      for (const r of responses) {
+        if (r.delegateId !== d.id) continue;
+        const wave = waveById.get(r.stageConfigId);
+        if (wave === undefined) continue;
+        mine[String(wave)] = {
+          state: r.submittedAt ? 'submitted' : 'started',
+          submittedAt: r.submittedAt?.toISOString() ?? null,
+          updatedAt: r.updatedAt.toISOString(),
+          statuses: statusCount.get(`${d.id}:${wave}`) ?? 0,
+        };
+      }
+      return { delegateId: d.id, name: d.name, organisation: d.organisation, responses: mine };
+    });
+    const overview: FollowUpOverview = { waves, rows, eligible };
+    res.json(overview);
+  });
 
   return router;
 }

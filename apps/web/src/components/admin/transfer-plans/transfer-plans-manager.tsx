@@ -135,7 +135,7 @@ export function TransferPlansManager({ event }: TransferPlansManagerProps) {
     0,
   );
   const actions = list.plans.reduce((n, p) => n + p.actions, 0);
-  const reminders = list.plans.filter((p) => p.reminderFrequency !== 'none').length;
+  const reminders = list.plans.filter((p) => p.remindersOn > 0).length;
   const withResult = list.plans.reduce((n, p) => n + (p.measures?.with_result ?? 0), 0);
   const needle = search.trim().toLowerCase();
   const rows = list.plans.filter((p) => {
@@ -166,7 +166,7 @@ export function TransferPlansManager({ event }: TransferPlansManagerProps) {
       ...actionProgressStatuses.map((s) => actionProgressLabels[s]),
       ...measureSummaries.map((s) => `Actions: ${measureSummaryLabels[s].toLowerCase()}`),
       ...evidenceSupports.map((s) => `Evidence ${evidenceSupportLabels[s].toLowerCase()}`),
-      'Reminders',
+      'Actions with a reminder',
       'Updated at',
     ];
     // Counts stay numbers so the spreadsheet can total and chart them without retyping.
@@ -182,7 +182,7 @@ export function TransferPlansManager({ event }: TransferPlansManagerProps) {
       ...actionProgressStatuses.map((s) => p.progress[s] ?? 0),
       ...measureSummaries.map((s) => p.measures?.[s] ?? 0),
       ...evidenceSupports.map((s) => p.evidence?.[s] ?? 0),
-      reminderFrequencyLabels[p.reminderFrequency],
+      p.remindersOn,
       p.updatedAt,
     ]);
     setExportProblem(null);
@@ -216,7 +216,11 @@ export function TransferPlansManager({ event }: TransferPlansManagerProps) {
           value={applied}
           hint={`of ${actions} planned actions, in their latest status`}
         />
-        <StatTile label="Reminders on" value={reminders} hint="Delegates who asked for reminders" />
+        <StatTile
+          label="Reminders on"
+          value={reminders}
+          hint="Delegates with a reminder on at least one action"
+        />
         <StatTile
           label="Actions with a result"
           value={withResult}
@@ -402,7 +406,9 @@ export function TransferPlansManager({ event }: TransferPlansManagerProps) {
                       </p>
                     </td>
                     <td className="px-4 py-2 text-corp-text">
-                      {reminderFrequencyLabels[p.reminderFrequency]}
+                      {p.remindersOn === 0
+                        ? 'None'
+                        : `On ${p.remindersOn} action${p.remindersOn === 1 ? '' : 's'}`}
                     </td>
                     <td className="px-4 py-2 text-xs text-corp-muted">
                       {formatInstant(p.updatedAt, event.timezone)}
@@ -676,14 +682,8 @@ function PlanDialog({
           <section aria-label="Reminders">
             <p className="font-semibold text-corp-ink">Reminders</p>
             <p className="text-corp-text">
-              {reminderFrequencyLabels[detail.plan.reminder.frequency]}
-              {detail.plan.reminder.startOn
-                ? ` from ${formatDateShort(detail.plan.reminder.startOn)}`
-                : ''}
-              {detail.plan.reminder.nextReminderAt
-                ? `; next ${formatInstant(detail.plan.reminder.nextReminderAt, timezone)}`
-                : ''}
-              . {detail.reminders.filter((r) => r.status === 'sent').length} sent.
+              Each action carries its own reminder, shown with the action above.{' '}
+              {detail.reminders.filter((r) => r.status === 'sent').length} sent.
             </p>
           </section>
 
@@ -725,9 +725,20 @@ function ActionSummary({
         {action.isPriority ? <StatusPill tone="positive">First priority</StatusPill> : null}
         <StatusPill tone="neutral">{actionProgressLabels[action.progressStatus]}</StatusPill>
       </div>
+      {action.reminder && action.reminder.frequency !== 'none' ? (
+        <p className="text-xs text-corp-muted">
+          Reminder: {reminderFrequencyLabels[action.reminder.frequency]}
+          {action.reminder.startOn ? ` from ${formatDateShort(action.reminder.startOn)}` : ''}
+          {action.reminder.endOn ? ` until ${formatDateShort(action.reminder.endOn)}` : ''}
+          {action.reminder.nextReminderAt
+            ? `; next ${formatInstant(action.reminder.nextReminderAt, timezone)}`
+            : ''}
+          .
+        </p>
+      ) : null}
       <dl className="grid gap-x-4 gap-y-1 sm:grid-cols-2">
         {fields
-          .filter((f) => f !== 'action' && action[f])
+          .filter((f) => f !== 'action' && f !== 'measureStatus' && action[f])
           .map((f) => (
             <div key={f}>
               <dt className="text-xs text-corp-muted">{planActionFieldLabels[f].label}</dt>

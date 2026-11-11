@@ -8,12 +8,9 @@
  */
 import {
   assessmentStages,
-  defaultWaveOpensAt,
+  defaultWaveWindow,
   DEFAULT_FOLLOW_UP_WAVES,
   followUpWaveOf,
-  FOLLOW_UP_OPEN_DAYS,
-  FOLLOW_UP_REMINDER_AFTER_DAYS,
-  FOLLOW_UP_REMINDER_LIMIT,
 } from '@mbc/shared';
 
 import { seedReferenceQuestions } from './assessments/ittec-references.js';
@@ -127,14 +124,15 @@ export async function seed(prisma: PrismaClient, options: SeedOptions = {}): Pro
     );
     log(`end-of-conference evaluation: ${loaded.sections} sections, ${loaded.questions} questions`);
   }
-  // ITTEC's follow-up waves: 30, 60 and 90 days after the last day, each with its approved
-  // questions (Appendix A7). Drafts, with their dates defaulted, for M.Bryan to review and open;
-  // creating them emails nobody. The longer-term wave waits for its questions.
+  // ITTEC's Transfer Plan follow-ups: windows of days 1-30, 31-60 and 61-90 after the last day
+  // (decision 2026-11-09), each with its approved questions (Appendix A7). Drafts, with their
+  // windows defaulted, for M.Bryan to review and open; creating them emails nobody. The
+  // longer-term wave waits for its questions.
   for (const wave of DEFAULT_FOLLOW_UP_WAVES) {
     const definition = followUpWaveOf(wave)!;
-    const opensAt = defaultWaveOpensAt(
+    const { opensAt, closesAt } = defaultWaveWindow(
       event.endsOn.toISOString().slice(0, 10),
-      definition.dueAfterDays,
+      wave,
       event.timezone,
     );
     const row = await prisma.assessmentStageConfig.upsert({
@@ -145,9 +143,9 @@ export async function seed(prisma: PrismaClient, options: SeedOptions = {}): Pro
         wave,
         dueAfterDays: definition.dueAfterDays,
         opensAt,
-        closesAt: new Date(opensAt.getTime() + FOLLOW_UP_OPEN_DAYS * 86_400_000),
-        reminderAfterDays: FOLLOW_UP_REMINDER_AFTER_DAYS,
-        reminderLimit: FOLLOW_UP_REMINDER_LIMIT,
+        closesAt,
+        reminderAfterDays: null,
+        reminderLimit: 0,
       },
       update: {},
       include: { _count: { select: { questions: true } } },

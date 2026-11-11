@@ -1102,11 +1102,17 @@ function FollowUpContext({
             Your transfer plan
           </p>
           {plan.actions.length === 0 ? (
-            <p className="mt-1 text-sm text-corp-muted">Your plan has no actions recorded yet.</p>
+            <p className="mt-1 text-sm text-corp-muted">
+              None of your plans has a written action yet. Add your actions on the Transfer plans
+              tab; this follow-up then asks about them.
+            </p>
           ) : (
             <ol className="mt-1 space-y-1.5">
               {plan.actions.map((action) => (
                 <li key={action.id} className="text-sm text-corp-text">
+                  {plan.plans.length > 1 ? (
+                    <span className="text-corp-muted">{action.planTitle} · </span>
+                  ) : null}
                   {action.isPriority ? (
                     <span className="font-semibold text-corp-ink">First priority: </span>
                   ) : null}
@@ -1134,7 +1140,7 @@ function FollowUpContext({
             href={`/account/events/${eventId}#transfer-plan`}
             className="mt-2 inline-block text-sm font-semibold text-corp-green-text hover:underline"
           >
-            Open my plan
+            {plan.plans.length > 1 ? 'Open my plans' : 'Open my plan'}
           </Link>
         </div>
       ) : null}
@@ -1190,8 +1196,9 @@ function FollowUpActionStatuses({
   const [problem, setProblem] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const id = useId();
+  const several = plan.plans.length > 1;
   const nameOf = (a: AssessmentPlanSummary['actions'][number]) =>
-    a.title || a.action || `Action ${a.order}`;
+    `${several ? `${a.planTitle} · ` : ''}${a.title || a.action || `Action ${a.order}`}`;
 
   function update(actionId: string, patch: Partial<StatusDraft>) {
     setRows((r) => ({ ...r, [actionId]: { ...r[actionId]!, ...patch } }));
@@ -1218,7 +1225,6 @@ function FollowUpActionStatuses({
         {
           method: 'PUT',
           body: JSON.stringify({
-            planId: plan.id,
             actions: plan.actions.map((a) => ({
               actionId: a.id,
               status: rows[a.id]!.status,
@@ -1255,10 +1261,10 @@ function FollowUpActionStatuses({
         ) : null}
       </div>
       <p className="text-sm text-corp-text">
-        Choose one current status for each action of your plan. Started, in progress and completed
-        describe the action itself; if you have used the learning at work, say so with “applied” or
-        “applied consistently”. Each follow-up adds to the history on your plan; nothing is
-        overwritten.
+        Choose one current status for each action of your {several ? 'plans' : 'plan'}. Started, in
+        progress and completed describe the action itself; if you have used the learning at work,
+        say so with “applied” or “applied consistently”. Each follow-up adds to the history on your
+        plan; nothing is overwritten.
       </p>
       {problem ? (
         <p

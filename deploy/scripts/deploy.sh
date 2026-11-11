@@ -16,7 +16,16 @@ MIGRATE=1
 cd "$(dirname "$0")/.."
 [ -f .env ] || { echo "deploy/.env not found"; exit 1; }
 
-COMPOSE="docker compose -f docker-compose.yml"
+# The stack to run: the files COMPOSE_FILE names in .env (staging names
+# docker-compose.yml:docker-compose.staging.yml), else docker-compose.yml alone, never the
+# development override.
+FILES="$(grep '^COMPOSE_FILE=' .env | cut -d= -f2- || true)"
+if [ -n "$FILES" ]; then
+  export COMPOSE_FILE="$FILES"
+  COMPOSE="docker compose"
+else
+  COMPOSE="docker compose -f docker-compose.yml"
+fi
 
 set_env() {
   key="$1"; val="$2"

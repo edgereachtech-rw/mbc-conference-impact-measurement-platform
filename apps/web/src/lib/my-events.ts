@@ -122,8 +122,8 @@ export function journeyFor(event: Pick<MyEvent, 'startsOn' | 'endsOn'>): Journey
     ...conferenceSteps,
     {
       step: 'After',
-      title: 'Follow-ups at 30, 60, 90 and 180 days',
-      note: 'Scheduled by the organisers',
+      title: 'Transfer Plan follow-ups: 30, 60 and 90 days, then longer term',
+      note: 'Sent by the organisers when it is time',
     },
   ];
 }

@@ -70,6 +70,38 @@ export async function createRegisteredIdentity(
   return { identity, delegate };
 }
 
+/**
+ * Marks a follow-up wave as sent to a delegate (2026-11-09): the invitation row is what lets
+ * them see and answer it. Idempotent.
+ */
+export async function inviteToFollowUp(
+  prisma: PrismaClient,
+  stageConfigId: string,
+  delegateId: string,
+) {
+  const at = new Date();
+  await prisma.assessmentInvitation.upsert({
+    where: {
+      stageConfigId_delegateId_kind_sequence: {
+        stageConfigId,
+        delegateId,
+        kind: 'invitation',
+        sequence: 0,
+      },
+    },
+    update: { status: 'sent' },
+    create: {
+      stageConfigId,
+      delegateId,
+      kind: 'invitation',
+      sequence: 0,
+      scheduledFor: at,
+      sentAt: at,
+      status: 'sent',
+    },
+  });
+}
+
 /** Removes an identity created by createRegisteredIdentity once its registrations are gone. */
 export async function deleteIdentity(prisma: PrismaClient, identityId: string) {
   await prisma.identityEmail.deleteMany({ where: { identityId } });

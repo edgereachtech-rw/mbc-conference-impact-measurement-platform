@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { actionProgressStatuses, transferPlanStatuses } from './transfer-plans.js';
 
 import { assessmentStages, isoDateSchema, type AssessmentStage } from './events.js';
+import { supportFlags } from './support.js';
 
 /**
  * Assessment questions and responses (E1-4, E5/E11/E12 groundwork). Every enabled stage carries
@@ -93,6 +94,12 @@ export const questionFieldsSchema = z
     visibleWhen: z.enum(questionVisibilities).default('always'),
     /** Offer "I prefer not to answer" beside the question. */
     allowDecline: z.boolean().default(false),
+    /**
+     * How the answer feeds the Support page (decision 2026-11-09): a follow-up question flagged
+     * "support requested" raises a support request from each answer, one flagged "barrier"
+     * lists the answer as a barrier. Meaningful on the follow-up stage; stored on every question.
+     */
+    supportFlag: z.enum(supportFlags).default('none'),
   })
   .superRefine((q, ctx) => {
     const issue = (message: string, path: string[] = ['options']) =>
@@ -223,6 +230,7 @@ export const questionPatchSchema = z.object({
   showReferenceAnswer: z.boolean().optional(),
   visibleWhen: z.enum(questionVisibilities).optional(),
   allowDecline: z.boolean().optional(),
+  supportFlag: z.enum(supportFlags).optional(),
 });
 export type QuestionPatch = z.infer<typeof questionPatchSchema>;
 
@@ -268,6 +276,7 @@ const plainDisplay = {
   showReferenceAnswer: false,
   visibleWhen: 'always',
   allowDecline: false,
+  supportFlag: 'none',
 } satisfies Partial<QuestionFields>;
 const choice = (
   builtin: string,
@@ -370,6 +379,8 @@ export const assessmentQuestionViewSchema = z.object({
   showReferenceAnswer: z.boolean(),
   visibleWhen: z.enum(questionVisibilities),
   allowDecline: z.boolean(),
+  /** How the answer feeds the Support page (2026-11-09). */
+  supportFlag: z.enum(supportFlags),
   /** The earlier question's wording, for the builder; null when nothing is referenced. */
   referencePrompt: z.string().nullable().optional(),
 });
@@ -711,12 +722,29 @@ export const followUpProgressViewSchema = z.object({
 });
 export type FollowUpProgressView = z.infer<typeof followUpProgressViewSchema>;
 
+/**
+ * The delegate's open plans as a follow-up shows them (2026-11-09: every plan that is not
+ * completed, not only the latest). `id` and `status` are the latest plan's, kept for the
+ * single-plan readers; `plans` names each plan and every action says which plan it belongs to.
+ * Actions nothing has been written in are left out: there is nothing to report on them.
+ */
 export const assessmentPlanSummarySchema = z.object({
   id: z.uuid(),
   status: z.enum(transferPlanStatuses),
+  plans: z.array(
+    z.object({
+      id: z.uuid(),
+      sequence: z.number().int(),
+      /** What the delegate calls the plan, or "Plan n". */
+      title: z.string(),
+      status: z.enum(transferPlanStatuses),
+    }),
+  ),
   actions: z.array(
     z.object({
       id: z.uuid(),
+      planId: z.uuid(),
+      planTitle: z.string(),
       order: z.number().int(),
       title: z.string(),
       action: z.string(),

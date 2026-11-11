@@ -55,7 +55,8 @@ async function main() {
     appUrl: authConfigFromEnv().appUrl,
     logger,
   });
-  // Follow-up waves invite and chase on their own schedule (E12-14).
+  // Follow-up invitations go out when the organisers press "Send the invitation", or at the
+  // time they scheduled for a wave (decision 2026-11-09); this job sends the scheduled ones.
   await registerFollowUpInvitations({
     boss,
     prisma: () => getPrisma(),

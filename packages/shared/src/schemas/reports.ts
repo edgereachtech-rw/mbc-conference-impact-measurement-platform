@@ -624,7 +624,8 @@ export const journeySchema = z.object({
       measures: z.number().int(),
       withResult: z.number().int(),
       evidence: z.number().int(),
-      reminder: z.enum(reminderFrequencies),
+      /** Actions with a reminder switched on (per action since 2026-11-11), and the earliest next one. */
+      reminders: z.number().int(),
       nextReminderAt: z.string().nullable(),
       updatedAt: z.string(),
     })
