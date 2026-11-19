@@ -37,33 +37,33 @@ export function EventCard({ event }: { event: MyEvent }) {
       <dl className="grid gap-2 text-sm">
         <div className="flex items-start gap-2">
           <CalendarDaysIcon className="mt-0.5 size-4 shrink-0 text-corp-muted" aria-hidden="true" />
-          <div className="min-w-0">
+          {/* <div className="min-w-0">
             <dt className="sr-only">Dates</dt>
             <dd className="text-corp-text">{formatEventDates(event.startsOn, event.endsOn)}</dd>
-          </div>
+          </div> */}
         </div>
-        <div className="flex items-start gap-2">
-          <MapPinIcon className="mt-0.5 size-4 shrink-0 text-corp-muted" aria-hidden="true" />
-          <div className="min-w-0">
-            <dt className="sr-only">Where</dt>
-            {/* The venue wraps rather than truncating: on a phone the card is the only place a
+        {/* <div className="flex items-start gap-2"> */}
+        {/* <MapPinIcon className="mt-0.5 size-4 shrink-0 text-corp-muted" aria-hidden="true" /> */}
+        {/* <div className="min-w-0"> */}
+        {/* <dt className="sr-only">Where</dt> */}
+        {/* The venue wraps rather than truncating: on a phone the card is the only place a
                 delegate reads the full address. */}
-            <dd className="break-words text-corp-text">
+        {/* <dd className="break-words text-corp-text">
               {event.location ?? formatWhereLabel[event.format]}
-            </dd>
-          </div>
-        </div>
+            </dd> */}
+        {/* </div> */}
+        {/* </div> */}
       </dl>
       {/* Two rows at every width: the attendance line, then the button (2026-11-06). */}
       <div className="mt-auto flex flex-col gap-3 border-t border-corp-line pt-3 text-xs text-corp-muted">
-        <span>
+        {/* <span>
           Attendance:{' '}
           <span className="font-semibold text-corp-ink">
             {event.attendance.status === 'pending'
               ? 'not recorded'
               : overallAttendanceLabels[event.attendance.status]}
           </span>
-        </span>
+        </span> */}
         <Link
           href={`/account/events/${event.id}`}
           className={`${consoleButton({ variant: 'secondary', size: 'sm' })} w-full`}
