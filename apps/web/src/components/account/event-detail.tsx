@@ -9,6 +9,8 @@ import {
   stageLabelsFor,
 } from '@mbc/shared';
 
+import { useEffect } from 'react';
+
 import { StatusPill } from '@/components/admin/page-header';
 import { consoleButton, StatePanel } from '@/components/console/page';
 import { TabStrip, useTabState } from '@/components/console/tabs';
@@ -161,6 +163,16 @@ export function EventDetail({ event, contactEmail }: { event: MyEvent; contactEm
   const selectedPlanId = chosen.startsWith('transfer-plan-')
     ? (plans.find((p) => transferPlanTabId(p) === chosen)?.id ?? defaultPlan(plans))
     : defaultPlan(plans);
+  // A link from the dashboard, an email or a QR code lands on one section (2026-11-19): the
+  // page starts at its top rather than where the browser kept the scroll, and so does a tab
+  // chosen on the page.
+  useEffect(() => {
+    try {
+      window.scrollTo({ top: 0 });
+    } catch {
+      // A browser without scrolling (tests) changes nothing.
+    }
+  }, [tab]);
   const current = tabs.find((t) => t.id === tab) ?? STATIC.overview;
   const form = tab.startsWith('assessment-') ? forms.find((a) => assessmentTabId(a) === tab) : null;
   const day = tab.startsWith('reflection-') ? days.find((r) => reflectionTabId(r) === tab) : null;
