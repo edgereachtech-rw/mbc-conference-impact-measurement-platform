@@ -285,8 +285,7 @@ export function renderLayout(branding: EmailBranding, content: EmailContent): Re
           <tr>
             <td bgcolor="${colours.navyDeep}" style="background-color:${colours.navyDeep};padding:20px 32px;border-radius:0 0 16px 16px;" align="left">
               <p class="footer-text" style="margin:0 0 6px;font-family:${headingStack};font-size:12px;line-height:18px;letter-spacing:1.5px;text-transform:uppercase;color:${colours.darkMuted};">${escapeHtml(branding.eventName)}${branding.eventFullName ? ` &middot; ${escapeHtml(branding.eventFullName)}` : ''}</p>
-              ${branding.footerLine ? `<p class="footer-text" style="margin:0 0 6px;font-family:${fontStack};font-size:13px;line-height:20px;color:${colours.darkText};">${escapeHtml(branding.footerLine)}</p>` : ''}
-              <p class="footer-text" style="margin:0;font-family:${fontStack};font-size:13px;line-height:20px;color:${colours.darkText};">Questions? Write to <a href="mailto:${escapeHtml(branding.contactEmail)}" style="color:${colours.amber};text-decoration:underline;">${escapeHtml(branding.contactEmail)}</a></p>
+              <p class="footer-text" style="margin:0;font-family:${fontStack};font-size:13px;line-height:20px;color:${colours.darkText};">Questions? Write to <a href="mailto: support@mbryanconsultinggroup.com}" style="color:${colours.amber};text-decoration:underline;">${escapeHtml(branding.contactEmail)}</a></p>
               <p class="footer-text" style="margin:12px 0 0;font-family:${fontStack};font-size:12px;line-height:18px;color:${colours.darkMuted};">Sent by ${escapeHtml(branding.organiser)} to the email address you registered with.</p>
             </td>
           </tr>
