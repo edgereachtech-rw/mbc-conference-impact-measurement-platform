@@ -89,6 +89,9 @@ export const questionFieldsSchema = z
     scale: ratingScaleSchema.optional(),
     /** An earlier question of this event, by question key; see questionVisibilities. */
     referenceQuestionKey: z.uuid().nullable().optional(),
+    /** Reveal this question when an earlier question in the same assessment has a selected value. */
+    conditionalQuestionKey: z.uuid().nullable().optional(),
+    conditionalValues: z.array(z.string().min(1).max(100)).max(20).default([]),
     /** Show the delegate their own answer to that question above this one. */
     showReferenceAnswer: z.boolean().default(false),
     visibleWhen: z.enum(questionVisibilities).default('always'),
@@ -107,6 +110,14 @@ export const questionFieldsSchema = z
     // Showing an answer, or asking only some delegates, both need to know which answer.
     if (!q.referenceQuestionKey && (q.showReferenceAnswer || q.visibleWhen !== 'always')) {
       issue('Choose the earlier question this one refers to', ['referenceQuestionKey']);
+    }
+    if (q.conditionalQuestionKey && q.conditionalValues.length === 0) {
+      issue('Choose at least one answer that shows this question', ['conditionalValues']);
+    }
+    if (!q.conditionalQuestionKey && q.conditionalValues.length > 0) {
+      issue('Choose a question that controls when this question appears', [
+        'conditionalQuestionKey',
+      ]);
     }
     if (choiceTypes.includes(q.type)) {
       const options = q.options ?? [];
@@ -227,6 +238,8 @@ export const questionPatchSchema = z.object({
   options: z.array(questionOptionSchema).max(20).nullable().optional(),
   scale: ratingScaleSchema.nullable().optional(),
   referenceQuestionKey: z.uuid().nullable().optional(),
+  conditionalQuestionKey: z.uuid().nullable().optional(),
+  conditionalValues: z.array(z.string().min(1).max(100)).max(20).optional(),
   showReferenceAnswer: z.boolean().optional(),
   visibleWhen: z.enum(questionVisibilities).optional(),
   allowDecline: z.boolean().optional(),
@@ -352,6 +365,21 @@ export function questionIsVisible(
   return when === 'reference_answered' ? referenceAnswered : !referenceAnswered;
 }
 
+/** Whether a selected answer should reveal a dependent question in the same assessment. */
+export function answerMatchesCondition(
+  sourceType: QuestionType,
+  answer: unknown,
+  values: readonly string[],
+): boolean {
+  if (sourceType === 'yes_no') return values.includes(String(answer));
+  if (sourceType === 'multiple_choice') {
+    if (!answer || typeof answer !== 'object' || !('selected' in answer)) return false;
+    const selected = (answer as { selected?: unknown }).selected;
+    return Array.isArray(selected) && selected.some((value) => values.includes(String(value)));
+  }
+  return typeof answer === 'string' && values.includes(answer);
+}
+
 export const assessmentQuestionViewSchema = z.object({
   id: z.uuid(),
   /** Stable across versions; answers point at a version (`id`). */
@@ -376,6 +404,8 @@ export const assessmentQuestionViewSchema = z.object({
   builtin: z.string().nullable(),
   /** An earlier question of this event whose answer this one shows or depends on (10.5). */
   referenceQuestionKey: z.uuid().nullable(),
+  conditionalQuestionKey: z.uuid().nullable().optional(),
+  conditionalValues: z.array(z.string()).optional(),
   showReferenceAnswer: z.boolean(),
   visibleWhen: z.enum(questionVisibilities),
   allowDecline: z.boolean(),

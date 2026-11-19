@@ -1,6 +1,7 @@
 import {
   planTitleOf,
   waveLabel,
+  answerMatchesCondition,
   answerIssue,
   answerScore,
   assessmentStageNames,
@@ -105,6 +106,8 @@ export function questionViewOf(q: QuestionRow): AssessmentQuestionView {
     sourceQuestionKey: q.sourceQuestionKey,
     builtin: q.builtin,
     referenceQuestionKey: q.referenceQuestionKey,
+    conditionalQuestionKey: q.conditionalQuestionKey,
+    conditionalValues: q.conditionalValues,
     supportFlag: q.supportFlag,
     showReferenceAnswer: q.showReferenceAnswer,
     visibleWhen: q.visibleWhen,
@@ -606,6 +609,12 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
       const sectionId = await sectionFor(stage.id, input.sectionId);
       const order = await nextOrder(stage.id);
       await assertReferenceAllowed(stage, input.referenceQuestionKey ?? null);
+      await assertConditionAllowed(
+        stage.id,
+        order,
+        input.conditionalQuestionKey ?? null,
+        input.conditionalValues,
+      );
       const created = await prisma().$transaction(async (tx) => {
         const row = await tx.assessmentQuestion.create({
           data: {
@@ -624,6 +633,8 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
                 ? ((input.scale ?? { min: 1, max: 5 }) as Prisma.InputJsonValue)
                 : undefined,
             referenceQuestionKey: input.referenceQuestionKey ?? null,
+            conditionalQuestionKey: input.conditionalQuestionKey ?? null,
+            conditionalValues: input.conditionalValues,
             showReferenceAnswer: input.showReferenceAnswer,
             visibleWhen: input.visibleWhen,
             allowDecline: input.allowDecline,
@@ -681,6 +692,47 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
     }
   }
 
+  /** A conditional question must depend on an earlier choice in this exact assessment. */
+  async function assertConditionAllowed(
+    stageConfigId: string,
+    questionOrder: number,
+    questionKey: string | null,
+    values: string[],
+  ) {
+    if (!questionKey) return;
+    const source = await prisma().assessmentQuestion.findFirst({
+      where: { stageConfigId, questionKey, retiredAt: null, order: { lt: questionOrder } },
+      select: { type: true, options: true },
+    });
+    if (!source) {
+      throw new HttpError(
+        400,
+        'condition_not_earlier',
+        'Choose an earlier question from this assessment to control when this question appears.',
+      );
+    }
+    const available =
+      source.type === 'yes_no'
+        ? ['true', 'false']
+        : source.type === 'single_choice' || source.type === 'multiple_choice'
+          ? ((source.options as QuestionOption[] | null) ?? []).map((option) => option.value)
+          : [];
+    if (available.length === 0) {
+      throw new HttpError(
+        400,
+        'condition_not_choice',
+        'The controlling question must have answer options.',
+      );
+    }
+    if (values.length === 0 || values.some((value) => !available.includes(value))) {
+      throw new HttpError(
+        400,
+        'condition_value_invalid',
+        'Choose valid answers for this condition.',
+      );
+    }
+  }
+
   router.patch(
     '/events/:eventId/assessments/:stage/questions/:questionId',
     guard,
@@ -733,6 +785,11 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
             : patch.referenceQuestionKey,
         showReferenceAnswer: patch.showReferenceAnswer ?? current.showReferenceAnswer,
         visibleWhen: patch.visibleWhen ?? current.visibleWhen,
+        conditionalQuestionKey:
+          patch.conditionalQuestionKey === undefined
+            ? current.conditionalQuestionKey
+            : patch.conditionalQuestionKey,
+        conditionalValues: patch.conditionalValues ?? current.conditionalValues,
         allowDecline: patch.allowDecline ?? current.allowDecline,
         supportFlag: patch.supportFlag ?? current.supportFlag,
       });
@@ -745,6 +802,12 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
         );
       }
       await assertReferenceAllowed(stage, merged.data.referenceQuestionKey ?? null);
+      await assertConditionAllowed(
+        stage.id,
+        current.order,
+        merged.data.conditionalQuestionKey ?? null,
+        merged.data.conditionalValues,
+      );
       const data = {
         prompt: merged.data.prompt,
         helpText: merged.data.helpText ?? null,
@@ -754,6 +817,8 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
         referenceQuestionKey: merged.data.referenceQuestionKey ?? null,
         showReferenceAnswer: merged.data.showReferenceAnswer,
         visibleWhen: merged.data.visibleWhen,
+        conditionalQuestionKey: merged.data.conditionalQuestionKey ?? null,
+        conditionalValues: merged.data.conditionalValues,
         allowDecline: merged.data.allowDecline,
         supportFlag: merged.data.supportFlag,
         options: merged.data.options
@@ -1905,20 +1970,51 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
         );
       }
       const context = await contextFor(delegate.eventId, delegate.id);
-      const byId = new Map(
-        config.questions
-          .filter(
-            (q) =>
-              audienceAllows(q.section, delegate.attendanceFormat) &&
-              questionIsVisible(
-                q,
-                Boolean(
-                  q.referenceQuestionKey &&
-                  context.referenceAnswers.get(q.referenceQuestionKey)?.answer,
-                ),
-              ),
+      const eligibleQuestions = config.questions.filter(
+        (q) =>
+          audienceAllows(q.section, delegate.attendanceFormat) &&
+          questionIsVisible(
+            q,
+            Boolean(
+              q.referenceQuestionKey &&
+              context.referenceAnswers.get(q.referenceQuestionKey)?.answer,
+            ),
+          ),
+      );
+      const answerValues = new Map(
+        (existing?.answers ?? []).map((answer) => [answer.questionId, answer.value]),
+      );
+      for (const [questionId, value] of Object.entries(answers))
+        answerValues.set(questionId, value);
+      const eligibleIds = new Set<string>();
+      const byQuestionKey = new Map(
+        eligibleQuestions.map((question) => [question.questionKey, question]),
+      );
+      for (const question of [...eligibleQuestions].sort((a, b) => a.order - b.order)) {
+        if (!question.conditionalQuestionKey) {
+          eligibleIds.add(question.id);
+          continue;
+        }
+        const source = byQuestionKey.get(question.conditionalQuestionKey);
+        if (
+          source &&
+          eligibleIds.has(source.id) &&
+          answerMatchesCondition(
+            source.type,
+            answerValues.get(source.id),
+            question.conditionalValues,
           )
-          .map((q) => [q.id, questionViewOf(q)]),
+        ) {
+          eligibleIds.add(question.id);
+        }
+      }
+      const allById = new Map(
+        eligibleQuestions.map((question) => [question.id, questionViewOf(question)]),
+      );
+      const byId = new Map(
+        eligibleQuestions
+          .filter((question) => eligibleIds.has(question.id))
+          .map((question) => [question.id, questionViewOf(question)]),
       );
       // Sections are submitted one at a time (keyed by section id, or "general" for questions
       // outside any section); the response is submitted once every section with questions is.
@@ -1967,6 +2063,7 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
         if (kept.some((k) => k.questionId === questionId) || problems[questionId]) continue;
         const question = byId.get(questionId);
         if (!question) {
+          if (allById.has(questionId)) continue;
           problems[questionId] = 'This question is no longer part of the assessment.';
           continue;
         }

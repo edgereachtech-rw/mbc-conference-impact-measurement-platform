@@ -88,6 +88,8 @@ interface Draft {
   maxLabel: string;
   /** Requirement 10.5: the earlier question this one shows back or depends on. */
   referenceQuestionKey: string;
+  conditionalQuestionKey: string;
+  conditionalValues: string[];
   showReferenceAnswer: boolean;
   visibleWhen: QuestionVisibility;
   allowDecline: boolean;
@@ -126,6 +128,8 @@ const EMPTY: Draft = {
   minLabel: '',
   maxLabel: '',
   referenceQuestionKey: '',
+  conditionalQuestionKey: '',
+  conditionalValues: [],
   showReferenceAnswer: false,
   visibleWhen: 'always',
   allowDecline: false,
@@ -161,6 +165,8 @@ function draftOf(q: AssessmentQuestionView | null, sectionId = ''): Draft {
     minLabel: q.scale?.minLabel ?? '',
     maxLabel: q.scale?.maxLabel ?? '',
     referenceQuestionKey: q.referenceQuestionKey ?? '',
+    conditionalQuestionKey: q.conditionalQuestionKey ?? '',
+    conditionalValues: q.conditionalValues ?? [],
     showReferenceAnswer: q.showReferenceAnswer,
     visibleWhen: q.visibleWhen,
     allowDecline: q.allowDecline,
@@ -245,6 +251,8 @@ export function payloadOf(draft: Draft, marking: SectionMarking = 'none') {
     required: draft.required,
     area: draft.area,
     referenceQuestionKey: draft.referenceQuestionKey || null,
+    conditionalQuestionKey: draft.conditionalQuestionKey || null,
+    conditionalValues: draft.conditionalValues,
     showReferenceAnswer: Boolean(draft.referenceQuestionKey) && draft.showReferenceAnswer,
     visibleWhen: draft.referenceQuestionKey ? draft.visibleWhen : 'always',
     allowDecline: draft.allowDecline,
@@ -608,6 +616,26 @@ export function QuestionBuilder({
           (q) => q.type === editing.draft.type && q.options?.length && q.id !== editing.id,
         )
       : [];
+  const conditionalSources =
+    lists?.questions.filter(
+      (q) =>
+        q.id !== editing?.id &&
+        (editing?.id === null ||
+          !editing?.id ||
+          q.order < (lists.questions.find((x) => x.id === editing.id)?.order ?? 0)) &&
+        (choiceTypes.includes(q.type) || q.type === 'yes_no'),
+    ) ?? [];
+  const conditionSource = conditionalSources.find(
+    (q) => q.questionKey === editing?.draft.conditionalQuestionKey,
+  );
+  const conditionOptions = conditionSource
+    ? conditionSource.type === 'yes_no'
+      ? [
+          { value: 'true', label: 'Yes' },
+          { value: 'false', label: 'No' },
+        ]
+      : (conditionSource.options ?? []).map(({ value, label }) => ({ value, label }))
+    : [];
   const groups = lists ? groupQuestions(lists.sections, lists.questions) : [];
   const anyBusy =
     busy || editing !== null || sectionEditing !== null || mirroring !== null || addingBlock;
@@ -1099,6 +1127,79 @@ export function QuestionBuilder({
                 />
               </div>
             </div>
+            {!lockedEditing ? (
+              <fieldset className="space-y-2 border border-corp-line p-3">
+                <legend className="px-1 text-sm font-semibold text-corp-ink">
+                  Display this question based on an answer (optional)
+                </legend>
+                <p className="text-xs text-corp-muted">
+                  The question appears when a delegate chooses one of the answers below. For
+                  multiple-choice questions, choosing any selected answer will show it.
+                </p>
+                <div className="space-y-1">
+                  <label htmlFor={`${id}-condition-question`} className="text-xs text-corp-muted">
+                    Controlling question
+                  </label>
+                  <NativeSelect
+                    id={`${id}-condition-question`}
+                    value={editing.draft.conditionalQuestionKey}
+                    onChange={(e) => {
+                      set('conditionalQuestionKey', e.target.value);
+                      set('conditionalValues', []);
+                    }}
+                    className="rounded-none"
+                  >
+                    <option value="">Always display this question</option>
+                    {conditionalSources.map((q) => (
+                      <option key={q.questionKey} value={q.questionKey}>
+                        {q.prompt.slice(0, 100)}
+                      </option>
+                    ))}
+                  </NativeSelect>
+                </div>
+                {editing.draft.conditionalQuestionKey ? (
+                  conditionOptions.length ? (
+                    <fieldset className="space-y-1">
+                      <legend className="text-xs font-semibold text-corp-ink">
+                        Show when the answer is
+                      </legend>
+                      {conditionOptions.map((option) => (
+                        <label
+                          key={option.value}
+                          className="flex min-h-tap items-center gap-2 text-sm text-corp-ink"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={editing.draft.conditionalValues.includes(option.value)}
+                            onChange={(e) =>
+                              set(
+                                'conditionalValues',
+                                e.target.checked
+                                  ? [...editing.draft.conditionalValues, option.value]
+                                  : editing.draft.conditionalValues.filter(
+                                      (value) => value !== option.value,
+                                    ),
+                              )
+                            }
+                            className="size-5 accent-corp-green"
+                          />
+                          {option.label}
+                        </label>
+                      ))}
+                      {errors.conditionalValues ? (
+                        <p className="text-xs font-semibold text-brand-danger">
+                          {errors.conditionalValues}
+                        </p>
+                      ) : null}
+                    </fieldset>
+                  ) : (
+                    <p role="alert" className="text-xs font-semibold text-brand-danger">
+                      The controlling question has no available answers. Edit its options first.
+                    </p>
+                  )
+                ) : null}
+              </fieldset>
+            ) : null}
             {/*
               Requirement 10.5: a question can show the delegate their own earlier answer, and
               can be asked only of those who did or did not give one. Earlier stages only, so a
