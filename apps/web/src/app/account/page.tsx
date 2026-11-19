@@ -33,11 +33,7 @@ export default async function AccountPage() {
         }
       />
       <AdminContent>
-        <DelegateDashboard
-          contactEmail={platform.contactEmail}
-          initialEvents={initialEvents}
-          howItWorksDismissed={Boolean(session.user.dashboardNoteDismissedAt)}
-        />
+        <DelegateDashboard contactEmail={platform.contactEmail} initialEvents={initialEvents} />
       </AdminContent>
     </>
   );

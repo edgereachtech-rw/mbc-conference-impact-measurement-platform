@@ -704,7 +704,9 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   subject, the title, the introduction (paragraphs), the closing notes (one per line) and the
   button label, with per-recipient placeholders such as `{{firstName}}` and kind-specific ones
   (`emailKindInfo`); a placeholder the kind does not know is refused (`unknown_placeholder`).
-  Stored in `event_email_template` (migration `20261119151600_email_wording_and_dashboard_note`),
+  The editor's fields start from the real wording (the organisers' where set, else the
+  platform's), and a field left reading as the platform's is stored as null, so the platform's
+  words stay in force. Stored in `event_email_template` (migration `20261119151600_email_wording_and_dashboard_note`),
   one row per event and kind, null fields meaning the platform's wording. Routes (admin):
   `GET /events/:id/emails` (every kind with its defaults, the stored wording and a preview from
   sample values), `PUT /events/:id/emails/:kind` (audited as `event.email_wording_changed`;
@@ -719,11 +721,12 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   dashboard and this one starts fresh. The line is the platform's, not editable, because it
   states a fact about the account; `returningFromFor` in `routes/onboarding.ts` finds it in
   one query per batch.
-- The dashboard's "How this works" note (2026-11-19): the three-phase story from the pack, in
-  the next event's words, on `/account` until the delegate closes it.
-  `user_account.dashboard_note_dismissed_at` records the closing (`POST
-/me/dashboard-note/dismiss`; the session user carries `dashboardNoteDismissedAt`), with the
-  browser's storage as a fallback until the next sign-in.
+- The dashboard's "How this works" note was built and then withdrawn the same day (decision
+  2026-11-19, "remove for now"): the screen shows no note. The account flag and route that
+  recorded its closing (`user_account.dashboard_note_dismissed_at`, `POST
+/me/dashboard-note/dismiss`, `dashboardNoteDismissedAt` on the session user) stay in place
+  for when it returns; the component lives in git history
+  (`apps/web/src/components/account/how-it-works-note.tsx`, commit 6d2415c).
 - Submission confirmation per assessment (decision 2026-11-19): the popup a delegate sees once
   every section of an assessment is submitted carries the organisers' own title, message and
   closing line, and a look (colour family green/accent/ink, centred or left, check icon on or

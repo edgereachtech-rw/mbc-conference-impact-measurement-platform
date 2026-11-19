@@ -72,13 +72,17 @@ describe('EventEmails', () => {
 
     await user.click(screen.getAllByRole('button', { name: 'Edit wording' })[0]!);
     const form = screen.getByRole('form', { name: 'Welcome pack wording' });
-    // The platform's wording is the starting point, shown as the placeholder of each field.
-    expect((within(form).getByLabelText('Button label') as HTMLInputElement).placeholder).toBe(
+    // The platform's wording is the starting point, as real text in each field.
+    expect((within(form).getByLabelText('Button label') as HTMLInputElement).value).toBe(
       'Open my dashboard',
+    );
+    expect((within(form).getByLabelText('Subject') as HTMLInputElement).value).toBe(
+      'Welcome to Transfer Summit: your check-in codes and what happens when',
     );
     expect(form.textContent).toContain('{{eventDates}}');
     expect(form.textContent).not.toContain('{{sessionTitle}}');
 
+    await user.clear(within(form).getByLabelText('Subject'));
     await user.type(within(form).getByLabelText('Subject'), 'Welcome aboard, {{{{firstName}}');
     await user.click(within(form).getByRole('button', { name: 'Preview' }));
     expect(await screen.findByText(/Preview: Welcome aboard, \{\{firstName\}\}/)).toBeTruthy();
@@ -98,8 +102,11 @@ describe('EventEmails', () => {
     expect(await within(form).findByRole('status')).toBeTruthy();
     expect(screen.getByText('Your wording is in use.')).toBeTruthy();
 
+    // Back to the platform's wording: the fields read it again, and nothing of ours is sent.
     await user.click(within(form).getByRole('button', { name: 'Clear to the platform’s wording' }));
-    expect((within(form).getByLabelText('Subject') as HTMLInputElement).value).toBe('');
+    expect((within(form).getByLabelText('Subject') as HTMLInputElement).value).toBe(
+      'Welcome to Transfer Summit: your check-in codes and what happens when',
+    );
     await user.click(within(form).getByRole('button', { name: 'Save wording' }));
     const puts = calls.filter((c) => c.init?.method === 'PUT');
     expect(JSON.parse(String(puts.at(-1)?.init?.body)).subject).toBeNull();

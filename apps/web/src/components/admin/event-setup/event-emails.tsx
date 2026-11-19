@@ -4,6 +4,7 @@ import {
   emailPlaceholderLabels,
   type EmailCustomisation,
   type EmailCustomisationInput,
+  type EmailParts,
   type EmailPreview,
   type EventDetail,
   type EventEmailView,
@@ -24,24 +25,35 @@ interface Draft {
   buttonLabel: string;
 }
 
-const draftOf = (c: EmailCustomisation | null): Draft => ({
-  subject: c?.subject ?? '',
-  title: c?.title ?? '',
-  intro: c?.intro ?? '',
-  closing: c?.closing ?? '',
-  buttonLabel: c?.buttonLabel ?? '',
+const KEYS: ReadonlyArray<keyof Draft> = ['subject', 'title', 'intro', 'closing', 'buttonLabel'];
+
+/**
+ * The fields start from the real wording (the organisers' where set, else the platform's), so
+ * editing means changing a sentence rather than writing one from a hint (2026-11-19).
+ */
+const draftOf = (c: EmailCustomisation | null, defaults: EmailParts): Draft => ({
+  subject: c?.subject ?? defaults.subject,
+  title: c?.title ?? defaults.title,
+  intro: c?.intro ?? defaults.intro,
+  closing: c?.closing ?? defaults.closing,
+  buttonLabel: c?.buttonLabel ?? defaults.buttonLabel,
 });
 
-const blank = (v: string) => (v.trim() ? v.trim() : null);
-
-/** What the server is sent: blanks become null, which means "the platform's wording". */
-export function emailPayload(d: Draft): EmailCustomisationInput {
+/**
+ * What the server is sent: a field that still reads as the platform's wording, or is blank, is
+ * null, so the platform's own words (and any later improvement to them) stay in force.
+ */
+export function emailPayload(d: Draft, defaults: EmailParts): EmailCustomisationInput {
+  const own = (key: keyof Draft) => {
+    const value = d[key].trim();
+    return value && value !== defaults[key].trim() ? value : null;
+  };
   return {
-    subject: blank(d.subject),
-    title: blank(d.title),
-    intro: blank(d.intro),
-    closing: blank(d.closing),
-    buttonLabel: blank(d.buttonLabel),
+    subject: own('subject'),
+    title: own('title'),
+    intro: own('intro'),
+    closing: own('closing'),
+    buttonLabel: own('buttonLabel'),
   };
 }
 
@@ -130,12 +142,13 @@ function EmailCard({
   onSaved: (email: EventEmailView) => void;
 }) {
   const id = useId();
-  const [draft, setDraft] = useState<Draft>(() => draftOf(email.custom));
+  const [draft, setDraft] = useState<Draft>(() => draftOf(email.custom, email.defaults));
   const [preview, setPreview] = useState<EmailPreview>(email.preview);
   const [busy, setBusy] = useState<'save' | 'preview' | null>(null);
   const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
   const [open, setOpen] = useState(false);
-  const customised = Object.values(emailPayload(draft)).some((v) => v);
+  const payload = emailPayload(draft, email.defaults);
+  const customised = KEYS.some((key) => payload[key]);
   const disabled = readOnly || busy !== null;
 
   const set = (key: keyof Draft, value: string) => {
@@ -149,7 +162,7 @@ function EmailCard({
       setPreview(
         await apiFetch<EmailPreview>(`/events/${eventId}/emails/${email.kind}/preview`, {
           method: 'POST',
-          body: JSON.stringify(emailPayload(draft)),
+          body: JSON.stringify(payload),
         }),
       );
       setNotice(null);
@@ -158,7 +171,7 @@ function EmailCard({
     } finally {
       setBusy(null);
     }
-  }, [draft, email.kind, eventId]);
+  }, [payload, email.kind, eventId]);
 
   async function save(e: FormEvent) {
     e.preventDefault();
@@ -167,13 +180,13 @@ function EmailCard({
     try {
       const result = await apiFetch<{ email: EventEmailView }>(
         `/events/${eventId}/emails/${email.kind}`,
-        { method: 'PUT', body: JSON.stringify(emailPayload(draft)) },
+        { method: 'PUT', body: JSON.stringify(payload) },
       );
       onSaved(result.email);
       setPreview(result.email.preview);
       setNotice({
         ok: true,
-        text: Object.values(emailPayload(draft)).some((v) => v)
+        text: customised
           ? 'Saved. Delegates get this wording from the next send.'
           : 'Back to the platform’s wording.',
       });
@@ -198,7 +211,6 @@ function EmailCard({
         <input
           id={`${id}-${key}`}
           value={draft[key]}
-          placeholder={email.defaults[key]}
           disabled={disabled}
           maxLength={key === 'buttonLabel' ? 80 : 200}
           onChange={(e) => set(key, e.target.value)}
@@ -209,7 +221,6 @@ function EmailCard({
           id={`${id}-${key}`}
           rows={rows}
           value={draft[key]}
-          placeholder={email.defaults[key]}
           disabled={disabled}
           maxLength={key === 'intro' ? 4000 : 2000}
           onChange={(e) => set(key, e.target.value)}
@@ -299,7 +310,7 @@ function EmailCard({
                 type="button"
                 disabled={disabled || !customised}
                 onClick={() => {
-                  setDraft(draftOf(null));
+                  setDraft(draftOf(null, email.defaults));
                   setNotice(null);
                 }}
                 className={consoleButton({ variant: 'ghost' })}
