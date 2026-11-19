@@ -11,8 +11,17 @@ import { type Block, type DocumentMeta, type Span, spansText } from './blocks.js
 
 const PAGE = { size: 'A4' as const, margin: 48 };
 const FONT = { body: 'Helvetica', bold: 'Helvetica-Bold', italic: 'Helvetica-Oblique' };
-const SIZE = { h1: 19, h2: 13.5, h3: 11.5, body: 9.5, small: 8 };
-const INK = { text: '#111827', muted: '#4b5563', rule: '#d1d5db', band: '#f3f4f6' };
+const SIZE = { h1: 23, h2: 15, h3: 11.5, body: 9.5, small: 8 };
+const INK = {
+  text: '#17212b',
+  muted: '#596773',
+  navy: '#12344a',
+  green: '#4c8b62',
+  rule: '#d5dee3',
+  band: '#eef3f5',
+  stripe: '#f8fafb',
+  white: '#ffffff',
+};
 
 type Doc = PDFKit.PDFDocument;
 
@@ -78,15 +87,20 @@ function writeRow(
   widths: readonly number[],
   font: string,
   height: number,
+  fill?: string,
 ) {
   const top = doc.y;
+  if (fill) {
+    const tableWidth = widths.reduce((sum, w) => sum + w, 0);
+    doc.rect(doc.page.margins.left, top, tableWidth, height + 6).fill(fill);
+  }
   let x = doc.page.margins.left;
   cells.forEach((text, i) => {
     const w = widths[i] ?? 0;
     doc
       .font(font)
       .fontSize(SIZE.body)
-      .fillColor(INK.text)
+      .fillColor(font === FONT.bold && fill === INK.navy ? INK.white : INK.text)
       .text(text, x + 4, top + 3, { width: w - 8 });
     x += w;
   });
@@ -100,11 +114,7 @@ function writeTable(doc: Doc, header: readonly string[], rows: readonly string[]
 
   const writeHeader = () => {
     const height = rowHeight(doc, header, widths, FONT.bold);
-    doc
-      .rect(doc.page.margins.left, doc.y, width, height + 6)
-      .fill(INK.band)
-      .fillColor(INK.text);
-    writeRow(doc, header, widths, FONT.bold, height);
+    writeRow(doc, header, widths, FONT.bold, height, INK.navy);
     doc
       .moveTo(doc.page.margins.left, doc.y - 3)
       .lineTo(doc.page.margins.left + width, doc.y - 3)
@@ -115,13 +125,13 @@ function writeTable(doc: Doc, header: readonly string[], rows: readonly string[]
 
   if (doc.y + 60 > bottom()) doc.addPage();
   writeHeader();
-  for (const row of rows) {
+  for (const [index, row] of rows.entries()) {
     const height = rowHeight(doc, row, widths, FONT.body);
     if (doc.y + height + 6 > bottom()) {
       doc.addPage();
       writeHeader(); // a table continuing on the next page repeats its header
     }
-    writeRow(doc, row, widths, FONT.body, height);
+    writeRow(doc, row, widths, FONT.body, height, index % 2 ? INK.stripe : undefined);
     doc
       .moveTo(doc.page.margins.left, doc.y - 3)
       .lineTo(doc.page.margins.left + width, doc.y - 3)
@@ -156,18 +166,19 @@ export function toPdf(blocks: readonly Block[], meta: DocumentMeta): Promise<Buf
         if (block.level < 3 && doc.y + size * 3 > doc.page.height - doc.page.margins.bottom) {
           doc.addPage();
         }
-        doc.moveDown(block.level === 1 ? 0 : 0.7);
-        doc.font(FONT.bold).fontSize(size).fillColor(INK.text);
+        doc.moveDown(block.level === 1 ? 0 : block.level === 2 ? 0.85 : 0.45);
+        const color = block.level === 1 ? INK.navy : block.level === 2 ? INK.navy : INK.green;
+        doc.font(FONT.bold).fontSize(size).fillColor(color);
         doc.text(spansText(block.spans), { width });
         if (block.level <= 2) {
-          doc.moveDown(0.25);
+          doc.moveDown(0.3);
           doc
             .moveTo(doc.page.margins.left, doc.y)
             .lineTo(doc.page.margins.left + width, doc.y)
-            .strokeColor(INK.rule)
-            .lineWidth(block.level === 1 ? 1 : 0.5)
+            .strokeColor(block.level === 1 ? INK.green : INK.rule)
+            .lineWidth(block.level === 1 ? 2 : 0.6)
             .stroke();
-          doc.moveDown(0.5);
+          doc.moveDown(block.level === 1 ? 0.65 : 0.45);
         } else {
           doc.moveDown(0.3);
         }
@@ -176,10 +187,11 @@ export function toPdf(blocks: readonly Block[], meta: DocumentMeta): Promise<Buf
       case 'note': {
         const text = spansText(block.spans);
         doc.fontSize(SIZE.body);
-        const height = doc.font(FONT.bold).heightOfString(text, { width: width - 20 }) + 14;
+        const height = doc.font(FONT.bold).heightOfString(text, { width: width - 24 }) + 16;
         doc.rect(doc.page.margins.left, doc.y, width, height).fill(INK.band);
-        doc.fillColor(INK.text).font(FONT.bold);
-        doc.text(text, doc.page.margins.left + 10, doc.y + 7, { width: width - 20 });
+        doc.rect(doc.page.margins.left, doc.y, 3, height).fill(INK.green);
+        doc.fillColor(INK.navy).font(FONT.bold);
+        doc.text(text, doc.page.margins.left + 12, doc.y + 8, { width: width - 24 });
         doc.x = doc.page.margins.left;
         doc.moveDown(0.8);
         break;
@@ -211,17 +223,37 @@ export function toPdf(blocks: readonly Block[], meta: DocumentMeta): Promise<Buf
   const range = doc.bufferedPageRange();
   for (let i = 0; i < range.count; i += 1) {
     doc.switchToPage(range.start + i);
+    doc
+      .font(FONT.bold)
+      .fontSize(SIZE.small)
+      .fillColor(INK.navy)
+      .text(meta.organiser.toUpperCase(), doc.page.margins.left, 22, {
+        width: width * 0.45,
+        lineBreak: false,
+      });
+    if (meta.subtitle) {
+      doc
+        .font(FONT.body)
+        .fontSize(SIZE.small)
+        .fillColor(INK.muted)
+        .text(meta.subtitle, doc.page.margins.left + width * 0.45, 22, {
+          width: width * 0.55,
+          align: 'right',
+          lineBreak: false,
+        });
+    }
+    doc
+      .moveTo(doc.page.margins.left, 38)
+      .lineTo(doc.page.margins.left + width, 38)
+      .strokeColor(INK.rule)
+      .lineWidth(0.5)
+      .stroke();
     const y = doc.page.height - doc.page.margins.bottom + 14;
     doc
       .font(FONT.body)
       .fontSize(SIZE.small)
       .fillColor(INK.muted)
-      .text(
-        `${meta.subtitle ? `${meta.subtitle} · ` : ''}${meta.organiser}`,
-        doc.page.margins.left,
-        y,
-        { width: width - 60, lineBreak: false },
-      )
+      .text(meta.title, doc.page.margins.left, y, { width: width - 60, lineBreak: false })
       .text(`Page ${i + 1} of ${range.count}`, doc.page.margins.left, y, {
         width,
         align: 'right',

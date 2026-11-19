@@ -3,6 +3,7 @@ import {
   BorderStyle,
   Document,
   Footer,
+  Header,
   HeadingLevel,
   Packer,
   Paragraph,
@@ -23,7 +24,16 @@ import { type Block, type DocumentMeta, type Span, spansText } from './blocks.js
  * restyle or extend it in their own template without undoing ours.
  */
 
-const INK = { text: '111827', muted: '4B5563', rule: 'D1D5DB', band: 'F3F4F6' };
+const INK = {
+  text: '17212B',
+  muted: '596773',
+  navy: '12344A',
+  green: '4C8B62',
+  rule: 'D5DEE3',
+  band: 'EEF3F5',
+  stripe: 'F8FAFB',
+  white: 'FFFFFF',
+};
 const FULL = { size: 100, type: WidthType.PERCENTAGE } as const;
 
 const runs = (spans: readonly Span[], extra: { color?: string; size?: number } = {}) =>
@@ -47,13 +57,13 @@ const headingLevel = (level: 1 | 2 | 3) =>
 
 function tableOf(header: readonly string[], rows: readonly string[][]): Table {
   const border = { style: BorderStyle.SINGLE, size: 2, color: INK.rule };
-  const cell = (text: string, bold: boolean) =>
+  const cell = (text: string, bold: boolean, fill: string) =>
     new TableCell({
       margins: { top: 60, bottom: 60, left: 90, right: 90 },
-      shading: bold ? { type: ShadingType.CLEAR, color: 'auto', fill: INK.band } : undefined,
+      shading: { type: ShadingType.CLEAR, color: 'auto', fill },
       children: [
         new Paragraph({
-          children: [new TextRun({ text, bold, color: INK.text, size: 18 })],
+          children: [new TextRun({ text, bold, color: bold ? INK.white : INK.text, size: 18 })],
         }),
       ],
     });
@@ -70,10 +80,15 @@ function tableOf(header: readonly string[], rows: readonly string[][]): Table {
     rows: [
       new TableRow({
         tableHeader: true, // repeats the header when a table runs over a page break
-        children: header.map((h) => cell(h, true)),
+        children: header.map((h) => cell(h, true, INK.navy)),
       }),
       ...rows.map(
-        (row) => new TableRow({ children: header.map((_, i) => cell(row[i] ?? '', false)) }),
+        (row, index) =>
+          new TableRow({
+            children: header.map((_, i) =>
+              cell(row[i] ?? '', false, index % 2 ? INK.stripe : INK.white),
+            ),
+          }),
       ),
     ],
   });
@@ -89,6 +104,8 @@ export function toDocx(blocks: readonly Block[], meta: DocumentMeta): Promise<Bu
           new Paragraph({
             heading: headingLevel(block.level),
             spacing: { before: block.level === 1 ? 0 : 240, after: 120 },
+            keepNext: true,
+            keepLines: true,
             children: runs(block.spans),
           }),
         );
@@ -130,14 +147,36 @@ export function toDocx(blocks: readonly Block[], meta: DocumentMeta): Promise<Bu
     styles: {
       default: {
         document: { run: { font: 'Calibri', size: 19, color: INK.text } },
-        heading1: { run: { font: 'Calibri', size: 36, bold: true, color: INK.text } },
-        heading2: { run: { font: 'Calibri', size: 27, bold: true, color: INK.text } },
-        heading3: { run: { font: 'Calibri', size: 23, bold: true, color: INK.text } },
+        heading1: { run: { font: 'Calibri', size: 40, bold: true, color: INK.navy } },
+        heading2: { run: { font: 'Calibri', size: 29, bold: true, color: INK.navy } },
+        heading3: { run: { font: 'Calibri', size: 23, bold: true, color: INK.green } },
       },
     },
     sections: [
       {
         children,
+        headers: {
+          default: new Header({
+            children: [
+              new Paragraph({
+                border: {
+                  bottom: { style: BorderStyle.SINGLE, size: 4, color: INK.green, space: 5 },
+                },
+                children: [
+                  new TextRun({
+                    text: meta.organiser.toUpperCase(),
+                    bold: true,
+                    color: INK.navy,
+                    size: 16,
+                  }),
+                  ...(meta.subtitle
+                    ? [new TextRun({ text: `   ${meta.subtitle}`, color: INK.muted, size: 16 })]
+                    : []),
+                ],
+              }),
+            ],
+          }),
+        },
         footers: {
           default: new Footer({
             children: [

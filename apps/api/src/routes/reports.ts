@@ -304,7 +304,7 @@ export function reportRouter({ prisma, middleware, now }: Deps): Router {
     });
     // PDF and Word are laid out from the same Markdown an admin reads, so no format can drift.
     const documentMeta = {
-      title: `${report.event.name}: ${reportKindMeta[kind].label}`,
+      title: `${report.event.name} Report`,
       organiser: organiserName(),
       subtitle: `${report.event.name} · ${report.generatedAt}`,
     };
@@ -321,7 +321,7 @@ export function reportRouter({ prisma, middleware, now }: Deps): Router {
     res.setHeader('Content-Type', MEDIA_TYPES[format]);
     res.setHeader(
       'Content-Disposition',
-      `attachment; filename="${report.event.code}-${kind}-report.${format}"`,
+      `attachment; filename="${report.event.code}-report.${format}"`,
     );
     res.send(body);
   });

@@ -87,7 +87,8 @@ export function renderMarkdown(report: EventReport): string {
   const meta = reportKindMeta[report.kind];
   const approved = report.approval?.covers ?? true;
   const lines: string[] = [];
-  lines.push(`# ${report.event.name}: ${meta.label}`);
+  lines.push(`# ${report.event.name} Report`);
+  lines.push('', `**Report type:** ${meta.label}`);
   if (report.audience === 'external' && !approved) {
     lines.push(
       '',

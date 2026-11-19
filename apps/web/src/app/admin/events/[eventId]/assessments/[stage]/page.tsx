@@ -16,10 +16,12 @@ export const metadata: Metadata = { title: 'Assessment stage' };
 /** One assessment stage of an event: its questions and its submissions, on a page of its own. */
 export default async function StagePage({
   params,
+  searchParams,
 }: {
   params: Promise<{ eventId: string; stage: string }>;
+  searchParams: Promise<{ wave?: string }>;
 }) {
-  const { eventId, stage } = await params;
+  const [{ eventId, stage }, query] = await Promise.all([params, searchParams]);
   if (!(assessmentStages as readonly string[]).includes(stage)) notFound();
   const stageKey = stage as AssessmentStage;
   const session = await getSession();
@@ -74,7 +76,11 @@ export default async function StagePage({
             <p className="mt-1 text-sm">Assessments are managed by M.Bryan admins.</p>
           </div>
         ) : (
-          <StageWorkspace event={event} stage={stageKey} />
+          <StageWorkspace
+            event={event}
+            stage={stageKey}
+            wave={stageKey === 'follow_up' ? Math.max(1, Math.min(4, Number(query.wave) || 1)) : 1}
+          />
         )}
       </AdminContent>
     </>

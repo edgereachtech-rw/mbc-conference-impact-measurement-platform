@@ -43,7 +43,7 @@ import {
   Trash2Icon,
   XIcon,
 } from 'lucide-react';
-import { useEffect, useId, useState } from 'react';
+import { useCallback, useEffect, useId, useState } from 'react';
 
 import { Dialog } from '@/components/console/dialog';
 import { consoleButton, StatePanel, StatusPill } from '@/components/console/page';
@@ -55,6 +55,7 @@ import { describeError } from '@/lib/imports';
 interface QuestionBuilderProps {
   eventId: string;
   stage: AssessmentStage;
+  wave?: number;
   readOnly?: boolean;
   /** Called after any change so the owner can refresh the event's question counts. */
   onChanged: () => void;
@@ -277,10 +278,13 @@ function describeOption(o: QuestionOption): string {
 export function QuestionBuilder({
   eventId,
   stage,
+  wave = 1,
   readOnly = false,
   onChanged,
 }: QuestionBuilderProps) {
   const base = `/events/${eventId}/assessments/${stage}`;
+  const waveQuery = stage === 'follow_up' ? `?wave=${wave}` : '';
+  const endpoint = useCallback((path: string) => `${base}/${path}${waveQuery}`, [base, waveQuery]);
   const [lists, setLists] = useState<Lists | null>(null);
   /**
    * Questions of the stages before this one: what a question here may refer to (10.5). Kept
@@ -316,7 +320,7 @@ export function QuestionBuilder({
 
   useEffect(() => {
     let cancelled = false;
-    apiFetch<Lists>(`${base}/questions`).then(
+    apiFetch<Lists>(endpoint('questions')).then(
       (result) => {
         if (!cancelled) {
           setLists({ sections: result.sections, questions: result.questions });
@@ -330,7 +334,7 @@ export function QuestionBuilder({
     return () => {
       cancelled = true;
     };
-  }, [base, stage, attempt]);
+  }, [endpoint, stage, attempt]);
 
   // A question may only refer to a stage that comes before this one, so the answer it needs
   // already exists by the time this stage opens. A stage that fails to load is simply absent.
@@ -445,7 +449,7 @@ export function QuestionBuilder({
         };
     const ok = await run(
       () =>
-        apiFetch<Lists>(editing.id ? `${base}/questions/${editing.id}` : `${base}/questions`, {
+        apiFetch<Lists>(endpoint(editing.id ? `questions/${editing.id}` : 'questions'), {
           method: editing.id ? 'PATCH' : 'POST',
           body: JSON.stringify(body),
         }),
@@ -455,7 +459,7 @@ export function QuestionBuilder({
   }
   async function removeQuestion(questionId: string) {
     const ok = await run(
-      () => apiFetch<Lists>(`${base}/questions/${questionId}`, { method: 'DELETE' }),
+      () => apiFetch<Lists>(endpoint(`questions/${questionId}`), { method: 'DELETE' }),
       'The question could not be deleted.',
     );
     if (ok) setConfirmDelete(null);
@@ -475,7 +479,7 @@ export function QuestionBuilder({
     [ids[a], ids[b]] = [ids[b]!, ids[a]!];
     await run(
       () =>
-        apiFetch<Lists>(`${base}/questions/order`, {
+        apiFetch<Lists>(endpoint('questions/order'), {
           method: 'PUT',
           body: JSON.stringify({ questionIds: ids }),
         }),
@@ -499,7 +503,7 @@ export function QuestionBuilder({
     const ok = await run(
       () =>
         apiFetch<Lists>(
-          sectionEditing.id ? `${base}/sections/${sectionEditing.id}` : `${base}/sections`,
+          endpoint(sectionEditing.id ? `sections/${sectionEditing.id}` : 'sections'),
           { method: sectionEditing.id ? 'PATCH' : 'POST', body: JSON.stringify(parsed.data) },
         ),
       'The section could not be saved.',
@@ -528,7 +532,7 @@ export function QuestionBuilder({
   async function mirror(sourceSectionId: string) {
     const ok = await run(
       () =>
-        apiFetch<Lists>(`${base}/sections/mirror`, {
+        apiFetch<Lists>(endpoint('sections/mirror'), {
           method: 'POST',
           body: JSON.stringify({ sourceSectionId }),
         }),
@@ -539,7 +543,7 @@ export function QuestionBuilder({
   async function addBlock(kind: (typeof builtinBlockKinds)[number]) {
     const ok = await run(
       () =>
-        apiFetch<Lists>(`${base}/sections/builtin`, {
+        apiFetch<Lists>(endpoint('sections/builtin'), {
           method: 'POST',
           body: JSON.stringify({ kind }),
         }),
@@ -549,7 +553,7 @@ export function QuestionBuilder({
   }
   async function removeSection(sectionId: string) {
     const ok = await run(
-      () => apiFetch<Lists>(`${base}/sections/${sectionId}`, { method: 'DELETE' }),
+      () => apiFetch<Lists>(endpoint(`sections/${sectionId}`), { method: 'DELETE' }),
       'The section could not be deleted.',
     );
     if (ok) setConfirmDelete(null);
@@ -562,7 +566,7 @@ export function QuestionBuilder({
     [ids[index], ids[target]] = [ids[target]!, ids[index]!];
     await run(
       () =>
-        apiFetch<Lists>(`${base}/sections/order`, {
+        apiFetch<Lists>(endpoint('sections/order'), {
           method: 'PUT',
           body: JSON.stringify({ sectionIds: ids }),
         }),

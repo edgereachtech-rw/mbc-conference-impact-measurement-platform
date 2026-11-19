@@ -19,13 +19,14 @@ const TABS: Array<{ id: Tab; label: string }> = [
 interface StageWorkspaceProps {
   event: EventDetail;
   stage: AssessmentStage;
+  wave?: number;
 }
 
 /**
  * One assessment stage's own page: the question builder and the submissions, as two tabs. A
  * change to the questions refreshes the server-rendered header so its question count follows.
  */
-export function StageWorkspace({ event, stage }: StageWorkspaceProps) {
+export function StageWorkspace({ event, stage, wave = 1 }: StageWorkspaceProps) {
   const router = useRouter();
   const [tab, setTab] = useState<Tab>('questions');
   const readOnly = event.status === 'archived';
@@ -68,6 +69,7 @@ export function StageWorkspace({ event, stage }: StageWorkspaceProps) {
           <QuestionBuilder
             eventId={event.id}
             stage={stage}
+            wave={wave}
             readOnly={readOnly}
             onChanged={() => router.refresh()}
           />
