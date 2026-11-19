@@ -275,7 +275,7 @@ export function renderLayout(branding: EmailBranding, content: EmailContent): Re
           </tr>
           <tr>
             <td bgcolor="${colours.white}" class="card card-pad" style="background-color:${colours.white};padding:32px 32px 16px;text-align:${align};" align="${align}">
-              ${content.eyebrow ? `<p class="eyebrow" style="margin:0 0 16px;font-family:${headingStack};font-size:13px;line-height:18px;letter-spacing:2px;text-transform:uppercase;color:${accent};">${escapeHtml(content.eyebrow)}</p>` : ''}
+              ${content.eyebrow ? `<p class="eyebrow" style="margin:0 0 16px;font-family:${headingStack};font-size:32px;line-height:40px;letter-spacing:3px;text-transform:uppercase;color:${accent};">${escapeHtml(content.eyebrow)}</p>` : ''}
               <h1 class="title" style="margin:0 0 16px;font-family:${fontStack};font-size:24px;line-height:32px;font-weight:700;color:${headingColour};">${title}</h1>
               ${paragraphsHtml}
               ${buttonHtml}
