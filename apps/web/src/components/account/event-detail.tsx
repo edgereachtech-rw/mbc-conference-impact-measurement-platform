@@ -15,7 +15,7 @@ import { StatusPill } from '@/components/admin/page-header';
 import { consoleButton, StatePanel } from '@/components/console/page';
 import { TabStrip, useTabState } from '@/components/console/tabs';
 import { EventWordingProvider } from '@/lib/event-wording';
-import { stageWhen } from '@/lib/events';
+import { stageWhen, formatDateShort } from '@/lib/events';
 import {
   attendanceFormatLabel,
   capacityLabel,
@@ -325,6 +325,13 @@ function Overview({ event, contactEmail }: { event: MyEvent; contactEmail: strin
             </dd>
           </div>
           <Fact label="Taking part" value={attendanceFormatLabel[r.attendanceFormat]} />
+          {r.batch ? (
+            <Fact
+              label="Your day"
+              value={formatDateShort(r.batch.date)}
+              hint={`${r.batch.name}: your check-in, attendance and reflection are for this day.`}
+            />
+          ) : null}
           <Fact label="Organisation" value={r.organisation} />
           <Fact label="Job title" value={r.jobTitle} />
           <Fact label="Country" value={r.country} />

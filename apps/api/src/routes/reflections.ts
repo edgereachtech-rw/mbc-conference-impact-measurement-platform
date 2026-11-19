@@ -630,16 +630,25 @@ export function reflectionRouter({ prisma, config, middleware, now }: Deps): Rou
         registrationStatus: { in: [...eligible()] },
         event: { status: 'active' },
       },
-      select: { id: true, eventId: true },
+      select: { id: true, eventId: true, batch: { select: { eventDateId: true } } },
     });
     if (!delegate) throw new HttpError(404, 'not_found', 'No event of yours has this id.');
     return delegate;
   }
 
-  async function myReflections(delegateId: string, eventId: string): Promise<MyReflection[]> {
+  async function myReflections(
+    delegateId: string,
+    eventId: string,
+    /** The delegate's batch day (2026-11-19): only that day's reflection is theirs. */
+    batchDateId?: string,
+  ): Promise<MyReflection[]> {
     const at = clock();
     const activities = await prisma().reflectionActivity.findMany({
-      where: { eventId, status: { not: 'draft' } },
+      where: {
+        eventId,
+        status: { not: 'draft' },
+        ...(batchDateId ? { eventDateId: batchDateId } : {}),
+      },
       include: {
         ...ACTIVITY_INCLUDE,
         responses: {
@@ -681,7 +690,9 @@ export function reflectionRouter({ prisma, config, middleware, now }: Deps): Rou
 
   router.get('/me/events/:eventId/reflections', middleware.requireAuth, async (req, res) => {
     const delegate = await myRegistration(res, String(req.params.eventId));
-    res.json({ reflections: await myReflections(delegate.id, delegate.eventId) });
+    res.json({
+      reflections: await myReflections(delegate.id, delegate.eventId, delegate.batch?.eventDateId),
+    });
   });
 
   router.post(

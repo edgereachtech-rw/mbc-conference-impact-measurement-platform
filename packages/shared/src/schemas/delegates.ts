@@ -28,6 +28,8 @@ export const delegateListQuerySchema = z.object({
   q: z.string().trim().max(200).optional(),
   status: z.enum(delegateListStatuses).optional(),
   attendanceFormat: z.enum(participationModes).optional(),
+  /** Only the delegates of this batch (2026-11-19). */
+  batch: z.uuid().optional(),
   sort: z.enum(delegateListSorts).default('name'),
   direction: z.enum(['asc', 'desc']).default('asc'),
   page: z.coerce.number().int().min(1).default(1),
@@ -48,6 +50,8 @@ export const delegateListItemSchema = z.object({
   registrationSource: z.string().nullable(),
   externalRegistrationId: z.string().nullable(),
   identityId: z.uuid().nullable(),
+  /** The batch the delegate comes with (2026-11-19); null when they attend every day. */
+  batch: z.object({ id: z.uuid(), name: z.string() }).nullable().optional(),
   signedUpAt: z.string().nullable(),
   importedAt: z.string().nullable(),
   createdAt: z.string(),
@@ -89,6 +93,8 @@ export const delegateCreateSchema = z.object({
   capacity: z.enum(['individual', 'nominee', 'other']).default('individual'),
   /** Active or pending; duplicate and test are never set by hand. */
   registrationStatus: z.enum(['active', 'pending']).default('active'),
+  /** The batch of this event the delegate comes with (2026-11-19); null for every day. */
+  batchId: z.uuid().nullable().optional(),
   /**
    * When the address belongs to a known person under another name (2026-11-19): the server
    * first answers 409 `name_mismatch` with both names, and the admin resubmits with the one to
@@ -126,6 +132,7 @@ export const delegateRecordSchema = z.object({
   attendanceFormat: z.enum(participationModes),
   capacity: z.enum(['individual', 'nominee', 'other']),
   registrationStatus: z.enum(delegateListStatuses),
+  batchId: z.uuid().nullable().optional(),
   signedUpAt: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),

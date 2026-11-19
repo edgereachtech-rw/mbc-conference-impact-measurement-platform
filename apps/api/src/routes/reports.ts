@@ -136,6 +136,7 @@ export function reportRouter({ prisma, middleware, now }: Deps): Router {
       filters: {
         attendanceFormat: query.format ?? null,
         organisation: query.organisation || null,
+        batch: query.batch ?? null,
         from: query.from ?? null,
         to: query.to ?? null,
       },

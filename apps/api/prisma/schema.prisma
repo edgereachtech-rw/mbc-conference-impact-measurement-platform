@@ -529,6 +529,7 @@ model Event {
   importRuns              ImportRun[]
   messages                DelegateMessage[]
   emailTemplates          EventEmailTemplate[]
+  batches                 EventBatch[]
   dates                   EventDate[]
   sessions                EventSession[]
   assessmentStages        AssessmentStageConfig[]
@@ -566,6 +567,7 @@ model EventDate {
   tokens     AttendanceToken[]
   attendance AttendanceRecord[]
   reflection ReflectionActivity?
+  batches    EventBatch[]
 
   @@unique([eventId, date])
   @@map("event_date")
@@ -1165,6 +1167,27 @@ model EventEmailTemplate {
   @@map("event_email_template")
 }
 
+/// A batch (decision 2026-11-19): the delegates who come on one of the event's days. A delegate
+/// in a batch has that day alone for check-in, attendance and reflection; one in no batch has
+/// every day. A date with batches cannot be removed (the dates route refuses it).
+model EventBatch {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventId     String   @map("event_id") @db.Uuid
+  eventDateId String   @map("event_date_id") @db.Uuid
+  name        String
+  order       Int      @default(0)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  event     Event      @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  eventDate EventDate  @relation(fields: [eventDateId], references: [id], onDelete: Restrict)
+  delegates Delegate[]
+
+  @@unique([eventId, name])
+  @@index([eventId, eventDateId])
+  @@map("event_batch")
+}
+
 /// A titled group of questions within one stage; delegates see one section per step.
 model AssessmentSection {
   id                   String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
@@ -1462,6 +1485,8 @@ model Delegate {
   capacity               DelegateCapacity   @default(individual)
   nominatingOrganisation String?            @map("nominating_organisation")
   registrationStatus     RegistrationStatus @default(active) @map("registration_status")
+  /// The batch the delegate comes with (2026-11-19); null means every day of the event.
+  batchId                String?            @map("batch_id") @db.Uuid
   duplicateOfId          String?            @map("duplicate_of_id") @db.Uuid
   /// Registration source the record was imported from (D4); scopes the external id.
   registrationSource     String?            @map("registration_source")
@@ -1478,6 +1503,7 @@ model Delegate {
   identity              DelegateIdentity?           @relation(fields: [identityId], references: [id], onDelete: Restrict)
   duplicateOf           Delegate?                   @relation("DelegateDuplicates", fields: [duplicateOfId], references: [id], onDelete: SetNull)
   duplicates            Delegate[]                  @relation("DelegateDuplicates")
+  batch                 EventBatch?                 @relation(fields: [batchId], references: [id], onDelete: SetNull)
   invitations           Invitation[]
   consents              ConsentRecord[]
   importRows            ImportRow[]
@@ -1499,6 +1525,7 @@ model Delegate {
   @@index([userAccountId])
   @@index([identityId])
   @@index([eventId, registrationStatus])
+  @@index([batchId])
   @@map("delegate")
 }
 
@@ -1521,6 +1548,8 @@ model ImportRun {
   headers                 Json
   mapping                 Json?
   attendanceFormatDefault ParticipationCode? @map("attendance_format_default")
+  /// The batch every delegate in the file comes with (2026-11-19); part of the fingerprint.
+  batchId                 String?            @map("batch_id") @db.Uuid
   /// Admin translations of file values for the enumerated fields (D4); part of the fingerprint.
   valueMappings           Json?              @map("value_mappings")
   status                  ImportRunStatus    @default(uploaded)

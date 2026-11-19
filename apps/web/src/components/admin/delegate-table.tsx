@@ -12,6 +12,8 @@ import { useEffect, useRef, useState } from 'react';
 import { NativeSelect } from '@/components/imports/native-select';
 import { ParticipationBadge } from '@/components/badges/participation-badge';
 import { apiFetch } from '@/lib/api';
+
+import { batchLabel, useEventBatches } from './use-batches';
 import { describeError } from '@/lib/imports';
 import type {
   DelegateMessageRecipients,
@@ -74,6 +76,9 @@ export function DelegateTable({ eventId, eventName = 'this event', onMessageSent
   const [q, setQ] = useState('');
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<Filter>('');
+  /** One batch of the event (2026-11-19); empty for every delegate. */
+  const [batch, setBatch] = useState('');
+  const batches = useEventBatches(eventId);
   const [sort, setSort] = useState<(typeof SORTS)[number]['value']>('name');
   const [direction, setDirection] = useState<'asc' | 'desc'>('asc');
   const [page, setPage] = useState(1);
@@ -104,6 +109,7 @@ export function DelegateTable({ eventId, eventName = 'this event', onMessageSent
   });
   if (search) params.set('q', search);
   if (status) params.set('status', status);
+  if (batch) params.set('batch', batch);
   const requestKey = eventId ? `${eventId}/delegates?${params.toString()}#${reload}` : '';
   const loading = requestKey !== '' && requestKey !== loadedKey;
 
@@ -332,6 +338,26 @@ export function DelegateTable({ eventId, eventName = 'this event', onMessageSent
             {chip.count !== null ? ` (${chip.count})` : ''}
           </button>
         ))}
+        {batches.length > 0 ? (
+          <div className="flex items-center gap-2 text-sm">
+            <label htmlFor="delegates-batch" className="text-corp-muted">
+              Batch
+            </label>
+            <NativeSelect
+              id="delegates-batch"
+              value={batch}
+              onChange={(e) => changeFilter(() => setBatch(e.target.value))}
+              className="h-10 w-auto rounded-none text-sm"
+            >
+              <option value="">Every batch</option>
+              {batches.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {batchLabel(b)}
+                </option>
+              ))}
+            </NativeSelect>
+          </div>
+        ) : null}
         <div className="ml-auto flex items-center gap-2 text-sm">
           <label htmlFor="delegates-sort" className="text-corp-muted">
             Sort
@@ -486,6 +512,11 @@ export function DelegateTable({ eventId, eventName = 'this event', onMessageSent
                 <th scope="col" className="px-4 py-2">
                   Format
                 </th>
+                {batches.length > 0 ? (
+                  <th scope="col" className="hidden px-4 py-2 md:table-cell">
+                    Batch
+                  </th>
+                ) : null}
                 <th scope="col" className="px-4 py-2">
                   Status
                 </th>
@@ -559,6 +590,11 @@ export function DelegateTable({ eventId, eventName = 'this event', onMessageSent
                   <td className="px-4 py-3">
                     <ParticipationBadge mode={d.attendanceFormat} />
                   </td>
+                  {batches.length > 0 ? (
+                    <td className="hidden px-4 py-3 text-corp-text md:table-cell">
+                      {d.batch?.name ?? 'Every day'}
+                    </td>
+                  ) : null}
                   <td className="px-4 py-3">
                     {SETTABLE.includes(d.registrationStatus) ? (
                       <NativeSelect

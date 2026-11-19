@@ -21,6 +21,7 @@ import { badgeRouter } from './badge.js';
 import { feedbackInvitationRouter } from './feedback-invitations.js';
 import { onboardingRouter } from './onboarding.js';
 import { eventEmailsRouter } from './event-emails.js';
+import { eventBatchesRouter } from './event-batches.js';
 import { consentRouter } from './consent.js';
 import { eventSetupRouter } from './event-setup.js';
 import { exportsRouter } from './exports.js';
@@ -128,6 +129,7 @@ export function apiRouter(deps: ApiDeps): Router {
       now: deps.now,
     }),
   );
+  router.use(eventBatchesRouter({ prisma: deps.prisma, middleware }));
   router.use(eventEmailsRouter({ prisma: deps.prisma, mailConfig: deps.mailConfig, middleware }));
   router.use(
     badgeRouter({ prisma: deps.prisma, config: deps.config, middleware, logger: deps.logger }),

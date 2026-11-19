@@ -79,6 +79,14 @@ export function meEventsRouter({ prisma, config, middleware, now }: Deps): Route
         jobTitle: true,
         country: true,
         signedUpAt: true,
+        batch: {
+          select: {
+            id: true,
+            name: true,
+            eventDateId: true,
+            eventDate: { select: { date: true } },
+          },
+        },
         event: {
           select: {
             ...EVENT_SELECT,
@@ -114,14 +122,20 @@ export function meEventsRouter({ prisma, config, middleware, now }: Deps): Route
         jobTitle: r.jobTitle,
         country: r.country,
         signedUpAt: r.signedUpAt ? r.signedUpAt.toISOString() : null,
+        batch: r.batch
+          ? { id: r.batch.id, name: r.batch.name, date: isoDate(r.batch.eventDate.date) }
+          : null,
       },
       attendance: {
         status: overallAttendance(
-          r.event.dates.map((d) => ({
-            closed: d.attendanceClosedAt !== null,
-            daily:
-              r.attendanceRecords.find((a) => a.eventDateId === d.id)?.status ?? 'not_checked_in',
-          })),
+          // A delegate in a batch has that day alone (2026-11-19).
+          r.event.dates
+            .filter((d) => !r.batch || r.batch.eventDateId === d.id)
+            .map((d) => ({
+              closed: d.attendanceClosedAt !== null,
+              daily:
+                r.attendanceRecords.find((a) => a.eventDateId === d.id)?.status ?? 'not_checked_in',
+            })),
         ),
       },
     }));

@@ -686,6 +686,26 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   aggregates per delegate at the furthest point any of their plans reached (completed, applied
   with no improvement yet, impact demonstrated, sustained impact) with checks waiting and
   answered. Migration `20261106210930_transfer_plan_outcome_and_impact_checks`.
+- Batches (decision 2026-11-19): one event, several days, each batch of delegates on one day.
+  `event_batch` (name, `event_date_id`, order; unique name per event) and
+  `delegate.batch_id` (nullable, set null when the batch goes; migration
+  `20261119211500_event_batches`). A delegate in a batch has that day alone: the attendance
+  tab's per-date lists, counts and closure (`onDate` in `routes/attendance.ts`), their own
+  check-in codes (`GET /me/events/:id/attendance`), their overall attendance and journey, the
+  welcome pack (one code) and their reflections; a delegate in no batch keeps every day.
+  Assessments, questions, emails and the follow-up timing stay the event's (the invitation goes
+  to every batch at once, at or after each batch's own due day). Routes (admin):
+  `GET/POST /events/:id/batches`, `PATCH/DELETE /events/:id/batches/:batchId` (audited
+  `event.batch_*`; each answers with the event detail, which now carries `batches`);
+  `PUT /events/:id/dates` refuses to remove a day with batches (`dates_have_batches`).
+  Delegates join a batch by hand (`batchId` on the add form and the record's `PATCH`,
+  `batch_not_in_event` for another event's batch), or a whole import file at once
+  (`batchId` on the preview request, stored on `import_run`, applied on commit to every
+  delegate the file touched, part of the fingerprint). The delegates list filters by
+  `?batch=` and shows the batch; reports take `?batch=` and say "in batch X" in the
+  population line. Screens: "Batches" under the Event dates tab, the Batch column and filter on
+  Delegates, the Batch field on the add and edit forms, the batch choice on the import mapping
+  step, the Batch filter on Reports, and "Your day" on the delegate's event overview.
 - Wording follows the kind of event (decision 2026-11-19): `event_type` gains `webinar`
   (migration `20261119151500_event_type_webinar`), and every screen and email that said
   "conference" now says the event's own word (`eventTypeNouns` / `eventNounOf` in

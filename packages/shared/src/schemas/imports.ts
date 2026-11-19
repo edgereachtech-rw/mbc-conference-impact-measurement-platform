@@ -76,6 +76,8 @@ export const importPreviewRequestSchema = z.object({
   mapping: importMappingSchema,
   /** One explicit value for every row when the export has no attendance-format column (D4). */
   attendanceFormatDefault: z.enum(participationModes).optional(),
+  /** The batch every delegate in this file comes with (2026-11-19); absent for every day. */
+  batchId: z.uuid().optional(),
   valueMappings: importValueMappingsSchema.optional(),
   /** Save this mapping for the run's registration source (E2-8). */
   saveMapping: z.boolean().optional(),

@@ -42,6 +42,7 @@ const LIST_FIELDS = {
   registrationSource: true,
   externalRegistrationId: true,
   identityId: true,
+  batch: { select: { id: true, name: true } },
   signedUpAt: true,
   importedAt: true,
   createdAt: true,
@@ -104,6 +105,7 @@ export function eventDelegateRouter({ prisma, middleware }: Deps): Router {
         eventId,
         ...(query.status ? { registrationStatus: query.status } : {}),
         ...(query.attendanceFormat ? { attendanceFormat: query.attendanceFormat } : {}),
+        ...(query.batch ? { batchId: query.batch } : {}),
         ...(query.q ? delegateSearchFilter(query.q) : {}),
       };
       const orderBy: Prisma.DelegateOrderByWithRelationInput[] = [
@@ -173,6 +175,15 @@ export function eventDelegateRouter({ prisma, middleware }: Deps): Router {
         );
       }
       const email = normaliseEmail(input.email);
+      if (input.batchId) {
+        const batch = await prisma().eventBatch.findFirst({
+          where: { id: input.batchId, eventId },
+          select: { id: true },
+        });
+        if (!batch) {
+          throw new HttpError(422, 'batch_not_in_event', 'Choose one of this event’s batches.');
+        }
+      }
 
       let result: { row: ListRow; identity: DelegateCreateResult['identity'] };
       try {
@@ -303,6 +314,7 @@ export function eventDelegateRouter({ prisma, middleware }: Deps): Router {
               attendanceFormat: input.attendanceFormat,
               capacity: input.capacity,
               registrationStatus: input.registrationStatus,
+              batchId: input.batchId ?? null,
               registrationSource: 'manual',
             },
             select: LIST_FIELDS,

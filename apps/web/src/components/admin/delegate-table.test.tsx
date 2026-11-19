@@ -67,7 +67,9 @@ describe('DelegateTable', () => {
     render(<DelegateTable eventId="e1" />);
     const table = await screen.findByRole('table', { name: 'Delegates' });
     expect(within(table).getAllByRole('row')).toHaveLength(4); // header + 3
-    expect(calls[0]?.url).toMatch(/\/events\/e1\/delegates\?/);
+    expect(calls.find((c) => c.url.includes('/delegates?'))?.url).toMatch(
+      /\/events\/e1\/delegates\?/,
+    );
     const tiles = screen.getByRole('region', { name: 'Registrations by status' });
     expect(tiles.textContent).toMatch(/Active2/);
     expect(tiles.textContent).toMatch(/Pending1/);
@@ -91,7 +93,7 @@ describe('DelegateTable', () => {
     expect(JSON.parse(String(patch?.init?.body))).toEqual({ registrationStatus: 'cancelled' });
     expect((await screen.findByRole('status')).textContent).toMatch(/Status set to cancelled/);
 
-    expect(calls[0]?.url).toMatch(/pageSize=10/); // 10 rows by default
+    expect(calls.find((c) => c.url.includes('/delegates?'))?.url).toMatch(/pageSize=10/); // 10 rows by default
     await user.selectOptions(screen.getByLabelText('Rows per page'), '50');
     expect(calls[calls.length - 1]?.url).toMatch(/pageSize=50&?/);
     expect(calls[calls.length - 1]?.url).toMatch(/page=1/);

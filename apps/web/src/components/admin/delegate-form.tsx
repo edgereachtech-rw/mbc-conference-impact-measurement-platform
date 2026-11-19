@@ -17,6 +17,8 @@ import { NativeSelect } from '@/components/imports/native-select';
 import { ApiError, apiFetch } from '@/lib/api';
 import { describeError } from '@/lib/imports';
 
+import { batchLabel, useEventBatches } from './use-batches';
+
 const STATUS_LABEL: Record<DelegateListStatus, string> = {
   active: 'Active',
   pending: 'Pending',
@@ -37,6 +39,8 @@ interface Fields {
   attendanceFormat: 'physical' | 'virtual';
   capacity: 'individual' | 'nominee' | 'other';
   registrationStatus: DelegateListStatus;
+  /** The batch of the event (2026-11-19); '' for every day. */
+  batchId: string;
 }
 
 const EMPTY: Fields = {
@@ -49,6 +53,7 @@ const EMPTY: Fields = {
   attendanceFormat: 'physical',
   capacity: 'individual',
   registrationStatus: 'active',
+  batchId: '',
 };
 
 function fieldsOf(record: DelegateRecord): Fields {
@@ -62,6 +67,7 @@ function fieldsOf(record: DelegateRecord): Fields {
     attendanceFormat: record.attendanceFormat,
     capacity: record.capacity,
     registrationStatus: record.registrationStatus,
+    batchId: record.batchId ?? '',
   };
 }
 
@@ -85,6 +91,7 @@ function patchOf(before: Fields, after: Fields): DelegatePatch {
   if (after.attendanceFormat !== before.attendanceFormat)
     patch.attendanceFormat = after.attendanceFormat;
   if (after.capacity !== before.capacity) patch.capacity = after.capacity;
+  if (after.batchId !== before.batchId) patch.batchId = after.batchId || null;
   if (
     after.registrationStatus !== before.registrationStatus &&
     (after.registrationStatus === 'active' ||
@@ -118,6 +125,7 @@ export function DelegateFormDialog({ eventId, mode, onClose, onSaved }: Props) {
   const [fields, setFields] = useState<Fields>(EMPTY);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  const batches = useEventBatches(eventId);
   /** Both names when the address belongs to a known person under another name (2026-11-19). */
   const [nameClash, setNameClash] = useState<DelegateNameMismatch['names'] | null>(null);
   const editing = mode.kind === 'edit';
@@ -176,6 +184,7 @@ export function DelegateFormDialog({ eventId, mode, onClose, onSaved }: Props) {
           attendanceFormat: fields.attendanceFormat,
           capacity: fields.capacity,
           registrationStatus: fields.registrationStatus === 'pending' ? 'pending' : 'active',
+          ...(fields.batchId ? { batchId: fields.batchId } : {}),
           ...(nameChoice ? { nameChoice } : {}),
         };
         const result = await apiFetch<DelegateCreateResult>(`/events/${eventId}/delegates`, {
@@ -335,6 +344,27 @@ export function DelegateFormDialog({ eventId, mode, onClose, onSaved }: Props) {
         </p>
         {text('jobTitle', 'Job title')}
         {text('country', 'Country')}
+        {batches.length > 0 ? (
+          <div className="space-y-1">
+            <label htmlFor={`${id}-batch`} className={label}>
+              Batch
+            </label>
+            <NativeSelect
+              id={`${id}-batch`}
+              value={fields.batchId}
+              disabled={busy || !ready}
+              onChange={(e) => set('batchId', e.target.value)}
+              className="rounded-none"
+            >
+              <option value="">Every day of the event</option>
+              {batches.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {batchLabel(b)}
+                </option>
+              ))}
+            </NativeSelect>
+          </div>
+        ) : null}
         <div className="grid gap-3 sm:grid-cols-3">
           <div className="space-y-1">
             <label htmlFor={`${id}-format`} className={label}>

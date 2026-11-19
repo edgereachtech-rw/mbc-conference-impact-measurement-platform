@@ -180,10 +180,18 @@ export function attendanceRouter({ prisma, config, middleware, now }: Deps): Rou
   async function registered(eventId: string) {
     return prisma().delegate.findMany({
       where: { eventId, registrationStatus: { in: [...eligible] } },
-      select: DELEGATE_SELECT,
+      select: { ...DELEGATE_SELECT, batch: { select: { eventDateId: true } } },
       orderBy: [{ name: 'asc' }, { createdAt: 'asc' }],
     });
   }
+  type Registered = Awaited<ReturnType<typeof registered>>[number];
+  /** The delegates of a date: those in no batch, and those whose batch is on it (2026-11-19). */
+  const onDate = (delegates: readonly Registered[], dateId: string) =>
+    delegates.filter((d) => !d.batch || d.batch.eventDateId === dateId);
+  /** The days a delegate takes part in: their batch's day, or every day. */
+  const daysOf = (event: EventRow, delegate: { batch: { eventDateId: string } | null }) =>
+    event.dates.filter((d) => !delegate.batch || delegate.batch.eventDateId === d.id);
+  const refOf = ({ batch: _batch, ...delegate }: Registered): AttendanceDelegateRef => delegate;
 
   async function emailsOf(userIds: Iterable<string>) {
     const ids = [...new Set(userIds)];
@@ -236,7 +244,7 @@ export function attendanceRouter({ prisma, config, middleware, now }: Deps): Rou
       id: d.id,
       date: isoDate(d.date),
       closedAt: d.attendanceClosedAt ? d.attendanceClosedAt.toISOString() : null,
-      counts: countsOf(delegates, byDate.get(d.id) ?? new Map()),
+      counts: countsOf(onDate(delegates, d.id), byDate.get(d.id) ?? new Map()),
     }));
     const overall = {
       registered: delegates.length,
@@ -248,7 +256,7 @@ export function attendanceRouter({ prisma, config, middleware, now }: Deps): Rou
       rate: null as number | null,
     };
     for (const delegate of delegates) {
-      const days = event.dates.map((d) => ({
+      const days = daysOf(event, delegate).map((d) => ({
         closed: d.attendanceClosedAt !== null,
         daily: dailyOf(byDate.get(d.id)?.get(delegate.id)),
       }));
@@ -331,7 +339,8 @@ export function attendanceRouter({ prisma, config, middleware, now }: Deps): Rou
     const byDelegate = new Map(records.map((r) => [r.delegateId, r]));
     const emails = await emailsOf(records.map((r) => r.recordedByUserId));
     const q = query.data.q?.toLowerCase();
-    const rows: AttendanceRow[] = delegates
+    const onThisDate = onDate(delegates, date.id);
+    const rows: AttendanceRow[] = onThisDate
       .filter((d) => !query.data.format || d.attendanceFormat === query.data.format)
       .filter(
         (d) =>
@@ -342,7 +351,7 @@ export function attendanceRouter({ prisma, config, middleware, now }: Deps): Rou
       )
       .map((d) => {
         const r = byDelegate.get(d.id);
-        return { delegate: d, daily: dailyOf(r), record: r ? recordView(r, emails) : null };
+        return { delegate: refOf(d), daily: dailyOf(r), record: r ? recordView(r, emails) : null };
       })
       .filter((row) => !query.data.status || row.daily === query.data.status);
     res.json({
@@ -351,7 +360,7 @@ export function attendanceRouter({ prisma, config, middleware, now }: Deps): Rou
         date: isoDate(date.date),
         closedAt: date.attendanceClosedAt ? date.attendanceClosedAt.toISOString() : null,
       },
-      counts: countsOf(delegates, byDelegate),
+      counts: countsOf(onThisDate, byDelegate),
       rows,
     });
   });
@@ -648,7 +657,7 @@ export function attendanceRouter({ prisma, config, middleware, now }: Deps): Rou
         recordsFor(event.id, date.id),
       ]);
       const recorded = new Set(records.map((r) => r.delegateId));
-      const missing = delegates.filter((d) => !recorded.has(d.id));
+      const missing = onDate(delegates, date.id).filter((d) => !recorded.has(d.id));
       const at = clock();
       await prisma().$transaction(async (tx) => {
         await tx.eventDate.update({
@@ -925,10 +934,12 @@ export function attendanceRouter({ prisma, config, middleware, now }: Deps): Rou
         registrationStatus: { in: [...eligible] },
         event: { status: { not: 'archived' } },
       },
-      select: { id: true },
+      select: { id: true, batch: { select: { eventDateId: true } } },
     });
     if (!delegate) throw new HttpError(404, 'not_found', 'No event of yours has this id.');
     const event = await loadEvent(eventId);
+    // A delegate in a batch has that day alone (2026-11-19).
+    const myDates = daysOf(event, delegate);
     const [records, sessions, tokens] = await Promise.all([
       prisma().attendanceRecord.findMany({
         where: { delegateId: delegate.id },
@@ -945,7 +956,7 @@ export function attendanceRouter({ prisma, config, middleware, now }: Deps): Rou
     ]);
     // Codes exist from the first time the delegate opens this screen; nothing is sent by email.
     const have = new Set(tokens.filter((t) => !t.revokedAt).map((t) => t.eventDateId));
-    const missing = event.dates.filter((d) => !have.has(d.id));
+    const missing = myDates.filter((d) => !have.has(d.id));
     if (missing.length) {
       await prisma().attendanceToken.createMany({
         data: missing.map((d) => ({
@@ -958,7 +969,7 @@ export function attendanceRouter({ prisma, config, middleware, now }: Deps): Rou
       });
     }
     const byDate = new Map(records.map((r) => [r.eventDateId, r]));
-    const days = event.dates.map((d) => {
+    const days = myDates.map((d) => {
       const r = byDate.get(d.id);
       return {
         id: d.id,

@@ -10,6 +10,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { useEventBatches } from '@/components/admin/use-batches';
 import { apiFetch, apiUpload, apiUrl } from '@/lib/api';
 import {
   describeError,
@@ -106,6 +107,8 @@ export function ImportWizard() {
   }, []);
 
   const selectedEvent = events?.find((e) => e.id === eventId) ?? null;
+  const batches = useEventBatches(eventId || null);
+  const [batchId, setBatchId] = useState('');
   /** In-person-only or online-only events fix the attendance format of every registration. */
   const fixedAttendanceFormat =
     selectedEvent && selectedEvent.format !== 'hybrid' ? selectedEvent.format : null;
@@ -181,6 +184,7 @@ export function ImportWizard() {
         body: JSON.stringify({
           mapping,
           ...(attendanceFormatDefault ? { attendanceFormatDefault } : {}),
+          ...(batchId ? { batchId } : {}),
           ...(hasValueMappings(valueMappings) ? { valueMappings } : {}),
           ...(saveMapping ? { saveMapping: true } : {}),
         }),
@@ -411,6 +415,9 @@ export function ImportWizard() {
               attendanceFormatDefault={attendanceDefault}
               fixedAttendanceFormat={fixedAttendanceFormat}
               onAttendanceFormatDefaultChange={setAttendanceDefault}
+              batches={batches}
+              batchId={batchId}
+              onBatchIdChange={setBatchId}
               saveMapping={saveMapping}
               onSaveMappingChange={setSaveMapping}
               busy={busy}

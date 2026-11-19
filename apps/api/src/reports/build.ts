@@ -162,6 +162,7 @@ export async function buildReport(input: BuildInput): Promise<BuiltReport> {
       ...(filters.organisation
         ? { nominatingOrganisation: { equals: filters.organisation, mode: 'insensitive' } }
         : {}),
+      ...(filters.batch ? { batchId: filters.batch } : {}),
     },
     select: {
       id: true,
@@ -174,6 +175,14 @@ export async function buildReport(input: BuildInput): Promise<BuiltReport> {
     },
     orderBy: { name: 'asc' },
   });
+  const batchName = filters.batch
+    ? ((
+        await db.eventBatch.findFirst({
+          where: { id: filters.batch, eventId },
+          select: { name: true },
+        })
+      )?.name ?? null)
+    : null;
   const population: Population = {
     delegates,
     ids: delegates.map((d) => d.id),
@@ -195,6 +204,7 @@ export async function buildReport(input: BuildInput): Promise<BuiltReport> {
         ? `attending ${filters.attendanceFormat === 'physical' ? 'in person' : 'online'}`
         : null,
       filters.organisation ? `nominated by ${filters.organisation}` : null,
+      filters.batch ? `in batch ${batchName ?? 'unknown'}` : null,
     ]
       .filter(Boolean)
       .join(', '),

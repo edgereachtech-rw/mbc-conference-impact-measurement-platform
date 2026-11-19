@@ -1,6 +1,6 @@
 'use client';
 
-import { importFields, type ImportField } from '@mbc/shared';
+import { importFields, type ImportField, type EventBatchView } from '@mbc/shared';
 import { Loader2Icon } from 'lucide-react';
 import { useId } from 'react';
 
@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { fieldLabels, requiredFields, type MappingDraft, type UploadResult } from '@/lib/imports';
 
+import { batchLabel } from '@/components/admin/use-batches';
 import { NativeSelect } from './native-select';
 
 interface MappingFormProps {
@@ -18,6 +19,10 @@ interface MappingFormProps {
   onAttendanceFormatDefaultChange: (value: '' | 'physical' | 'virtual') => void;
   /** Set for an in-person-only or online-only event: every row gets this format, nothing to map. */
   fixedAttendanceFormat?: 'physical' | 'virtual' | null;
+  /** The event's batches (2026-11-19); the whole file can be put in one. */
+  batches?: EventBatchView[];
+  batchId?: string;
+  onBatchIdChange?: (value: string) => void;
   saveMapping: boolean;
   onSaveMappingChange: (value: boolean) => void;
   busy: boolean;
@@ -39,6 +44,9 @@ export function MappingForm({
   attendanceFormatDefault,
   onAttendanceFormatDefaultChange,
   fixedAttendanceFormat = null,
+  batches = [],
+  batchId = '',
+  onBatchIdChange,
   saveMapping,
   onSaveMappingChange,
   busy,
@@ -215,6 +223,26 @@ export function MappingForm({
           );
         })}
       </div>
+
+      {batches.length > 0 ? (
+        <div className="space-y-1">
+          <Label htmlFor={`${ids.base}-batch`} className="text-sm text-brand-muted">
+            Batch for every delegate in this file
+          </Label>
+          <NativeSelect
+            id={`${ids.base}-batch`}
+            value={batchId}
+            onChange={(e) => onBatchIdChange?.(e.target.value)}
+          >
+            <option value="">No batch: every day of the event</option>
+            {batches.map((b) => (
+              <option key={b.id} value={b.id}>
+                {batchLabel(b)}
+              </option>
+            ))}
+          </NativeSelect>
+        </div>
+      ) : null}
 
       {unusedHeaders.length > 0 ? (
         <p className="text-sm text-brand-muted">

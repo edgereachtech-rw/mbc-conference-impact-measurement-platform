@@ -39,6 +39,8 @@ export const myEventSchema = z.object({
     jobTitle: z.string().nullable(),
     country: z.string().nullable(),
     signedUpAt: z.string().nullable(),
+    /** The batch the delegate comes with, and its day (2026-11-19); null for every day. */
+    batch: z.object({ id: z.uuid(), name: z.string(), date: z.string() }).nullable().optional(),
   }),
   /**
    * Attendance comes only from attendance records (E6): pending until the organisers record it

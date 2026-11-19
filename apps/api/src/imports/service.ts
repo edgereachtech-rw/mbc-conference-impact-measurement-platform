@@ -269,6 +269,16 @@ export class ImportService {
       select: { format: true },
     });
     request = applyEventFormat(request, event.format);
+    // The batch every delegate in the file comes with (2026-11-19) is one of this event's.
+    if (request.batchId) {
+      const batch = await this.prisma.eventBatch.findFirst({
+        where: { id: request.batchId, eventId: run.eventId },
+        select: { id: true },
+      });
+      if (!batch) {
+        throw new HttpError(422, 'batch_not_in_event', 'Choose one of this event’s batches.');
+      }
+    }
     const headers = run.headers as string[];
     const { ignoredColumns } = validateMapping(
       request.mapping,
@@ -311,6 +321,7 @@ export class ImportService {
         data: {
           mapping: request.mapping as Prisma.InputJsonValue,
           attendanceFormatDefault: request.attendanceFormatDefault ?? null,
+          batchId: request.batchId ?? null,
           valueMappings: request.valueMappings
             ? (request.valueMappings as Prisma.InputJsonValue)
             : Prisma.JsonNull,
@@ -418,6 +429,7 @@ export class ImportService {
           const request: ImportPreviewRequest = {
             mapping: run.mapping as ImportMapping,
             attendanceFormatDefault: run.attendanceFormatDefault ?? undefined,
+            batchId: run.batchId ?? undefined,
             valueMappings: (run.valueMappings as ImportValueMappings | null) ?? undefined,
           };
           const stored = await tx.importRow.findMany({
@@ -486,6 +498,24 @@ export class ImportService {
             client,
             now,
           );
+          // Every delegate the file touched comes with the run's batch (2026-11-19).
+          if (run.batchId) {
+            const touched = await tx.importRow.findMany({
+              where: {
+                runId,
+                outcome: { in: ['accepted', 'updated', 'unchanged', 'linked'] },
+                delegateId: { not: null },
+              },
+              select: { delegateId: true },
+            });
+            const ids = touched.map((r) => r.delegateId).filter((x): x is string => Boolean(x));
+            if (ids.length) {
+              await tx.delegate.updateMany({
+                where: { id: { in: ids }, eventId: run.eventId },
+                data: { batchId: run.batchId },
+              });
+            }
+          }
           await tx.importRun.update({
             where: { id: runId },
             data: {
@@ -504,6 +534,7 @@ export class ImportService {
               runId,
               counts,
               attendanceFormatDefault: run.attendanceFormatDefault ?? null,
+              batchId: run.batchId ?? null,
             } as unknown as Prisma.InputJsonValue,
             ...client,
           });
@@ -867,6 +898,7 @@ export class ImportService {
       fileHash,
       stableStringify(request.mapping),
       request.attendanceFormatDefault ?? '',
+      request.batchId ?? '',
       stableStringify(request.valueMappings ?? null),
       snapshot,
     ]);

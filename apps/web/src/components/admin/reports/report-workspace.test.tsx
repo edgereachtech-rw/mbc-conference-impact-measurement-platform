@@ -32,7 +32,9 @@ function stub(report: (url: string) => EventReport = () => makeReport()) {
 }
 
 const reportUrls = (calls: Array<{ url: string; method?: string }>) =>
-  calls.filter((c) => !c.method && !c.url.includes('/organisations')).map((c) => c.url);
+  calls
+    .filter((c) => !c.method && !c.url.includes('/organisations') && !c.url.includes('/batches'))
+    .map((c) => c.url);
 
 describe('ReportWorkspace', () => {
   it('loads the dashboard, offers the downloads and shows no approval controls', async () => {

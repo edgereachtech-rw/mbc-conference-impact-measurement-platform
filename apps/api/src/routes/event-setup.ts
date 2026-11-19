@@ -38,7 +38,7 @@ interface Deps {
 const isoDate = (d: Date) => d.toISOString().slice(0, 10);
 const fromIsoDate = (s: string) => new Date(`${s}T00:00:00.000Z`);
 
-const DETAIL_INCLUDE = {
+export const DETAIL_INCLUDE = {
   dates: { orderBy: { date: 'asc' as const } },
   sessions: {
     include: { eventDate: { select: { date: true } } },
@@ -46,6 +46,10 @@ const DETAIL_INCLUDE = {
   assessmentStages: {
     include: { _count: { select: { questions: { where: { retiredAt: null } } } } },
     orderBy: [{ stage: 'asc' }, { wave: 'asc' }],
+  },
+  batches: {
+    include: { eventDate: { select: { date: true } }, _count: { select: { delegates: true } } },
+    orderBy: [{ eventDate: { date: 'asc' } }, { order: 'asc' }, { createdAt: 'asc' }],
   },
 } satisfies Prisma.EventInclude;
 
@@ -97,6 +101,14 @@ export function eventDetailOf(event: EventRow): EventDetail {
     startsOn: isoDate(event.startsOn),
     endsOn: isoDate(event.endsOn),
     dates: event.dates.map((d) => ({ id: d.id, date: isoDate(d.date) })),
+    batches: event.batches.map((b) => ({
+      id: b.id,
+      name: b.name,
+      eventDateId: b.eventDateId,
+      date: isoDate(b.eventDate.date),
+      order: b.order,
+      delegates: b._count.delegates,
+    })),
     sessions,
     assessmentStages: [...event.assessmentStages]
       .sort(
@@ -323,6 +335,20 @@ export function eventSetupRouter({ prisma, middleware, now }: Deps): Router {
         sessions: event.sessions.filter((s) => s.eventDateId === current.get(d)!.id).length,
       }))
       .filter((d) => d.sessions > 0);
+    // A date with batches is not removed either (2026-11-19): move the batches first.
+    const withBatches = removed
+      .map((d) => ({
+        date: d,
+        batches: event.batches.filter((b) => b.eventDateId === current.get(d)!.id).length,
+      }))
+      .filter((d) => d.batches > 0);
+    if (withBatches.length) {
+      throw new HttpError(
+        409,
+        'dates_have_batches',
+        `Move or delete the batches on ${withBatches.map((b) => `${b.date} (${b.batches})`).join(', ')} before removing ${withBatches.length === 1 ? 'that date' : 'those dates'}.`,
+      );
+    }
     if (blocked.length) {
       throw new HttpError(
         409,

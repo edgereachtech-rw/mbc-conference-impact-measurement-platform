@@ -515,6 +515,8 @@ export type ResultsSection = z.infer<typeof resultsSectionSchema>;
 export const reportFiltersSchema = z.object({
   attendanceFormat: z.enum(participationModes).nullable(),
   organisation: z.string().nullable(),
+  /** One batch of the event (2026-11-19), by id; null for every delegate. */
+  batch: z.string().nullable().optional(),
   from: z.string().nullable(),
   to: z.string().nullable(),
 });
@@ -582,6 +584,7 @@ export const reportQuerySchema = z.object({
     ),
   format: z.enum(participationModes).optional(),
   organisation: z.string().trim().max(200).optional(),
+  batch: z.uuid().optional(),
   from: z.iso.date().optional(),
   to: z.iso.date().optional(),
 });

@@ -314,6 +314,33 @@ export type AssessmentStageConfigInput = z.infer<typeof assessmentStageConfigSch
 export const eventDateViewSchema = z.object({ id: z.uuid(), date: isoDateSchema });
 export type EventDateView = z.infer<typeof eventDateViewSchema>;
 
+/**
+ * A batch (decision 2026-11-19): a group of the event's delegates who come on one of its days.
+ * A delegate in a batch has one check-in code, one attendance day and one reflection day; a
+ * delegate in no batch takes part on every day, as before. Questions, assessments, emails and
+ * reports stay the event's, and reports can be filtered by batch.
+ */
+export const eventBatchViewSchema = z.object({
+  id: z.uuid(),
+  name: z.string(),
+  eventDateId: z.uuid(),
+  date: isoDateSchema,
+  order: z.number().int(),
+  /** Registrations in the batch, every status counted. */
+  delegates: z.number().int(),
+});
+export type EventBatchView = z.infer<typeof eventBatchViewSchema>;
+
+export const eventBatchCreateSchema = z.object({
+  name: z.string().trim().min(1, 'Name the batch').max(80),
+  eventDateId: z.uuid(),
+});
+export type EventBatchCreate = z.infer<typeof eventBatchCreateSchema>;
+export const eventBatchPatchSchema = eventBatchCreateSchema.partial();
+export type EventBatchPatch = z.infer<typeof eventBatchPatchSchema>;
+export const eventBatchesResponseSchema = z.object({ batches: z.array(eventBatchViewSchema) });
+export type EventBatchesResponse = z.infer<typeof eventBatchesResponseSchema>;
+
 export const eventSessionViewSchema = z.object({
   id: z.uuid(),
   eventDateId: z.uuid(),
@@ -463,6 +490,8 @@ export const eventDetailSchema = z.object({
   startsOn: isoDateSchema,
   endsOn: isoDateSchema,
   dates: z.array(eventDateViewSchema),
+  /** The batches in order (2026-11-19); empty for an event everyone attends on every day. */
+  batches: z.array(eventBatchViewSchema).optional(),
   sessions: z.array(eventSessionViewSchema),
   assessmentStages: z.array(assessmentStageViewSchema),
   createdAt: z.string(),

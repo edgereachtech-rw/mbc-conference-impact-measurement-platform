@@ -163,7 +163,13 @@ export function onboardingRouter({
           ...(scope === 'not_yet_sent' ? { onboardingSends: { none: { status: 'sent' } } } : {}),
           ...(scope === 'selected' ? { id: { in: delegateIds ?? [] } } : {}),
         },
-        select: { id: true, name: true, email: true, identityId: true },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          identityId: true,
+          batch: { select: { eventDateId: true } },
+        },
         orderBy: { createdAt: 'asc' },
         take: BATCH,
       });
@@ -176,8 +182,14 @@ export function onboardingRouter({
       for (const delegate of recipients) {
         const at = clock();
         try {
+          // A delegate in a batch gets that day's code alone (2026-11-19).
           const message = await buildOnboardingPack(
-            event,
+            {
+              ...event,
+              dates: event.dates.filter(
+                (d) => !delegate.batch || delegate.batch.eventDateId === d.id,
+              ),
+            },
             { ...delegate, returningFrom: returning.get(delegate.id) ?? null },
             {
               mailConfig: mailConfig(),

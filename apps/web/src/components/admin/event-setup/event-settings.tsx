@@ -9,6 +9,7 @@ import { ActionQrCodes } from '@/components/admin/event-setup/action-qr-codes';
 import { AttendanceManager } from '@/components/admin/attendance/attendance-manager';
 import { EventWorkspace } from '@/components/admin/event-workspace';
 import { OnboardingSender } from '@/components/admin/onboarding-sender';
+import { BatchesEditor } from '@/components/admin/event-setup/batches-editor';
 import { EventEmails } from '@/components/admin/event-setup/event-emails';
 import { FeedbackManager } from '@/components/admin/feedback/feedback-manager';
 import { ReflectionsManager } from '@/components/admin/reflections/reflections-manager';
@@ -192,6 +193,7 @@ export function EventSettings({ initialEvent }: EventSettingsProps) {
                 </button>
               </div>
             ) : null}
+            <BatchesEditor event={event} readOnly={readOnly} onSaved={saved} />
           </div>
         ) : null}
         {tab === 'sessions' ? <SessionsEditor event={event} onSaved={saved} /> : null}

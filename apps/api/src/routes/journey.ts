@@ -61,6 +61,7 @@ export function journeyRouter({ prisma, config, middleware, now }: Deps): Router
       },
       select: {
         id: true,
+        batch: { select: { eventDateId: true } },
         // Follow-ups the organisers have sent this delegate (2026-11-09): only those are listed.
         assessmentInvitations: {
           where: { kind: 'invitation', status: 'sent' },
@@ -147,11 +148,14 @@ export function journeyRouter({ prisma, config, middleware, now }: Deps): Router
         db.supportRequest.count({ where: { eventId, delegateId: delegate.id } }),
       ]);
     const byDate = new Map(attendance.map((a) => [a.eventDateId, a.status]));
-    const dates = delegate.event.dates.map((d) => ({
-      date: isoDate(d.date),
-      status: byDate.get(d.id) ?? ('not_checked_in' as const),
-      closed: Boolean(d.attendanceClosedAt),
-    }));
+    // A delegate in a batch has that day alone (2026-11-19).
+    const dates = delegate.event.dates
+      .filter((d) => !delegate.batch || delegate.batch.eventDateId === d.id)
+      .map((d) => ({
+        date: isoDate(d.date),
+        status: byDate.get(d.id) ?? ('not_checked_in' as const),
+        closed: Boolean(d.attendanceClosedAt),
+      }));
     const present = dates.filter((d) => d.status === 'attended' || d.status === 'partial');
     const status: Journey['attendance']['status'] =
       dates.length && present.length === dates.length && dates.every((d) => d.status === 'attended')

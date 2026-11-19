@@ -15,6 +15,7 @@ import { useCallback, useEffect, useId, useMemo, useState } from 'react';
 
 import { consoleButton, Panel, StatePanel, StatusPill } from '@/components/console/page';
 import { NativeSelect } from '@/components/imports/native-select';
+import { batchLabel, useEventBatches } from '@/components/admin/use-batches';
 import { apiFetch, apiUrl } from '@/lib/api';
 import { describeError } from '@/lib/imports';
 
@@ -53,6 +54,8 @@ export function ReportWorkspace({ eventId, timezone, kinds, readOnly = false }: 
   const [sections, setSections] = useState<ReportSection[]>([...reportDefaultSections[kinds[0]!]]);
   const [format, setFormat] = useState<'' | (typeof participationModes)[number]>('');
   const [organisation, setOrganisation] = useState('');
+  const [batch, setBatch] = useState('');
+  const batches = useEventBatches(eventId);
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [state, setState] = useState<State>({ kind: 'loading' });
@@ -73,11 +76,12 @@ export function ReportWorkspace({ eventId, timezone, kinds, readOnly = false }: 
     }
     if (format) params.set('format', format);
     if (organisation) params.set('organisation', organisation);
+    if (batch) params.set('batch', batch);
     if (from) params.set('from', from);
     if (to) params.set('to', to);
     const s = params.toString();
     return s ? `?${s}` : '';
-  }, [sections, kind, format, organisation, from, to]);
+  }, [sections, kind, format, organisation, batch, from, to]);
 
   const refresh = useCallback(() => setAttempt((n) => n + 1), []);
 
@@ -244,6 +248,26 @@ export function ReportWorkspace({ eventId, timezone, kinds, readOnly = false }: 
                 ))}
               </NativeSelect>
             </div>
+            {batches.length > 0 ? (
+              <div className="space-y-1">
+                <label htmlFor={`${id}-batch`} className="text-sm font-semibold text-corp-ink">
+                  Batch
+                </label>
+                <NativeSelect
+                  id={`${id}-batch`}
+                  value={batch}
+                  onChange={(e) => setBatch(e.target.value)}
+                  className="rounded-none border-corp-line"
+                >
+                  <option value="">Every batch</option>
+                  {batches.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {batchLabel(b)}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </div>
+            ) : null}
             <div className="space-y-1">
               <label htmlFor={`${id}-from`} className="text-sm font-semibold text-corp-ink">
                 Period from

@@ -33,6 +33,7 @@ const DELEGATE_FIELDS = {
   attendanceFormat: true,
   capacity: true,
   registrationStatus: true,
+  batchId: true,
   signedUpAt: true,
   createdAt: true,
   updatedAt: true,
@@ -47,6 +48,7 @@ const EDITABLE = [
   'attendanceFormat',
   'capacity',
   'registrationStatus',
+  'batchId',
 ] as const;
 
 /**
@@ -93,6 +95,16 @@ export function delegateRouter({ prisma, middleware }: Deps): Router {
       const updated = await prisma().$transaction(async (tx) => {
         const before = await tx.delegate.findUnique({ where: { id }, select: DELEGATE_FIELDS });
         if (!before) throw new HttpError(404, 'not_found', 'Delegate record not found.');
+        // A batch is one of the delegate's own event (2026-11-19).
+        if (patch.batchId) {
+          const batch = await tx.eventBatch.findFirst({
+            where: { id: patch.batchId, eventId: before.eventId },
+            select: { id: true },
+          });
+          if (!batch) {
+            throw new HttpError(422, 'batch_not_in_event', 'Choose one of this event’s batches.');
+          }
+        }
         const after = await tx.delegate.update({
           where: { id },
           data: patch,
