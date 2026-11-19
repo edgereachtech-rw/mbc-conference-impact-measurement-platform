@@ -34,7 +34,7 @@ const INK = {
   stripe: 'F8FAFB',
   white: 'FFFFFF',
 };
-const FULL = { size: 100, type: WidthType.PERCENTAGE } as const;
+const PAGE = { width: 12240, height: 15840, contentWidth: 10240 } as const;
 
 const runs = (spans: readonly Span[], extra: { color?: string; size?: number } = {}) =>
   spans.map(
@@ -55,11 +55,43 @@ const headingLevel = (level: 1 | 2 | 3) =>
       ? HeadingLevel.HEADING_2
       : HeadingLevel.HEADING_3;
 
+function tableColumnWidths(header: readonly string[], rows: readonly string[][]) {
+  const total = PAGE.contentWidth;
+  const min = Math.min(total * 0.1, total / header.length);
+  const max = total * (header.length === 1 ? 1 : header.length === 2 ? 0.68 : 0.48);
+  const weights = header.map((title, i) => {
+    const values = rows.map((row) => Math.min(60, row[i]?.length ?? 0)).sort((a, b) => a - b);
+    const typical = values[Math.floor((values.length - 1) * 0.85)] ?? 0;
+    return Math.max(title.length, typical, 8);
+  });
+  const widths = Array(header.length).fill(0) as number[];
+  const open = new Set(header.map((_, i) => i));
+  let remaining = total;
+  while (open.size) {
+    const weightTotal = [...open].reduce((sum, i) => sum + weights[i]!, 0);
+    const shares = new Map(
+      [...open].map((i) => [i, (remaining * weights[i]!) / weightTotal] as const),
+    );
+    const fixed = [...open].filter((i) => shares.get(i)! < min || shares.get(i)! > max);
+    if (!fixed.length) {
+      for (const i of open) widths[i] = shares.get(i)!;
+      break;
+    }
+    for (const i of fixed) {
+      widths[i] = shares.get(i)! < min ? min : max;
+      open.delete(i);
+    }
+    remaining = total - widths.reduce((sum, value) => sum + value, 0);
+  }
+  return widths.map(Math.round);
+}
+
 function tableOf(header: readonly string[], rows: readonly string[][]): Table {
   const border = { style: BorderStyle.SINGLE, size: 2, color: INK.rule };
+  const widths = tableColumnWidths(header, rows);
   const cell = (text: string, bold: boolean, fill: string) =>
     new TableCell({
-      margins: { top: 60, bottom: 60, left: 90, right: 90 },
+      margins: { top: 100, bottom: 100, left: 140, right: 140 },
       shading: { type: ShadingType.CLEAR, color: 'auto', fill },
       children: [
         new Paragraph({
@@ -68,7 +100,8 @@ function tableOf(header: readonly string[], rows: readonly string[][]): Table {
       ],
     });
   return new Table({
-    width: FULL,
+    width: { size: PAGE.contentWidth, type: WidthType.DXA },
+    columnWidths: widths,
     borders: {
       top: border,
       bottom: border,
@@ -103,7 +136,10 @@ export function toDocx(blocks: readonly Block[], meta: DocumentMeta): Promise<Bu
         children.push(
           new Paragraph({
             heading: headingLevel(block.level),
-            spacing: { before: block.level === 1 ? 0 : 240, after: 120 },
+            spacing: {
+              before: block.level === 1 ? 0 : block.level === 2 ? 360 : 220,
+              after: block.level === 1 ? 220 : 140,
+            },
             keepNext: true,
             keepLines: true,
             children: runs(block.spans),
@@ -130,12 +166,12 @@ export function toDocx(blocks: readonly Block[], meta: DocumentMeta): Promise<Bu
         );
         break;
       case 'paragraph':
-        children.push(new Paragraph({ spacing: { after: 120 }, children: runs(block.spans) }));
+        children.push(new Paragraph({ spacing: { after: 180 }, children: runs(block.spans) }));
         break;
       case 'table':
         children.push(tableOf(block.header, block.rows));
         // Word runs consecutive tables together; a spacer keeps them apart and readable.
-        children.push(new Paragraph({ spacing: { after: 120 }, children: [] }));
+        children.push(new Paragraph({ spacing: { after: 200 }, children: [] }));
         break;
     }
   }
@@ -146,14 +182,27 @@ export function toDocx(blocks: readonly Block[], meta: DocumentMeta): Promise<Bu
     description: meta.subtitle ?? '',
     styles: {
       default: {
-        document: { run: { font: 'Calibri', size: 19, color: INK.text } },
-        heading1: { run: { font: 'Calibri', size: 40, bold: true, color: INK.navy } },
-        heading2: { run: { font: 'Calibri', size: 29, bold: true, color: INK.navy } },
-        heading3: { run: { font: 'Calibri', size: 23, bold: true, color: INK.green } },
+        document: { run: { font: 'Aptos', size: 20, color: INK.text } },
+        heading1: { run: { font: 'Aptos Display', size: 44, bold: true, color: INK.navy } },
+        heading2: { run: { font: 'Aptos Display', size: 32, bold: true, color: INK.navy } },
+        heading3: { run: { font: 'Aptos', size: 24, bold: true, color: INK.green } },
       },
     },
     sections: [
       {
+        properties: {
+          page: {
+            size: { width: PAGE.width, height: PAGE.height },
+            margin: {
+              top: 1240,
+              right: 1000,
+              bottom: 1100,
+              left: 1000,
+              header: 520,
+              footer: 520,
+            },
+          },
+        },
         children,
         headers: {
           default: new Header({

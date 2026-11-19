@@ -30,6 +30,9 @@ export function StageWorkspace({ event, stage, wave = 1 }: StageWorkspaceProps) 
   const router = useRouter();
   const [tab, setTab] = useState<Tab>('questions');
   const readOnly = event.status === 'archived';
+  const selectedWave = event.assessmentStages.find(
+    (item) => item.stage === stage && item.wave === wave,
+  );
   return (
     <section aria-label="Stage workspace" className="space-y-4">
       <div
@@ -70,6 +73,7 @@ export function StageWorkspace({ event, stage, wave = 1 }: StageWorkspaceProps) 
             eventId={event.id}
             stage={stage}
             wave={wave}
+            waveLabel={selectedWave?.waveLabel}
             readOnly={readOnly}
             onChanged={() => router.refresh()}
           />

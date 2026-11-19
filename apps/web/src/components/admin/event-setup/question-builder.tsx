@@ -56,6 +56,7 @@ interface QuestionBuilderProps {
   eventId: string;
   stage: AssessmentStage;
   wave?: number;
+  waveLabel?: string;
   readOnly?: boolean;
   /** Called after any change so the owner can refresh the event's question counts. */
   onChanged: () => void;
@@ -279,12 +280,15 @@ export function QuestionBuilder({
   eventId,
   stage,
   wave = 1,
+  waveLabel,
   readOnly = false,
   onChanged,
 }: QuestionBuilderProps) {
   const base = `/events/${eventId}/assessments/${stage}`;
   const waveQuery = stage === 'follow_up' ? `?wave=${wave}` : '';
   const endpoint = useCallback((path: string) => `${base}/${path}${waveQuery}`, [base, waveQuery]);
+  const questionSetLabel =
+    stage === 'follow_up' ? waveLabel || `Follow-up round ${wave}` : stageLabels[stage];
   const [lists, setLists] = useState<Lists | null>(null);
   /**
    * Questions of the stages before this one: what a question here may refer to (10.5). Kept
@@ -626,13 +630,13 @@ export function QuestionBuilder({
 
   return (
     <section
-      aria-label={`Questions: ${stageLabels[stage]}`}
+      aria-label={`Questions: ${questionSetLabel}`}
       className="space-y-4 rounded-none border border-corp-line bg-white p-4 md:p-5"
     >
       <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <h3 className="font-corporate text-base font-semibold text-corp-ink">
-            Questions · {stageLabels[stage]}
+            Questions · {questionSetLabel}
           </h3>
           <p className="text-sm text-corp-text">
             Group questions into sections: delegates see one section per step. Questions without a

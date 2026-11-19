@@ -9,9 +9,9 @@ import { type Block, type DocumentMeta, type Span, spansText } from './blocks.js
  * not fit the width is still readable, which matters more than matching the screen exactly.
  */
 
-const PAGE = { size: 'A4' as const, margin: 48 };
+const PAGE = { size: 'A4' as const, margin: 52, marginTop: 58, marginBottom: 54 };
 const FONT = { body: 'Helvetica', bold: 'Helvetica-Bold', italic: 'Helvetica-Oblique' };
-const SIZE = { h1: 23, h2: 15, h3: 11.5, body: 9.5, small: 8 };
+const SIZE = { h1: 25, h2: 16, h3: 12, body: 10, small: 8 };
 const INK = {
   text: '#17212b',
   muted: '#596773',
@@ -41,7 +41,7 @@ function writeSpans(doc: Doc, spans: readonly Span[], width: number, indent = 0)
   doc.x = doc.page.margins.left;
 }
 
-/** Column widths proportional to the widest cell in each column, never below a readable minimum. */
+/** Allocate width by each column's measured content, with caps so long answers wrap cleanly. */
 function columnWidths(
   doc: Doc,
   header: readonly string[],
@@ -49,26 +49,40 @@ function columnWidths(
   total: number,
 ) {
   const natural = header.map((h, i) => {
-    const widest = rows.reduce(
-      (max, row) =>
-        Math.max(
-          max,
-          doc
-            .font(FONT.body)
-            .fontSize(SIZE.body)
-            .widthOfString(row[i] ?? ''),
-        ),
-      doc.font(FONT.bold).fontSize(SIZE.body).widthOfString(h),
+    const cellWidths = rows.map((row) =>
+      doc
+        .font(FONT.body)
+        .fontSize(SIZE.body)
+        .widthOfString(row[i] ?? ''),
     );
-    return widest + 12;
+    cellWidths.sort((a, b) => a - b);
+    // The 85th percentile keeps one long free-text response from taking over the whole table.
+    const bodyWidth = cellWidths[Math.floor((cellWidths.length - 1) * 0.85)] ?? 0;
+    return Math.max(doc.font(FONT.bold).fontSize(SIZE.body).widthOfString(h), bodyWidth) + 16;
   });
-  const sum = natural.reduce((a, b) => a + b, 0);
-  if (sum <= total) return natural;
-  // Too wide: give every column its share of the overflow, but keep narrow columns legible.
-  const min = Math.min(46, total / header.length);
-  const scaled = natural.map((w) => Math.max(min, (w / sum) * total));
-  const scaledSum = scaled.reduce((a, b) => a + b, 0);
-  return scaled.map((w) => (w / scaledSum) * total);
+  const min = Math.min(44, total / header.length);
+  const max = total * (header.length === 2 ? 0.66 : header.length === 1 ? 1 : 0.44);
+  const weights = natural.map((value) => Math.max(min, value));
+  const widths = Array(header.length).fill(0) as number[];
+  const open = new Set(header.map((_, i) => i));
+  let remaining = total;
+  while (open.size > 0) {
+    const weightTotal = [...open].reduce((sum, i) => sum + weights[i]!, 0);
+    const shares = new Map(
+      [...open].map((i) => [i, (remaining * weights[i]!) / weightTotal] as const),
+    );
+    const constrained = [...open].filter((i) => shares.get(i)! < min || shares.get(i)! > max);
+    if (constrained.length === 0) {
+      for (const i of open) widths[i] = (remaining * weights[i]!) / weightTotal;
+      break;
+    }
+    for (const i of constrained) {
+      widths[i] = shares.get(i)! < min ? min : max;
+      open.delete(i);
+    }
+    remaining = total - widths.reduce((sum, value) => sum + value, 0);
+  }
+  return widths;
 }
 
 function rowHeight(doc: Doc, cells: readonly string[], widths: readonly number[], font: string) {
@@ -76,7 +90,7 @@ function rowHeight(doc: Doc, cells: readonly string[], widths: readonly number[]
     const h = doc
       .font(font)
       .fontSize(SIZE.body)
-      .heightOfString(text || ' ', { width: (widths[i] ?? 0) - 8 });
+      .heightOfString(text || ' ', { width: (widths[i] ?? 0) - 12 });
     return Math.max(tallest, h);
   }, 0);
 }
@@ -101,10 +115,10 @@ function writeRow(
       .font(font)
       .fontSize(SIZE.body)
       .fillColor(font === FONT.bold && fill === INK.navy ? INK.white : INK.text)
-      .text(text, x + 4, top + 3, { width: w - 8 });
+      .text(text, x + 6, top + 4, { width: w - 12 });
     x += w;
   });
-  doc.y = top + height + 6;
+  doc.y = top + height + 8;
   doc.x = doc.page.margins.left;
 }
 
@@ -146,7 +160,12 @@ function writeTable(doc: Doc, header: readonly string[], rows: readonly string[]
 export function toPdf(blocks: readonly Block[], meta: DocumentMeta): Promise<Buffer> {
   const doc = new PDFDocument({
     size: PAGE.size,
-    margin: PAGE.margin,
+    margins: {
+      top: PAGE.marginTop,
+      bottom: PAGE.marginBottom,
+      left: PAGE.margin,
+      right: PAGE.margin,
+    },
     bufferPages: true,
     info: { Title: meta.title, Author: meta.organiser, Creator: meta.organiser },
   });
