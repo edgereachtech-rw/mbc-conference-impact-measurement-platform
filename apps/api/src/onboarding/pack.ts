@@ -96,7 +96,7 @@ export async function buildOnboardingPack(
       recipientName: delegate.name,
       eventDates: rangeLabel(event.startsOn, event.endsOn, event.timezone),
       venue: event.location ?? '',
-      dashboardUrl: `${base}/account/events/${event.id}`,
+      dashboardUrl: `${base}/account`,
       badgeUrl: `${base}/account/events/${event.id}`,
       dates,
       firstStep,

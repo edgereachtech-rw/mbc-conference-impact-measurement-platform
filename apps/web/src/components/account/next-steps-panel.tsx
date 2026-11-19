@@ -65,22 +65,20 @@ export function NextStepsPanel({ event }: { event: MyEvent }) {
   const eventName = shortEventName(event.name);
   // Before the event the pre-event assessment leads, and the heading says what it is
   // for in the delegate's own terms (2026-11-06). Any other first step keeps the plain heading.
-  const heading = first?.key.startsWith('assessment:pre_conference:')
-    ? 'First thing, create your expectation'
-    : 'What to do next';
+  const heading = first?.key.startsWith('assessment:pre_conference:') ? '' : 'What to do next';
 
   return (
     <section aria-labelledby="next-steps-title" className="space-y-3">
       <div className="flex items-baseline justify-between gap-3">
-        <h2 id="next-steps-title" className="font-corporate text-h3 text-corp-ink">
+        {/* <h2 id="next-steps-title" className="font-corporate text-h3 text-corp-ink">
           {heading}
-        </h2>
-        <Link
+        </h2> */}
+        {/* <Link
           href={`/account/events/${event.id}`}
           className="text-sm font-semibold text-corp-green-text hover:underline"
         >
           {eventName}
-        </Link>
+        </Link> */}
       </div>
 
       {state.kind === 'loading' ? (
