@@ -116,8 +116,6 @@ ${
     <p style="margin:0 0 14px;font-size:13px;line-height:20px;color:#5b6b7f;">An organiser checks you in; holding the code is not attendance on its own. The code carries no personal details.</p>`
     : ''
 }
-    <p style="${H}">Tell people you are coming</p>
-    <p style="${P}"> Have you downloaded your "I will be attending" card? If not, you can still do so with the link sent to your email box earlier thanks.</p>
 ${input.firstStep ? `\n    <p style="${P}"><strong>Your first step:</strong> ${escapeHtml(input.firstStep)}</p>` : ''}
   `.trim();
 
