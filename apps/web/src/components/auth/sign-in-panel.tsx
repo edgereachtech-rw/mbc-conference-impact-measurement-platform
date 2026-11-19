@@ -91,7 +91,7 @@ export function SignInPanel({ safeNext, initialEmail, invite }: SignInState & { 
           </h2>
           <p className="mt-3 max-w-lg text-sm leading-relaxed text-white/85 md:text-base lg:text-sm xl:text-base">
             Whether you are attending the ITTEC Conference, a training programme, a webinar, or a
-            workshop, use the platform to set clear goals, plan how you will apply what you learn,
+            workshop, use this platform to set clear goals, plan how you will apply what you learn,
             and track what changes in your work.
           </p>
           {/* Hidden below `lg`: with it, the band pushed the form off a 360px screen, and the
