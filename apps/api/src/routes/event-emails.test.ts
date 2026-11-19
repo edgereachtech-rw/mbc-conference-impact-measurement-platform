@@ -217,6 +217,11 @@ describe.skipIf(!hasDatabase)('event email wording', () => {
     expect(toDee.html).toContain('check you in on the day');
     expect(toDee.html).not.toContain('entrance');
     expect(toDee.html).toContain('Check in with the code below');
+    // The invitation to press the button sits right before it.
+    expect(toDee.html).toContain('Click on this button to start your journey.');
+    expect(toDee.text).toContain(
+      'Click on this button to start your journey.\nOpen your dashboard:',
+    );
     expect(toDee.text).toContain('this training starts fresh');
     expect(toBo.text).not.toContain('already have an account');
 
