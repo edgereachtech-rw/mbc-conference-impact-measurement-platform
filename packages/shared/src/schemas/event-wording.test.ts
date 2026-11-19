@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  DEFAULT_EMAIL_STYLE,
   emailCustomisationSchema,
   emailLines,
   emailParagraphs,
+  emailStyleIsDefault,
+  emailStyleSchema,
   fillEmailPlaceholders,
+  parseEmailStyle,
   unknownEmailPlaceholders,
 } from './emails.js';
 import { eventNounOf, stageLabelsFor, stageNamesFor } from './events.js';
@@ -44,6 +48,14 @@ describe('email wording helpers', () => {
     expect(emailLines('a\n\n b \nc')).toEqual(['a', 'b', 'c']);
   });
 
+  it('reads a look and knows when it is the platform’s own', () => {
+    expect(parseEmailStyle(null)).toBeNull();
+    expect(parseEmailStyle({ align: 'left', fontSize: 'normal' })).toBeNull();
+    expect(parseEmailStyle({ accentColor: '#1a7f5a' })).toMatchObject({ accentColor: '#1A7F5A' });
+    expect(emailStyleSchema.safeParse({ accentColor: 'red' }).success).toBe(false);
+    expect(emailStyleIsDefault({ ...DEFAULT_EMAIL_STYLE, align: 'center' })).toBe(false);
+  });
+
   it('blanks empty wording to null and bounds the lengths', () => {
     expect(emailCustomisationSchema.parse({ subject: '  ', intro: 'x' })).toEqual({
       subject: null,
@@ -51,6 +63,7 @@ describe('email wording helpers', () => {
       intro: 'x',
       closing: null,
       buttonLabel: null,
+      body: null,
     });
     expect(emailCustomisationSchema.safeParse({ buttonLabel: 'x'.repeat(81) }).success).toBe(false);
   });

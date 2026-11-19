@@ -41,7 +41,7 @@ function defaultDay(dates: MyAttendance['dates'], today: string): string | undef
 }
 
 /**
- * The delegate's attendance: one QR code per event date to show at the entrance, and the status
+ * The delegate's attendance: one QR code per event date to show when checked in, and the status
  * the organisers recorded. The code carries a random-looking token, never personal data, and
  * holding it is not attendance: an admin verifies the person and confirms the check-in.
  *
@@ -129,8 +129,9 @@ export function AttendanceCodes({ eventId, timezone }: { eventId: string; timezo
           {overallAttendanceLabels[attendance.overall]}
         </StatusPill>
         <span>
-          Pick the day, then show its code at the entrance. The organisers check it against your
-          registration before recording your attendance.
+          {attendance.dates.length > 1
+            ? 'Pick the day, then show its code to the organisers when they check you in. They check it against your registration before recording your attendance.'
+            : 'Show this code to the organisers when they check you in. They check it against your registration before recording your attendance.'}
         </span>
       </div>
 
@@ -191,7 +192,7 @@ export function AttendanceCodes({ eventId, timezone }: { eventId: string; timezo
               className="size-60 max-w-full"
             />
             <p className="text-xs text-corp-muted">
-              Show this code at the entrance on {formatDateShort(day.date)}.
+              Show this code to the organisers on {formatDateShort(day.date)}.
             </p>
           </>
         ) : (

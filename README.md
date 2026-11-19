@@ -704,7 +704,13 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   subject, the title, the introduction (paragraphs), the closing notes (one per line) and the
   button label, with per-recipient placeholders such as `{{firstName}}` and kind-specific ones
   (`emailKindInfo`); a placeholder the kind does not know is refused (`unknown_placeholder`).
-  The editor's fields start from the real wording (the organisers' where set, else the
+  Since later the same day the organisers may also write the **whole content** (`body`: the
+  admin-message markdown subset with the kind's placeholders and `{{link}}` for the button's
+  address) and set the **look** inside the frame (`style`: accent, text and heading colours,
+  alignment, text size; `emailStyleSchema`); the frame (header, logo, footer), the title, the
+  button and the welcome pack's check-in codes stay. The editor offers "Edit the parts" or "Write
+  the whole email" per kind, plus the styling controls. Migration
+  `20261119174700_email_body_and_style`. The editor's fields start from the real wording (the organisers' where set, else the
   platform's), and a field left reading as the platform's is stored as null, so the platform's
   words stay in force. Stored in `event_email_template` (migration `20261119151600_email_wording_and_dashboard_note`),
   one row per event and kind, null fields meaning the platform's wording. Routes (admin):

@@ -1,7 +1,9 @@
 import {
   emailKindInfo,
   emailKinds,
+  emailStyleIsDefault,
   EMPTY_EMAIL_CUSTOMISATION,
+  parseEmailStyle,
   type EmailCustomisation,
   type EmailKind,
   type EmailParts,
@@ -30,6 +32,16 @@ import { renderOnboardingPack } from './templates/onboarding.js';
 
 type Reader = Pick<PrismaClient, 'eventEmailTemplate'>;
 
+/** Whether anything of the organisers' is set: a word, the whole content or the look. */
+export function isCustomised(custom: EmailCustomisation | null | undefined): boolean {
+  if (!custom) return false;
+  return (
+    Boolean(custom.subject || custom.title || custom.intro || custom.closing) ||
+    Boolean(custom.buttonLabel || custom.body) ||
+    !emailStyleIsDefault(custom.style)
+  );
+}
+
 /** The stored wording of one kind for one event; null when the platform's wording stands. */
 export async function emailCustomisationFor(
   prisma: Reader,
@@ -38,11 +50,23 @@ export async function emailCustomisationFor(
 ): Promise<EmailCustomisation | null> {
   const row = await prisma.eventEmailTemplate.findUnique({
     where: { eventId_kind: { eventId, kind } },
-    select: { subject: true, title: true, intro: true, closing: true, buttonLabel: true },
+    select: {
+      subject: true,
+      title: true,
+      intro: true,
+      closing: true,
+      buttonLabel: true,
+      body: true,
+      style: true,
+    },
   });
   if (!row) return null;
-  const custom: EmailCustomisation = { ...EMPTY_EMAIL_CUSTOMISATION, ...row };
-  return Object.values(custom).some((v) => v) ? custom : null;
+  const custom: EmailCustomisation = {
+    ...EMPTY_EMAIL_CUSTOMISATION,
+    ...row,
+    style: parseEmailStyle(row.style),
+  };
+  return isCustomised(custom) ? custom : null;
 }
 
 /** Every kind's wording for one event, in one query. */
@@ -59,12 +83,18 @@ export async function emailCustomisationsFor(
       intro: true,
       closing: true,
       buttonLabel: true,
+      body: true,
+      style: true,
     },
   });
   const out = new Map<EmailKind, EmailCustomisation>();
-  for (const { kind, ...rest } of rows) {
+  for (const { kind, style, ...rest } of rows) {
     if ((emailKinds as readonly string[]).includes(kind)) {
-      out.set(kind as EmailKind, { ...EMPTY_EMAIL_CUSTOMISATION, ...rest });
+      out.set(kind as EmailKind, {
+        ...EMPTY_EMAIL_CUSTOMISATION,
+        ...rest,
+        style: parseEmailStyle(style),
+      });
     }
   }
   return out;
@@ -202,7 +232,7 @@ export async function eventEmailViews(
       description: emailKindInfo[kind].description,
       placeholders: [...emailKindInfo[kind].placeholders],
       defaults: defaultParts(kind, branding, mailConfig.appUrl),
-      custom: custom && Object.values(custom).some((v) => v) ? custom : null,
+      custom: isCustomised(custom) ? custom : null,
       preview: { subject: preview.subject, html: preview.html },
     };
   });

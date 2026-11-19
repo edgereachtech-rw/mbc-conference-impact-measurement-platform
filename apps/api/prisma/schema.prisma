@@ -1152,6 +1152,10 @@ model EventEmailTemplate {
   intro       String?
   closing     String?
   buttonLabel String?  @map("button_label")
+  /// The whole content, when the organisers wrote it (2026-11-19); see emailCustomisationSchema.
+  body        String?
+  /// Colours, alignment and size inside the frame; see emailStyleSchema.
+  style       Json?
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 

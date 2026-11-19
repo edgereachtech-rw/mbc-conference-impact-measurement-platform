@@ -21,7 +21,7 @@ export const emailKinds = [
 export type EmailKind = (typeof emailKinds)[number];
 
 /** Placeholders every kind understands. */
-export const commonEmailPlaceholders = ['firstName', 'name', 'eventName'] as const;
+export const commonEmailPlaceholders = ['firstName', 'name', 'eventName', 'link'] as const;
 
 export interface EmailKindInfo {
   label: string;
@@ -80,6 +80,7 @@ export const emailPlaceholderLabels: Record<string, string> = {
   firstName: 'First name',
   name: 'Full name',
   eventName: 'Event name',
+  link: 'The email’s link (the button’s address)',
   eventDates: 'Event dates',
   venue: 'Venue',
   waveLabel: 'Follow-up name (e.g. 30-day follow-up)',
@@ -104,6 +105,47 @@ const optional = (max: number) =>
     .optional()
     .transform((v) => (v ? v : null));
 
+const hexColour = z
+  .string()
+  .trim()
+  .regex(/^#[0-9a-fA-F]{6}$/, 'A colour such as #8B1C1C')
+  .nullable()
+  .optional()
+  .transform((v) => (v ? v.toUpperCase() : null));
+
+/**
+ * How an email looks inside the frame (2026-11-19): the frame (header, logo, footer) is the
+ * platform's; the colours, alignment and size of what sits inside it are the organisers'.
+ */
+export const emailAlignments = ['left', 'center'] as const;
+export const emailFontSizes = ['normal', 'large'] as const;
+export const emailStyleSchema = z.object({
+  /** The button and the eyebrow line. */
+  accentColor: hexColour,
+  /** Paragraph text. */
+  textColor: hexColour,
+  /** The title. */
+  headingColor: hexColour,
+  align: z.enum(emailAlignments).default('left'),
+  fontSize: z.enum(emailFontSizes).default('normal'),
+});
+export type EmailStyle = z.infer<typeof emailStyleSchema>;
+export const DEFAULT_EMAIL_STYLE: EmailStyle = {
+  accentColor: null,
+  textColor: null,
+  headingColor: null,
+  align: 'left',
+  fontSize: 'normal',
+};
+export const emailAlignmentLabels: Record<(typeof emailAlignments)[number], string> = {
+  left: 'Left',
+  center: 'Centred',
+};
+export const emailFontSizeLabels: Record<(typeof emailFontSizes)[number], string> = {
+  normal: 'Normal',
+  large: 'Large',
+};
+
 export const emailCustomisationSchema = z.object({
   subject: optional(200),
   title: optional(200),
@@ -112,6 +154,14 @@ export const emailCustomisationSchema = z.object({
   /** One note per line; replaces the small print under the button. */
   closing: optional(2_000),
   buttonLabel: optional(80),
+  /**
+   * The whole content, written by the organisers (2026-11-19): when set, it replaces the
+   * greeting, the introduction, the facts and the notes; the title, the button and, for the
+   * welcome pack, the check-in codes stay. The same small markdown as admin messages
+   * (headings, bold, italic, lists, links) with the kind's placeholders and {{link}}.
+   */
+  body: optional(20_000),
+  style: emailStyleSchema.nullable().optional(),
 });
 export type EmailCustomisation = z.infer<typeof emailCustomisationSchema>;
 export type EmailCustomisationInput = z.input<typeof emailCustomisationSchema>;
@@ -121,7 +171,28 @@ export const EMPTY_EMAIL_CUSTOMISATION: EmailCustomisation = {
   intro: null,
   closing: null,
   buttonLabel: null,
+  body: null,
+  style: null,
 };
+
+/** Whether a style differs from the platform's look at all. */
+export function emailStyleIsDefault(style: EmailStyle | null | undefined): boolean {
+  if (!style) return true;
+  return (
+    !style.accentColor &&
+    !style.textColor &&
+    !style.headingColor &&
+    style.align === 'left' &&
+    style.fontSize === 'normal'
+  );
+}
+
+/** The stored style, or null when absent or unreadable. */
+export function parseEmailStyle(value: unknown): EmailStyle | null {
+  if (value === null || value === undefined) return null;
+  const parsed = emailStyleSchema.safeParse(value);
+  return parsed.success && !emailStyleIsDefault(parsed.data) ? parsed.data : null;
+}
 
 /** The platform's wording of one kind, as text the organisers can start from. */
 export const emailPartsSchema = z.object({

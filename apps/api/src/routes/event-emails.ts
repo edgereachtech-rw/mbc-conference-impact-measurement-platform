@@ -2,6 +2,7 @@ import {
   emailCustomisationSchema,
   emailKindInfo,
   emailKinds,
+  emailStyleIsDefault,
   unknownEmailPlaceholders,
   type EmailCustomisation,
   type EmailKind,
@@ -12,12 +13,18 @@ import { Router, type Response } from 'express';
 import { clientOf, principalOf, type createAuthMiddleware } from '../auth/middleware.js';
 import { canConfigureEvents, EVENT_SETUP_ROLES } from '../auth/policies.js';
 import type { PrismaClient } from '../db.js';
+import { Prisma } from '../generated/prisma/client.js';
 import { audit } from '../lib/audit.js';
 import { HttpError } from '../lib/errors.js';
 import { validate } from '../lib/validate.js';
 import { brandingForEvent } from '../mail/branding.js';
 import type { MailConfig } from '../mail/config.js';
-import { emailCustomisationFor, eventEmailViews, renderSample } from '../mail/customisation.js';
+import {
+  emailCustomisationFor,
+  eventEmailViews,
+  isCustomised,
+  renderSample,
+} from '../mail/customisation.js';
 
 interface Deps {
   prisma: () => PrismaClient;
@@ -78,6 +85,7 @@ export function eventEmailsRouter({ prisma, mailConfig, middleware }: Deps): Rou
       custom.intro,
       custom.closing,
       custom.buttonLabel,
+      custom.body,
     ]) {
       if (text) for (const key of unknownEmailPlaceholders(text, allowed)) unknown.add(key);
     }
@@ -113,15 +121,22 @@ export function eventEmailsRouter({ prisma, mailConfig, middleware }: Deps): Rou
       const custom = req.body as EmailCustomisation;
       assertPlaceholders(kind, custom);
       const previous = await emailCustomisationFor(prisma(), event.id, kind);
-      const empty = !Object.values(custom).some((v) => v);
+      const empty = !isCustomised(custom);
+      const stored = {
+        ...custom,
+        style:
+          custom.style && !emailStyleIsDefault(custom.style)
+            ? (custom.style as Prisma.InputJsonValue)
+            : Prisma.DbNull,
+      };
       await prisma().$transaction(async (tx) => {
         if (empty) {
           await tx.eventEmailTemplate.deleteMany({ where: { eventId: event.id, kind } });
         } else {
           await tx.eventEmailTemplate.upsert({
             where: { eventId_kind: { eventId: event.id, kind } },
-            create: { eventId: event.id, kind, ...custom },
-            update: custom,
+            create: { eventId: event.id, kind, ...stored },
+            update: stored,
           });
         }
         await audit(tx, {
@@ -130,8 +145,8 @@ export function eventEmailsRouter({ prisma, mailConfig, middleware }: Deps): Rou
           entityId: event.id,
           eventId: event.id,
           actorUserId: principal.userId,
-          oldValue: { kind, custom: previous },
-          newValue: { kind, custom: empty ? null : custom },
+          oldValue: { kind, custom: previous } as Prisma.InputJsonValue,
+          newValue: { kind, custom: empty ? null : custom } as Prisma.InputJsonValue,
           ...clientOf(res),
         });
       });

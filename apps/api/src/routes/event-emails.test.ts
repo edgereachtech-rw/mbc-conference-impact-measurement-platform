@@ -155,7 +155,14 @@ describe.skipIf(!hasDatabase)('event email wording', () => {
     // The event is a training: the platform's wording says so.
     expect(pack.defaults.intro).toContain('get out of the training');
     expect(pack.preview.html).toContain('At the training');
-    expect(pack.placeholders).toEqual(['firstName', 'name', 'eventName', 'eventDates', 'venue']);
+    expect(pack.placeholders).toEqual([
+      'firstName',
+      'name',
+      'eventName',
+      'link',
+      'eventDates',
+      'venue',
+    ]);
   });
 
   it('saves one kind, fills its placeholders per delegate, and refuses one it does not know', async () => {
@@ -202,19 +209,68 @@ describe.skipIf(!hasDatabase)('event email wording', () => {
     expect(toDee.text).toContain('Dear Dee, Test event');
     expect(toDee.text).toContain('Go to my space');
     expect(toDee.text).toContain('You already have an account here from ITTEC 2025');
+    // A one-day event: one code, said so, and nobody is sent to an entrance.
+    expect(toDee.subject).toBe('Welcome aboard, Dee');
+    expect(toDee.text).toContain('YOUR CHECK-IN CODE\n');
+    expect(toDee.text).not.toContain('YOUR CHECK-IN CODES');
+    expect(toDee.text).toContain('Attached to this email as an image:');
+    expect(toDee.html).toContain('check you in on the day');
+    expect(toDee.html).not.toContain('entrance');
+    expect(toDee.html).toContain('Check in with the code below');
     expect(toDee.text).toContain('this training starts fresh');
     expect(toBo.text).not.toContain('already have an account');
+
+    // The whole content and the look (2026-11-19): the frame stays, the rest is theirs, and
+    // the welcome pack still carries the codes after their content.
+    const whole = await call('put', `/events/${eventId}/emails/onboarding`, {
+      title: 'A note from the organisers',
+      body: '## Welcome, {{firstName}}\n\nWe are glad you are joining **{{eventName}}**.\n\n- Bring your code\n- Open [your space]({{link}}) before the day',
+      buttonLabel: 'Open my space',
+      style: { accentColor: '#1a7f5a', align: 'center', fontSize: 'large' },
+    });
+    expect(whole.status, whole.text).toBe(200);
+    expect(whole.body.email.custom.style).toEqual({
+      accentColor: '#1A7F5A',
+      textColor: null,
+      headingColor: null,
+      align: 'center',
+      fontSize: 'large',
+    });
+    const html = whole.body.email.preview.html as string;
+    expect(html).toContain('Welcome, Ada');
+    expect(html).toContain('<strong>Test event');
+    expect(html).toContain('bgcolor="#1A7F5A"');
+    expect(html).toContain('text-align:center');
+    expect(html).not.toContain('What happens when');
+    expect(html).toContain('Open my space');
+    mailer.sent.length = 0;
+    const sentWhole = await call('post', `/events/${eventId}/onboarding/send`, { scope: 'all' });
+    expect(sentWhole.status, sentWhole.text).toBe(201);
+    const wholeToDee = mailer.sent.find((m) => m.to.startsWith('dee-ew-'))!;
+    expect(wholeToDee.text).toContain('Welcome, Dee');
+    expect(wholeToDee.text).toContain('YOUR CHECK-IN CODE');
+    expect(wholeToDee.text).not.toContain('WHAT HAPPENS WHEN');
+    expect(wholeToDee.html).toContain('cid:attendance-1@mbc');
+    expect(
+      (
+        await call('put', `/events/${eventId}/emails/onboarding`, {
+          style: { accentColor: 'red' },
+        })
+      ).status,
+    ).toBe(422);
 
     // Clearing every field returns to the platform's wording and is audited.
     const cleared = await call('put', `/events/${eventId}/emails/onboarding`, {
       subject: '',
       intro: '',
       buttonLabel: '',
+      body: '',
+      style: null,
     });
     expect(cleared.status, cleared.text).toBe(200);
     expect(cleared.body.email.custom).toBeNull();
     expect(
       await prisma.auditLog.count({ where: { eventId, action: 'event.email_wording_changed' } }),
-    ).toBe(2);
+    ).toBe(3);
   });
 });

@@ -1,9 +1,12 @@
 import {
+  DEFAULT_EMAIL_STYLE,
   emailLines,
   emailParagraphs,
   fillEmailPlaceholders,
+  renderMessageBody,
   type EmailCustomisation,
   type EmailParts,
+  type EmailStyle,
 } from '@mbc/shared';
 
 /**
@@ -55,6 +58,13 @@ export interface EmailContent {
   body?: { html: string; text: string };
   /** The one primary action. Its URL is repeated in plain text and under the button. */
   button?: EmailButton;
+  /**
+   * Content that follows the body whatever the organisers wrote (2026-11-19): the welcome
+   * pack's check-in codes. Rendered after the organisers' own content in body mode.
+   */
+  appendix?: { html: string; text: string };
+  /** The organisers' look inside the frame (2026-11-19); the platform's when absent. */
+  style?: EmailStyle | null;
   /** Lines after the button, e.g. expiry notice. */
   notes?: string[];
 }
@@ -103,6 +113,39 @@ export function wordingOf(
       buttonLabel: defaults.buttonLabel,
     },
   };
+}
+
+/**
+ * Renders a template's content with the organisers' customisation applied (2026-11-19): their
+ * look, and, when they wrote the whole content, that content in place of the platform's
+ * greeting, paragraphs and notes. The title, the button and any appendix stay.
+ */
+export function renderCustomisable(
+  branding: EmailBranding,
+  content: EmailContent,
+  custom: EmailCustomisation | null | undefined,
+  values: Record<string, string>,
+): RenderedEmail {
+  const style = custom?.style ?? null;
+  if (!custom?.body) return renderLayout(branding, { ...content, style });
+  const all: Record<string, string> = { ...values, link: content.button?.url ?? values.link ?? '' };
+  const own = renderMessageBody(fillEmailPlaceholders(custom.body, all), {
+    firstName: all.firstName ?? '',
+    name: all.name ?? '',
+    email: '',
+    organisation: '',
+    eventName: all.eventName ?? '',
+  });
+  return renderLayout(branding, {
+    ...content,
+    paragraphs: [],
+    notes: undefined,
+    body: {
+      html: own.html + (content.appendix ? `\n${content.appendix.html}` : ''),
+      text: own.text + (content.appendix ? `\n\n${content.appendix.text}` : ''),
+    },
+    style,
+  });
 }
 
 /** The common placeholder values of a recipient. */
@@ -160,12 +203,19 @@ export function renderLayout(branding: EmailBranding, content: EmailContent): Re
   // because several email clients (Outlook among them) do not render WEBP.
   const logoUrl = `${branding.appUrl.replace(/\/+$/, '')}/brand/mbryan-consulting-email.png`;
   const title = escapeHtml(content.title);
+  const style = { ...DEFAULT_EMAIL_STYLE, ...(content.style ?? {}) };
+  const accent = style.accentColor ?? colours.red;
+  const textColour = style.textColor ?? colours.text;
+  const headingColour = style.headingColor ?? colours.navy;
+  const fontSize = style.fontSize === 'large' ? 18 : 16;
+  const lineHeight = style.fontSize === 'large' ? 28 : 24;
+  const align = style.align;
   const paragraphsHtml =
     content.body?.html ??
     content.paragraphs
       .map(
         (p) =>
-          `<p style="margin:0 0 16px;font-family:${fontStack};font-size:16px;line-height:24px;color:${colours.text};" class="body-text">${escapeHtml(p)}</p>`,
+          `<p style="margin:0 0 16px;font-family:${fontStack};font-size:${fontSize}px;line-height:${lineHeight}px;color:${textColour};" class="body-text">${escapeHtml(p)}</p>`,
       )
       .join('\n');
   const notesHtml = (content.notes ?? [])
@@ -176,10 +226,10 @@ export function renderLayout(branding: EmailBranding, content: EmailContent): Re
     .join('\n');
   const buttonHtml = content.button
     ? `
-<table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin:8px 0 20px;">
+<table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin:8px ${align === 'center' ? 'auto' : '0'} 20px;">
   <tr>
-    <td align="center" bgcolor="${colours.red}" style="border-radius:4px;">
-      <a href="${escapeHtml(content.button.url)}" target="_blank" style="display:inline-block;min-width:200px;padding:14px 28px;font-family:${headingStack};font-size:16px;line-height:16px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:${colours.white};text-decoration:none;border-radius:4px;background-color:${colours.red};">${escapeHtml(content.button.label)}</a>
+    <td align="center" bgcolor="${accent}" style="border-radius:4px;">
+      <a href="${escapeHtml(content.button.url)}" target="_blank" style="display:inline-block;min-width:200px;padding:14px 28px;font-family:${headingStack};font-size:16px;line-height:16px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:${colours.white};text-decoration:none;border-radius:4px;background-color:${accent};">${escapeHtml(content.button.label)}</a>
     </td>
   </tr>
 </table>
@@ -224,9 +274,9 @@ export function renderLayout(branding: EmailBranding, content: EmailContent): Re
             </td>
           </tr>
           <tr>
-            <td bgcolor="${colours.white}" class="card card-pad" style="background-color:${colours.white};padding:32px 32px 16px;" align="left">
-              ${content.eyebrow ? `<p class="eyebrow" style="margin:0 0 8px;font-family:${headingStack};font-size:13px;line-height:18px;letter-spacing:2px;text-transform:uppercase;color:${colours.red};">${escapeHtml(content.eyebrow)}</p>` : ''}
-              <h1 class="title" style="margin:0 0 16px;font-family:${fontStack};font-size:24px;line-height:32px;font-weight:700;color:${colours.navy};">${title}</h1>
+            <td bgcolor="${colours.white}" class="card card-pad" style="background-color:${colours.white};padding:32px 32px 16px;text-align:${align};" align="${align}">
+              ${content.eyebrow ? `<p class="eyebrow" style="margin:0 0 8px;font-family:${headingStack};font-size:13px;line-height:18px;letter-spacing:2px;text-transform:uppercase;color:${accent};">${escapeHtml(content.eyebrow)}</p>` : ''}
+              <h1 class="title" style="margin:0 0 16px;font-family:${fontStack};font-size:24px;line-height:32px;font-weight:700;color:${headingColour};">${title}</h1>
               ${paragraphsHtml}
               ${buttonHtml}
               ${notesHtml}

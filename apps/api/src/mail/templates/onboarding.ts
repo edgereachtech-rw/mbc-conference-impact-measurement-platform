@@ -2,11 +2,11 @@ import type { EmailCustomisation } from '@mbc/shared';
 
 import {
   escapeHtml,
-  renderLayout,
   type EmailBranding,
   type RenderedEmail,
   recipientValues,
   wordingOf,
+  renderCustomisable,
 } from './layout.js';
 
 /**
@@ -58,9 +58,18 @@ export function renderOnboardingPack(
 ): RenderedEmail {
   const greeting = input.recipientName ? `Hello ${escapeHtml(input.recipientName)},` : 'Hello,';
   const noun = branding.eventNoun ?? 'conference';
+  // One day, one code (2026-11-19): the pack says so, and never sends anyone to an "entrance",
+  // because check-in happens wherever the organisers do it, on the day.
+  const single = input.dates.length === 1;
+  const codesWord = single ? 'your check-in code' : 'your check-in codes';
+  const values = {
+    ...recipientValues(branding, input.recipientName),
+    eventDates: input.eventDates,
+    venue: input.venue ?? '',
+  };
   const w = wordingOf(
     {
-      subject: `Welcome to ${branding.eventName}: your check-in codes and what happens when`,
+      subject: `Welcome to ${branding.eventName}: ${codesWord} and what happens when`,
       title: `You are set for ${branding.eventName}`,
       intro: [
         `You are registered for ${branding.eventName}, ${input.eventDates}${input.venue ? ` at ${input.venue}` : ''}. This platform is where you record what you want to get out of the ${noun}, and what you do with it afterwards — so the value shows up in your work, not just in the room.`,
@@ -72,11 +81,7 @@ export function renderOnboardingPack(
       buttonLabel: 'Open my dashboard',
     },
     custom,
-    {
-      ...recipientValues(branding, input.recipientName),
-      eventDates: input.eventDates,
-      venue: input.venue ?? '',
-    },
+    values,
   );
   // The returning line is the platform's, not the organisers': it states a fact about the account.
   const returning = input.returningFrom
@@ -97,6 +102,31 @@ export function renderOnboardingPack(
     )
     .join('');
 
+  // The codes travel whatever the organisers wrote: they are the point of the pack.
+  const codesHtml =
+    input.dates.length > 0
+      ? `
+    <p style="${H}">${single ? 'Your check-in code' : 'Your check-in codes'}</p>
+    <p style="${P}">${
+      single
+        ? 'Show this code to the organisers when they check you in on the day. Save this email or take a screenshot — it works without signal, and it is also on the platform under Attendance.'
+        : 'Show the day’s code to the organisers when they check you in. Save this email or take a screenshot — the codes work without signal, and they are also on the platform under Attendance.'
+    }</p>
+    <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto;"><tr>${codes}</tr></table>
+    <p style="margin:0 0 14px;font-size:13px;line-height:20px;color:#5b6b7f;">An organiser checks you in; holding the code is not attendance on its own. The code carries no personal details.</p>`
+      : '';
+  const codesText =
+    input.dates.length > 0
+      ? [
+          single ? 'YOUR CHECK-IN CODE' : 'YOUR CHECK-IN CODES',
+          single
+            ? 'Attached to this email as an image:'
+            : 'Attached to this email as images, one per day:',
+          ...input.dates.map((d) => `  - ${d.label}`),
+          'An organiser checks you in; holding the code is not attendance on its own.',
+        ].join('\n')
+      : '';
+
   const html = `
     <p style="${P}">${greeting}</p>
     ${introHtml}
@@ -104,18 +134,10 @@ export function renderOnboardingPack(
     <p style="${H}">What happens when</p>
     <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;">
       <tr><td style="padding:6px 0;border-bottom:1px solid #eef2f6;font-size:15px;color:#1f2937;"><strong>Before</strong> &nbsp;A short check-in: where you are now and what you want to change.</td></tr>
-      <tr><td style="padding:6px 0;border-bottom:1px solid #eef2f6;font-size:15px;color:#1f2937;"><strong>At the ${noun}</strong> &nbsp;Check in each day with the code below, give feedback on sessions, and build your Transfer Plan.</td></tr>
+      <tr><td style="padding:6px 0;border-bottom:1px solid #eef2f6;font-size:15px;color:#1f2937;"><strong>At the ${noun}</strong> &nbsp;${single ? 'Check in with the code below' : 'Check in each day with the code below'}, give feedback on sessions, and build your Transfer Plan.</td></tr>
       <tr><td style="padding:6px 0;font-size:15px;color:#1f2937;"><strong>Afterwards</strong> &nbsp;Short follow-ups at 30, 60, 90 days, and beyond asking what you have been able to apply..</td></tr>
     </table>
-${
-  input.dates.length > 0
-    ? `
-    <p style="${H}">Your check-in codes</p>
-    <p style="${P}">Show this at the entrance on each day. Save this email or take a screenshot — the codes work without signal, and they are also on the platform under Attendance.</p>
-    <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto;"><tr>${codes}</tr></table>
-    <p style="margin:0 0 14px;font-size:13px;line-height:20px;color:#5b6b7f;">An organiser checks you in; holding the code is not attendance on its own. The code carries no personal details.</p>`
-    : ''
-}
+${codesHtml}
 ${input.firstStep ? `\n    <p style="${P}"><strong>Your first step:</strong> ${escapeHtml(input.firstStep)}</p>` : ''}
   `.trim();
 
@@ -127,18 +149,10 @@ ${input.firstStep ? `\n    <p style="${P}"><strong>Your first step:</strong> ${e
     '',
     'WHAT HAPPENS WHEN',
     'Before: a short check-in on where you are now and what you want to change.',
-    `At the ${noun}: check in each day with your code, give session feedback, build your Transfer Plan.`,
+    `At the ${noun}: ${single ? 'check in with your code' : 'check in each day with your code'}, give session feedback, build your Transfer Plan.`,
     'Afterwards: short follow-ups at 30, 60, 90 days, and beyond asking what you have been able to apply.',
     '',
-    ...(input.dates.length > 0
-      ? [
-          'YOUR CHECK-IN CODES',
-          'Attached to this email as images, one per day:',
-          ...input.dates.map((d) => `  - ${d.label}`),
-          'An organiser checks you in; holding the code is not attendance on its own.',
-          '',
-        ]
-      : []),
+    ...(codesText ? [codesText, ''] : []),
     'TELL PEOPLE YOU ARE COMING',
     `Have you downloaded your "I will be attending" card? If not, you can still do so with the link sent to your email box earlier thanks.`,
     '',
@@ -147,17 +161,22 @@ ${input.firstStep ? `\n    <p style="${P}"><strong>Your first step:</strong> ${e
   ].join('\n');
 
   return {
-    ...renderLayout(branding, {
-      subject: w.subject,
-      preheader:
-        'Your check-in codes, what the platform is for, and what happens before and after.',
-      eyebrow: 'Welcome',
-      title: w.title,
-      paragraphs: [],
-      body: { html, text },
-      button: { label: w.buttonLabel, url: input.dashboardUrl },
-      notes: w.closing,
-    }),
+    ...renderCustomisable(
+      branding,
+      {
+        subject: w.subject,
+        preheader: `${single ? 'Your check-in code' : 'Your check-in codes'}, what the platform is for, and what happens before and after.`,
+        eyebrow: 'Welcome',
+        title: w.title,
+        paragraphs: [],
+        body: { html, text },
+        appendix: codesHtml ? { html: codesHtml, text: codesText } : undefined,
+        button: { label: w.buttonLabel, url: input.dashboardUrl },
+        notes: w.closing,
+      },
+      custom,
+      values,
+    ),
     parts: w.parts,
   };
 }
