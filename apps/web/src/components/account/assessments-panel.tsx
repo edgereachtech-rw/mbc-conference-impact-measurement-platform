@@ -398,15 +398,20 @@ function AssessmentCard({
   /** Closing the popup after a section is submitted lands on the next one: it is already current. */
   function closeReview() {
     // After a section is submitted the next one takes its place, and the page is still scrolled
-    // to where the submit button was. Start the delegate at the top of the new section (2026-11-07).
+    // to where the submit button was. Start the delegate at the top of the page (2026-11-19; the
+    // top of the section until then), so the event's name and the section heading lead again.
     const nextSection = review?.done === 'section' && remaining > 0;
     setReview(null);
     setNotice(null);
     setBanner(null);
     if (nextSection) {
-      requestAnimationFrame(() =>
-        top.current?.scrollIntoView?.({ block: 'start', behavior: 'smooth' }),
-      );
+      requestAnimationFrame(() => {
+        try {
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        } catch {
+          top.current?.scrollIntoView?.({ block: 'start', behavior: 'smooth' });
+        }
+      });
     }
   }
 
