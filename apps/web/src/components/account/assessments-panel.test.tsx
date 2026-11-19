@@ -626,6 +626,66 @@ describe('AssessmentsPanel', () => {
     });
   });
 
+  it('shows a follow-up question only once the controlling answer matches, requires it then, and leaves its stale answer out of the submission', async () => {
+    const branched: MyAssessment = {
+      ...open,
+      questions: [
+        question('a', {
+          type: 'yes_no',
+          prompt: 'Were you asked to attend by your organisation?',
+          order: 1,
+        }),
+        question('w', {
+          type: 'long_text',
+          prompt: 'Please state the reason',
+          order: 2,
+          conditionalQuestionKey: 'a-k',
+          conditionalValues: ['true'],
+        }),
+        question('p', {
+          type: 'multiple_choice',
+          prompt: 'Who explained why you were asked to attend?',
+          order: 3,
+          required: false,
+          conditionalQuestionKey: 'a-k',
+          conditionalValues: ['true'],
+          options: [
+            { value: 'manager', label: 'My line manager' },
+            { value: 'other', label: 'Another person — please specify', other: true },
+          ],
+        }),
+      ] as MyAssessment['questions'],
+    };
+    const calls = stub([branched]);
+    const user = userEvent.setup();
+    render(<Harness stage="pre_conference" />);
+    const card = await screen.findByRole('article');
+    expect(within(card).getByText(/Were you asked to attend/)).toBeTruthy();
+    expect(within(card).queryByText(/Please state the reason/)).toBeNull();
+    expect(within(card).queryByText(/Who explained/)).toBeNull();
+
+    // Yes reveals the two follow-ups, and the required one blocks a submission while blank.
+    await user.click(within(card).getByLabelText('Yes'));
+    expect(within(card).getByText(/Please state the reason/)).toBeTruthy();
+    expect(within(card).getByText(/Who explained/)).toBeTruthy();
+    await user.click(within(card).getByRole('button', { name: 'Submit answers' }));
+    expect(within(card).getByText(/One question needs attention/)).toBeTruthy();
+    await user.type(
+      within(card).getByLabelText(/Please state the reason/),
+      'Our HR director nominated me',
+    );
+
+    // No hides them again; what was typed is neither shown nor sent.
+    await user.click(within(card).getByLabelText('No'));
+    expect(within(card).queryByText(/Please state the reason/)).toBeNull();
+    await user.click(within(card).getByRole('button', { name: 'Submit answers' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Submit your responses?' });
+    expect(within(dialog).queryByText(/Please state the reason/)).toBeNull();
+    await user.click(within(dialog).getByRole('button', { name: 'Submit now' }));
+    expect(puts(calls).at(-1)).toMatchObject({ submitSection: 'general' });
+    expect((puts(calls).at(-1) as { answers: unknown }).answers).toEqual({ a: false });
+  });
+
   it('shows a section introduction plainly, or highlighted when the admin marked it so', async () => {
     // As it is: a subtitle under the title, no note role.
     stub([sectioned]);

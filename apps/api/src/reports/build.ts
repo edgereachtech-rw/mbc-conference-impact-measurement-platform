@@ -2,9 +2,11 @@ import {
   actionProgressLabels,
   actionProgressStatuses,
   appliedStatuses,
+  askedQuestionIds,
   assessmentStages,
   BUILTIN,
   compareMeasure,
+  describeCondition,
   evidenceSupports,
   evidenceTypeLabels,
   figure,
@@ -303,6 +305,24 @@ export async function buildReport(input: BuildInput): Promise<BuiltReport> {
 
   const textOf = (value: unknown) => (typeof value === 'string' ? value.trim() : '');
 
+  /**
+   * A conditional question (decision 2026-11-19) reaches only the delegates whose controlling
+   * answer matched: the figure says so, and how many it reached, so a small count reads as a
+   * small branch rather than low engagement. Null for a question everyone was asked.
+   */
+  function askedOf(sa: StageAnswers, q: AssessmentQuestionView) {
+    if (!q.conditionalQuestionKey) return { askedWhen: null, asked: null };
+    const source = sa.questions.find((x) => x.questionKey === q.conditionalQuestionKey);
+    if (!source) return { askedWhen: null, asked: null };
+    const asked = sa.responses.filter((r) =>
+      askedQuestionIds(
+        sa.questions,
+        (id) => answerTo(r.answers, sa.versions.get(id), id)?.value,
+      ).has(q.id),
+    ).length;
+    return { askedWhen: describeCondition(source, q.conditionalValues ?? []), asked };
+  }
+
   function textsOf(sa: StageAnswers, q: AssessmentQuestionView): TextAnswers {
     const answers = sa.responses
       .map((r) => ({
@@ -314,6 +334,7 @@ export async function buildReport(input: BuildInput): Promise<BuiltReport> {
       key: q.questionKey,
       prompt: q.prompt,
       sectionTitle: sectionTitleOf(sa, q),
+      ...askedOf(sa, q),
       responses: answers.length,
       state: answers.length ? 'ok' : 'no_response',
       answers,
@@ -362,6 +383,7 @@ export async function buildReport(input: BuildInput): Promise<BuiltReport> {
       sectionTitle: sectionTitleOf(sa, q),
       builtin: q.builtin,
       visibleWhen: q.visibleWhen,
+      ...askedOf(sa, q),
       multiple,
       responses: chosen.length,
       state: chosen.length ? 'ok' : 'no_response',
@@ -380,6 +402,7 @@ export async function buildReport(input: BuildInput): Promise<BuiltReport> {
       key: q.questionKey,
       prompt: q.prompt,
       sectionTitle: sectionTitleOf(sa, q),
+      ...askedOf(sa, q),
       responses: scores.length,
       average: scores.length ? round1(scores.reduce((a, b) => a + b, 0) / scores.length) : null,
       state: scores.length ? 'ok' : 'no_response',

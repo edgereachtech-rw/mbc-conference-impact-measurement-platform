@@ -168,6 +168,40 @@ describe('QuestionBuilder', () => {
     expect(JSON.parse(String(put?.init?.body))).toEqual({ questionIds: ['q1', 'q3', 'q2', 'q4'] });
   });
 
+  it('says when a conditional question is asked, and shows its control when editing it', async () => {
+    const questions = [
+      q('q1', 'Were you asked to attend by your organisation?', { type: 'yes_no', scale: null }),
+      q('q2', 'Please state the reason', {
+        type: 'long_text',
+        scale: null,
+        order: 2,
+        conditionalQuestionKey: 'q1-key',
+        conditionalValues: ['true'],
+      }),
+    ];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => json({ sections: [], questions })),
+    );
+    const user = userEvent.setup();
+    render(<QuestionBuilder eventId="e1" stage="pre_conference" onChanged={vi.fn()} />);
+    const general = await screen.findByRole('region', { name: 'Questions without a section' });
+    expect(within(general).getAllByRole('listitem')[1]!.textContent).toContain(
+      'Asked only when “Were you asked to attend by your organisation?” is answered Yes',
+    );
+    await user.click(screen.getByRole('button', { name: 'Edit: Please state the reason' }));
+    const form = screen.getByRole('form', { name: 'Edit question' });
+    expect((within(form).getByLabelText('Controlling question') as HTMLSelectElement).value).toBe(
+      'q1-key',
+    );
+    expect((within(form).getByRole('checkbox', { name: 'Yes' }) as HTMLInputElement).checked).toBe(
+      true,
+    );
+    expect((within(form).getByRole('checkbox', { name: 'No' }) as HTMLInputElement).checked).toBe(
+      false,
+    );
+  });
+
   it('builds a knowledge question from a preset with one correct answer, marked by its section', async () => {
     const calls: Array<{ url: string; init?: RequestInit }> = [];
     const sections = [

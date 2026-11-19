@@ -59,8 +59,14 @@ function stageLine(s: StageParticipation) {
   return `${stageNames[s.stage]}: ${s.submitted} submitted of ${s.invited} invited${s.responseRate === null ? '' : ` (${s.responseRate}%)`}, ${s.started - s.submitted} started but not submitted, ${s.notSubmitted} without a submission${s.state === 'not_yet_available' ? ' (not yet open)' : ''}.`;
 }
 
+/** A conditional question's reach (2026-11-19), after the count of answers. */
+const askedNote = (x: { askedWhen?: string | null; asked?: number | null }) =>
+  x.askedWhen
+    ? ` ${x.askedWhen}${x.asked === null || x.asked === undefined ? '' : ` (asked of ${x.asked})`}.`
+    : '';
+
 function distribution(d: ChoiceDistribution) {
-  const head = `**${d.prompt}**${d.sectionTitle ? ` (${d.sectionTitle})` : ''}: ${d.responses} answered${d.multiple ? ', several options allowed' : ''}.`;
+  const head = `**${d.prompt}**${d.sectionTitle ? ` (${d.sectionTitle})` : ''}: ${d.responses} answered${d.multiple ? ', several options allowed' : ''}.${askedNote(d)}`;
   if (d.state !== 'ok') return `${head} ${stateText(d.state)}.`;
   return `${head}\n\n${table(
     ['Option', 'Count', '% of answers'],
@@ -72,12 +78,16 @@ function statements(title: string, rows: StatementAverage[]) {
   if (!rows.length) return `_${title}: none configured._`;
   return `${title} (self-reported; average of the option scores, "Not applicable" excluded):\n\n${table(
     ['Statement', 'Respondents', 'Average'],
-    rows.map((r) => [r.prompt, r.responses, r.average ?? stateText(r.state)]),
+    rows.map((r) => [
+      r.askedWhen ? `${r.prompt} (${r.askedWhen.replace(/^Asked only/, 'asked only')})` : r.prompt,
+      r.responses,
+      r.average ?? stateText(r.state),
+    ]),
   )}`;
 }
 
 function texts(t: TextAnswers) {
-  const head = `**${t.prompt}**${t.sectionTitle ? ` (${t.sectionTitle})` : ''}: ${t.responses} answer${t.responses === 1 ? '' : 's'}.`;
+  const head = `**${t.prompt}**${t.sectionTitle ? ` (${t.sectionTitle})` : ''}: ${t.responses} answer${t.responses === 1 ? '' : 's'}.${askedNote(t)}`;
   if (t.state === 'withheld') return `${head} _${stateText('withheld')}._`;
   if (!t.answers.length) return `${head} _${stateText(t.state)}._`;
   return `${head}\n\n${t.answers.map((a) => `- ${a.delegate ? `${a.delegate.name}${a.delegate.organisation ? ` (${a.delegate.organisation})` : ''}: ` : ''}${cell(a.value)}`).join('\n')}`;

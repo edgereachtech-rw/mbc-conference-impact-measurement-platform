@@ -1,7 +1,7 @@
 import {
   planTitleOf,
   waveLabel,
-  answerMatchesCondition,
+  askedQuestionIds,
   answerIssue,
   answerScore,
   assessmentStageNames,
@@ -1328,6 +1328,12 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
       const versions = await versionIdsOf(stage.id, questions);
       const byId = new Map(response.answers.map((a) => [a.questionId, a]));
       const submitted = new Map(response.sections.map((x) => [x.sectionKey, x.submittedAt]));
+      // A conditional question this delegate was never asked is left out, rather than shown
+      // as unanswered (decision 2026-11-19).
+      const asked = askedQuestionIds(
+        questions,
+        (id) => answerTo(byId, versions.get(id), id)?.value,
+      );
       const detail: StageResponseDetail = {
         delegate: response.delegate,
         submittedAt: response.submittedAt ? response.submittedAt.toISOString() : null,
@@ -1336,7 +1342,7 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
           ...k,
           submittedAt: submitted.get(k.key)?.toISOString() ?? null,
           questions: questions
-            .filter((q) => sectionKeyOf(q.sectionId) === k.key)
+            .filter((q) => sectionKeyOf(q.sectionId) === k.key && asked.has(q.id))
             .map((q) => {
               const a = answerTo(byId, versions.get(q.id), q.id);
               return {
@@ -1981,33 +1987,15 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
             ),
           ),
       );
-      const answerValues = new Map(
+      const answerValues = new Map<string, unknown>(
         (existing?.answers ?? []).map((answer) => [answer.questionId, answer.value]),
       );
       for (const [questionId, value] of Object.entries(answers))
         answerValues.set(questionId, value);
-      const eligibleIds = new Set<string>();
-      const byQuestionKey = new Map(
-        eligibleQuestions.map((question) => [question.questionKey, question]),
-      );
-      for (const question of [...eligibleQuestions].sort((a, b) => a.order - b.order)) {
-        if (!question.conditionalQuestionKey) {
-          eligibleIds.add(question.id);
-          continue;
-        }
-        const source = byQuestionKey.get(question.conditionalQuestionKey);
-        if (
-          source &&
-          eligibleIds.has(source.id) &&
-          answerMatchesCondition(
-            source.type,
-            answerValues.get(source.id),
-            question.conditionalValues,
-          )
-        ) {
-          eligibleIds.add(question.id);
-        }
-      }
+      // A conditional question is asked only while its controlling answer matches (decision
+      // 2026-11-19): the rest are neither required nor kept, so an answer given before the
+      // controlling answer changed is dropped with the rest of the hidden branch.
+      const eligibleIds = askedQuestionIds(eligibleQuestions, (id) => answerValues.get(id));
       const allById = new Map(
         eligibleQuestions.map((question) => [question.id, questionViewOf(question)]),
       );

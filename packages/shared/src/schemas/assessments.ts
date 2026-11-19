@@ -286,6 +286,8 @@ export interface BuiltinQuestion extends QuestionFields {
 /** A built-in question refers to nothing and is asked of everyone. */
 const plainDisplay = {
   referenceQuestionKey: null,
+  conditionalQuestionKey: null,
+  conditionalValues: [],
   showReferenceAnswer: false,
   visibleWhen: 'always',
   allowDecline: false,
@@ -365,19 +367,99 @@ export function questionIsVisible(
   return when === 'reference_answered' ? referenceAnswered : !referenceAnswered;
 }
 
-/** Whether a selected answer should reveal a dependent question in the same assessment. */
+/**
+ * Whether an answer to the controlling question reveals a dependent question of the same
+ * assessment (decision 2026-11-19): a yes/no answer is matched as "true" or "false", a single
+ * choice by its value, a multiple choice when any selected value is among the chosen ones. A
+ * blank answer never matches, so a dependent question waits for the answer.
+ */
 export function answerMatchesCondition(
   sourceType: QuestionType,
   answer: unknown,
   values: readonly string[],
 ): boolean {
-  if (sourceType === 'yes_no') return values.includes(String(answer));
+  if (answer === null || answer === undefined || answer === '') return false;
+  if (sourceType === 'yes_no') {
+    return typeof answer === 'boolean' && values.includes(String(answer));
+  }
   if (sourceType === 'multiple_choice') {
-    if (!answer || typeof answer !== 'object' || !('selected' in answer)) return false;
-    const selected = (answer as { selected?: unknown }).selected;
-    return Array.isArray(selected) && selected.some((value) => values.includes(String(value)));
+    const selected = Array.isArray(answer)
+      ? answer
+      : typeof answer === 'object' && Array.isArray((answer as { selected?: unknown }).selected)
+        ? (answer as { selected: unknown[] }).selected
+        : [];
+    return selected.some((value) => values.includes(String(value)));
   }
   return typeof answer === 'string' && values.includes(answer);
+}
+
+/** The fields the condition rule needs from a question. */
+export interface ConditionalQuestion {
+  id: string;
+  questionKey: string;
+  order: number;
+  type: QuestionType;
+  conditionalQuestionKey?: string | null;
+  conditionalValues?: readonly string[];
+}
+
+/**
+ * The ids of the questions a delegate is asked, given their answers so far: every question with
+ * no condition, and every conditional question whose controlling question is itself asked and
+ * answered with one of the chosen values. A chain of conditions resolves in question order, so a
+ * question hidden by its own condition hides the ones that depend on it. The form, the
+ * submission and the reports all use this one rule, so they agree on what was asked.
+ */
+export function askedQuestionIds<Q extends ConditionalQuestion>(
+  questions: readonly Q[],
+  answerOf: (questionId: string) => unknown,
+): Set<string> {
+  const asked = new Set<string>();
+  const byKey = new Map(questions.map((q) => [q.questionKey, q]));
+  for (const q of [...questions].sort((a, b) => a.order - b.order)) {
+    if (!q.conditionalQuestionKey) {
+      asked.add(q.id);
+      continue;
+    }
+    const source = byKey.get(q.conditionalQuestionKey);
+    if (
+      source &&
+      source.id !== q.id &&
+      asked.has(source.id) &&
+      answerMatchesCondition(source.type, answerOf(source.id), q.conditionalValues ?? [])
+    ) {
+      asked.add(q.id);
+    }
+  }
+  return asked;
+}
+
+/** The labels of a controlling question's answers, for the chosen values. */
+export function conditionValueLabels(
+  source: { type: QuestionType; options?: readonly QuestionOption[] | null },
+  values: readonly string[],
+): string[] {
+  if (source.type === 'yes_no') {
+    return values.map((v) => (v === 'true' ? 'Yes' : v === 'false' ? 'No' : v));
+  }
+  const labels = new Map((source.options ?? []).map((o) => [o.value, o.label]));
+  return values.map((v) => labels.get(v) ?? v);
+}
+
+/**
+ * One sentence saying when a conditional question is asked, for the builder's list and the
+ * reports: "Asked only when “Were you nominated?” is answered Yes or No".
+ */
+export function describeCondition(
+  source: { prompt: string; type: QuestionType; options?: readonly QuestionOption[] | null },
+  values: readonly string[],
+): string {
+  const labels = conditionValueLabels(source, values);
+  const list =
+    labels.length <= 1
+      ? (labels[0] ?? '')
+      : `${labels.slice(0, -1).join(', ')} or ${labels[labels.length - 1]}`;
+  return `Asked only when “${source.prompt}” is answered ${list}`;
 }
 
 export const assessmentQuestionViewSchema = z.object({

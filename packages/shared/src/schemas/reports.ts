@@ -160,6 +160,9 @@ export const textAnswersSchema = z.object({
   key: z.string(),
   prompt: z.string(),
   sectionTitle: z.string().nullable(),
+  /** A conditional question (2026-11-19): when it was asked, and how many delegates it reached. */
+  askedWhen: z.string().nullable().optional(),
+  asked: z.number().int().nullable().optional(),
   responses: z.number().int(),
   state: z.enum(dataStates),
   answers: z.array(z.object({ delegate: delegateRef.nullable(), value: z.string() })),
@@ -174,6 +177,9 @@ export const choiceDistributionSchema = z.object({
   builtin: z.string().nullable(),
   /** Which delegates were asked: a branch question's share is of its cohort, not the stage. */
   visibleWhen: z.enum(questionVisibilities).default('always'),
+  /** A conditional question (2026-11-19): when it was asked, and how many delegates it reached. */
+  askedWhen: z.string().nullable().optional(),
+  asked: z.number().int().nullable().optional(),
   multiple: z.boolean(),
   responses: z.number().int(),
   state: z.enum(dataStates),
@@ -193,6 +199,9 @@ export const statementAverageSchema = z.object({
   key: z.string(),
   prompt: z.string(),
   sectionTitle: z.string().nullable(),
+  /** A conditional question (2026-11-19): when it was asked, and how many delegates it reached. */
+  askedWhen: z.string().nullable().optional(),
+  asked: z.number().int().nullable().optional(),
   responses: z.number().int(),
   average: z.number().nullable(),
   state: z.enum(dataStates),

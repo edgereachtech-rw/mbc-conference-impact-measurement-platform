@@ -13,6 +13,7 @@ import {
   type ActionProgressStatus,
   type AssessmentPlanSummary,
   answerIssue,
+  askedQuestionIds,
   BUILTIN,
   describeAnswer,
   GENERAL_SECTION,
@@ -236,7 +237,20 @@ function AssessmentCard({
     assessment.context.references.find((r) => /do differently/i.test(r.prompt)) ??
     assessment.context.references[0] ??
     null;
-  const groups = groupQuestions(assessment.sections, assessment.questions).filter(
+  // A conditional question is on the form only while its controlling answer matches (decision
+  // 2026-11-19): the rest are neither shown, required nor sent. An answer typed before the
+  // controlling answer changed stays in local state, in case that answer changes back, but the
+  // server never sees it. The same rule runs on the server, so form and submission agree.
+  const askedIdsOf = (current: Record<string, unknown>) =>
+    askedQuestionIds(assessment.questions, (id) => current[id]);
+  const askedIds = askedIdsOf(answers);
+  const askedQuestions = assessment.questions.filter((q) => askedIds.has(q.id));
+  /** Only the answers to the questions on the form: a hidden branch's stale answers stay behind. */
+  const askedAnswers = (current: Record<string, unknown>) => {
+    const asked = askedIdsOf(current);
+    return Object.fromEntries(Object.entries(current).filter(([id]) => asked.has(id)));
+  };
+  const groups = groupQuestions(assessment.sections, askedQuestions).filter(
     (g) => g.questions.length > 0,
   );
   const keyOf = (g: (typeof groups)[number]) => sectionKeyOf(g.section?.id ?? null);
@@ -277,8 +291,9 @@ function AssessmentCard({
     current: Record<string, unknown> = answers,
   ): Record<string, string> {
     const next: Record<string, string> = {};
+    const asked = askedIdsOf(current);
     for (const q of assessment.questions) {
-      if (followsADecline(q)) continue;
+      if (!asked.has(q.id) || followsADecline(q)) continue;
       const value = current[q.id];
       if (isBlankAnswer(value)) {
         if (q.required && requiredIn?.some((x) => x.id === q.id)) {
@@ -312,7 +327,7 @@ function AssessmentCard({
     try {
       const result = await apiFetch<{ assessments: MyAssessment[] }>(
         `/me/events/${eventId}/assessments/${assessment.stage}?wave=${assessment.wave}`,
-        { method: 'PUT', body: JSON.stringify({ answers: current, ...body }) },
+        { method: 'PUT', body: JSON.stringify({ answers: askedAnswers(current), ...body }) },
       );
       onUpdated(result.assessments);
       const next = result.assessments.find((a) => a.stage === assessment.stage);

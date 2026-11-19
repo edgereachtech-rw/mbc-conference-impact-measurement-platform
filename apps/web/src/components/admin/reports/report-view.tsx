@@ -74,6 +74,12 @@ function StageLine({ stage }: { stage: StageParticipation }) {
   );
 }
 
+/** A conditional question's reach (2026-11-19): when it was asked, and of how many. */
+const askedNote = (x: { askedWhen?: string | null; asked?: number | null }) =>
+  x.askedWhen
+    ? ` ${x.askedWhen}${x.asked === null || x.asked === undefined ? '' : ` (asked of ${x.asked})`}.`
+    : '';
+
 function Distribution({ d }: { d: ChoiceDistribution }) {
   return (
     <div className="space-y-1">
@@ -86,6 +92,7 @@ function Distribution({ d }: { d: ChoiceDistribution }) {
       <p className="text-xs text-corp-muted">
         {d.responses} answered{d.multiple ? ', several options allowed' : ''}.
         {d.state === 'ok' ? '' : ` ${stateText(d.state)}.`}
+        {askedNote(d)}
       </p>
       {d.responses > 0 ? (
         <dl className="divide-y divide-corp-line text-sm">
@@ -125,7 +132,12 @@ function Statements({ title, rows }: { title: string; rows: StatementAverage[] }
           <tbody className="divide-y divide-corp-line">
             {rows.map((r) => (
               <tr key={r.key}>
-                <td className="px-3 py-1.5 text-corp-text">{r.prompt}</td>
+                <td className="px-3 py-1.5 text-corp-text">
+                  {r.prompt}
+                  {r.askedWhen ? (
+                    <span className="block text-xs text-corp-muted">{askedNote(r).trim()}</span>
+                  ) : null}
+                </td>
                 <td className="px-3 py-1.5 tabular-nums">{r.responses}</td>
                 <td className="px-3 py-1.5 tabular-nums">{r.average ?? stateText(r.state)}</td>
               </tr>
@@ -144,6 +156,9 @@ function Texts({ t }: { t: TextAnswers }) {
         {t.prompt} ({t.responses})
         {t.sectionTitle ? (
           <span className="font-normal text-corp-muted"> · {t.sectionTitle}</span>
+        ) : null}
+        {t.askedWhen ? (
+          <span className="block text-xs font-normal text-corp-muted">{askedNote(t).trim()}</span>
         ) : null}
       </summary>
       {t.answers.length === 0 ? (

@@ -686,6 +686,24 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   aggregates per delegate at the furthest point any of their plans reached (completed, applied
   with no improvement yet, impact demonstrated, sustained impact) with checks waiting and
   answered. Migration `20261106210930_transfer_plan_outcome_and_impact_checks`.
+- Conditional questions within one assessment (decision 2026-11-19, backlog E4-5): a question
+  can be asked only when an earlier question of the same assessment is answered in a chosen way.
+  `assessment_question.conditional_question_key` names the controlling question (an earlier
+  yes/no, single-choice or multiple-choice question of the same stage; `condition_not_earlier`,
+  `condition_not_choice`) and `conditional_values` the answers that reveal it
+  (`condition_value_invalid` for a value the controlling question cannot take); a multiple-choice
+  control reveals it when any selected value is among them. Migration
+  `20261119120000_conditional_assessment_questions`. One rule decides what was asked
+  (`askedQuestionIds` in `@mbc/shared`): the delegate form shows a conditional question only
+  while the controlling answer matches, and hidden questions are neither required nor sent, so an
+  answer typed before the controlling answer changed stays out of the submission; `PUT` applies
+  the same rule, so a hidden branch's stale answers are dropped on save and never required. The
+  builder's "Display this question based on an answer" controls set it, and the question list says
+  "Asked only when “…” is answered Yes". Reports keep the figure's denominator as those who
+  answered, and add `askedWhen` (the condition in words) and `asked` (how many delegates
+  reached it) to the text, choice and statement figures, so a small count reads as a small branch;
+  the organisers' view of one delegate's response leaves out the questions that delegate was
+  never asked.
 - QR codes for every delegate action (task of 2026-11-06): the admin event page has a "QR codes"
   tab (`ActionQrCodes`) with one code per action: each day's reflection (its own tab and code per
   day since 2026-11-07, target `reflection-<activity id>`), each session's feedback

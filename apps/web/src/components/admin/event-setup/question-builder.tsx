@@ -13,6 +13,7 @@ import {
   builtinBlockKinds,
   builtinBlocks,
   builtinBlockLabels,
+  describeCondition,
   isLockedQuestion,
   sectionAudienceLabels,
   sectionAudiences,
@@ -284,6 +285,17 @@ function describeOption(o: QuestionOption): string {
  * can repeat a question of another stage by reference (same wording, paired answers) and can
  * load an example set, which becomes the event's own editable questions.
  */
+/** The list's note on a conditional question (decision 2026-11-19): when it is asked, in words. */
+function conditionNoteOf(
+  q: AssessmentQuestionView,
+  questions: readonly AssessmentQuestionView[],
+): string {
+  const source = questions.find((x) => x.questionKey === q.conditionalQuestionKey);
+  return source
+    ? describeCondition(source, q.conditionalValues ?? [])
+    : 'Asked only on an answer to a question that no longer exists';
+}
+
 export function QuestionBuilder({
   eventId,
   stage,
@@ -1712,6 +1724,11 @@ export function QuestionBuilder({
                             {isLockedQuestion(q) ? (
                               <StatusPill tone="neutral">
                                 {q.builtin ? 'Built-in' : 'Repeated'} · wording locked
+                              </StatusPill>
+                            ) : null}
+                            {q.conditionalQuestionKey ? (
+                              <StatusPill tone="attention">
+                                {conditionNoteOf(q, lists?.questions ?? [])}
                               </StatusPill>
                             ) : null}
                             {q.version > 1 ? <span>version {q.version}</span> : null}

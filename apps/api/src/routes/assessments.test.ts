@@ -911,4 +911,128 @@ describe.skipIf(!hasDatabase)('assessment questions and answers', () => {
       await prisma.auditLog.count({ where: { eventId, action: 'assessment.section_submitted' } }),
     ).toBe(1);
   });
+
+  it('asks a conditional question only on the matching answer, drops the hidden branch on submission, and reports it as asked of a subset', async () => {
+    const base = `/events/${eventId}/assessments/end_of_conference/questions`;
+    const asked = await call('post', base, {
+      prompt: 'Were you asked to attend by your organisation?',
+      type: 'yes_no',
+    });
+    expect(asked.status, asked.text).toBe(201);
+    const askedKey = asked.body.question.questionKey as string;
+    // The condition must name an answer the controlling question can take.
+    const bad = await call('post', base, {
+      prompt: 'Please state the reason',
+      type: 'long_text',
+      conditionalQuestionKey: askedKey,
+      conditionalValues: ['maybe'],
+    });
+    expect(bad.status).toBe(400);
+    expect(bad.body.error.code).toBe('condition_value_invalid');
+    const reason = await call('post', base, {
+      prompt: 'Please state the reason',
+      type: 'long_text',
+      conditionalQuestionKey: askedKey,
+      conditionalValues: ['true'],
+    });
+    expect(reason.status, reason.text).toBe(201);
+    expect(reason.body.question).toMatchObject({
+      conditionalQuestionKey: askedKey,
+      conditionalValues: ['true'],
+    });
+    const who = await call('post', base, {
+      prompt: 'Who explained why you were asked to attend?',
+      type: 'multiple_choice',
+      required: false,
+      options: [
+        { value: 'manager', label: 'My line manager' },
+        { value: 'other', label: 'Another person — please specify', other: true },
+      ],
+      conditionalQuestionKey: askedKey,
+      conditionalValues: ['true'],
+    });
+    expect(who.status, who.text).toBe(201);
+    // Only an earlier question of the same assessment can control: the first cannot follow the third.
+    const later = await call('patch', `${base}/${asked.body.question.id}`, {
+      conditionalQuestionKey: who.body.question.questionKey,
+      conditionalValues: ['manager'],
+    });
+    expect(later.status).toBe(400);
+    expect(later.body.error.code).toBe('condition_not_earlier');
+
+    const stageUrl = `/events/${eventId}/assessments/end_of_conference`;
+    const opened = await call('put', stageUrl, {
+      enabled: true,
+      status: 'open',
+      opensAt: '2026-11-13T09:00:00+01:00',
+      closesAt: '2026-11-30T18:00:00+01:00',
+    });
+    expect(opened.status, opened.text).toBe(200);
+    now = new Date('2026-11-20T12:00:00.000Z');
+    const me = `/me/events/${eventId}/assessments/end_of_conference`;
+    const ids = {
+      asked: asked.body.question.id as string,
+      reason: reason.body.question.id as string,
+      who: who.body.question.id as string,
+    };
+    const stageOf = (body: { assessments: Array<{ stage: string }> }) =>
+      body.assessments.find((a) => a.stage === 'end_of_conference') as {
+        response: { submittedAt: string | null; answers: Record<string, unknown> };
+      };
+    // Yes without a reason: the reason is required now that it is asked.
+    const missing = await call(
+      'put',
+      me,
+      { answers: { [ids.asked]: true }, submit: true },
+      cookies.delegate,
+    );
+    expect(missing.status).toBe(422);
+    expect(Object.keys(missing.body.problems)).toEqual([ids.reason]);
+    // The whole branch answered, kept as a draft.
+    const branch = {
+      [ids.reason]: 'Our HR director nominated me',
+      [ids.who]: { selected: ['other'], other: 'The HR director' },
+    };
+    const draft = await call(
+      'put',
+      me,
+      { answers: { [ids.asked]: true, ...branch } },
+      cookies.delegate,
+    );
+    expect(draft.status, draft.text).toBe(200);
+    expect(Object.keys(stageOf(draft.body).response.answers).sort()).toEqual(
+      [ids.asked, ids.reason, ids.who].sort(),
+    );
+    // The answer flips to No: the branch is hidden, not required, and its stale answers go.
+    const done = await call(
+      'put',
+      me,
+      { answers: { [ids.asked]: false, ...branch }, submit: true },
+      cookies.delegate,
+    );
+    expect(done.status, done.text).toBe(200);
+    expect(stageOf(done.body).response.submittedAt).toBeTruthy();
+    expect(stageOf(done.body).response.answers).toEqual({ [ids.asked]: false });
+
+    // The organisers' view of the response leaves the never-asked questions out.
+    const listing = await call('get', `${stageUrl}/responses`);
+    const delegateId = listing.body.responses[0].delegateId as string;
+    const detail = await call('get', `${stageUrl}/responses/${delegateId}`);
+    expect(detail.status, detail.text).toBe(200);
+    expect(
+      detail.body.response.sections.flatMap((x: { questions: Array<{ prompt: string }> }) =>
+        x.questions.map((q) => q.prompt),
+      ),
+    ).toEqual(['Were you asked to attend by your organisation?']);
+
+    // The report says when the question was asked, and of how many, so a small count is read
+    // as a small branch rather than low engagement.
+    const report = await call('get', `/events/${eventId}/reports/conference`);
+    expect(report.status, report.text).toBe(200);
+    const figures = JSON.stringify(report.body);
+    expect(figures).toContain(
+      'Asked only when “Were you asked to attend by your organisation?” is answered Yes',
+    );
+    expect(figures).toContain('"asked":0');
+  });
 });
