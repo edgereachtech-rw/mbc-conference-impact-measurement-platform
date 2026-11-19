@@ -35,13 +35,13 @@ export function EventCard({ event }: { event: MyEvent }) {
         {event.theme ? <p className="text-sm text-corp-muted">{event.theme}</p> : null}
       </div>
       <dl className="grid gap-2 text-sm">
-        <div className="flex items-start gap-2">
-          <CalendarDaysIcon className="mt-0.5 size-4 shrink-0 text-corp-muted" aria-hidden="true" />
-          {/* <div className="min-w-0">
+        {/* <div className="flex items-start gap-2"> */}
+        {/* <CalendarDaysIcon className="mt-0.5 size-4 shrink-0 text-corp-muted" aria-hidden="true" /> */}
+        {/* <div className="min-w-0">
             <dt className="sr-only">Dates</dt>
             <dd className="text-corp-text">{formatEventDates(event.startsOn, event.endsOn)}</dd>
           </div> */}
-        </div>
+        {/* </div> */}
         {/* <div className="flex items-start gap-2"> */}
         {/* <MapPinIcon className="mt-0.5 size-4 shrink-0 text-corp-muted" aria-hidden="true" /> */}
         {/* <div className="min-w-0"> */}
