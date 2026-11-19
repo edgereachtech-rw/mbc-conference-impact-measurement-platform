@@ -51,9 +51,9 @@ export async function resolveSignIn({
 
 /** What the platform is for, said once, on the panel beside the form. */
 const WHAT_IT_DOES = [
-  'Record what you want to get out of the conference, before it starts.',
-  'Check in each day, give session feedback and build your transfer plan.',
-  'Follow up at 30, 60, 90 days, and beyond on what you have been able to apply.',
+  'Before you attend, record what you want to gain, where you are starting from, and what you want to improve.',
+  'As you learn, reflect on key takeaways, share feedback, and build a practical plan for applying what you learn.',
+  'Afterwards, check in at 30, 60, 90 days, and beyond, to capture what you have applied, what has improved, and what support you still need.',
 ];
 
 /**
@@ -71,7 +71,7 @@ export function SignInPanel({ safeNext, initialEmail, invite }: SignInState & { 
   return (
     <div className="flex min-h-dvh flex-col lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] xl:grid-cols-[minmax(0,5fr)_minmax(0,4fr)]">
       {/* ---------------------------------------------------------------- brand */}
-      <aside className="flex flex-col justify-between bg-brand-primary bg-[radial-gradient(ellipse_at_top_left,rgb(255_255_255/0.10),transparent_55%)] px-gutter py-6 text-white md:px-10 lg:py-12 xl:px-16">
+      <aside className="flex flex-col justify-between bg-brand-primary bg-[radial-gradient(ellipse_at_top_left,rgb(255_255_255/0.10),transparent_55%)] px-gutter py-6 text-white md:px-10 lg:min-h-dvh lg:py-8 xl:px-16">
         <a
           href={platform.company.url}
           target="_blank"
@@ -79,19 +79,24 @@ export function SignInPanel({ safeNext, initialEmail, invite }: SignInState & { 
           aria-label={`${platform.company.name} website (opens in a new tab)`}
           className="inline-flex min-h-tap w-fit items-center rounded-md"
         >
-          <MbryanLogoOnDark priority className="h-12 w-auto md:h-14" />
+          <MbryanLogoOnDark priority className="h-10 w-auto md:h-12" />
         </a>
 
         <div className="mt-6 max-w-xl lg:mt-0">
-          <p className="font-display text-3xl leading-tight font-bold tracking-[0.04em] text-brand-accent uppercase md:text-4xl xl:text-5xl">
+          <p className="font-display text-3xl leading-tight font-bold tracking-[0.04em] text-brand-accent uppercase md:text-4xl lg:text-3xl xl:text-4xl">
             {platform.shortName}
           </p>
-          <h2 className="mt-4 font-display text-xl leading-snug font-semibold text-white md:text-2xl xl:text-3xl">
+          <h2 className="mt-3 font-display text-lg leading-snug font-semibold text-white md:text-xl xl:text-2xl">
             The true value of learning is what changes afterwards.
           </h2>
+          <p className="mt-3 max-w-lg text-sm leading-relaxed text-white/85 md:text-base lg:text-sm xl:text-base">
+            Whether you are attending the ITTEC Conference, a training programme, a webinar, or a
+            workshop, use the platform to set clear goals, plan how you will apply what you learn,
+            and track what changes in your work.
+          </p>
           {/* Hidden below `lg`: with it, the band pushed the form off a 360px screen, and the
               form is the only thing a delegate came here to do. */}
-          <ul className="mt-6 hidden space-y-3 lg:block">
+          <ul className="mt-4 hidden space-y-2 lg:block">
             {WHAT_IT_DOES.map((line) => (
               <li key={line} className="flex gap-3 text-sm text-white/85 md:text-base">
                 <CheckCircle2Icon
@@ -104,15 +109,15 @@ export function SignInPanel({ safeNext, initialEmail, invite }: SignInState & { 
           </ul>
         </div>
 
-        <p className="mt-8 hidden text-xs text-white/60 lg:mt-0 lg:block">
+        <p className="mt-5 hidden text-xs text-white/60 lg:mt-0 lg:block">
           {platform.company.name} · {platform.copyright}
         </p>
       </aside>
 
       {/* ---------------------------------------------------------------- sign in */}
       {/* A div, not a main: the root layout owns the one main landmark the skip link targets. */}
-      <div className="flex flex-1 flex-col justify-center bg-surface-raised px-gutter py-10 md:px-10 xl:px-16">
-        <div className="mx-auto w-full max-w-md space-y-6">
+      <div className="flex flex-1 flex-col justify-center bg-surface-raised px-gutter py-8 md:px-10 lg:min-h-dvh lg:py-6 xl:px-16">
+        <div className="mx-auto w-full max-w-md space-y-4 lg:space-y-4">
           <div className="space-y-2">
             <h1 className="text-h1">{initialEmail ? 'Activate your account' : 'Sign in'}</h1>
             <p className="text-base text-brand-muted">
@@ -122,7 +127,7 @@ export function SignInPanel({ safeNext, initialEmail, invite }: SignInState & { 
             </p>
           </div>
 
-          <div className="rounded-lg border border-brand-line bg-card p-5 shadow-card md:p-6">
+          <div className="rounded-lg border border-brand-line bg-card p-4 shadow-card md:p-5">
             {invite && !initialEmail ? (
               <p className="mb-4 text-sm text-brand-muted" role="note">
                 This invitation link is no longer valid. Sign in with the email address you
