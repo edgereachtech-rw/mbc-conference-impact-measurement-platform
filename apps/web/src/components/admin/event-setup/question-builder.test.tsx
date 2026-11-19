@@ -175,6 +175,7 @@ describe('QuestionBuilder', () => {
         type: 'long_text',
         scale: null,
         order: 2,
+        maxWords: 150,
         conditionalQuestionKey: 'q1-key',
         conditionalValues: ['true'],
       }),
@@ -189,11 +190,15 @@ describe('QuestionBuilder', () => {
     expect(within(general).getAllByRole('listitem')[1]!.textContent).toContain(
       'Asked only when “Were you asked to attend by your organisation?” is answered Yes',
     );
+    expect(within(general).getAllByRole('listitem')[1]!.textContent).toContain('Up to 150 words');
     await user.click(screen.getByRole('button', { name: 'Edit: Please state the reason' }));
     const form = screen.getByRole('form', { name: 'Edit question' });
     expect((within(form).getByLabelText('Controlling question') as HTMLSelectElement).value).toBe(
       'q1-key',
     );
+    expect(
+      (within(form).getByLabelText('Maximum words (optional)') as HTMLInputElement).value,
+    ).toBe('150');
     expect((within(form).getByRole('checkbox', { name: 'Yes' }) as HTMLInputElement).checked).toBe(
       true,
     );

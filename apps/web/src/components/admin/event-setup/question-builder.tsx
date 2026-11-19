@@ -25,6 +25,7 @@ import {
   stageOrder,
   supportFlagLabels,
   supportFlags,
+  textTypes,
   type QuestionVisibility,
   type SupportFlag,
   type AssessmentQuestionView,
@@ -87,6 +88,8 @@ interface Draft {
   scaleMax: string;
   minLabel: string;
   maxLabel: string;
+  /** A text question's word limit (2026-11-19), as typed; blank means none. */
+  maxWords: string;
   /** Requirement 10.5: the earlier question this one shows back or depends on. */
   referenceQuestionKey: string;
   conditionalQuestionKey: string;
@@ -128,6 +131,7 @@ const EMPTY: Draft = {
   scaleMax: '5',
   minLabel: '',
   maxLabel: '',
+  maxWords: '',
   referenceQuestionKey: '',
   conditionalQuestionKey: '',
   conditionalValues: [],
@@ -165,6 +169,7 @@ function draftOf(q: AssessmentQuestionView | null, sectionId = ''): Draft {
     scaleMax: String(q.scale?.max ?? 5),
     minLabel: q.scale?.minLabel ?? '',
     maxLabel: q.scale?.maxLabel ?? '',
+    maxWords: q.maxWords ? String(q.maxWords) : '',
     referenceQuestionKey: q.referenceQuestionKey ?? '',
     conditionalQuestionKey: q.conditionalQuestionKey ?? '',
     conditionalValues: q.conditionalValues ?? [],
@@ -259,6 +264,8 @@ export function payloadOf(draft: Draft, marking: SectionMarking = 'none') {
     allowDecline: draft.allowDecline,
     supportFlag: draft.supportFlag,
     ...(isChoice ? { options: optionsPayload(draft.type, draft.options, marking) } : {}),
+    maxWords:
+      textTypes.includes(draft.type) && draft.maxWords.trim() ? Number(draft.maxWords) : null,
     ...(draft.type === 'rating'
       ? {
           scale: {
@@ -1450,6 +1457,28 @@ export function QuestionBuilder({
                 {fieldError('options')}
               </fieldset>
             ) : null}
+            {textTypes.includes(editing.draft.type) ? (
+              <div className="space-y-1">
+                <label htmlFor={`${id}-maxwords`} className="text-sm font-semibold text-corp-ink">
+                  Maximum words (optional)
+                </label>
+                <input
+                  id={`${id}-maxwords`}
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  max={5000}
+                  value={editing.draft.maxWords}
+                  onChange={(e) => set('maxWords', e.target.value)}
+                  className="h-11 w-32 rounded-none border border-corp-line bg-white px-3 text-base md:text-sm"
+                />
+                <p className="text-xs text-corp-muted">
+                  The delegate sees a word count under the answer and cannot submit over the limit.
+                  Leave blank for no limit.
+                </p>
+                {fieldError('maxWords')}
+              </div>
+            ) : null}
             {editing.draft.type === 'rating' ? (
               <div className="grid gap-4 sm:grid-cols-4">
                 <div className="space-y-1">
@@ -1739,6 +1768,9 @@ export function QuestionBuilder({
                             <p className="mt-1 text-xs text-corp-muted">
                               {q.options.map(describeOption).join(' · ')}
                             </p>
+                          ) : null}
+                          {q.maxWords ? (
+                            <p className="mt-1 text-xs text-corp-muted">Up to {q.maxWords} words</p>
                           ) : null}
                           {q.scale ? (
                             <p className="mt-1 text-xs text-corp-muted">

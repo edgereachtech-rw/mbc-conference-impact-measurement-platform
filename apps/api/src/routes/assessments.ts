@@ -101,6 +101,7 @@ export function questionViewOf(q: QuestionRow): AssessmentQuestionView {
     area: q.area,
     options,
     scale: (q.scale as RatingScale | null) ?? null,
+    maxWords: q.maxWords,
     isKnowledge: isKnowledgeQuestion({ type: q.type, options }),
     responseCount: q._count.answers,
     sourceQuestionKey: q.sourceQuestionKey,
@@ -632,6 +633,7 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
               input.type === 'rating'
                 ? ((input.scale ?? { min: 1, max: 5 }) as Prisma.InputJsonValue)
                 : undefined,
+            maxWords: input.maxWords ?? null,
             referenceQuestionKey: input.referenceQuestionKey ?? null,
             conditionalQuestionKey: input.conditionalQuestionKey ?? null,
             conditionalValues: input.conditionalValues,
@@ -779,6 +781,7 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
           patch.scale === undefined
             ? ((current.scale as RatingScale | null) ?? undefined)
             : (patch.scale ?? undefined),
+        maxWords: patch.maxWords === undefined ? current.maxWords : patch.maxWords,
         referenceQuestionKey:
           patch.referenceQuestionKey === undefined
             ? current.referenceQuestionKey
@@ -828,6 +831,7 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
           merged.data.type === 'rating'
             ? ((merged.data.scale ?? { min: 1, max: 5 }) as Prisma.InputJsonValue)
             : Prisma.JsonNull,
+        maxWords: merged.data.maxWords ?? null,
       };
       const answered = current._count.answers > 0;
       const saved = await prisma().$transaction(async (tx) => {

@@ -639,6 +639,7 @@ describe('AssessmentsPanel', () => {
           type: 'long_text',
           prompt: 'Please state the reason',
           order: 2,
+          maxWords: 4,
           conditionalQuestionKey: 'a-k',
           conditionalValues: ['true'],
         }),
@@ -670,10 +671,16 @@ describe('AssessmentsPanel', () => {
     expect(within(card).getByText(/Who explained/)).toBeTruthy();
     await user.click(within(card).getByRole('button', { name: 'Submit answers' }));
     expect(within(card).getByText(/One question needs attention/)).toBeTruthy();
+    // The word count is live, and an answer over the limit is refused before any request.
     await user.type(
       within(card).getByLabelText(/Please state the reason/),
       'Our HR director nominated me',
     );
+    expect(within(card).getByText('5 of 4 words')).toBeTruthy();
+    const before = puts(calls).length;
+    await user.click(within(card).getByRole('button', { name: 'Submit answers' }));
+    expect(within(card).getByText('Keep your answer to 4 words (5 so far).')).toBeTruthy();
+    expect(puts(calls).length).toBe(before);
 
     // No hides them again; what was typed is neither shown nor sent.
     await user.click(within(card).getByLabelText('No'));

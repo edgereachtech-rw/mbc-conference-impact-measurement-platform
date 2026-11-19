@@ -1184,6 +1184,8 @@ model AssessmentQuestion {
   area                 String?
   options              Json?
   scale                Json?
+  /// A text question's word limit (decision 2026-11-19); null means the character limit alone.
+  maxWords             Int?               @map("max_words")
   /// The question_key this question repeats from another stage (mirrored sections); answers to
   /// the two are paired per delegate in reports. Wording and options stay locked.
   sourceQuestionKey    String?            @map("source_question_key") @db.Uuid

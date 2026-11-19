@@ -15,6 +15,7 @@ import {
   answerIssue,
   askedQuestionIds,
   BUILTIN,
+  countWords,
   describeAnswer,
   GENERAL_SECTION,
   PREFER_NOT_TO_ANSWER,
@@ -870,7 +871,9 @@ function QuestionField({
           {error}
         </div>
       );
-    case 'long_text':
+    case 'long_text': {
+      const text = typeof value === 'string' ? value : '';
+      const words = question.maxWords ? countWords(text) : 0;
       return (
         <div className="space-y-1">
           <label htmlFor={id}>
@@ -880,15 +883,30 @@ function QuestionField({
           <textarea
             id={id}
             rows={4}
-            value={typeof value === 'string' ? value : ''}
+            value={text}
             disabled={disabled}
             maxLength={5000}
+            aria-describedby={question.maxWords ? `${id}-words` : undefined}
             onChange={(e) => onChange(e.target.value)}
             className="w-full rounded-none border border-corp-line bg-white px-3 py-2 text-base disabled:bg-corp-surface md:text-sm"
           />
+          {question.maxWords ? (
+            // The count is live so the delegate trims before submitting, not after a refusal.
+            <p
+              id={`${id}-words`}
+              className={
+                words > question.maxWords
+                  ? 'text-xs font-semibold text-danger'
+                  : 'text-xs text-corp-muted'
+              }
+            >
+              {words} of {question.maxWords} words
+            </p>
+          ) : null}
           {error}
         </div>
       );
+    }
     case 'single_choice':
     case 'yes_no': {
       const options =

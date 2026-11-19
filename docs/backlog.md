@@ -834,6 +834,7 @@ question replace it, and any event can now express 10.5 in its own words:
 | `showReferenceAnswer` | Shows the delegate their own answer to it, above this question ("Before the conference, you said") |
 | `visibleWhen` | `always`, `reference_answered` or `reference_unanswered` — which delegates are asked at all |
 | `allowDecline` | Offers "I prefer not to answer"; declining drops the required check on the questions after it in the same section, on the same reference and branch |
+| `maxWords` | Decision 2026-11-19: a word limit on a short- or long-answer question (1 to 5,000); the delegate sees a live count and neither the form nor the server accepts an answer over it |
 | `conditionalQuestionKey`, `conditionalValues` | Decision 2026-11-19: an earlier yes/no or choice question of the **same assessment** and the answers that reveal this one. Independent of the reference fields above; a question may carry both |
 
 What this changes elsewhere:

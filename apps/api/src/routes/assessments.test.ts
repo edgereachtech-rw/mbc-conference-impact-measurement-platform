@@ -929,9 +929,17 @@ describe.skipIf(!hasDatabase)('assessment questions and answers', () => {
     });
     expect(bad.status).toBe(400);
     expect(bad.body.error.code).toBe('condition_value_invalid');
+    // A word limit applies to text questions only.
+    const limited = await call('post', base, {
+      prompt: 'x',
+      type: 'yes_no',
+      maxWords: 10,
+    });
+    expect(limited.status).toBe(422);
     const reason = await call('post', base, {
       prompt: 'Please state the reason',
       type: 'long_text',
+      maxWords: 5,
       conditionalQuestionKey: askedKey,
       conditionalValues: ['true'],
     });
@@ -939,6 +947,7 @@ describe.skipIf(!hasDatabase)('assessment questions and answers', () => {
     expect(reason.body.question).toMatchObject({
       conditionalQuestionKey: askedKey,
       conditionalValues: ['true'],
+      maxWords: 5,
     });
     const who = await call('post', base, {
       prompt: 'Who explained why you were asked to attend?',
@@ -976,7 +985,7 @@ describe.skipIf(!hasDatabase)('assessment questions and answers', () => {
       who: who.body.question.id as string,
     };
     const stageOf = (body: { assessments: Array<{ stage: string }> }) =>
-      body.assessments.find((a) => a.stage === 'end_of_conference') as {
+      body.assessments.find((a) => a.stage === 'end_of_conference') as unknown as {
         response: { submittedAt: string | null; answers: Record<string, unknown> };
       };
     // Yes without a reason: the reason is required now that it is asked.
@@ -988,6 +997,15 @@ describe.skipIf(!hasDatabase)('assessment questions and answers', () => {
     );
     expect(missing.status).toBe(422);
     expect(Object.keys(missing.body.problems)).toEqual([ids.reason]);
+    // Over the word limit: refused with the count.
+    const wordy = await call(
+      'put',
+      me,
+      { answers: { [ids.asked]: true, [ids.reason]: 'one two three four five six' } },
+      cookies.delegate,
+    );
+    expect(wordy.status).toBe(422);
+    expect(wordy.body.problems[ids.reason]).toBe('Keep your answer to 5 words (6 so far).');
     // The whole branch answered, kept as a draft.
     const branch = {
       [ids.reason]: 'Our HR director nominated me',

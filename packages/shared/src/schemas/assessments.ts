@@ -87,6 +87,8 @@ export const questionFieldsSchema = z
     area: optionalText(100),
     options: z.array(questionOptionSchema).max(20).optional(),
     scale: ratingScaleSchema.optional(),
+    /** A text question's word limit (decision 2026-11-19); null or absent means none. */
+    maxWords: z.number().int().min(1, 'At least one word').max(5000).nullable().optional(),
     /** An earlier question of this event, by question key; see questionVisibilities. */
     referenceQuestionKey: z.uuid().nullable().optional(),
     /** Reveal this question when an earlier question in the same assessment has a selected value. */
@@ -110,6 +112,9 @@ export const questionFieldsSchema = z
     // Showing an answer, or asking only some delegates, both need to know which answer.
     if (!q.referenceQuestionKey && (q.showReferenceAnswer || q.visibleWhen !== 'always')) {
       issue('Choose the earlier question this one refers to', ['referenceQuestionKey']);
+    }
+    if (q.maxWords && !textTypes.includes(q.type)) {
+      issue('A word limit applies to text questions only', ['maxWords']);
     }
     if (q.conditionalQuestionKey && q.conditionalValues.length === 0) {
       issue('Choose at least one answer that shows this question', ['conditionalValues']);
@@ -237,6 +242,7 @@ export const questionPatchSchema = z.object({
   area: optionalText(100),
   options: z.array(questionOptionSchema).max(20).nullable().optional(),
   scale: ratingScaleSchema.nullable().optional(),
+  maxWords: z.number().int().min(1).max(5000).nullable().optional(),
   referenceQuestionKey: z.uuid().nullable().optional(),
   conditionalQuestionKey: z.uuid().nullable().optional(),
   conditionalValues: z.array(z.string().min(1).max(100)).max(20).optional(),
@@ -476,6 +482,8 @@ export const assessmentQuestionViewSchema = z.object({
   area: z.string().nullable(),
   options: z.array(questionOptionSchema).nullable(),
   scale: ratingScaleSchema.nullable(),
+  /** A text question's word limit (decision 2026-11-19); null means none. */
+  maxWords: z.number().int().nullable().optional(),
   /** A single-choice question with a correct answer: scored, with instant feedback. */
   isKnowledge: z.boolean(),
   /** Answers stored against this version; editing then creates a new version. */
@@ -603,19 +611,39 @@ export function multipleChoiceAnswer(value: unknown): MultipleChoiceAnswer | nul
   return null;
 }
 
+/** The text question types, the ones a word limit applies to. */
+export const textTypes: readonly QuestionType[] = ['short_text', 'long_text'];
+
+/** The number of words in an answer: runs of non-space characters. */
+export function countWords(text: string): number {
+  const trimmed = text.trim();
+  return trimmed ? trimmed.split(/\s+/).length : 0;
+}
+
+/** The message for an answer over its question's word limit; null when within it or no limit. */
+export function wordLimitIssue(maxWords: number | null | undefined, value: string): string | null {
+  if (!maxWords) return null;
+  const words = countWords(value);
+  return words > maxWords
+    ? `Keep your answer to ${maxWords} word${maxWords === 1 ? '' : 's'} (${words} so far).`
+    : null;
+}
+
 /** Checks one answer against its question; null when valid, otherwise the message to show. */
 export function answerIssue(
-  question: Pick<AssessmentQuestionView, 'type' | 'options' | 'scale'>,
+  question: Pick<AssessmentQuestionView, 'type' | 'options' | 'scale'> & {
+    maxWords?: number | null;
+  },
   value: unknown,
 ): string | null {
   switch (question.type) {
     case 'short_text':
       return typeof value === 'string' && value.trim().length > 0 && value.length <= 500
-        ? null
+        ? wordLimitIssue(question.maxWords, value)
         : 'Enter a short answer (up to 500 characters).';
     case 'long_text':
       return typeof value === 'string' && value.trim().length > 0 && value.length <= 5_000
-        ? null
+        ? wordLimitIssue(question.maxWords, value)
         : 'Enter an answer (up to 5,000 characters).';
     case 'single_choice':
       return typeof value === 'string' && (question.options ?? []).some((o) => o.value === value)

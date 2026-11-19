@@ -686,6 +686,13 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   aggregates per delegate at the furthest point any of their plans reached (completed, applied
   with no improvement yet, impact demonstrated, sustained impact) with checks waiting and
   answered. Migration `20261106210930_transfer_plan_outcome_and_impact_checks`.
+- Word limit on text questions (decision 2026-11-19): a short- or long-answer question may carry
+  `assessment_question.max_words` (`maxWords`, 1 to 5,000; set in the builder as "Maximum words",
+  blank for none; refused on other types). The delegate's long-answer field shows a live
+  "12 of 150 words" count, and the form and `PUT` both refuse an answer over the limit
+  ("Keep your answer to 150 words"); the 500 and 5,000 character limits still apply. Words are
+  runs of non-space characters (`countWords` in `@mbc/shared`). Migration
+  `20261119142000_long_text_max_words`.
 - Conditional questions within one assessment (decision 2026-11-19, backlog E4-5): a question
   can be asked only when an earlier question of the same assessment is answered in a chosen way.
   `assessment_question.conditional_question_key` names the controlling question (an earlier
