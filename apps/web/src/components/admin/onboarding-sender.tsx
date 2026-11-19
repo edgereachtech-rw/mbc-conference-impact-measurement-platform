@@ -91,7 +91,9 @@ export function OnboardingSender({ eventId, timezone }: { eventId: string; timez
       <p className="mt-1 text-sm text-corp-muted">
         One email per delegate: what the platform is for, what happens before, during and after,
         their check-in codes for each day as images they can show at the door, and the card with
-        their name on it. Nothing is sent until you press the button.
+        their name on it. Nothing is sent until you press the button. The wording is yours to set
+        under the Emails tab (&ldquo;Welcome pack&rdquo;); a delegate who already took part in an
+        earlier event is told their account carries over.
       </p>
 
       <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">

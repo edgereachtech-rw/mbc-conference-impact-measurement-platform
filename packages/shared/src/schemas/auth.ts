@@ -71,6 +71,8 @@ export const sessionUserSchema = z.object({
   email: z.string(),
   role: z.enum(userRoles),
   displayName: z.string(),
+  /** When the delegate closed the dashboard's "How this works" note (2026-11-19); null until then. */
+  dashboardNoteDismissedAt: z.string().nullable().optional(),
   delegate: z
     .object({
       id: z.uuid(),

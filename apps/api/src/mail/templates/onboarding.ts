@@ -1,4 +1,13 @@
-import { escapeHtml, renderLayout, type EmailBranding, type RenderedEmail } from './layout.js';
+import type { EmailCustomisation } from '@mbc/shared';
+
+import {
+  escapeHtml,
+  renderLayout,
+  type EmailBranding,
+  type RenderedEmail,
+  recipientValues,
+  wordingOf,
+} from './layout.js';
 
 /**
  * The onboarding pack (task of 2026-11-03): what the platform is for, what happens when, the
@@ -29,8 +38,13 @@ export interface OnboardingPackInput {
   /** Absolute link to the delegate's event page,  */
   badgeUrl: string;
   dates: OnboardingDate[];
-  /** What the pre-conference assessment is called and whether it is open yet. */
+  /** What the pre-event assessment is called and whether it is open yet. */
   firstStep?: string;
+  /**
+   * The earlier event this person already took part in on the platform, when there is one
+   * (2026-11-19): the pack then says their account and earlier records carry over.
+   */
+  returningFrom?: string;
 }
 
 const P = 'margin:0 0 14px;font-size:15px;line-height:23px;color:#1f2937;';
@@ -40,9 +54,37 @@ const H =
 export function renderOnboardingPack(
   branding: EmailBranding,
   input: OnboardingPackInput,
+  custom?: EmailCustomisation | null,
 ): RenderedEmail {
   const greeting = input.recipientName ? `Hello ${escapeHtml(input.recipientName)},` : 'Hello,';
-  const where = input.venue ? ` at ${escapeHtml(input.venue)}` : '';
+  const noun = branding.eventNoun ?? 'conference';
+  const w = wordingOf(
+    {
+      subject: `Welcome to ${branding.eventName}: your check-in codes and what happens when`,
+      title: `You are set for ${branding.eventName}`,
+      intro: [
+        `You are registered for ${branding.eventName}, ${input.eventDates}${input.venue ? ` at ${input.venue}` : ''}. This platform is where you record what you want to get out of the ${noun}, and what you do with it afterwards — so the value shows up in your work, not just in the room.`,
+      ],
+      closing: [
+        'You sign in with this email address — there is no password. Ask for a link whenever you need one.',
+        `Questions about your registration? Write to ${branding.contactEmail}.`,
+      ],
+      buttonLabel: 'Open my dashboard',
+    },
+    custom,
+    {
+      ...recipientValues(branding, input.recipientName),
+      eventDates: input.eventDates,
+      venue: input.venue ?? '',
+    },
+  );
+  // The returning line is the platform's, not the organisers': it states a fact about the account.
+  const returning = input.returningFrom
+    ? `You already have an account here from ${input.returningFrom}. Sign in with the same email address; your earlier events stay on your dashboard, and this ${noun} starts fresh with its own questions and plan.`
+    : null;
+  const introHtml = [...w.intro, ...(returning ? [returning] : [])]
+    .map((text) => `<p style="${P}">${escapeHtml(text)}</p>`)
+    .join('\n');
 
   const codes = input.dates
     .map(
@@ -57,12 +99,12 @@ export function renderOnboardingPack(
 
   const html = `
     <p style="${P}">${greeting}</p>
-    <p style="${P}">You are registered for <strong>${escapeHtml(branding.eventName)}</strong>, ${escapeHtml(input.eventDates)}${where}. This platform is where you record what you want to get out of the conference, and what you do with it afterwards — so the value shows up in your work, not just in the room.</p>
+    ${introHtml}
 
     <p style="${H}">What happens when</p>
     <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;">
       <tr><td style="padding:6px 0;border-bottom:1px solid #eef2f6;font-size:15px;color:#1f2937;"><strong>Before</strong> &nbsp;A short check-in: where you are now and what you want to change.</td></tr>
-      <tr><td style="padding:6px 0;border-bottom:1px solid #eef2f6;font-size:15px;color:#1f2937;"><strong>At the conference</strong> &nbsp;Check in each day with the code below, give feedback on sessions, and build your Transfer Plan.</td></tr>
+      <tr><td style="padding:6px 0;border-bottom:1px solid #eef2f6;font-size:15px;color:#1f2937;"><strong>At the ${noun}</strong> &nbsp;Check in each day with the code below, give feedback on sessions, and build your Transfer Plan.</td></tr>
       <tr><td style="padding:6px 0;font-size:15px;color:#1f2937;"><strong>Afterwards</strong> &nbsp;Short follow-ups at 30, 60, 90 days, and beyond asking what you have been able to apply..</td></tr>
     </table>
 ${
@@ -82,11 +124,12 @@ ${input.firstStep ? `\n    <p style="${P}"><strong>Your first step:</strong> ${e
   const text = [
     input.recipientName ? `Hello ${input.recipientName},` : 'Hello,',
     '',
-    `You are registered for ${branding.eventName}, ${input.eventDates}${input.venue ? ` at ${input.venue}` : ''}. This platform is where you record what you want to get out of the conference, and what you do with it afterwards.`,
+    ...w.intro,
+    ...(returning ? [returning] : []),
     '',
     'WHAT HAPPENS WHEN',
     'Before: a short check-in on where you are now and what you want to change.',
-    'At the conference: check in each day with your code, give session feedback, build your Transfer Plan.',
+    `At the ${noun}: check in each day with your code, give session feedback, build your Transfer Plan.`,
     'Afterwards: short follow-ups at 30, 60, 90 days, and beyond asking what you have been able to apply.',
     '',
     ...(input.dates.length > 0
@@ -105,17 +148,18 @@ ${input.firstStep ? `\n    <p style="${P}"><strong>Your first step:</strong> ${e
     `Open your dashboard: ${input.dashboardUrl}`,
   ].join('\n');
 
-  return renderLayout(branding, {
-    subject: `Welcome to ${branding.eventName}: your check-in codes and what happens when`,
-    preheader: 'Your check-in codes, what the platform is for, and what happens before and after.',
-    eyebrow: 'Welcome',
-    title: `You are set for ${branding.eventName}`,
-    paragraphs: [],
-    body: { html, text },
-    button: { label: 'Open my dashboard', url: input.dashboardUrl },
-    notes: [
-      'You sign in with this email address — there is no password. Ask for a link whenever you need one.',
-      `Questions about your registration? Write to ${branding.contactEmail}.`,
-    ],
-  });
+  return {
+    ...renderLayout(branding, {
+      subject: w.subject,
+      preheader:
+        'Your check-in codes, what the platform is for, and what happens before and after.',
+      eyebrow: 'Welcome',
+      title: w.title,
+      paragraphs: [],
+      body: { html, text },
+      button: { label: w.buttonLabel, url: input.dashboardUrl },
+      notes: w.closing,
+    }),
+    parts: w.parts,
+  };
 }

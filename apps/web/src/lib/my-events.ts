@@ -1,4 +1,5 @@
 import type { MyEvent } from '@mbc/shared';
+import { eventNounOf } from '@mbc/shared';
 
 /** Labels for the delegate screens; event facts themselves always come from the API. */
 export const formatLabel = { physical: 'In person', virtual: 'Online', hybrid: 'Hybrid' } as const;
@@ -86,13 +87,17 @@ export interface JourneyStep {
 }
 
 /** The stages of one event's journey, with that event's own dates. */
-export function journeyFor(event: Pick<MyEvent, 'startsOn' | 'endsOn'>): JourneyStep[] {
+export function journeyFor(
+  event: Pick<MyEvent, 'startsOn' | 'endsOn'> & { eventType?: MyEvent['eventType'] },
+): JourneyStep[] {
+  const noun = eventNounOf(event.eventType);
+  const Noun = noun.charAt(0).toUpperCase() + noun.slice(1);
   const days = daysUntil(event.endsOn, toUtcDate(event.startsOn)) + 1;
   const conferenceSteps: JourneyStep[] =
     days === 1
       ? [
           {
-            step: 'Conference',
+            step: Noun,
             title: 'Check-in, Transfer Plan and evaluation',
             note: formatEventDay(event.startsOn),
           },
@@ -112,13 +117,13 @@ export function journeyFor(event: Pick<MyEvent, 'startsOn' | 'endsOn'>): Journey
           ]
         : [
             {
-              step: 'Conference',
+              step: Noun,
               title: 'Daily check-ins, Transfer Plan and evaluation',
               note: formatEventDates(event.startsOn, event.endsOn),
             },
           ];
   return [
-    { step: 'Before', title: 'Pre-conference check-in', note: 'Opens before the conference' },
+    { step: 'Before', title: `Pre-${noun} check-in`, note: `Opens before the ${noun}` },
     ...conferenceSteps,
     {
       step: 'After',

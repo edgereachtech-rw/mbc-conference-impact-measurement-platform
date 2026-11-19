@@ -9,6 +9,7 @@ import { ActionQrCodes } from '@/components/admin/event-setup/action-qr-codes';
 import { AttendanceManager } from '@/components/admin/attendance/attendance-manager';
 import { EventWorkspace } from '@/components/admin/event-workspace';
 import { OnboardingSender } from '@/components/admin/onboarding-sender';
+import { EventEmails } from '@/components/admin/event-setup/event-emails';
 import { FeedbackManager } from '@/components/admin/feedback/feedback-manager';
 import { ReflectionsManager } from '@/components/admin/reflections/reflections-manager';
 import { ReportWorkspace } from '@/components/admin/reports/report-workspace';
@@ -41,7 +42,8 @@ type Tab =
   | 'transfer-plans'
   | 'support'
   | 'reports'
-  | 'qr-codes';
+  | 'qr-codes'
+  | 'emails';
 
 const TABS: ReadonlyArray<{ id: Tab; label: string }> = [
   { id: 'profile', label: 'Event profile' },
@@ -57,6 +59,7 @@ const TABS: ReadonlyArray<{ id: Tab; label: string }> = [
   { id: 'support', label: 'Support' },
   { id: 'reports', label: 'Reports' },
   { id: 'qr-codes', label: 'QR codes' },
+  { id: 'emails', label: 'Emails' },
 ];
 
 const TAB_IDS = TABS.map((t) => t.id);
@@ -214,6 +217,7 @@ export function EventSettings({ initialEvent }: EventSettingsProps) {
         {tab === 'support' ? <SupportManager event={event} /> : null}
         {tab === 'support' ? <SupportManager event={event} /> : null}
         {tab === 'qr-codes' ? <ActionQrCodes event={event} /> : null}
+        {tab === 'emails' ? <EventEmails event={event} /> : null}
         {tab === 'reports' ? (
           <ReportWorkspace
             eventId={event.id}

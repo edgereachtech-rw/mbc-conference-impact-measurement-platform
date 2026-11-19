@@ -1,3 +1,5 @@
+import { eventNounOf, eventTypes, type EventType } from '@mbc/shared';
+
 import type { PrismaClient } from '../db.js';
 import type { MailConfig } from './config.js';
 import type { EmailBranding } from './templates/layout.js';
@@ -31,6 +33,8 @@ export function brandingForEvent(
     endsOn: Date;
     timezone: string;
     location: string | null;
+    /** The event's kind, so the wording says "training" or "webinar" (2026-11-19). */
+    eventType?: string | null;
   },
 ): EmailBranding {
   const [shortName, ...rest] = event.name.split(':');
@@ -42,6 +46,11 @@ export function brandingForEvent(
     contactEmail: config.contactEmail,
     appUrl: config.appUrl,
     footerLine: [event.location, dates].filter(Boolean).join(' | '),
+    eventNoun: eventNounOf(
+      (eventTypes as readonly string[]).includes(event.eventType ?? '')
+        ? (event.eventType as EventType)
+        : null,
+    ),
   };
 }
 

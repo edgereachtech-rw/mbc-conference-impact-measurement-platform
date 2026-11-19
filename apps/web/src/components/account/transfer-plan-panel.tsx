@@ -46,6 +46,7 @@ import { consoleButton, StatePanel, StatusPill } from '@/components/console/page
 import { NativeSelect } from '@/components/imports/native-select';
 import { ApiError, apiFetch } from '@/lib/api';
 import { formatDateShort, formatInstant } from '@/lib/events';
+import { useEventNoun, useStageLabels } from '@/lib/event-wording';
 import { describeError } from '@/lib/imports';
 
 import { ActionMeasures, EvidenceDialog, MeasuresDialog } from './measures-evidence';
@@ -373,6 +374,7 @@ function PlanEditor({
   onCompleted: (data: MyTransferPlan) => void;
   onReload: () => void;
 }) {
+  const noun = useEventNoun();
   const { plan } = data;
   // The first plan is created without a name; it gets one here like any other (2026-11-08).
   const [title, setTitle] = useState(plan.title);
@@ -673,7 +675,7 @@ function PlanEditor({
       <div className="space-y-4">
         {actions.length === 0 ? (
           <p className="border border-dashed border-corp-line bg-white p-4 text-sm text-corp-muted">
-            No action yet. Add the first thing you will do differently after the conference.
+            No action yet. Add the first thing you will do differently after the {noun}.
           </p>
         ) : null}
         {actions.map((a, index) => (
@@ -1131,13 +1133,14 @@ function PlanEditor({
 }
 
 function References({ references }: { references: MyTransferPlan['references'] }) {
+  const noun = useEventNoun();
   if (references.length === 0) return null;
   return (
     <section
-      aria-label="Before the conference, you said"
+      aria-label={`Before the ${noun}, you said`}
       className="space-y-2 border-l-4 border-corp-accent bg-corp-accent-soft/40 p-4 text-sm"
     >
-      <p className="font-semibold text-corp-ink">Before the conference, you said</p>
+      <p className="font-semibold text-corp-ink">Before the {noun}, you said</p>
       <dl className="space-y-2">
         {references.map((r) => (
           <div key={r.questionKey}>
@@ -1638,6 +1641,8 @@ function FollowUpsBlock({
   timezone: string;
   onOpen?: (followUp: MyAssessment) => void;
 }) {
+  const noun = useEventNoun();
+  const stageLabels = useStageLabels();
   const id = useId();
   const ordered = [...followUps].sort((a, b) => a.wave - b.wave);
   return (
@@ -1646,12 +1651,12 @@ function FollowUpsBlock({
       className="space-y-2 border border-corp-line bg-white p-4"
     >
       <h3 id={`${id}-follow-ups`} className="font-semibold text-corp-ink">
-        Post-conference follow-ups
+        {stageLabels.follow_up}s
       </h3>
       <p className="text-sm text-corp-muted">
-        After the conference, each follow-up asks where every action of your plans stands and what
-        you have applied. What you answer is recorded under each action below. The organisers send
-        you each follow-up when it is time; it appears here once they have.
+        After the {noun}, each follow-up asks where every action of your plans stands and what you
+        have applied. What you answer is recorded under each action below. The organisers send you
+        each follow-up when it is time; it appears here once they have.
       </p>
       <ul className="divide-y divide-corp-line">
         {ordered.map((f) => {

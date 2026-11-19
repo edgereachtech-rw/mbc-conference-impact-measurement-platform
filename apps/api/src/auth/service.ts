@@ -526,6 +526,7 @@ interface AccountLike {
   id: string;
   email: string;
   role: UserRole;
+  dashboardNoteDismissedAt?: Date | null;
 }
 
 interface DelegateLike {
@@ -541,6 +542,7 @@ export function toSessionUser(account: AccountLike, delegate: DelegateLike | nul
     email: account.email,
     role: account.role,
     displayName: delegate?.name ?? account.email.split('@')[0] ?? account.email,
+    dashboardNoteDismissedAt: account.dashboardNoteDismissedAt?.toISOString() ?? null,
     delegate: delegate
       ? {
           id: delegate.id,

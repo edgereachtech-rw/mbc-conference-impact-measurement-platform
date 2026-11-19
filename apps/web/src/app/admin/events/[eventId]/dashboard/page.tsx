@@ -75,7 +75,11 @@ export default async function EventDashboardPage({
             <p className="mt-1 text-sm">Event dashboards are for M.Bryan admins.</p>
           </div>
         ) : (
-          <EventDashboard eventId={event.id} timezone={event.timezone} />
+          <EventDashboard
+            eventId={event.id}
+            timezone={event.timezone}
+            eventType={event.eventType}
+          />
         )}
       </AdminContent>
     </>

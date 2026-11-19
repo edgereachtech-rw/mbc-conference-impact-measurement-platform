@@ -22,11 +22,13 @@ import {
   type StageParticipation,
   type StatementAverage,
   type TextAnswers,
+  stageLabelsFor,
+  type EventType,
 } from '@mbc/shared';
 import { AlertTriangleIcon } from 'lucide-react';
 
 import { Panel, StatTile, StatusPill, TableScroll } from '@/components/console/page';
-import { formatDateShort, formatInstant, stageLabels } from '@/lib/events';
+import { formatDateShort, formatInstant } from '@/lib/events';
 
 /**
  * Renders one report document (task of 2026-10-31, §2 and §5): every figure with its count,
@@ -56,10 +58,10 @@ function FigureLine({ label, value }: { label: string; value: Figure }) {
   );
 }
 
-function StageLine({ stage }: { stage: StageParticipation }) {
+function StageLine({ stage, eventType }: { stage: StageParticipation; eventType?: EventType }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-2 py-1.5 text-sm">
-      <span className="text-corp-text">{stageLabels[stage.stage]}</span>
+      <span className="text-corp-text">{stageLabelsFor(eventType)[stage.stage]}</span>
       {stage.state === 'not_configured' ? (
         <StatusPill tone="neutral">{stateText(stage.state)}</StatusPill>
       ) : (
@@ -403,7 +405,7 @@ export function ReportView({ report, timezone }: { report: EventReport; timezone
             <p className="text-sm font-semibold text-corp-ink">Assessment completion</p>
             <dl aria-label="Assessment completion" className="mt-1 divide-y divide-corp-line">
               {report.participation.stages.map((s) => (
-                <StageLine key={s.stage} stage={s} />
+                <StageLine eventType={report.event.eventType} key={s.stage} stage={s} />
               ))}
             </dl>
           </Panel>

@@ -1,4 +1,4 @@
-import { assessmentStageNames, type AssessmentStage } from './events.js';
+import { eventNounOf, stageNamesFor, type AssessmentStage } from './events.js';
 import type { Journey } from './reports.js';
 
 /**
@@ -47,7 +47,7 @@ export function nextSteps(journey: Journey): NextStep[] {
         a.waveLabel ||
         (a.stage === 'end_of_conference'
           ? 'end-of-conference evaluation'
-          : `${assessmentStageNames[a.stage]} assessment`);
+          : `${stageNamesFor(journey.event.eventType)[a.stage]} assessment`);
       steps.push({
         key: `assessment:${a.stage}:${a.wave}`,
         label: a.state === 'draft' ? `Finish your ${name}` : `Complete your ${name}`,
@@ -57,7 +57,7 @@ export function nextSteps(journey: Journey): NextStep[] {
           a.state === 'draft'
             ? 'Saved but not submitted yet. Pick up where you left off.'
             : a.stage === 'pre_conference'
-              ? 'Open now. It records where you start, so the conference can show what changed. Your answers are saved as you go.'
+              ? `Open now. It records where you start, so the ${eventNounOf(journey.event.eventType)} can show what changed. Your answers are saved as you go.`
               : 'Open now. Your answers are saved as you go.',
         tab: `assessment-${a.stage}-${a.wave}`,
         started: a.state === 'draft',

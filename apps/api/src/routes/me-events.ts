@@ -35,6 +35,7 @@ const EVENT_SELECT = {
   timezone: true,
   location: true,
   format: true,
+  eventType: true,
   status: true,
   transferPlanVisibility: true,
   transferPlanShownFrom: true,
@@ -102,6 +103,7 @@ export function meEventsRouter({ prisma, config, middleware, now }: Deps): Route
       },
       location: r.event.location,
       format: r.event.format,
+      eventType: r.event.eventType,
       period: isoDate(r.event.endsOn) >= current ? 'upcoming' : 'past',
       registration: {
         id: r.id,
@@ -140,6 +142,17 @@ export function meEventsRouter({ prisma, config, middleware, now }: Deps): Route
     }
     return principal.identityId;
   }
+
+  // The dashboard's "How this works" note is closed once per account (2026-11-19).
+  router.post('/me/dashboard-note/dismiss', middleware.requireAuth, async (_req, res) => {
+    const principal = principalOf(res);
+    const at = clock();
+    await prisma().userAccount.updateMany({
+      where: { id: principal.userId, dashboardNoteDismissedAt: null },
+      data: { dashboardNoteDismissedAt: at },
+    });
+    res.json({ dismissedAt: at.toISOString() });
+  });
 
   router.get('/me/events', middleware.requireAuth, async (_req, res) => {
     res.json({ events: await myEvents(identityOf(res)) });

@@ -13,6 +13,7 @@ import { genericBranding, loadEventBranding } from '../mail/branding.js';
 import type { MailConfig } from '../mail/config.js';
 import type { Mailer } from '../mail/mailer.js';
 import { renderInvitation } from '../mail/templates/index.js';
+import { emailCustomisationFor } from '../mail/customisation.js';
 
 interface Deps {
   prisma: () => PrismaClient;
@@ -122,6 +123,7 @@ export function invitationRouter({
       const eventSummary = `${event.startsOn.toISOString().slice(0, 10)} to ${event.endsOn.toISOString().slice(0, 10)}${event.location ? `, ${event.location}` : ''}`;
       const now = clock();
       const expiresAt = new Date(now.getTime() + ttlDays * 86_400_000);
+      const custom = await emailCustomisationFor(prisma(), event.id, 'invitation');
       let sent = 0;
       let failed = 0;
       for (const delegate of targets) {
@@ -136,12 +138,16 @@ export function invitationRouter({
             select: { id: true },
           });
         });
-        const rendered = renderInvitation(branding, {
-          recipientName: delegate.name,
-          inviteUrl: `${config.appUrl}/signin?invite=${encodeURIComponent(rawToken)}`,
-          expiresInMinutes: ttlDays * 24 * 60,
-          eventSummary,
-        });
+        const rendered = renderInvitation(
+          branding,
+          {
+            recipientName: delegate.name,
+            inviteUrl: `${config.appUrl}/signin?invite=${encodeURIComponent(rawToken)}`,
+            expiresInMinutes: ttlDays * 24 * 60,
+            eventSummary,
+          },
+          custom,
+        );
         try {
           await mailer().send({
             to: delegate.email,

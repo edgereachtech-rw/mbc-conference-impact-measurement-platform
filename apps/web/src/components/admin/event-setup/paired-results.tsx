@@ -1,16 +1,17 @@
 'use client';
 
 import type { AssessmentStage, PairedResults } from '@mbc/shared';
+import { stageLabelsFor, type EventType } from '@mbc/shared';
 import { useEffect, useState } from 'react';
 
 import { consoleButton, Panel, StatePanel, StatTile } from '@/components/console/page';
 import { apiFetch } from '@/lib/api';
-import { stageLabels } from '@/lib/events';
 import { describeError } from '@/lib/imports';
 
 interface PairedResultsProps {
   eventId: string;
   stage: AssessmentStage;
+  eventType?: EventType;
 }
 
 const signed = (n: number | null, unit = '') =>
@@ -23,7 +24,8 @@ const signed = (n: number | null, unit = '') =>
  * the change in percentage points; rating-scale sections report each statement, labelled as
  * self-reported.
  */
-export function PairedResults({ eventId, stage }: PairedResultsProps) {
+export function PairedResults({ eventId, stage, eventType }: PairedResultsProps) {
+  const stageLabels = stageLabelsFor(eventType);
   const [data, setData] = useState<PairedResults | null>(null);
   const [error, setError] = useState<{ message: string; requestId?: string } | null>(null);
   const [attempt, setAttempt] = useState(0);

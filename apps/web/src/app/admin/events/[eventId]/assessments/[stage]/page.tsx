@@ -1,4 +1,4 @@
-import { assessmentStages, type AssessmentStage } from '@mbc/shared';
+import { assessmentStages, type AssessmentStage, stageLabelsFor } from '@mbc/shared';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
@@ -7,13 +7,7 @@ import { StageWorkspace } from '@/components/admin/event-setup/stage-workspace';
 import { AdminContent, AdminPageHeader, StatusPill } from '@/components/admin/page-header';
 import { consoleButton } from '@/components/console/page';
 import { loadAdminEvent } from '@/lib/admin-events';
-import {
-  formatInstant,
-  stageLabels,
-  stagePurpose,
-  stageStatusLabels,
-  targetLabels,
-} from '@/lib/events';
+import { formatInstant, stagePurpose, stageStatusLabels, targetLabels } from '@/lib/events';
 import { importsAccess } from '@/lib/imports-access';
 import { getSession } from '@/lib/session';
 
@@ -41,7 +35,7 @@ export default async function StagePage({
   const heading =
     stageKey === 'follow_up'
       ? view?.waveLabel || `Follow-up round ${selectedWave}`
-      : stageLabels[stageKey];
+      : stageLabelsFor(event?.eventType)[stageKey];
 
   return (
     <>

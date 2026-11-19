@@ -1,12 +1,17 @@
 'use client';
 
-import { eventPublishIssues, type EventDetail, type EventStatus } from '@mbc/shared';
+import {
+  eventPublishIssues,
+  type EventDetail,
+  type EventStatus,
+  stageLabelsFor,
+} from '@mbc/shared';
 import { CheckCircle2Icon, CircleAlertIcon, Loader2Icon } from 'lucide-react';
 import { useState } from 'react';
 
 import { consoleButton, StatusPill } from '@/components/console/page';
 import { apiFetch } from '@/lib/api';
-import { eventStatusLabels, formatDateShort, stageLabels } from '@/lib/events';
+import { eventStatusLabels, formatDateShort } from '@/lib/events';
 import { describeError } from '@/lib/imports';
 
 interface PublishPanelProps {
@@ -60,7 +65,7 @@ export function PublishPanel({ event, onSaved }: PublishPanelProps) {
     {
       label: 'Assessment stages',
       value: enabledStages.length
-        ? enabledStages.map((s) => stageLabels[s.stage]).join(', ')
+        ? enabledStages.map((s) => stageLabelsFor(event.eventType)[s.stage]).join(', ')
         : 'None enabled (allowed)',
       ok: true,
     },

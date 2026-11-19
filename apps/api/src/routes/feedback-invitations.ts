@@ -14,6 +14,7 @@ import { brandingForEvent } from '../mail/branding.js';
 import type { MailConfig } from '../mail/config.js';
 import type { Mailer } from '../mail/mailer.js';
 import { renderSessionFeedback } from '../mail/templates/index.js';
+import { emailCustomisationFor } from '../mail/customisation.js';
 
 interface Deps {
   prisma: () => PrismaClient;
@@ -83,6 +84,7 @@ export function feedbackInvitationRouter({
             endsOn: true,
             timezone: true,
             location: true,
+            eventType: true,
           },
         },
       },
@@ -204,17 +206,22 @@ export function feedbackInvitationRouter({
 
       const branding = brandingForEvent(mailConfig(), session.event);
       const formUrl = `${config.appUrl.replace(/\/+$/, '')}/feedback/${session.feedbackCode}`;
+      const custom = await emailCustomisationFor(prisma(), session.event.id, 'session_feedback');
       let justSent = 0;
       let justFailed = 0;
       const transport = mailer();
       for (const delegate of recipients) {
-        const rendered = renderSessionFeedback(branding, {
-          recipientName: delegate.name,
-          sessionTitle: session.title,
-          whenLine: whenLine(session),
-          speaker: session.speaker ?? undefined,
-          formUrl,
-        });
+        const rendered = renderSessionFeedback(
+          branding,
+          {
+            recipientName: delegate.name,
+            sessionTitle: session.title,
+            whenLine: whenLine(session),
+            speaker: session.speaker ?? undefined,
+            formUrl,
+          },
+          custom,
+        );
         try {
           await transport.send({
             to: delegate.email,

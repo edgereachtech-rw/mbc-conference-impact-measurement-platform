@@ -686,6 +686,44 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   aggregates per delegate at the furthest point any of their plans reached (completed, applied
   with no improvement yet, impact demonstrated, sustained impact) with checks waiting and
   answered. Migration `20261106210930_transfer_plan_outcome_and_impact_checks`.
+- Wording follows the kind of event (decision 2026-11-19): `event_type` gains `webinar`
+  (migration `20261119151500_event_type_webinar`), and every screen and email that said
+  "conference" now says the event's own word (`eventTypeNouns` / `eventNounOf` in
+  `@mbc/shared`; "event" for the unnamed kind). Stage titles come from
+  `stageLabelsFor(eventType)` ("Pre-training assessment", "End-of-webinar evaluation",
+  "Post-training follow-up") and the lower-case names from `stageNamesFor`; the web's old
+  `stageLabels` is the conference default for screens outside an event. The delegate event
+  page wraps its panels in `EventWordingProvider` (`apps/web/src/lib/event-wording.tsx`,
+  hooks `useEventNoun` / `useStageLabels`), `MyEvent`, the journey and the report event
+  carry `eventType`, and email branding carries `eventNoun`. ITTEC's own question wording is
+  content, not code, and is untouched.
+- Every email the platform sends for an event is the organisers' to word (decision 2026-11-19):
+  the Welcome pack, the account invitation, the follow-up invitation and reminder, the transfer
+  plan reminder, the session feedback request and the two impact checks (`emailKinds` in
+  `@mbc/shared`). Each keeps its structure, its facts and its button; the organisers set the
+  subject, the title, the introduction (paragraphs), the closing notes (one per line) and the
+  button label, with per-recipient placeholders such as `{{firstName}}` and kind-specific ones
+  (`emailKindInfo`); a placeholder the kind does not know is refused (`unknown_placeholder`).
+  Stored in `event_email_template` (migration `20261119151600_email_wording_and_dashboard_note`),
+  one row per event and kind, null fields meaning the platform's wording. Routes (admin):
+  `GET /events/:id/emails` (every kind with its defaults, the stored wording and a preview from
+  sample values), `PUT /events/:id/emails/:kind` (audited as `event.email_wording_changed`;
+  all blank deletes the row), `POST .../:kind/preview` (unsaved wording). Senders load the
+  wording with `emailCustomisationFor` (`apps/api/src/mail/customisation.ts`) and the
+  templates apply it through `wordingOf` (`templates/layout.ts`), returning `parts` with the
+  defaults. Screen: the event page's "Emails" tab. The magic link, the delivery test and the
+  staff notice on a completed plan are not per event and stay fixed.
+- The welcome pack tells a returning delegate about their account (2026-11-19): when the same
+  identity is registered for an earlier, non-draft event, the pack adds that they already have an
+  account from that event, sign in with the same address, their earlier events stay on the
+  dashboard and this one starts fresh. The line is the platform's, not editable, because it
+  states a fact about the account; `returningFromFor` in `routes/onboarding.ts` finds it in
+  one query per batch.
+- The dashboard's "How this works" note (2026-11-19): the three-phase story from the pack, in
+  the next event's words, on `/account` until the delegate closes it.
+  `user_account.dashboard_note_dismissed_at` records the closing (`POST
+/me/dashboard-note/dismiss`; the session user carries `dashboardNoteDismissedAt`), with the
+  browser's storage as a fallback until the next sign-in.
 - Submission confirmation per assessment (decision 2026-11-19): the popup a delegate sees once
   every section of an assessment is submitted carries the organisers' own title, message and
   closing line, and a look (colour family green/accent/ink, centred or left, check icon on or

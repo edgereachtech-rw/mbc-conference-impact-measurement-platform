@@ -1,3 +1,11 @@
+import {
+  emailLines,
+  emailParagraphs,
+  fillEmailPlaceholders,
+  type EmailCustomisation,
+  type EmailParts,
+} from '@mbc/shared';
+
 /**
  * Shared email layout. Produces an HTML part and a plain-text part from the same content so the
  * two never drift. Visual tokens come from docs/design-tokens.md (navy, brand red, amber, surface
@@ -19,6 +27,8 @@ export interface EmailBranding {
   contactEmail: string;
   /** Absolute origin of the web app; the logo is loaded from `${appUrl}/brand/mbryan-consulting-email.png`. */
   appUrl: string;
+  /** The word for the event ("conference", "training", "webinar"); see eventTypeNouns. */
+  eventNoun?: string;
   /** Optional venue + dates line for the footer. */
   footerLine?: string;
 }
@@ -53,7 +63,60 @@ export interface RenderedEmail {
   subject: string;
   html: string;
   text: string;
+  /** The platform's wording of the editable parts, for the organisers to start from. */
+  parts?: EmailParts;
 }
+
+/** The editable parts of a template, before the organisers' wording is applied. */
+export interface EmailWordingDefaults {
+  subject: string;
+  title: string;
+  /** The prose after the greeting, one paragraph each. */
+  intro: string[];
+  /** The notes under the button, one each. */
+  closing: string[];
+  buttonLabel: string;
+}
+
+/**
+ * The wording a template renders with (decision 2026-11-19): the organisers' own where they set
+ * it, with placeholders filled from this recipient's values, else the platform's. `parts` keeps
+ * the defaults as text, so the admin screen can show what the organisers are replacing.
+ */
+export function wordingOf(
+  defaults: EmailWordingDefaults,
+  custom: EmailCustomisation | null | undefined,
+  values: Record<string, string>,
+): EmailWordingDefaults & { parts: EmailParts } {
+  const fill = (text: string) => fillEmailPlaceholders(text, values);
+  return {
+    subject: custom?.subject ? fill(custom.subject) : defaults.subject,
+    title: custom?.title ? fill(custom.title) : defaults.title,
+    intro: custom?.intro ? emailParagraphs(fill(custom.intro)) : defaults.intro,
+    closing: custom?.closing ? emailLines(fill(custom.closing)) : defaults.closing,
+    buttonLabel: custom?.buttonLabel ? fill(custom.buttonLabel) : defaults.buttonLabel,
+    parts: {
+      subject: defaults.subject,
+      title: defaults.title,
+      intro: defaults.intro.join('\n\n'),
+      closing: defaults.closing.join('\n'),
+      buttonLabel: defaults.buttonLabel,
+    },
+  };
+}
+
+/** The common placeholder values of a recipient. */
+export function recipientValues(
+  branding: EmailBranding,
+  recipientName: string | undefined,
+): Record<string, string> {
+  const name = (recipientName ?? '').trim();
+  return { firstName: name.split(/\s+/)[0] ?? '', name, eventName: branding.eventName };
+}
+
+/** "Hello Ada," or "Hello," when the name is unknown. */
+export const greetingOf = (recipientName: string | undefined) =>
+  recipientName ? `Hello ${recipientName},` : 'Hello,';
 
 const colours = {
   navy: '#002A5E',

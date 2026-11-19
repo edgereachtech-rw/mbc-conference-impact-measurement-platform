@@ -4,7 +4,7 @@ import {
   askedQuestionIds,
   answerIssue,
   answerScore,
-  assessmentStageNames,
+  stageNamesFor,
   assessmentStages,
   builtinBlockSchema,
   describeAnswer,
@@ -78,7 +78,12 @@ const QUESTION_INCLUDE = {
 } as const;
 
 const SECTION_INCLUDE = {
-  source: { select: { title: true, stage: { select: { stage: true } } } },
+  source: {
+    select: {
+      title: true,
+      stage: { select: { stage: true, event: { select: { eventType: true } } } },
+    },
+  },
 } as const;
 type SectionRow = Prisma.AssessmentSectionGetPayload<{ include: typeof SECTION_INCLUDE }>;
 
@@ -166,7 +171,7 @@ function sectionViewOf(s: SectionRow): AssessmentSectionView {
     audience: s.audience,
     sourceSectionId: s.sourceSectionId,
     sourceLabel: s.source
-      ? `${assessmentStageNames[s.source.stage.stage]} · ${s.source.title}`
+      ? `${stageNamesFor(s.source.stage.event.eventType)[s.source.stage.stage]} · ${s.source.title}`
       : null,
   };
 }
@@ -397,7 +402,13 @@ export async function pairedResultsFor(
   const sections = await db.assessmentSection.findMany({
     where: { stageConfigId: stage.id, sourceSectionId: { not: null } },
     include: {
-      source: { select: { title: true, stageConfigId: true, stage: { select: { stage: true } } } },
+      source: {
+        select: {
+          title: true,
+          stageConfigId: true,
+          stage: { select: { stage: true, event: { select: { eventType: true } } } },
+        },
+      },
       questions: { where: { retiredAt: null }, include: QUESTION_INCLUDE },
     },
     orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],

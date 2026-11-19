@@ -1,7 +1,18 @@
-import { type EmailBranding, type RenderedEmail, renderLayout } from './layout.js';
+import type { EmailCustomisation } from '@mbc/shared';
+
+import {
+  greetingOf,
+  recipientValues,
+  renderLayout,
+  wordingOf,
+  type EmailBranding,
+  type RenderedEmail,
+} from './layout.js';
 
 export type { EmailBranding, EmailButton, EmailContent, RenderedEmail } from './layout.js';
-export { renderLayout, escapeHtml } from './layout.js';
+export { renderLayout, escapeHtml, wordingOf, recipientValues, greetingOf } from './layout.js';
+
+const nounOf = (branding: EmailBranding) => branding.eventNoun ?? 'conference';
 
 export type TemplateName =
   | 'invitation'
@@ -34,24 +45,41 @@ export interface InvitationInput {
   eventSummary?: string;
 }
 
-export function renderInvitation(branding: EmailBranding, input: InvitationInput): RenderedEmail {
-  const greeting = input.recipientName ? `Hello ${input.recipientName},` : 'Hello,';
-  return renderLayout(branding, {
-    subject: `Your ${branding.eventName} impact platform invitation`,
-    preheader: `Activate your ${branding.eventName} account to record what you will take back to work.`,
-    eyebrow: 'Invitation',
-    title: `Welcome to the ${branding.eventName} impact platform`,
-    paragraphs: [
-      greeting,
-      `You are registered for ${branding.eventName}${input.eventSummary ? ` (${input.eventSummary})` : ''}. This platform follows your journey from a short pre-conference check-in, through the conference days, to brief follow-ups afterwards, so that your learning turns into measurable results at work.`,
-      'Use the button below to activate your account. The link is personal and works once.',
-    ],
-    button: { label: 'Activate my account', url: input.inviteUrl },
-    notes: [
-      `This link expires in ${describeDuration(input.expiresInMinutes)}. If it has expired, open the platform and request a new one with this email address.`,
-      'If you did not register for this conference, you can ignore this email.',
-    ],
-  });
+export function renderInvitation(
+  branding: EmailBranding,
+  input: InvitationInput,
+  custom?: EmailCustomisation | null,
+): RenderedEmail {
+  const noun = nounOf(branding);
+  const w = wordingOf(
+    {
+      subject: `Your ${branding.eventName} impact platform invitation`,
+      title: `Welcome to the ${branding.eventName} impact platform`,
+      intro: [
+        `You are registered for ${branding.eventName}${input.eventSummary ? ` (${input.eventSummary})` : ''}. This platform follows your journey from a short pre-${noun} check-in, through the ${noun} days, to brief follow-ups afterwards, so that your learning turns into measurable results at work.`,
+        'Use the button below to activate your account. The link is personal and works once.',
+      ],
+      closing: [
+        `This link expires in ${describeDuration(input.expiresInMinutes)}. If it has expired, open the platform and request a new one with this email address.`,
+        `If you did not register for this ${noun}, you can ignore this email.`,
+      ],
+      buttonLabel: 'Activate my account',
+    },
+    custom,
+    { ...recipientValues(branding, input.recipientName), eventDates: input.eventSummary ?? '' },
+  );
+  return {
+    ...renderLayout(branding, {
+      subject: w.subject,
+      preheader: `Activate your ${branding.eventName} account to record what you will take back to work.`,
+      eyebrow: 'Invitation',
+      title: w.title,
+      paragraphs: [greetingOf(input.recipientName), ...w.intro],
+      button: { label: w.buttonLabel, url: input.inviteUrl },
+      notes: w.closing,
+    }),
+    parts: w.parts,
+  };
 }
 
 // ------------------------------------------------------------------ magic link (E3-3)
@@ -164,10 +192,31 @@ export interface TransferPlanReminderInput {
 export function renderTransferPlanReminder(
   branding: EmailBranding,
   input: TransferPlanReminderInput,
+  custom?: EmailCustomisation | null,
 ): RenderedEmail {
+  const w = wordingOf(
+    {
+      subject: `Reminder: ${input.actionName}`,
+      title: 'A reminder about your action',
+      intro: [
+        `A reminder you asked for, ${input.frequency}, about an action in your ${branding.eventName} Transfer Plan:`,
+      ],
+      closing: [
+        'You can change how often you hear about this action, or stop its reminders, on your plan page.',
+      ],
+      buttonLabel: 'Open my plan',
+    },
+    custom,
+    {
+      ...recipientValues(branding, input.recipientName),
+      actionName: input.actionName,
+      firstStep: input.firstStep ?? '',
+      targetDate: input.targetOn ?? '',
+    },
+  );
   const paragraphs = [
-    input.recipientName ? `Hello ${input.recipientName},` : 'Hello,',
-    `A reminder you asked for, ${input.frequency}, about an action in your ${branding.eventName} Transfer Plan:`,
+    greetingOf(input.recipientName),
+    ...w.intro,
     input.actionText ? `${input.actionName}: ${input.actionText}` : input.actionName,
   ];
   if (input.firstStep) paragraphs.push(`First step: ${input.firstStep}`);
@@ -175,17 +224,18 @@ export function renderTransferPlanReminder(
   paragraphs.push(
     'Nothing is needed from you now. Whenever you wish, you can go to the platform to update your plan: where the action stands, its measures and your evidence.',
   );
-  return renderLayout(branding, {
-    subject: `Reminder: ${input.actionName}`,
-    preheader: `A reminder you asked for about your ${branding.eventName} Transfer Plan.`,
-    eyebrow: 'Transfer plan',
-    title: 'A reminder about your action',
-    paragraphs,
-    button: { label: 'Open my plan', url: input.planUrl },
-    notes: [
-      'You can change how often you hear about this action, or stop its reminders, on your plan page.',
-    ],
-  });
+  return {
+    ...renderLayout(branding, {
+      subject: w.subject,
+      preheader: `A reminder you asked for about your ${branding.eventName} Transfer Plan.`,
+      eyebrow: 'Transfer plan',
+      title: w.title,
+      paragraphs,
+      button: { label: w.buttonLabel, url: input.planUrl },
+      notes: w.closing,
+    }),
+    parts: w.parts,
+  };
 }
 
 export interface TransferPlanCompletedInput {
@@ -243,31 +293,49 @@ export interface FollowUpInvitationInput {
 export function renderFollowUpInvitation(
   branding: EmailBranding,
   input: FollowUpInvitationInput,
+  custom?: EmailCustomisation | null,
 ): RenderedEmail {
-  const paragraphs = [
-    input.recipientName ? `Hello ${input.recipientName},` : 'Hello,',
-    input.reminder
-      ? `Your ${input.waveLabel} from ${branding.eventName} is still open. It asks what you have been able to apply, what has helped and what is in the way — your Transfer Plan is shown beside the questions, so there is nothing to look up.`
-      : `Your ${input.waveLabel} from ${branding.eventName} is now open. It asks what you have been able to apply, what has helped and what is in the way. Your Transfer Plan and what you said you wanted to do differently are shown beside the questions.`,
-  ];
+  const w = wordingOf(
+    {
+      subject: input.reminder
+        ? `Still open: your ${input.waveLabel}`
+        : `Your ${input.waveLabel} is open`,
+      title: input.reminder ? 'Your follow-up is waiting' : input.waveLabel,
+      intro: [
+        input.reminder
+          ? `Your ${input.waveLabel} from ${branding.eventName} is still open. It asks what you have been able to apply, what has helped and what is in the way — your Transfer Plan is shown beside the questions, so there is nothing to look up.`
+          : `Your ${input.waveLabel} from ${branding.eventName} is now open. It asks what you have been able to apply, what has helped and what is in the way. Your Transfer Plan and what you said you wanted to do differently are shown beside the questions.`,
+      ],
+      closing: [
+        'The organisers send this once when a follow-up opens. The reminders you choose on your plan page point at the follow-up that is open when they arrive.',
+      ],
+      buttonLabel: 'Open the follow-up',
+    },
+    custom,
+    {
+      ...recipientValues(branding, input.recipientName),
+      waveLabel: input.waveLabel,
+      deadline: input.deadline ?? '',
+    },
+  );
+  const paragraphs = [greetingOf(input.recipientName), ...w.intro];
   if (input.deadline) {
     paragraphs.push(`Please answer by ${input.deadline}. Your answers save as you go.`);
   }
-  return renderLayout(branding, {
-    subject: input.reminder
-      ? `Still open: your ${input.waveLabel}`
-      : `Your ${input.waveLabel} is open`,
-    preheader: input.reminder
-      ? 'A reminder: your follow-up is still waiting.'
-      : 'Tell us what you have applied since the conference.',
-    eyebrow: 'Transfer Plan follow-up',
-    title: input.reminder ? 'Your follow-up is waiting' : input.waveLabel,
-    paragraphs,
-    button: { label: 'Open the follow-up', url: input.formUrl },
-    notes: [
-      'The organisers send this once when a follow-up opens. The reminders you choose on your plan page point at the follow-up that is open when they arrive.',
-    ],
-  });
+  return {
+    ...renderLayout(branding, {
+      subject: w.subject,
+      preheader: input.reminder
+        ? 'A reminder: your follow-up is still waiting.'
+        : `Tell us what you have applied since the ${nounOf(branding)}.`,
+      eyebrow: 'Transfer Plan follow-up',
+      title: w.title,
+      paragraphs,
+      button: { label: w.buttonLabel, url: input.formUrl },
+      notes: w.closing,
+    }),
+    parts: w.parts,
+  };
 }
 
 export interface SessionFeedbackInput {
@@ -289,25 +357,43 @@ export interface SessionFeedbackInput {
 export function renderSessionFeedback(
   branding: EmailBranding,
   input: SessionFeedbackInput,
+  custom?: EmailCustomisation | null,
 ): RenderedEmail {
-  const paragraphs = [
-    input.recipientName ? `Hello ${input.recipientName},` : 'Hello,',
-    `You were at ${input.sessionTitle}${input.speaker ? ` with ${input.speaker}` : ''} (${input.whenLine}). Tell us how it went — three quick ratings and two optional comments, about five minutes.`,
-    'It shapes what runs next year, and the speaker sees it without your name attached.',
-  ];
-  paragraphs.push('The form stays open until the organisers close it.');
-  return renderLayout(branding, {
-    subject: `How was ${input.sessionTitle}?`,
-    preheader: 'Five minutes on the session you attended.',
-    eyebrow: 'Session feedback',
-    title: input.sessionTitle,
-    paragraphs,
-    button: { label: 'Give feedback on this session', url: input.formUrl },
-    notes: [
-      'You are asked because your attendance at this session was recorded.',
-      'The form is also on your event page under Session feedback.',
-    ],
-  });
+  const w = wordingOf(
+    {
+      subject: `How was ${input.sessionTitle}?`,
+      title: input.sessionTitle,
+      intro: [
+        `You were at ${input.sessionTitle}${input.speaker ? ` with ${input.speaker}` : ''} (${input.whenLine}). Tell us how it went — three quick ratings and two optional comments, about five minutes.`,
+        'It shapes what runs next year, and the speaker sees it without your name attached.',
+        'The form stays open until the organisers close it.',
+      ],
+      closing: [
+        'You are asked because your attendance at this session was recorded.',
+        'The form is also on your event page under Session feedback.',
+      ],
+      buttonLabel: 'Give feedback on this session',
+    },
+    custom,
+    {
+      ...recipientValues(branding, input.recipientName),
+      sessionTitle: input.sessionTitle,
+      speaker: input.speaker ?? '',
+      when: input.whenLine,
+    },
+  );
+  return {
+    ...renderLayout(branding, {
+      subject: w.subject,
+      preheader: 'Five minutes on the session you attended.',
+      eyebrow: 'Session feedback',
+      title: w.title,
+      paragraphs: [greetingOf(input.recipientName), ...w.intro],
+      button: { label: w.buttonLabel, url: input.formUrl },
+      notes: w.closing,
+    }),
+    parts: w.parts,
+  };
 }
 
 export const templates = {
@@ -335,22 +421,44 @@ export interface ImpactCheckInput {
  * An impact check after a plan is completed (2026-11-06): has a measurable improvement appeared
  * since, or has the one reported continued? Sent once per check; answered on the plan page.
  */
-export function renderImpactCheck(branding: EmailBranding, input: ImpactCheckInput): RenderedEmail {
+export function renderImpactCheck(
+  branding: EmailBranding,
+  input: ImpactCheckInput,
+  custom?: EmailCustomisation | null,
+): RenderedEmail {
   const question = input.sustaining
     ? `When you completed "${input.planTitle}" you reported a measurable improvement. Has it continued? Tell us, with the evidence you have, on your plan page.`
     : `When you completed "${input.planTitle}" you had not yet seen a measurable improvement. Has one appeared since? Tell us either way, with the evidence you have, on your plan page.`;
-  return renderLayout(branding, {
-    subject: input.sustaining
-      ? `Has the improvement from your ${branding.eventName} plan continued?`
-      : `Any measurable improvement from your ${branding.eventName} plan yet?`,
-    preheader: 'A short impact check on your completed plan.',
-    eyebrow: 'Transfer plan',
-    title: input.sustaining ? 'Has the improvement lasted?' : 'Has an improvement appeared?',
-    paragraphs: [
-      input.recipientName ? `Hello ${input.recipientName},` : 'Hello,',
-      question,
-      `So far your plan stands as: ${input.outcome}. "No measurable improvement yet" is a valid answer; it is what the evidence shows that counts.`,
-    ],
-    button: { label: 'Answer on my plan page', url: input.planUrl },
-  });
+  const w = wordingOf(
+    {
+      subject: input.sustaining
+        ? `Has the improvement from your ${branding.eventName} plan continued?`
+        : `Any measurable improvement from your ${branding.eventName} plan yet?`,
+      title: input.sustaining ? 'Has the improvement lasted?' : 'Has an improvement appeared?',
+      intro: [
+        question,
+        `So far your plan stands as: ${input.outcome}. "No measurable improvement yet" is a valid answer; it is what the evidence shows that counts.`,
+      ],
+      closing: [],
+      buttonLabel: 'Answer on my plan page',
+    },
+    custom,
+    {
+      ...recipientValues(branding, input.recipientName),
+      planTitle: input.planTitle,
+      outcome: input.outcome,
+    },
+  );
+  return {
+    ...renderLayout(branding, {
+      subject: w.subject,
+      preheader: 'A short impact check on your completed plan.',
+      eyebrow: 'Transfer plan',
+      title: w.title,
+      paragraphs: [greetingOf(input.recipientName), ...w.intro],
+      button: { label: w.buttonLabel, url: input.planUrl },
+      notes: w.closing.length ? w.closing : undefined,
+    }),
+    parts: w.parts,
+  };
 }

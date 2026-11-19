@@ -34,6 +34,8 @@ import {
   type QuestionOption,
   type QuestionType,
   type SectionMarking,
+  stageLabelsFor,
+  type EventType,
 } from '@mbc/shared';
 import {
   ArrowDownIcon,
@@ -51,7 +53,7 @@ import { Dialog } from '@/components/console/dialog';
 import { consoleButton, StatePanel, StatusPill } from '@/components/console/page';
 import { NativeSelect } from '@/components/imports/native-select';
 import { apiFetch } from '@/lib/api';
-import { stageAreas, stageLabels } from '@/lib/events';
+import { stageAreas } from '@/lib/events';
 import { describeError } from '@/lib/imports';
 
 interface QuestionBuilderProps {
@@ -59,6 +61,8 @@ interface QuestionBuilderProps {
   stage: AssessmentStage;
   wave?: number;
   waveLabel?: string;
+  /** The event's kind, so the stage names read "pre-training" (2026-11-19). */
+  eventType?: EventType;
   readOnly?: boolean;
   /** Called after any change so the owner can refresh the event's question counts. */
   onChanged: () => void;
@@ -308,12 +312,14 @@ export function QuestionBuilder({
   stage,
   wave = 1,
   waveLabel,
+  eventType,
   readOnly = false,
   onChanged,
 }: QuestionBuilderProps) {
   const base = `/events/${eventId}/assessments/${stage}`;
   const waveQuery = stage === 'follow_up' ? `?wave=${wave}` : '';
   const endpoint = useCallback((path: string) => `${base}/${path}${waveQuery}`, [base, waveQuery]);
+  const stageLabels = stageLabelsFor(eventType);
   const questionSetLabel =
     stage === 'follow_up' ? waveLabel || `Follow-up round ${wave}` : stageLabels[stage];
   const [lists, setLists] = useState<Lists | null>(null);

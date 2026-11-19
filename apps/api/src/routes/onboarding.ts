@@ -12,6 +12,7 @@ import { validate } from '../lib/validate.js';
 import type { MailConfig } from '../mail/config.js';
 import type { Mailer } from '../mail/mailer.js';
 import { buildOnboardingPack } from '../onboarding/pack.js';
+import { emailCustomisationFor } from '../mail/customisation.js';
 
 interface Deps {
   prisma: () => PrismaClient;
@@ -66,11 +67,47 @@ export function onboardingRouter({
         endsOn: true,
         timezone: true,
         location: true,
+        eventType: true,
         dates: { orderBy: { date: 'asc' }, select: { id: true, date: true } },
       },
     });
     if (!event) throw new HttpError(404, 'not_found', 'Event not found.');
     return event;
+  }
+
+  /**
+   * The earlier event each of these delegates already took part in on the platform, by delegate
+   * id (2026-11-19): the same person (identity) registered for another event that started
+   * before this one. The pack then says their account carries over. One query for the batch.
+   */
+  async function returningFromFor(
+    delegates: Array<{ id: string; identityId: string | null }>,
+    event: { id: string; startsOn: Date },
+  ): Promise<Map<string, string>> {
+    const identityIds = delegates.map((d) => d.identityId).filter((x): x is string => Boolean(x));
+    if (identityIds.length === 0) return new Map();
+    const earlier = await prisma().delegate.findMany({
+      where: {
+        identityId: { in: identityIds },
+        eventId: { not: event.id },
+        registrationStatus: { in: ['active', 'test'] },
+        event: { startsOn: { lt: event.startsOn }, status: { not: 'draft' } },
+      },
+      select: { identityId: true, event: { select: { name: true, startsOn: true } } },
+      orderBy: { event: { startsOn: 'desc' } },
+    });
+    const latestByIdentity = new Map<string, string>();
+    for (const row of earlier) {
+      if (row.identityId && !latestByIdentity.has(row.identityId)) {
+        latestByIdentity.set(row.identityId, row.event.name);
+      }
+    }
+    const out = new Map<string, string>();
+    for (const d of delegates) {
+      const name = d.identityId ? latestByIdentity.get(d.identityId) : undefined;
+      if (name) out.set(d.id, name);
+    }
+    return out;
   }
 
   async function stateOf(eventId: string): Promise<OnboardingState> {
@@ -126,10 +163,12 @@ export function onboardingRouter({
           ...(scope === 'not_yet_sent' ? { onboardingSends: { none: { status: 'sent' } } } : {}),
           ...(scope === 'selected' ? { id: { in: delegateIds ?? [] } } : {}),
         },
-        select: { id: true, name: true, email: true },
+        select: { id: true, name: true, email: true, identityId: true },
         orderBy: { createdAt: 'asc' },
         take: BATCH,
       });
+      const returning = await returningFromFor(recipients, event);
+      const custom = await emailCustomisationFor(prisma(), event.id, 'onboarding');
 
       let justSent = 0;
       let justFailed = 0;
@@ -137,11 +176,17 @@ export function onboardingRouter({
       for (const delegate of recipients) {
         const at = clock();
         try {
-          const message = await buildOnboardingPack(event, delegate, {
-            mailConfig: mailConfig(),
-            hashSecret: config.hashSecret,
-            appUrl: config.appUrl,
-          });
+          const message = await buildOnboardingPack(
+            event,
+            { ...delegate, returningFrom: returning.get(delegate.id) ?? null },
+            {
+              mailConfig: mailConfig(),
+              hashSecret: config.hashSecret,
+              appUrl: config.appUrl,
+            },
+            undefined,
+            custom,
+          );
           await transport.send(message);
           await prisma().onboardingSend.create({
             data: { delegateId: delegate.id, status: 'sent', sentAt: at },

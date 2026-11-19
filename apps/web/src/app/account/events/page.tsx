@@ -15,7 +15,7 @@ export default async function MyEventsPage() {
       <AdminPageHeader
         breadcrumbs={[{ label: 'Dashboard', href: '/account' }, { label: 'My events' }]}
         title="My events"
-        description="Every event you are registered for. Registration and attendance are shown separately; attendance is recorded at the conference."
+        description="Every event you are registered for. Registration and attendance are shown separately; attendance is recorded at the event."
       />
       <AdminContent>
         <MyEventsScreen initialEvents={initialEvents} contactEmail={platform.contactEmail} />

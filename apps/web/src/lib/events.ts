@@ -9,6 +9,7 @@ import type {
   EventType,
   SessionType,
 } from '@mbc/shared';
+import { stageLabelsFor } from '@mbc/shared';
 
 export type {
   AssessmentStageConfigInput,
@@ -27,6 +28,7 @@ export const eventTypeLabels: Record<EventType, string> = {
   seminar: 'Seminar',
   summit: 'Summit',
   training: 'Training',
+  webinar: 'Webinar',
   other: 'Other',
 };
 
@@ -53,12 +55,12 @@ export const sessionTypeLabels: Record<SessionType, string> = {
   other: 'Other',
 };
 
-export const stageLabels: Record<AssessmentStage, string> = {
-  pre_conference: 'Pre-conference assessment',
-  during_conference: 'During-conference assessment',
-  end_of_conference: 'End-of-conference evaluation',
-  follow_up: 'Post-conference follow-up',
-};
+/**
+ * The stage titles of a conference, the default. Screens that know the event use
+ * `stageLabelsFor(event.eventType)` from @mbc/shared instead (decision 2026-11-19), so a
+ * training's delegates read "Pre-training assessment".
+ */
+export const stageLabels: Record<AssessmentStage, string> = stageLabelsFor('conference');
 
 export const stageWhen: Record<AssessmentStage, string> = {
   pre_conference: 'Before the event',

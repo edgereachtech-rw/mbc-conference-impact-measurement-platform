@@ -8,6 +8,7 @@ import { Dialog } from '@/components/console/dialog';
 import { consoleButton, StatePanel, StatusPill } from '@/components/console/page';
 import { ApiError, apiFetch } from '@/lib/api';
 import { formatDateShort, formatInstant } from '@/lib/events';
+import { useEventNoun } from '@/lib/event-wording';
 import { describeError } from '@/lib/imports';
 
 export type MyReflectionsState =
@@ -69,6 +70,7 @@ export function ReflectionsPanel({
   onUpdated,
   onRetry,
 }: ReflectionsPanelProps) {
+  const noun = useEventNoun();
   if (state.kind === 'loading') return <StatePanel kind="loading" title="Loading reflection…" />;
   if (state.kind === 'error') {
     return (
@@ -93,7 +95,7 @@ export function ReflectionsPanel({
   if (!reflection) {
     return (
       <p className="text-sm text-corp-muted">
-        This reflection is not open yet. The organisers open it at the end of the conference day.
+        This reflection is not open yet. The organisers open it at the end of the {noun} day.
       </p>
     );
   }

@@ -68,7 +68,7 @@ describe('AssessmentConfig', () => {
     render(<AssessmentConfig event={event} onSaved={vi.fn()} />);
     // The follow-up stage is configured on the Transfer plans tab (2026-11-09): two cards here.
     expect(screen.getAllByRole('form')).toHaveLength(2);
-    const pre = screen.getByRole('form', { name: 'Pre-conference assessment' });
+    const pre = screen.getByRole('form', { name: 'Pre-summit assessment' });
     expect(within(pre).getByLabelText('Available from')).toHaveProperty('disabled', true);
     await user.click(within(pre).getByLabelText('Enabled for this event'));
     await user.type(within(pre).getByLabelText('Available from'), '2026-11-05T09:00');
@@ -93,12 +93,12 @@ describe('AssessmentConfig', () => {
     });
     expect((await within(pre).findByRole('status')).textContent).toBe('Saved.');
     // The other stages were not touched; the follow-ups are not here at all (2026-11-09).
-    const during = screen.getByRole('form', { name: 'During-conference assessment' });
+    const during = screen.getByRole('form', { name: 'During-summit assessment' });
     expect(within(during).getByLabelText('Enabled for this event')).toHaveProperty(
       'checked',
       false,
     );
-    expect(screen.queryByRole('form', { name: 'Post-conference follow-up' })).toBeNull();
+    expect(screen.queryByRole('form', { name: 'Post-summit follow-up' })).toBeNull();
   });
 
   it('shows what delegates see, the response counts and the link to the stage page', async () => {
@@ -144,7 +144,7 @@ describe('AssessmentConfig', () => {
       }),
     );
     render(<AssessmentConfig event={live} onSaved={vi.fn()} />);
-    const pre = screen.getByRole('form', { name: 'Pre-conference assessment' });
+    const pre = screen.getByRole('form', { name: 'Pre-summit assessment' });
     await within(pre).findByText(/Open to delegates until 1 Jan 2099/);
     const responses = await within(pre).findByLabelText('Responses');
     expect(responses.textContent).toMatch(/Invited3Started2Submitted1 \(33\.3%\)/);

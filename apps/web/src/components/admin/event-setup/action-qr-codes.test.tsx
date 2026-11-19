@@ -140,7 +140,7 @@ describe('ActionQrCodes', () => {
       'Day 2 reflection',
       'Measuring transfer',
       'Transfer plan',
-      'End-of-conference evaluation',
+      'End-of-summit evaluation',
       '30-day follow-up',
     ]);
     const origin = window.location.origin;

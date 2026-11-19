@@ -76,6 +76,7 @@ export function StageWorkspace({ event, stage, wave = 1 }: StageWorkspaceProps) 
             stage={stage}
             wave={wave}
             waveLabel={selectedWave?.waveLabel}
+            eventType={event.eventType}
             readOnly={readOnly}
             onChanged={() => router.refresh()}
           />
@@ -89,7 +90,7 @@ export function StageWorkspace({ event, stage, wave = 1 }: StageWorkspaceProps) 
             onSaved={() => router.refresh()}
           />
         ) : tab === 'paired' ? (
-          <PairedResults eventId={event.id} stage={stage} />
+          <PairedResults eventId={event.id} stage={stage} eventType={event.eventType} />
         ) : (
           <StageSubmissions
             eventId={event.id}

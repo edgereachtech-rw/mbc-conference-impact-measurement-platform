@@ -36,7 +36,8 @@ import { Dialog } from '@/components/console/dialog';
 import { consoleButton, StatePanel, StatusPill } from '@/components/console/page';
 import { NativeSelect } from '@/components/imports/native-select';
 import { ApiError, apiFetch } from '@/lib/api';
-import { formatDateShort, formatInstant, stageLabels, stagePurpose, stageWhen } from '@/lib/events';
+import { formatDateShort, formatInstant, stagePurpose, stageWhen } from '@/lib/events';
+import { useEventNoun, useStageLabels } from '@/lib/event-wording';
 import { describeError } from '@/lib/imports';
 
 import { confirmationTitle, SubmissionConfirmation } from './submission-confirmation';
@@ -169,6 +170,8 @@ function AssessmentCard({
   assessment: MyAssessment;
   onUpdated: (assessments: MyAssessment[]) => void;
 }) {
+  const stageLabels = useStageLabels();
+  const noun = useEventNoun();
   const [answers, setAnswers] = useState<Record<string, unknown>>(() => {
     const stored = assessment.response?.answers ?? {};
     // The plan status comes filled in from the Transfer Plan (E11-11); the delegate may change it.
@@ -554,11 +557,11 @@ function AssessmentCard({
                         {shownReference?.answer ? (
                           <div
                             role="note"
-                            aria-label="Before the conference, you said"
+                            aria-label={`Before the ${noun}, you said`}
                             className="space-y-1 border-l-4 border-corp-accent bg-corp-accent-soft/40 p-3 text-sm"
                           >
                             <p className="text-xs font-semibold tracking-[0.08em] text-corp-muted uppercase">
-                              Before the conference, you said
+                              Before the {noun}, you said
                             </p>
                             {shownReference.prompt ? (
                               <p className="text-xs text-corp-muted">{shownReference.prompt}</p>
@@ -1100,6 +1103,7 @@ function FollowUpContext({
   expectation: { prompt: string; answer: string | null } | null;
   eventId: string;
 }) {
+  const noun = useEventNoun();
   if (!plan && !expectation?.answer) return null;
   return (
     <section
@@ -1109,7 +1113,7 @@ function FollowUpContext({
       {expectation?.answer ? (
         <div>
           <p className="text-xs font-semibold tracking-[0.08em] text-corp-muted uppercase">
-            Before the conference you said
+            Before the {noun} you said
           </p>
           <p className="mt-1 text-sm text-corp-text italic">{expectation.answer}</p>
         </div>

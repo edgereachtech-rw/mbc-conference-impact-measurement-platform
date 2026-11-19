@@ -9,6 +9,7 @@ import {
   eventFormats,
   eventStatuses,
   sessionTypes,
+  eventTypes,
 } from './events.js';
 import { feedbackRatings } from './feedback.js';
 import {
@@ -536,6 +537,8 @@ export const eventReportSchema = z.object({
     code: z.string(),
     status: z.enum(eventStatuses),
     format: z.enum(eventFormats),
+    /** So the stage names read for the event's kind (2026-11-19). */
+    eventType: z.enum(eventTypes).optional(),
     startsOn: z.string(),
     endsOn: z.string(),
     timezone: z.string(),
@@ -598,7 +601,13 @@ export const reportOrganisationsSchema = z.object({
 // ------------------------------------------------------------------ delegate journey (3)
 
 export const journeySchema = z.object({
-  event: z.object({ id: z.uuid(), name: z.string(), timezone: z.string() }),
+  event: z.object({
+    id: z.uuid(),
+    name: z.string(),
+    timezone: z.string(),
+    /** So the next steps are worded for the event's kind (2026-11-19). */
+    eventType: z.enum(eventTypes).optional(),
+  }),
   attendance: z.object({
     status: z.enum(['pending', 'attended', 'partial', 'absent']),
     dates: z.array(

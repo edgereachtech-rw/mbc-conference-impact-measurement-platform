@@ -13,9 +13,27 @@ export const eventTypes = [
   'seminar',
   'summit',
   'training',
+  'webinar',
   'other',
 ] as const;
 export type EventType = (typeof eventTypes)[number];
+
+/**
+ * The word the platform uses for an event of each type (decision 2026-11-19): a training's
+ * delegates are asked a "pre-training assessment", not a pre-conference one. "Event" stands in
+ * for a type with no better word.
+ */
+export const eventTypeNouns: Record<EventType, string> = {
+  conference: 'conference',
+  workshop: 'workshop',
+  seminar: 'seminar',
+  summit: 'summit',
+  training: 'training',
+  webinar: 'webinar',
+  other: 'event',
+};
+export const eventNounOf = (eventType: EventType | null | undefined): string =>
+  eventTypeNouns[eventType ?? 'conference'] ?? 'event';
 
 export const eventFormats = ['physical', 'virtual', 'hybrid'] as const;
 export type EventFormat = (typeof eventFormats)[number];
@@ -459,6 +477,33 @@ export const assessmentStageNames: Record<AssessmentStage, string> = {
   end_of_conference: 'end-of-conference',
   follow_up: 'follow-up',
 };
+
+/** The lower-case stage names for an event of this type: "pre-training", "end-of-webinar". */
+export function stageNamesFor(
+  eventType: EventType | null | undefined,
+): Record<AssessmentStage, string> {
+  const noun = eventNounOf(eventType);
+  return {
+    pre_conference: `pre-${noun}`,
+    during_conference: `during-${noun}`,
+    end_of_conference: `end-of-${noun}`,
+    follow_up: 'follow-up',
+  };
+}
+
+/** The stage titles for an event of this type: "Pre-training assessment", "Post-webinar follow-up". */
+export function stageLabelsFor(
+  eventType: EventType | null | undefined,
+): Record<AssessmentStage, string> {
+  const noun = eventNounOf(eventType);
+  const cap = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+  return {
+    pre_conference: `${cap(`pre-${noun}`)} assessment`,
+    during_conference: `${cap(`during-${noun}`)} assessment`,
+    end_of_conference: `${cap(`end-of-${noun}`)} evaluation`,
+    follow_up: `${cap(`post-${noun}`)} follow-up`,
+  };
+}
 
 export function eventPublishIssues(
   event: Pick<EventDetail, 'format' | 'location' | 'dates'> & {

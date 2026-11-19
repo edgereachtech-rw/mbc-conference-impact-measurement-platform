@@ -5,6 +5,7 @@ import { brandingForEvent } from '../mail/branding.js';
 import type { MailConfig } from '../mail/config.js';
 import type { MailAttachment, MailMessage } from '../mail/mailer.js';
 import { renderOnboardingPack } from '../mail/templates/onboarding.js';
+import type { EmailCustomisation } from '@mbc/shared';
 
 /**
  * Builds one delegate's onboarding pack (task of 2026-11-03).
@@ -21,6 +22,7 @@ export interface PackEvent {
   endsOn: Date;
   timezone: string;
   location: string | null;
+  eventType?: string | null;
   dates: Array<{ id: string; date: Date }>;
 }
 
@@ -28,6 +30,8 @@ export interface PackDelegate {
   id: string;
   name: string;
   email: string;
+  /** The earlier event this person took part in on the platform, when there is one (2026-11-19). */
+  returningFrom?: string | null;
 }
 
 export interface PackDeps {
@@ -67,6 +71,7 @@ export async function buildOnboardingPack(
   delegate: PackDelegate,
   deps: PackDeps,
   firstStep?: string,
+  custom?: EmailCustomisation | null,
 ): Promise<MailMessage> {
   const base = deps.appUrl.replace(/\/+$/, '');
   const attachments: MailAttachment[] = [];
@@ -85,15 +90,20 @@ export async function buildOnboardingPack(
     dates.push({ label: dayLabel(eventDate.date, event.timezone), cid });
   }
 
-  const rendered = renderOnboardingPack(brandingForEvent(deps.mailConfig, event), {
-    recipientName: delegate.name,
-    eventDates: rangeLabel(event.startsOn, event.endsOn, event.timezone),
-    venue: event.location ?? '',
-    dashboardUrl: `${base}/account/events/${event.id}`,
-    badgeUrl: `${base}/account/events/${event.id}`,
-    dates,
-    firstStep,
-  });
+  const rendered = renderOnboardingPack(
+    brandingForEvent(deps.mailConfig, event),
+    {
+      recipientName: delegate.name,
+      eventDates: rangeLabel(event.startsOn, event.endsOn, event.timezone),
+      venue: event.location ?? '',
+      dashboardUrl: `${base}/account/events/${event.id}`,
+      badgeUrl: `${base}/account/events/${event.id}`,
+      dates,
+      firstStep,
+      returningFrom: delegate.returningFrom ?? undefined,
+    },
+    custom,
+  );
 
   return {
     to: delegate.email,

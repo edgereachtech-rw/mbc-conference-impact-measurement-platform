@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { eventTypes } from './events.js';
+
 import { participationModes } from './auth.js';
 
 /**
@@ -23,6 +25,8 @@ export const myEventSchema = z.object({
   timezone: z.string(),
   location: z.string().nullable(),
   format: z.enum(['physical', 'virtual', 'hybrid']),
+  /** What kind of event, so the wording follows it (2026-11-19): "pre-training assessment". */
+  eventType: z.enum(eventTypes).optional(),
   period: z.enum(myEventPeriods),
   /** The caller's own registration for this event. */
   registration: z.object({

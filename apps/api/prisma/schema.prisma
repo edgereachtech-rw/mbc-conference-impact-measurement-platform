@@ -60,6 +60,7 @@ enum EventType {
   seminar
   summit
   training
+  webinar
   other
 
   @@map("event_type")
@@ -527,6 +528,7 @@ model Event {
   delegates               Delegate[]
   importRuns              ImportRun[]
   messages                DelegateMessage[]
+  emailTemplates          EventEmailTemplate[]
   dates                   EventDate[]
   sessions                EventSession[]
   assessmentStages        AssessmentStageConfig[]
@@ -1138,6 +1140,27 @@ model AssessmentStageConfig {
   @@map("assessment_stage_config")
 }
 
+/// The organisers' own wording for one kind of email of one event (decision 2026-11-19): subject,
+/// title, introduction, closing notes and button label; see emailCustomisationSchema in
+/// @mbc/shared. A null field keeps the platform's wording.
+model EventEmailTemplate {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventId     String   @map("event_id") @db.Uuid
+  kind        String
+  subject     String?
+  title       String?
+  intro       String?
+  closing     String?
+  buttonLabel String?  @map("button_label")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, kind])
+  @@map("event_email_template")
+}
+
 /// A titled group of questions within one stage; delegates see one section per step.
 model AssessmentSection {
   id                   String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
@@ -1366,6 +1389,8 @@ model UserAccount {
   role         UserRole
   status       UserStatus @default(active)
   lastSignInAt DateTime?  @map("last_sign_in_at") @db.Timestamptz(3)
+  /// When the delegate closed the dashboard's "How this works" note (2026-11-19); null until then.
+  dashboardNoteDismissedAt DateTime? @map("dashboard_note_dismissed_at") @db.Timestamptz(3)
   createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt    DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
 

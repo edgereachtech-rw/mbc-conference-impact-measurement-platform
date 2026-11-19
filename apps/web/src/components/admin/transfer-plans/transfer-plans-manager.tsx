@@ -20,6 +20,8 @@ import {
   type TransferPlanAdminDetail,
   type TransferPlanListItem,
   type TransferPlanView,
+  eventNounOf,
+  type EventType,
 } from '@mbc/shared';
 import { DownloadIcon, EyeIcon, Loader2Icon } from 'lucide-react';
 import { useCallback, useEffect, useId, useState } from 'react';
@@ -438,6 +440,7 @@ export function TransferPlansManager({ event }: TransferPlansManagerProps) {
           delegateId={viewing.delegateId}
           planId={viewing.planId}
           timezone={event.timezone}
+          eventType={event.eventType}
           onClose={() => setViewing(null)}
         />
       ) : null}
@@ -555,12 +558,15 @@ function PlanDialog({
   planId,
   timezone,
   onClose,
+  eventType,
 }: {
   eventId: string;
   delegateId: string;
   /** Which of the delegate's plans to read (2026-11-06). */
   planId: string;
   timezone: string;
+  /** The event's kind, for "Before the training" (2026-11-19). */
+  eventType?: EventType;
   onClose: () => void;
 }) {
   const [detail, setDetail] = useState<TransferPlanAdminDetail | null>(null);
@@ -655,7 +661,7 @@ function PlanDialog({
 
           {detail.references.length > 0 ? (
             <section aria-label="Pre-event answers" className="border-l-4 border-corp-accent pl-3">
-              <p className="font-semibold text-corp-ink">Before the conference</p>
+              <p className="font-semibold text-corp-ink">Before the {eventNounOf(eventType)}</p>
               <dl className="mt-1 space-y-1">
                 {detail.references.map((r) => (
                   <div key={r.questionKey}>

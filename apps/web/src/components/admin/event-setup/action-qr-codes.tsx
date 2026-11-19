@@ -1,6 +1,7 @@
 'use client';
 
 import type { EventDetail, FeedbackSessionView, ReflectionDateView } from '@mbc/shared';
+import { stageLabelsFor } from '@mbc/shared';
 import { DownloadIcon, PrinterIcon } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
@@ -8,7 +9,7 @@ import { consoleButton, Panel, StatePanel } from '@/components/console/page';
 import { apiFetch } from '@/lib/api';
 import { qrImages, type QrImages } from '@/lib/qr-image';
 import { assessmentTarget, deepLinkPath, reflectionTarget } from '@/lib/deep-links';
-import { formatDateShort, stageLabels } from '@/lib/events';
+import { formatDateShort } from '@/lib/events';
 import { describeError } from '@/lib/imports';
 
 interface Code {
@@ -104,7 +105,7 @@ export function ActionQrCodes({ event }: { event: EventDetail }) {
       .map<Code>((s) => ({
         key: `assessment:${s.stage}:${s.wave}`,
         group: 'Assessments',
-        title: s.waveLabel || stageLabels[s.stage],
+        title: s.waveLabel || stageLabelsFor(event.eventType)[s.stage],
         hint:
           s.stage === 'end_of_conference'
             ? 'For the closing session: the delegate lands on the evaluation.'

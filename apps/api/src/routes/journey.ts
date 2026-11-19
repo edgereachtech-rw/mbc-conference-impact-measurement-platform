@@ -71,6 +71,7 @@ export function journeyRouter({ prisma, config, middleware, now }: Deps): Router
             id: true,
             name: true,
             timezone: true,
+            eventType: true,
             transferPlanVisibility: true,
             transferPlanShownFrom: true,
             dates: {
@@ -165,6 +166,7 @@ export function journeyRouter({ prisma, config, middleware, now }: Deps): Router
         id: delegate.event.id,
         name: delegate.event.name,
         timezone: delegate.event.timezone,
+        eventType: delegate.event.eventType,
       },
       attendance: { status, dates },
       // One row per configured wave, in stage then wave order, plus a row for a stage the event

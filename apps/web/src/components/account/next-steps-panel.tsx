@@ -32,11 +32,11 @@ function callToAction(step: NextStep): string {
  * The dashboard showed counts and event cards; whatever a delegate still owed was two taps away
  * inside an event and behind the right tab. This reads the journey of the event in focus and lists
  * the outstanding items, each linking straight to the tab that holds it. One request, for one
- * event: the next upcoming one, or the most recent if the conference has passed.
+ * event: the next upcoming one, or the most recent if the event has passed.
  *
  * The first outstanding item is the one thing the delegate should do now, so it is a large card
  * with the only accent button on the screen rather than one row among several (2026-11-06). For
- * a delegate arriving before the conference that is the pre-conference assessment: `nextSteps`
+ * a delegate arriving before the event that is the pre-event assessment: `nextSteps`
  * lists assessments first, in stage order, so it leads whenever it is open.
  */
 export function NextStepsPanel({ event }: { event: MyEvent }) {
@@ -63,7 +63,7 @@ export function NextStepsPanel({ event }: { event: MyEvent }) {
 
   const [first, ...rest] = state.kind === 'ready' ? state.steps : [];
   const eventName = shortEventName(event.name);
-  // Before the conference the pre-conference assessment leads, and the heading says what it is
+  // Before the event the pre-event assessment leads, and the heading says what it is
   // for in the delegate's own terms (2026-11-06). Any other first step keeps the plain heading.
   const heading = first?.key.startsWith('assessment:pre_conference:')
     ? 'First thing, create your expectation'

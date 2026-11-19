@@ -7,6 +7,7 @@ import { StatTile } from '@/components/admin/page-header';
 import { formatEventDates, shortEventName } from '@/lib/my-events';
 
 import { EventCardGrid } from './event-cards';
+import { HowItWorksNote } from './how-it-works-note';
 import { NextStepsPanel } from './next-steps-panel';
 import { MyEventsStatus, useMyEvents } from './my-events';
 
@@ -14,6 +15,8 @@ interface Props {
   contactEmail: string;
   /** The list as the page loaded it on the server; null when that failed (the browser retries). */
   initialEvents?: MyEvent[] | null;
+  /** Whether the account already closed the "How this works" note (2026-11-19). */
+  howItWorksDismissed?: boolean;
 }
 
 /**
@@ -21,7 +24,11 @@ interface Props {
  * and the help note. Everything about events comes from `GET /me/events`; the page holds no
  * event facts of its own.
  */
-export function DelegateDashboard({ contactEmail, initialEvents }: Props) {
+export function DelegateDashboard({
+  contactEmail,
+  initialEvents,
+  howItWorksDismissed = false,
+}: Props) {
   const { state, retry } = useMyEvents(initialEvents);
   const events = state.kind === 'ready' ? state.events : [];
   const upcoming = events.filter((e) => e.period === 'upcoming');
@@ -35,8 +42,9 @@ export function DelegateDashboard({ contactEmail, initialEvents }: Props) {
 
   return (
     <div className="space-y-8">
-      {/* First on the screen: the one thing to do now (the pre-conference assessment, before the
-          conference). The figures below are context; they never outrank an open task. */}
+      <HowItWorksNote dismissed={howItWorksDismissed} eventType={focus?.eventType ?? null} />
+      {/* First on the screen: the one thing to do now (the pre-event assessment, before the
+          event). The figures below are context; they never outrank an open task. */}
       {focus ? <NextStepsPanel event={focus} /> : null}
 
       {state.kind === 'ready' ? (

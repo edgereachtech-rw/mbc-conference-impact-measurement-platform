@@ -14,6 +14,7 @@ import { brandingForEvent } from '../mail/branding.js';
 import type { MailConfig } from '../mail/config.js';
 import type { Mailer } from '../mail/mailer.js';
 import { renderImpactCheck, renderTransferPlanReminder } from '../mail/templates/index.js';
+import { emailCustomisationFor } from '../mail/customisation.js';
 
 export interface ReminderDeps {
   prisma: () => PrismaClient;
@@ -105,15 +106,19 @@ export async function sendDueTransferPlanReminders(deps: ReminderDeps) {
     };
     const { event, delegate } = action.plan;
     const branding = brandingForEvent(deps.mailConfig, event);
-    const rendered = renderTransferPlanReminder(branding, {
-      recipientName: delegate.name,
-      actionName: action.title.trim() || action.action.trim() || 'Your planned action',
-      actionText: action.title.trim() && action.action.trim() ? action.action.trim() : undefined,
-      firstStep: action.firstStep.trim() || undefined,
-      targetOn: formatDay(action.targetOn),
-      frequency: reminderFrequencyLabels[action.reminderFrequency].toLowerCase(),
-      planUrl: `${appUrl}/account/events/${event.id}#transfer-plan`,
-    });
+    const rendered = renderTransferPlanReminder(
+      branding,
+      {
+        recipientName: delegate.name,
+        actionName: action.title.trim() || action.action.trim() || 'Your planned action',
+        actionText: action.title.trim() && action.action.trim() ? action.action.trim() : undefined,
+        firstStep: action.firstStep.trim() || undefined,
+        targetOn: formatDay(action.targetOn),
+        frequency: reminderFrequencyLabels[action.reminderFrequency].toLowerCase(),
+        planUrl: `${appUrl}/account/events/${event.id}#transfer-plan`,
+      },
+      await emailCustomisationFor(prisma, event.id, 'transfer_plan_reminder'),
+    );
     // Move the pointer first so a crash mid-send cannot resend the same reminder. Null once
     // the window has closed: the reminders stop by themselves.
     const next = nextReminderAfter(preference, at, event.timezone);
@@ -206,13 +211,22 @@ async function sendDueImpactChecks(deps: ReminderDeps, at: Date) {
       data: { notifiedAt: at },
     });
     const branding = brandingForEvent(deps.mailConfig, plan.event);
-    const rendered = renderImpactCheck(branding, {
-      recipientName: plan.delegate.name,
-      planTitle: planTitleOf(plan),
-      outcome: planOutcomeLabels[plan.outcome],
-      sustaining: plan.outcome === 'impact_demonstrated',
-      planUrl: `${deps.appUrl.replace(/\/$/, '')}/account/events/${plan.event.id}#transfer-plan`,
-    });
+    const sustaining = plan.outcome === 'impact_demonstrated';
+    const rendered = renderImpactCheck(
+      branding,
+      {
+        recipientName: plan.delegate.name,
+        planTitle: planTitleOf(plan),
+        outcome: planOutcomeLabels[plan.outcome],
+        sustaining,
+        planUrl: `${deps.appUrl.replace(/\/$/, '')}/account/events/${plan.event.id}#transfer-plan`,
+      },
+      await emailCustomisationFor(
+        prisma,
+        plan.event.id,
+        sustaining ? 'impact_check_sustaining' : 'impact_check',
+      ),
+    );
     try {
       await deps.mailer.send({
         to: plan.delegate.email,

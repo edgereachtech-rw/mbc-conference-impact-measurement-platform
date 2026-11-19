@@ -1,4 +1,4 @@
-import { waveLabel } from '@mbc/shared';
+import { waveLabel, stageLabelsFor } from '@mbc/shared';
 import type { PgBoss } from 'pg-boss';
 
 import type { PrismaClient } from '../db.js';
@@ -7,6 +7,7 @@ import { brandingForEvent } from '../mail/branding.js';
 import type { MailConfig } from '../mail/config.js';
 import type { Mailer } from '../mail/mailer.js';
 import { renderFollowUpInvitation } from '../mail/templates/index.js';
+import { emailCustomisationsFor } from '../mail/customisation.js';
 
 export interface FollowUpSendDeps {
   prisma: () => PrismaClient;
@@ -59,11 +60,15 @@ export async function sendFollowUpEmails(
           endsOn: true,
           timezone: true,
           location: true,
+          eventType: true,
         },
       },
     },
   });
-  const label = waveLabel('follow_up', wave.wave, wave.dueAfterDays) || 'Post-conference follow-up';
+  const label =
+    waveLabel('follow_up', wave.wave, wave.dueAfterDays) ||
+    stageLabelsFor(wave.event.eventType).follow_up;
+  const wording = await emailCustomisationsFor(prisma, wave.event.id);
   const branding = brandingForEvent(deps.mailConfig, wave.event);
   const formUrl = `${deps.appUrl.replace(/\/$/, '')}/account/events/${wave.event.id}#assessment-follow_up-${wave.wave}`;
   const deadline = wave.closesAt
@@ -100,13 +105,17 @@ export async function sendFollowUpEmails(
       skipped += 1;
       return;
     }
-    const rendered = renderFollowUpInvitation(branding, {
-      recipientName: delegate.name,
-      waveLabel: label,
-      formUrl,
-      deadline,
-      reminder: kind === 'reminder',
-    });
+    const rendered = renderFollowUpInvitation(
+      branding,
+      {
+        recipientName: delegate.name,
+        waveLabel: label,
+        formUrl,
+        deadline,
+        reminder: kind === 'reminder',
+      },
+      wording.get(kind === 'reminder' ? 'follow_up_reminder' : 'follow_up_invitation') ?? null,
+    );
     const where = {
       stageConfigId_delegateId_kind_sequence: {
         stageConfigId: wave.id,

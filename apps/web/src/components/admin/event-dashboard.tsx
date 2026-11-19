@@ -1,12 +1,13 @@
 'use client';
 
 import type { EventDashboard as Dashboard } from '@mbc/shared';
+import { stageLabelsFor, type EventType } from '@mbc/shared';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
 import { consoleButton, Panel, StatusPill } from '@/components/console/page';
 import { apiFetch } from '@/lib/api';
-import { formatInstant, stageLabels, stageStatusLabels, stageWhen } from '@/lib/events';
+import { formatInstant, stageStatusLabels, stageWhen } from '@/lib/events';
 import { describeError } from '@/lib/imports';
 
 import { ReportWorkspace } from './reports/report-workspace';
@@ -14,6 +15,7 @@ import { ReportWorkspace } from './reports/report-workspace';
 interface EventDashboardProps {
   eventId: string;
   timezone: string;
+  eventType?: EventType;
 }
 
 const statusLabels: Record<keyof Dashboard['delegates']['byStatus'], string> = {
@@ -37,17 +39,18 @@ const windowText: Record<Dashboard['stages'][number]['window'], string> = {
  * things that belong to running the event rather than reporting on it: how the registrations
  * stand, the messages sent, and the way in to each assessment stage.
  */
-export function EventDashboard({ eventId, timezone }: EventDashboardProps) {
+export function EventDashboard({ eventId, timezone, eventType }: EventDashboardProps) {
   return (
     <div className="space-y-8">
       <ReportWorkspace eventId={eventId} timezone={timezone} kinds={['dashboard']} />
-      <EventAdminPanels eventId={eventId} timezone={timezone} />
+      <EventAdminPanels eventId={eventId} timezone={timezone} eventType={eventType} />
     </div>
   );
 }
 
 /** Registrations by status, the messages sent, and a link into every assessment stage. */
-function EventAdminPanels({ eventId, timezone }: EventDashboardProps) {
+function EventAdminPanels({ eventId, timezone, eventType }: EventDashboardProps) {
+  const stageLabels = stageLabelsFor(eventType);
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
   const [error, setError] = useState<string | null>(null);
 

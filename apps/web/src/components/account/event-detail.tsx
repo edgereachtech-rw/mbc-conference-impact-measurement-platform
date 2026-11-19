@@ -6,12 +6,14 @@ import {
   type MyAssessment,
   type MyEvent,
   type MyReflection,
+  stageLabelsFor,
 } from '@mbc/shared';
 
 import { StatusPill } from '@/components/admin/page-header';
 import { consoleButton, StatePanel } from '@/components/console/page';
 import { TabStrip, useTabState } from '@/components/console/tabs';
-import { stageLabels, stageWhen } from '@/lib/events';
+import { EventWordingProvider } from '@/lib/event-wording';
+import { stageWhen } from '@/lib/events';
 import {
   attendanceFormatLabel,
   capacityLabel,
@@ -68,7 +70,9 @@ function journeyTabs(
   forms: readonly MyAssessment[],
   reflections: readonly MyReflection[],
   planVisible: boolean,
+  eventType: MyEvent['eventType'],
 ): TabItem[] {
+  const stageLabels = stageLabelsFor(eventType);
   const of = (stage: AssessmentStage): TabItem[] =>
     forms
       .filter((a) => a.stage === stage)
@@ -116,7 +120,7 @@ export function EventDetail({ event, contactEmail }: { event: MyEvent; contactEm
   const forms = assessments.state.kind === 'ready' ? assessments.state.assessments : [];
   const days = reflections.state.kind === 'ready' ? reflections.state.reflections : [];
   const plans = transferPlans.state.kind === 'ready' ? transferPlans.state.plans : [];
-  const tabs = journeyTabs(forms, days, planVisible);
+  const tabs = journeyTabs(forms, days, planVisible, event.eventType);
   // A plan's own id (`#transfer-plan-<id>`) is a known address: it opens the tab on that plan.
   const ids: Tab[] = [
     ...tabs.map((t) => t.id),
@@ -166,82 +170,86 @@ export function EventDetail({ event, contactEmail }: { event: MyEvent; contactEm
   }
 
   return (
-    <div className="space-y-5">
-      <TabStrip
-        label="Your records for this event"
-        tabs={tabs}
-        current={current.id}
-        onChoose={choose}
-        bleed
-      />
-      {assessments.state.kind === 'error' ? (
-        <p
-          role="alert"
-          className="flex flex-wrap items-center gap-3 border border-danger bg-danger/10 px-4 py-3 text-sm text-danger"
-        >
-          Your assessments could not be loaded, so their tabs are missing.
-          <button
-            type="button"
-            onClick={assessments.retry}
-            className={consoleButton({ variant: 'ghost', size: 'sm' })}
+    <EventWordingProvider eventType={event.eventType}>
+      <div className="space-y-5">
+        <TabStrip
+          label="Your records for this event"
+          tabs={tabs}
+          current={current.id}
+          onChoose={choose}
+          bleed
+        />
+        {assessments.state.kind === 'error' ? (
+          <p
+            role="alert"
+            className="flex flex-wrap items-center gap-3 border border-danger bg-danger/10 px-4 py-3 text-sm text-danger"
           >
-            Try again
-          </button>
-        </p>
-      ) : null}
-      <div
-        role="tabpanel"
-        id={`panel-${current.id}`}
-        aria-labelledby={`tab-${current.id}`}
-        className="space-y-6"
-      >
-        {current.id !== 'overview' ? (
-          <div>
-            <h2 className="font-corporate text-h3 text-corp-ink">{current.label}</h2>
-            <p className="text-sm text-corp-muted">{current.hint}</p>
-          </div>
+            Your assessments could not be loaded, so their tabs are missing.
+            <button
+              type="button"
+              onClick={assessments.retry}
+              className={consoleButton({ variant: 'ghost', size: 'sm' })}
+            >
+              Try again
+            </button>
+          </p>
         ) : null}
-        {current.id === 'overview' ? <Overview event={event} contactEmail={contactEmail} /> : null}
-        {form ? (
-          <AssessmentsPanel
-            eventId={event.id}
-            timezone={event.timezone}
-            stage={form.stage}
-            wave={form.wave}
-            state={assessments.state}
-            onUpdated={assessments.update}
-            onRetry={assessments.retry}
-          />
-        ) : null}
-        {tab === 'attendance' ? (
-          <AttendanceCodes eventId={event.id} timezone={event.timezone} />
-        ) : null}
-        {day ? (
-          <ReflectionsPanel
-            eventId={event.id}
-            timezone={event.timezone}
-            activityId={day.id}
-            state={reflections.state}
-            onUpdated={reflections.update}
-            onRetry={reflections.retry}
-          />
-        ) : null}
-        {tab === 'feedback' ? <SessionFeedbackList eventId={event.id} /> : null}
-        {tab === 'transfer-plan' && planVisible ? (
-          <TransferPlansTabs
-            eventId={event.id}
-            timezone={event.timezone}
-            plans={transferPlans.state}
-            selectedPlanId={selectedPlanId}
-            onSelectPlan={(id) => choose(transferPlanTabId({ id }))}
-            onPlansChanged={() => void transferPlans.refresh()}
-            onRetry={transferPlans.retry}
-            followUps={forms.filter((a) => a.stage === 'follow_up')}
-            onOpenFollowUp={(a) => choose(assessmentTabId(a))}
-          />
-        ) : null}
+        <div
+          role="tabpanel"
+          id={`panel-${current.id}`}
+          aria-labelledby={`tab-${current.id}`}
+          className="space-y-6"
+        >
+          {current.id !== 'overview' ? (
+            <div>
+              <h2 className="font-corporate text-h3 text-corp-ink">{current.label}</h2>
+              <p className="text-sm text-corp-muted">{current.hint}</p>
+            </div>
+          ) : null}
+          {current.id === 'overview' ? (
+            <Overview event={event} contactEmail={contactEmail} />
+          ) : null}
+          {form ? (
+            <AssessmentsPanel
+              eventId={event.id}
+              timezone={event.timezone}
+              stage={form.stage}
+              wave={form.wave}
+              state={assessments.state}
+              onUpdated={assessments.update}
+              onRetry={assessments.retry}
+            />
+          ) : null}
+          {tab === 'attendance' ? (
+            <AttendanceCodes eventId={event.id} timezone={event.timezone} />
+          ) : null}
+          {day ? (
+            <ReflectionsPanel
+              eventId={event.id}
+              timezone={event.timezone}
+              activityId={day.id}
+              state={reflections.state}
+              onUpdated={reflections.update}
+              onRetry={reflections.retry}
+            />
+          ) : null}
+          {tab === 'feedback' ? <SessionFeedbackList eventId={event.id} /> : null}
+          {tab === 'transfer-plan' && planVisible ? (
+            <TransferPlansTabs
+              eventId={event.id}
+              timezone={event.timezone}
+              plans={transferPlans.state}
+              selectedPlanId={selectedPlanId}
+              onSelectPlan={(id) => choose(transferPlanTabId({ id }))}
+              onPlansChanged={() => void transferPlans.refresh()}
+              onRetry={transferPlans.retry}
+              followUps={forms.filter((a) => a.stage === 'follow_up')}
+              onOpenFollowUp={(a) => choose(assessmentTabId(a))}
+            />
+          ) : null}
+        </div>
       </div>
-    </div>
+    </EventWordingProvider>
   );
 }
 

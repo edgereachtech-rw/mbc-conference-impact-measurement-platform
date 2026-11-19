@@ -9,6 +9,7 @@ import {
   type AssessmentStageView,
   type EventDetail,
   type StageSummary,
+  stageLabelsFor,
 } from '@mbc/shared';
 import { ListChecksIcon, Loader2Icon } from 'lucide-react';
 import Link from 'next/link';
@@ -21,7 +22,6 @@ import {
   formatInstant,
   isoToZonedLocal,
   stageAreas,
-  stageLabels,
   stagePurpose,
   stageStatusLabels,
   stageWhen,
@@ -202,7 +202,7 @@ export function StageCard({
     <>
       <form
         noValidate
-        aria-label={stage.waveLabel || stageLabels[stage.stage]}
+        aria-label={stage.waveLabel || stageLabelsFor(event.eventType)[stage.stage]}
         onSubmit={(e) => {
           e.preventDefault();
           void save();
@@ -219,7 +219,7 @@ export function StageCard({
             </StatusPill>
           </div>
           <h3 className="font-corporate text-base font-semibold text-corp-ink">
-            {stage.waveLabel || stageLabels[stage.stage]}
+            {stage.waveLabel || stageLabelsFor(event.eventType)[stage.stage]}
           </h3>
           {stagePurpose[stage.stage] ? (
             <p className="text-sm text-corp-text">{stagePurpose[stage.stage]}</p>
