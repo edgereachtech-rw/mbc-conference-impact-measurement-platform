@@ -646,6 +646,8 @@ Required changes when Increment 1b is implemented (impact only, not done here):
 | E4-11 | As a delegate, I want to see the form in clear, mobile-first layout | Large touch targets, progress indicator, works with narrow screens | P0 | 2 |
 | E4-12 | As a delegate, I want to see my pre-conference answers while completing later forms | Reusable "show earlier answer" component (used by Transfer Plan, final evaluation, follow-ups) | P0 | 2 |
 
+**Decision 2026-11-19 (product owner): the submission confirmation is the organisers' own per assessment.** Its title, message and closing line, and its look (colour, alignment, icon, tinted panel), are set on the stage page's "Confirmation" tab with a live preview; blank text keeps the platform's wording. The section-by-section popup keeps its wording and takes the styling.
+
 **Decision 2026-11-19 (product owner): E4-5's "by earlier answers" is delivered within one assessment.** A question may be shown only when an earlier yes/no, single-choice or multiple-choice question of the same assessment is answered in one of the chosen ways (`conditionalQuestionKey`, `conditionalValues`), set from the question builder. A hidden question is neither required nor submitted, and an answer given before the controlling answer changed is dropped. Reports state when such a question was asked and how many delegates it reached. Worked example: "Please state the reason" and "Who explained why you were asked to attend?" (select all that apply, with "Another person — please specify") appear when "Were you asked to attend by your organisation?" is Yes.
 
 ---

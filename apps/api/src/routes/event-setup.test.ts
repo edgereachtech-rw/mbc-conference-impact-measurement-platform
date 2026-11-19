@@ -391,6 +391,46 @@ describe.skipIf(!hasDatabase)('event setup (E1 brief)', () => {
     expect(
       await prisma.auditLog.count({ where: { action: 'event.status_changed', entityId: id } }),
     ).toBe(1);
+    // The submission confirmation of a stage (2026-11-19): words and look, audited, served
+    // with the event; a value outside the choices is refused.
+    const confirmed = await call('put', `/events/${id}/assessments/pre_conference/confirmation`, {
+      title: 'Thank you!',
+      message: 'Your baseline is in.',
+      detail: '',
+      tone: 'accent',
+      align: 'left',
+      showIcon: false,
+      highlight: true,
+    });
+    expect(confirmed.status, confirmed.text).toBe(200);
+    expect(
+      confirmed.body.event.assessmentStages.find(
+        (s: { stage: string }) => s.stage === 'pre_conference',
+      ).confirmation,
+    ).toEqual({
+      title: 'Thank you!',
+      message: 'Your baseline is in.',
+      detail: null,
+      tone: 'accent',
+      align: 'left',
+      showIcon: false,
+      highlight: true,
+    });
+    expect(
+      (
+        await call('put', `/events/${id}/assessments/pre_conference/confirmation`, {
+          tone: 'purple',
+        })
+      ).status,
+    ).toBe(422);
+    expect(
+      (await call('put', `/events/${id}/assessments/nope/confirmation`, { title: 'x' })).status,
+    ).toBe(404);
+    expect(
+      await prisma.auditLog.count({
+        where: { action: 'event.assessment_confirmation_configured', eventId: id },
+      }),
+    ).toBe(1);
     const archived = await call('post', `/events/${id}/status`, { status: 'archived' });
     expect(archived.body.event.status).toBe('archived');
     expect((await call('patch', `/events/${id}`, { name: 'x' })).body.error.code).toBe(

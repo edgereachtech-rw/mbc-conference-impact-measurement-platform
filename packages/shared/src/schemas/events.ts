@@ -312,6 +312,60 @@ export const eventSessionViewSchema = z.object({
 });
 export type EventSessionView = z.infer<typeof eventSessionViewSchema>;
 
+/**
+ * The confirmation a delegate sees once an assessment is fully submitted (decision 2026-11-19):
+ * the organisers' own title, message and closing line (null keeps the platform's wording), and
+ * how it looks. Stored as JSON on the stage configuration; defaults reproduce the fixed popup.
+ */
+export const confirmationTones = ['green', 'accent', 'ink'] as const;
+export type ConfirmationTone = (typeof confirmationTones)[number];
+export const confirmationToneLabels: Record<ConfirmationTone, string> = {
+  green: 'Green',
+  accent: 'Accent',
+  ink: 'Ink',
+};
+export const confirmationAlignments = ['center', 'left'] as const;
+export type ConfirmationAlignment = (typeof confirmationAlignments)[number];
+export const confirmationAlignmentLabels: Record<ConfirmationAlignment, string> = {
+  center: 'Centred',
+  left: 'Left',
+};
+/** Trimmed text that is null when blank or absent, so a stored record always has the key. */
+const confirmationText = (max: number) =>
+  z
+    .string()
+    .trim()
+    .max(max)
+    .nullable()
+    .optional()
+    .transform((v) => (v ? v : null));
+export const assessmentConfirmationSchema = z.object({
+  title: confirmationText(120),
+  message: confirmationText(600),
+  detail: confirmationText(600),
+  tone: z.enum(confirmationTones).default('green'),
+  align: z.enum(confirmationAlignments).default('center'),
+  showIcon: z.boolean().default(true),
+  highlight: z.boolean().default(false),
+});
+export type AssessmentConfirmation = z.infer<typeof assessmentConfirmationSchema>;
+export type AssessmentConfirmationInput = z.input<typeof assessmentConfirmationSchema>;
+export const DEFAULT_CONFIRMATION: AssessmentConfirmation = {
+  title: null,
+  message: null,
+  detail: null,
+  tone: 'green',
+  align: 'center',
+  showIcon: true,
+  highlight: false,
+};
+/** The stored settings, or null when none or unreadable (the popup then uses the defaults). */
+export function parseConfirmation(value: unknown): AssessmentConfirmation | null {
+  if (value === null || value === undefined) return null;
+  const parsed = assessmentConfirmationSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
+}
+
 export const assessmentStageViewSchema = z.object({
   stage: z.enum(assessmentStages),
   /** Which round of the stage: always 1 except the follow-up waves (E12-1). */
@@ -331,6 +385,8 @@ export const assessmentStageViewSchema = z.object({
   status: z.enum(assessmentStageStatuses),
   /** Active (non-retired) questions; an enabled stage needs at least one to publish or open. */
   questionCount: z.number().int(),
+  /** The submission confirmation's words and look (2026-11-19); null means the defaults. */
+  confirmation: assessmentConfirmationSchema.nullable().optional(),
   updatedAt: z.string(),
 });
 export type AssessmentStageView = z.infer<typeof assessmentStageViewSchema>;

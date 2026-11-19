@@ -1122,6 +1122,9 @@ model AssessmentStageConfig {
   /// reminderLimit times. Null means no chasing (E12-14: configurable intervals).
   reminderAfterDays Int?                  @map("reminder_after_days")
   reminderLimit     Int                   @default(0) @map("reminder_limit")
+  /// The submission confirmation's words and look (decision 2026-11-19); see
+  /// assessmentConfirmationSchema in @mbc/shared. Null means the platform's defaults.
+  confirmation      Json?
   createdAt         DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt         DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
 

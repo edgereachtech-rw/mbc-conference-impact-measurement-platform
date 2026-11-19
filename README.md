@@ -686,6 +686,17 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   aggregates per delegate at the furthest point any of their plans reached (completed, applied
   with no improvement yet, impact demonstrated, sustained impact) with checks waiting and
   answered. Migration `20261106210930_transfer_plan_outcome_and_impact_checks`.
+- Submission confirmation per assessment (decision 2026-11-19): the popup a delegate sees once
+  every section of an assessment is submitted carries the organisers' own title, message and
+  closing line, and a look (colour family green/accent/ink, centred or left, check icon on or
+  off, tinted panel), stored as JSON in `assessment_stage_config.confirmation` (migration
+  `20261119144500_assessment_confirmation`; `assessmentConfirmationSchema` in `@mbc/shared`,
+  blanks mean the platform's wording). `PUT /events/:id/assessments/:stage/confirmation?wave=`
+  sets it (admin, audited as `event.assessment_confirmation_configured`); the stage page has a
+  "Confirmation" tab with the fields and a live preview, and the delegate's view of the stage
+  carries `confirmation`. The section-by-section popup keeps its wording and takes the styling.
+  `apps/web/src/components/account/submission-confirmation.tsx` renders both the real popup and
+  the preview.
 - Word limit on text questions (decision 2026-11-19): a short- or long-answer question may carry
   `assessment_question.max_words` (`maxWords`, 1 to 5,000; set in the builder as "Maximum words",
   blank for none; refused on other types). The delegate's long-answer field shows a live

@@ -970,6 +970,10 @@ describe.skipIf(!hasDatabase)('assessment questions and answers', () => {
     expect(later.body.error.code).toBe('condition_not_earlier');
 
     const stageUrl = `/events/${eventId}/assessments/end_of_conference`;
+    // The organisers' confirmation travels with the delegate's view of the stage (2026-11-19).
+    expect(
+      (await call('put', `${stageUrl}/confirmation`, { title: 'Thank you for today' })).status,
+    ).toBe(200);
     const opened = await call('put', stageUrl, {
       enabled: true,
       status: 'open',
@@ -1031,6 +1035,9 @@ describe.skipIf(!hasDatabase)('assessment questions and answers', () => {
     expect(done.status, done.text).toBe(200);
     expect(stageOf(done.body).response.submittedAt).toBeTruthy();
     expect(stageOf(done.body).response.answers).toEqual({ [ids.asked]: false });
+    expect(
+      (stageOf(done.body) as unknown as { confirmation: { title: string } }).confirmation,
+    ).toMatchObject({ title: 'Thank you for today', tone: 'green' });
 
     // The organisers' view of the response leaves the never-asked questions out.
     const listing = await call('get', `${stageUrl}/responses`);

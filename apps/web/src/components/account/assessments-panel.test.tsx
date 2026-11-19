@@ -693,6 +693,38 @@ describe('AssessmentsPanel', () => {
     expect((puts(calls).at(-1) as { answers: unknown }).answers).toEqual({ a: false });
   });
 
+  it('shows the organisers’ own confirmation, in their words and look, once everything is submitted', async () => {
+    const styled: MyAssessment = {
+      ...open,
+      questions: [
+        question('t', { type: 'long_text', prompt: 'Anything to add?', required: false }),
+      ] as MyAssessment['questions'],
+      confirmation: {
+        title: 'Baseline recorded',
+        message: 'Thank you, your starting point is saved.',
+        detail: 'See you at the conference.',
+        tone: 'accent',
+        align: 'left',
+        showIcon: false,
+        highlight: true,
+      },
+    };
+    stub([styled]);
+    const user = userEvent.setup();
+    render(<Harness stage="pre_conference" />);
+    const card = await screen.findByRole('article');
+    await user.click(within(card).getByRole('button', { name: 'Submit answers' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Submit your responses?' });
+    await user.click(within(dialog).getByRole('button', { name: 'Submit now' }));
+    const done = await screen.findByRole('dialog', { name: 'Baseline recorded' });
+    const status = within(done).getByRole('status');
+    expect(status.textContent).toContain('Thank you, your starting point is saved.');
+    expect(status.textContent).toContain('See you at the conference.');
+    expect(status.className).toContain('items-start');
+    expect(status.className).toContain('border-corp-accent');
+    expect(status.querySelector('svg')).toBeNull();
+  });
+
   it('shows a section introduction plainly, or highlighted when the admin marked it so', async () => {
     // As it is: a subtitle under the title, no note role.
     stub([sectioned]);

@@ -39,6 +39,8 @@ import { ApiError, apiFetch } from '@/lib/api';
 import { formatDateShort, formatInstant, stageLabels, stagePurpose, stageWhen } from '@/lib/events';
 import { describeError } from '@/lib/imports';
 
+import { confirmationTitle, SubmissionConfirmation } from './submission-confirmation';
+
 /**
  * What identifies one form on this screen. A stage name no longer does: the follow-up assessment
  * runs in waves (E12-1), so three of the forms share the stage `follow_up`.
@@ -660,13 +662,11 @@ function AssessmentCard({
       {review && reviewGroup ? (
         <Dialog
           title={
-            review.done === 'all'
-              ? 'All sections submitted'
-              : review.done === 'section'
-                ? 'Section submitted'
-                : groups.length > 1
-                  ? 'Submit this section?'
-                  : 'Submit your responses?'
+            review.done
+              ? confirmationTitle(assessment.confirmation, review.done)
+              : groups.length > 1
+                ? 'Submit this section?'
+                : 'Submit your responses?'
           }
           description={
             // A knowledge section gets no "check your responses" line (2026-11-07): the answers
@@ -721,34 +721,19 @@ function AssessmentCard({
         >
           {review.done ? (
             // The confirmation (2026-11-06): a check, what was recorded, and what comes next, so
-            // the delegate never wonders whether it went through or where to go from here.
-            <div className="flex flex-col items-center gap-3 py-2 text-center" role="status">
-              <CheckCircle2Icon className="size-14 text-corp-green-text" aria-hidden="true" />
-              <p className="text-base font-semibold text-corp-ink">
-                {review.done === 'all'
-                  ? 'Thank you. Every section is submitted and your responses are recorded.'
-                  : `Thank you. “${reviewGroup.section?.title ?? 'Your responses'}” is recorded.`}
-              </p>
-              {sectionMarks[review.key] ? (
-                // A marked section tells the delegate how they did, at once (2026-11-07).
-                <p
-                  aria-label="Your mark"
-                  className="rounded-none border-2 border-corp-accent px-4 py-2 font-corporate text-2xl font-bold text-corp-ink"
-                >
-                  {sectionMarks[review.key]!.percent}%
-                  <span className="ml-2 text-sm font-normal text-corp-muted">
-                    {sectionMarks[review.key]!.scored} of {sectionMarks[review.key]!.max} points
-                  </span>
-                </p>
-              ) : null}
-              <p className="max-w-prose text-sm text-corp-text">
-                {review.done === 'all'
-                  ? 'Nothing more to do here. We will email you when the next step opens.'
-                  : current && remaining > 0
-                    ? `Next: “${current.section?.title ?? 'the remaining questions'}”. ${remaining} section${remaining === 1 ? '' : 's'} left; your responses save as you go.`
-                    : 'Nothing more to do here.'}
-              </p>
-            </div>
+            // the delegate never wonders whether it went through or where to go from here. Its
+            // words and look are the organisers' own per assessment (2026-11-19).
+            <SubmissionConfirmation
+              confirmation={assessment.confirmation}
+              scope={review.done}
+              sectionTitle={reviewGroup.section?.title ?? null}
+              mark={sectionMarks[review.key] ?? null}
+              nextText={
+                current && remaining > 0
+                  ? `Next: “${current.section?.title ?? 'the remaining questions'}”. ${remaining} section${remaining === 1 ? '' : 's'} left; your responses save as you go.`
+                  : 'Nothing more to do here.'
+              }
+            />
           ) : (
             <AnswerSummary groups={[reviewGroup]} answers={answers} />
           )}

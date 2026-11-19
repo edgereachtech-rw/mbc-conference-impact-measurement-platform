@@ -1,5 +1,7 @@
 import {
+  assessmentConfirmationSchema,
   assessmentStageConfigSchema,
+  parseConfirmation,
   assessmentStages,
   eventCodeFromName,
   eventCreateSchema,
@@ -115,6 +117,7 @@ export function eventDetailOf(event: EventRow): EventDetail {
         targetGroup: s.targetGroup,
         status: s.status,
         questionCount: s._count.questions,
+        confirmation: parseConfirmation(s.confirmation),
         updatedAt: s.updatedAt.toISOString(),
       })),
     createdAt: event.createdAt.toISOString(),
@@ -579,6 +582,45 @@ export function eventSetupRouter({ prisma, middleware, now }: Deps): Router {
     });
     res.json({ event: eventDetailOf(updated) });
   });
+
+  // The submission confirmation of one stage or wave (decision 2026-11-19): what the delegate
+  // reads once every section is in, and how it looks. Separate from the window and status so
+  // the words can change while the stage is open, without re-validating its schedule.
+  router.put(
+    '/events/:eventId/assessments/:stage/confirmation',
+    guard,
+    validated(assessmentConfirmationSchema),
+    async (req, res) => {
+      const principal = requireAdmin(res);
+      const stage = String(req.params.stage) as AssessmentStage;
+      if (!assessmentStages.includes(stage)) {
+        throw new HttpError(404, 'not_found', 'Unknown assessment stage.');
+      }
+      const event = await loadEditable(String(req.params.eventId));
+      const wave = waveOf(req);
+      const input = req.body as z.infer<typeof assessmentConfirmationSchema>;
+      const previous = event.assessmentStages.find((s) => s.stage === stage && s.wave === wave);
+      if (!previous) throw new HttpError(404, 'not_found', 'This stage is not set up yet.');
+      const updated = await prisma().$transaction(async (tx) => {
+        await tx.assessmentStageConfig.update({
+          where: { id: previous.id },
+          data: { confirmation: input as Prisma.InputJsonValue },
+        });
+        await audit(tx, {
+          action: 'event.assessment_confirmation_configured',
+          entityType: 'assessment_stage_config',
+          entityId: previous.id,
+          eventId: event.id,
+          actorUserId: principal.userId,
+          oldValue: { stage, wave, confirmation: parseConfirmation(previous.confirmation) },
+          newValue: { stage, wave, confirmation: input },
+          ...clientOf(res),
+        });
+        return tx.event.findUniqueOrThrow({ where: { id: event.id }, include: DETAIL_INCLUDE });
+      });
+      res.json({ event: eventDetailOf(updated) });
+    },
+  );
 
   return router;
 }

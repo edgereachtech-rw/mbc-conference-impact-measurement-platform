@@ -2,7 +2,12 @@ import { z } from 'zod';
 
 import { actionProgressStatuses, transferPlanStatuses } from './transfer-plans.js';
 
-import { assessmentStages, isoDateSchema, type AssessmentStage } from './events.js';
+import {
+  assessmentConfirmationSchema,
+  assessmentStages,
+  isoDateSchema,
+  type AssessmentStage,
+} from './events.js';
 import { supportFlags } from './support.js';
 
 /**
@@ -907,6 +912,8 @@ export const myAssessmentSchema = z.object({
   status: z.enum(myAssessmentStatuses),
   opensAt: z.string().nullable(),
   closesAt: z.string().nullable(),
+  /** The organisers' submission confirmation (2026-11-19); null means the platform's wording. */
+  confirmation: assessmentConfirmationSchema.nullable().optional(),
   /** Sections in order; questions whose sectionId is null form an untitled first group. */
   sections: z.array(assessmentSectionViewSchema),
   /** Questions in section order then question order; present when the stage is open or closed. */

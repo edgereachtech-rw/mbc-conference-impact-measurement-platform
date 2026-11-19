@@ -4,14 +4,16 @@ import type { AssessmentStage, EventDetail } from '@mbc/shared';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
+import { ConfirmationEditor } from './confirmation-editor';
 import { PairedResults } from './paired-results';
 import { QuestionBuilder } from './question-builder';
 import { StageSubmissions } from './stage-submissions';
 
-type Tab = 'questions' | 'submissions' | 'paired';
+type Tab = 'questions' | 'confirmation' | 'submissions' | 'paired';
 
 const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'questions', label: 'Questions' },
+  { id: 'confirmation', label: 'Confirmation' },
   { id: 'submissions', label: 'Submissions' },
   { id: 'paired', label: 'Paired results' },
 ];
@@ -76,6 +78,15 @@ export function StageWorkspace({ event, stage, wave = 1 }: StageWorkspaceProps) 
             waveLabel={selectedWave?.waveLabel}
             readOnly={readOnly}
             onChanged={() => router.refresh()}
+          />
+        ) : tab === 'confirmation' ? (
+          <ConfirmationEditor
+            key={`${stage}:${wave}:${selectedWave?.updatedAt ?? ''}`}
+            event={event}
+            stage={stage}
+            wave={wave}
+            readOnly={readOnly}
+            onSaved={() => router.refresh()}
           />
         ) : tab === 'paired' ? (
           <PairedResults eventId={event.id} stage={stage} />

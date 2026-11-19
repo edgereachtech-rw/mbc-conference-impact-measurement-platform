@@ -15,6 +15,7 @@ import {
   sectionMirrorSchema,
   isBlankAnswer,
   isKnowledgeQuestion,
+  parseConfirmation,
   sectionMarkOf,
   stableShuffle,
   markedOptions,
@@ -1756,6 +1757,7 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
           status: state as 'upcoming' | 'open' | 'closed',
           opensAt: s.opensAt ? s.opensAt.toISOString() : null,
           closesAt: s.closesAt ? s.closesAt.toISOString() : null,
+          confirmation: parseConfirmation(s.confirmation),
           sections: state === 'upcoming' ? [] : sections.map(sectionViewOf),
           questions: state === 'upcoming' ? [] : views.map(delegateViewOf),
           response: response
