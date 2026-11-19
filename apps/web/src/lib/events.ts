@@ -70,8 +70,7 @@ export const stageWhen: Record<AssessmentStage, string> = {
 };
 
 export const stagePurpose: Record<AssessmentStage, string> = {
-  pre_conference:
-    'This is to establish your expectations, baseline knowledge, confidence, and learning needs before you attend.',
+  pre_conference: 'This is to establish your expectations and learning needs before you attend.',
   during_conference:
     'Measure learning, engagement and experience while the event is taking place. Session-specific feedback is linked to each session separately.',
   // No purpose line for the evaluation or the follow-ups (2026-11-07): their names say enough.
