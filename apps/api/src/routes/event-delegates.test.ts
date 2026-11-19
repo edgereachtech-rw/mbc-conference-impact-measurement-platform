@@ -255,10 +255,20 @@ describe.skipIf(!hasDatabase)('GET /events/:eventId/delegates (admin listing)', 
       name: 'A. Known',
       email: `ama-${tag}@example.com`,
       attendanceFormat: 'physical',
+      department: 'Learning and Development',
       nameChoice: 'existing',
     });
     expect(kept.status, kept.text).toBe(201);
     expect(kept.body.delegate.name).toBe('Ama Known');
+    // The department travels with the registration (2026-11-19).
+    expect(kept.body.delegate.department).toBe('Learning and Development');
+    const renamedDept = await request(app())
+      .patch(`/api/v1/delegates/${kept.body.delegate.id}`)
+      .set('Origin', ORIGIN)
+      .set('Cookie', cookies.admin ?? '')
+      .send({ department: 'People' });
+    expect(renamedDept.status, renamedDept.text).toBe(200);
+    expect(renamedDept.body.delegate.department).toBe('People');
     expect(
       (await prisma.delegateIdentity.findUniqueOrThrow({ where: { id: ama.identity.id } }))
         .displayName,

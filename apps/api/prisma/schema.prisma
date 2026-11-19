@@ -1480,6 +1480,8 @@ model Delegate {
   email                  String
   organisation           String?
   jobTitle               String?            @map("job_title")
+  /// The delegate's department within their organisation (2026-11-19).
+  department             String?
   country                String?
   attendanceFormat       ParticipationCode  @map("attendance_format")
   capacity               DelegateCapacity   @default(individual)

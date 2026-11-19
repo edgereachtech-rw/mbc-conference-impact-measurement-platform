@@ -20,6 +20,7 @@ export interface RowValues {
   attendanceFormat: AttendanceFormat;
   organisation: string | null;
   jobTitle: string | null;
+  department: string | null;
   country: string | null;
   capacity: Capacity;
   nominatingOrganisation: string | null;
@@ -40,6 +41,7 @@ const LIMITS = {
   name: 200,
   organisation: 200,
   jobTitle: 200,
+  department: 200,
   country: 100,
   nominatingOrganisation: 200,
   externalRegistrationId: 100,
@@ -213,6 +215,7 @@ export function normaliseRow(
 
   const organisation = text('organisation', mapping.organisation, LIMITS.organisation);
   const jobTitle = text('jobTitle', mapping.jobTitle, LIMITS.jobTitle);
+  const department = text('department', mapping.department, LIMITS.department);
   const country = text('country', mapping.country, LIMITS.country);
   const nominatingOrganisation = text(
     'nominatingOrganisation',
@@ -256,6 +259,7 @@ export function normaliseRow(
       attendanceFormat: attendanceFormat!,
       organisation,
       jobTitle,
+      department,
       country,
       capacity,
       nominatingOrganisation,
@@ -270,6 +274,7 @@ export const UPDATABLE_FIELDS = [
   'name',
   'organisation',
   'jobTitle',
+  'department',
   'country',
   'attendanceFormat',
   'capacity',
@@ -287,6 +292,7 @@ export function repeatKey(values: RowValues): string {
     values.attendanceFormat,
     detailKey(values.organisation),
     detailKey(values.jobTitle),
+    detailKey(values.department),
     detailKey(values.country),
     values.capacity,
     detailKey(values.nominatingOrganisation),

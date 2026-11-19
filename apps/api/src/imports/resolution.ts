@@ -508,6 +508,7 @@ export class ConflictResolver {
         email: v.email,
         organisation: v.organisation,
         jobTitle: v.jobTitle,
+        department: v.department,
         country: v.country,
         attendanceFormat: v.attendanceFormat,
         capacity: v.capacity,

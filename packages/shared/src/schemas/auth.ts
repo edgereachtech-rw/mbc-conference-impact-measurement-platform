@@ -99,6 +99,7 @@ export const delegatePatchSchema = z
     /** The batch of the delegate's event they come with (2026-11-19); null for every day. */
     batchId: z.uuid().nullable(),
     jobTitle: z.string().trim().max(200).nullable(),
+    department: z.string().trim().max(200).nullable(),
     country: z.string().trim().max(100).nullable(),
     attendanceFormat: z.enum(participationModes),
     capacity: z.enum(['individual', 'nominee', 'other']),

@@ -64,6 +64,7 @@ describe('DelegateFormDialog', () => {
     await user.type(screen.getByLabelText('Full name'), 'Nia New');
     await user.type(screen.getByLabelText('Email address'), 'Nia@Example.com');
     await user.type(screen.getByLabelText('Nominating organisation'), 'Delta Nominees');
+    await user.type(screen.getByLabelText('Department'), 'Finance');
     await user.selectOptions(screen.getByLabelText('Attendance'), 'virtual');
     await user.selectOptions(screen.getByLabelText('Status'), 'pending');
     // Cancelled is never offered when adding.
@@ -78,6 +79,7 @@ describe('DelegateFormDialog', () => {
       organisation: null,
       nominatingOrganisation: 'Delta Nominees',
       jobTitle: null,
+      department: 'Finance',
       country: null,
       attendanceFormat: 'virtual',
       capacity: 'individual',

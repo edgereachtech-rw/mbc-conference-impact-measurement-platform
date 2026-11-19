@@ -212,6 +212,7 @@ describe('row normalisation and validation (D3 step 3, D4, criterion 2)', () => 
         attendanceFormat: 'physical',
         organisation: null,
         jobTitle: null,
+        department: null,
         country: null,
         capacity: 'individual',
         nominatingOrganisation: null,

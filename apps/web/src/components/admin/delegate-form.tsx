@@ -35,6 +35,7 @@ interface Fields {
   organisation: string;
   nominatingOrganisation: string;
   jobTitle: string;
+  department: string;
   country: string;
   attendanceFormat: 'physical' | 'virtual';
   capacity: 'individual' | 'nominee' | 'other';
@@ -49,6 +50,7 @@ const EMPTY: Fields = {
   organisation: '',
   nominatingOrganisation: '',
   jobTitle: '',
+  department: '',
   country: '',
   attendanceFormat: 'physical',
   capacity: 'individual',
@@ -63,6 +65,7 @@ function fieldsOf(record: DelegateRecord): Fields {
     organisation: record.organisation ?? '',
     nominatingOrganisation: record.nominatingOrganisation ?? '',
     jobTitle: record.jobTitle ?? '',
+    department: record.department ?? '',
     country: record.country ?? '',
     attendanceFormat: record.attendanceFormat,
     capacity: record.capacity,
@@ -85,7 +88,13 @@ function namesOf(body: unknown): DelegateNameMismatch['names'] | null {
 function patchOf(before: Fields, after: Fields): DelegatePatch {
   const patch: DelegatePatch = {};
   if (after.name.trim() !== before.name) patch.name = after.name.trim();
-  for (const key of ['organisation', 'nominatingOrganisation', 'jobTitle', 'country'] as const) {
+  for (const key of [
+    'organisation',
+    'nominatingOrganisation',
+    'jobTitle',
+    'department',
+    'country',
+  ] as const) {
     if (blank(after[key]) !== blank(before[key])) patch[key] = blank(after[key]);
   }
   if (after.attendanceFormat !== before.attendanceFormat)
@@ -180,6 +189,7 @@ export function DelegateFormDialog({ eventId, mode, onClose, onSaved }: Props) {
           organisation: blank(fields.organisation),
           nominatingOrganisation: blank(fields.nominatingOrganisation),
           jobTitle: blank(fields.jobTitle),
+          department: blank(fields.department),
           country: blank(fields.country),
           attendanceFormat: fields.attendanceFormat,
           capacity: fields.capacity,
@@ -219,7 +229,7 @@ export function DelegateFormDialog({ eventId, mode, onClose, onSaved }: Props) {
     'h-11 w-full rounded-none border border-corp-line bg-white px-3 text-base md:text-sm';
   const label = 'text-sm font-semibold text-corp-ink';
   const text = (
-    key: 'name' | 'organisation' | 'nominatingOrganisation' | 'jobTitle' | 'country',
+    key: 'name' | 'organisation' | 'nominatingOrganisation' | 'jobTitle' | 'department' | 'country',
     title: string,
     required = false,
   ) => (
@@ -343,6 +353,7 @@ export function DelegateFormDialog({ eventId, mode, onClose, onSaved }: Props) {
           Shown as the organisation when the delegate has none of their own.
         </p>
         {text('jobTitle', 'Job title')}
+        {text('department', 'Department')}
         {text('country', 'Country')}
         {batches.length > 0 ? (
           <div className="space-y-1">

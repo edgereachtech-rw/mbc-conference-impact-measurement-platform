@@ -582,7 +582,11 @@ export function DelegateTable({ eventId, eventName = 'this event', onMessageSent
                   </td>
                   <td className="hidden px-4 py-3 text-corp-text md:table-cell">
                     <p>{d.organisation ?? '–'}</p>
-                    {d.jobTitle ? <p className="text-xs text-corp-muted">{d.jobTitle}</p> : null}
+                    {d.jobTitle || d.department ? (
+                      <p className="text-xs text-corp-muted">
+                        {[d.jobTitle, d.department].filter(Boolean).join(' · ')}
+                      </p>
+                    ) : null}
                   </td>
                   <td className="hidden px-4 py-3 text-corp-text lg:table-cell">
                     {d.country ?? '–'}

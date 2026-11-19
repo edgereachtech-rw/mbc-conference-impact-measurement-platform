@@ -72,6 +72,7 @@ export interface RowValues {
   attendanceFormat: 'physical' | 'virtual';
   organisation: string | null;
   jobTitle: string | null;
+  department?: string | null;
   country: string | null;
   capacity: string;
   nominatingOrganisation: string | null;
@@ -203,6 +204,7 @@ export const fieldLabels: Record<ImportField, string> = {
   attendanceFormat: 'Attendance format (physical / virtual)',
   organisation: 'Organisation',
   jobTitle: 'Job title',
+  department: 'Department',
   country: 'Country',
   capacity: 'Capacity (individual / nominee / other)',
   nominatingOrganisation: 'Nominating organisation',

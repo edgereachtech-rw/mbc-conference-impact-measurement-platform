@@ -29,6 +29,7 @@ export interface ExistingRegistration {
   name: string;
   organisation: string | null;
   jobTitle: string | null;
+  department?: string | null;
   country: string | null;
   attendanceFormat: 'physical' | 'virtual';
   capacity: 'individual' | 'nominee' | 'other';

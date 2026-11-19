@@ -37,6 +37,7 @@ export const myEventSchema = z.object({
     capacity: z.enum(['individual', 'nominee', 'other']),
     organisation: z.string().nullable(),
     jobTitle: z.string().nullable(),
+    department: z.string().nullable().optional(),
     country: z.string().nullable(),
     signedUpAt: z.string().nullable(),
     /** The batch the delegate comes with, and its day (2026-11-19); null for every day. */

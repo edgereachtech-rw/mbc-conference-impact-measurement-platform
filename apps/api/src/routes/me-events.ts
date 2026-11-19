@@ -77,6 +77,7 @@ export function meEventsRouter({ prisma, config, middleware, now }: Deps): Route
         capacity: true,
         organisation: true,
         jobTitle: true,
+        department: true,
         country: true,
         signedUpAt: true,
         batch: {
@@ -120,6 +121,7 @@ export function meEventsRouter({ prisma, config, middleware, now }: Deps): Route
         capacity: r.capacity,
         organisation: r.organisation,
         jobTitle: r.jobTitle,
+        department: r.department,
         country: r.country,
         signedUpAt: r.signedUpAt ? r.signedUpAt.toISOString() : null,
         batch: r.batch

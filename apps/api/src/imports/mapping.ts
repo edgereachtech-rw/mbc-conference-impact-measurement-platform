@@ -46,6 +46,7 @@ const SYNONYMS: Record<ImportField | 'firstName' | 'lastName', readonly string[]
   ],
   organisation: ['organisation', 'organization', 'company', 'employer', 'institution', 'org'],
   jobTitle: ['jobtitle', 'title', 'position', 'role', 'designation'],
+  department: ['department', 'dept', 'unit', 'division', 'team', 'directorate'],
   country: ['country', 'nation', 'countryofresidence'],
   capacity: ['capacity', 'delegatecapacity', 'attendingas'],
   nominatingOrganisation: [

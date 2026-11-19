@@ -94,6 +94,9 @@ export function ProfilePanel({ displayName, email, initialEvents, contactEmail }
                   <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
                     <Field label="Organisation" value={ev.registration.organisation} />
                     <Field label="Job title" value={ev.registration.jobTitle} />
+                    {ev.registration.department ? (
+                      <Field label="Department" value={ev.registration.department} />
+                    ) : null}
                     <Field label="Country" value={ev.registration.country} />
                     <Field label="Capacity" value={capacityLabel[ev.registration.capacity]} />
                     <Field

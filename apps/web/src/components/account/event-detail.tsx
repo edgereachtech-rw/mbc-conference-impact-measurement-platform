@@ -334,6 +334,7 @@ function Overview({ event, contactEmail }: { event: MyEvent; contactEmail: strin
           ) : null}
           <Fact label="Organisation" value={r.organisation} />
           <Fact label="Job title" value={r.jobTitle} />
+          {r.department ? <Fact label="Department" value={r.department} /> : null}
           <Fact label="Country" value={r.country} />
           <Fact label="Capacity" value={capacityLabel[r.capacity]} />
           <Fact label="First signed in" value={r.signedUpAt ? formatDay(r.signedUpAt) : null} />
