@@ -139,7 +139,6 @@ export function renderOnboardingPack(
     </table>
 ${codesHtml}
 ${input.firstStep ? `\n    <p style="${P}"><strong>Your first step:</strong> ${escapeHtml(input.firstStep)}</p>` : ''}
-    <p style="${P}"><strong>Click on this button to start your journey.</strong></p>
   `.trim();
 
   const text = [
@@ -158,7 +157,6 @@ ${input.firstStep ? `\n    <p style="${P}"><strong>Your first step:</strong> ${e
     `Have you downloaded your "I will be attending" card? If not, you can still do so with the link sent to your email box earlier thanks.`,
     '',
     ...(input.firstStep ? [`Your first step: ${input.firstStep}`, ''] : []),
-    'Click on this button to start your journey.',
     `Open your dashboard: ${input.dashboardUrl}`,
   ].join('\n');
 
@@ -174,6 +172,7 @@ ${input.firstStep ? `\n    <p style="${P}"><strong>Your first step:</strong> ${e
         body: { html, text },
         appendix: codesHtml ? { html: codesHtml, text: codesText } : undefined,
         button: { label: w.buttonLabel, url: input.dashboardUrl },
+        buttonLead: 'Click on this button to start your journey.',
         notes: w.closing,
       },
       custom,

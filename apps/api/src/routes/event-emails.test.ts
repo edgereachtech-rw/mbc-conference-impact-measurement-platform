@@ -219,9 +219,7 @@ describe.skipIf(!hasDatabase)('event email wording', () => {
     expect(toDee.html).toContain('Check in with the code below');
     // The invitation to press the button sits right before it.
     expect(toDee.html).toContain('Click on this button to start your journey.');
-    expect(toDee.text).toContain(
-      'Click on this button to start your journey.\nOpen your dashboard:',
-    );
+    expect(toDee.text).toContain('Click on this button to start your journey.\nGo to my space:');
     expect(toDee.text).toContain('this training starts fresh');
     expect(toBo.text).not.toContain('already have an account');
 
@@ -255,6 +253,11 @@ describe.skipIf(!hasDatabase)('event email wording', () => {
     expect(wholeToDee.text).toContain('Welcome, Dee');
     expect(wholeToDee.text).toContain('YOUR CHECK-IN CODE');
     expect(wholeToDee.text).not.toContain('WHAT HAPPENS WHEN');
+    // The line before the button is the frame's, like the button: it stays whatever they wrote.
+    expect(wholeToDee.html).toContain('Click on this button to start your journey.');
+    expect(wholeToDee.text).toContain(
+      'Click on this button to start your journey.\nOpen my space:',
+    );
     expect(wholeToDee.html).toContain('cid:attendance-1@mbc');
     expect(
       (

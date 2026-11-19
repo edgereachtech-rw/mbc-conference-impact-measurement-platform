@@ -59,6 +59,11 @@ export interface EmailContent {
   /** The one primary action. Its URL is repeated in plain text and under the button. */
   button?: EmailButton;
   /**
+   * A line shown in bold right above the button, part of the frame like the button itself
+   * (2026-11-19): it stays whatever the organisers write, and nothing of theirs replaces it.
+   */
+  buttonLead?: string;
+  /**
    * Content that follows the body whatever the organisers wrote (2026-11-19): the welcome
    * pack's check-in codes. Rendered after the organisers' own content in body mode.
    */
@@ -224,6 +229,10 @@ export function renderLayout(branding: EmailBranding, content: EmailContent): Re
         `<p style="margin:0 0 8px;font-family:${fontStack};font-size:14px;line-height:20px;color:${colours.muted};" class="muted-text">${escapeHtml(n)}</p>`,
     )
     .join('\n');
+  const buttonLeadHtml =
+    content.button && content.buttonLead
+      ? `<p style="margin:0 0 12px;font-family:${fontStack};font-size:${fontSize}px;line-height:${lineHeight}px;font-weight:700;color:${textColour};" class="body-text">${escapeHtml(content.buttonLead)}</p>\n`
+      : '';
   const buttonHtml = content.button
     ? `
 <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin:8px ${align === 'center' ? 'auto' : '0'} 20px;">
@@ -278,7 +287,7 @@ export function renderLayout(branding: EmailBranding, content: EmailContent): Re
               ${content.eyebrow ? `<p class="eyebrow" style="margin:0 0 16px;font-family:${headingStack};font-size:32px;line-height:40px;letter-spacing:3px;text-transform:uppercase;color:${accent};">${escapeHtml(content.eyebrow)}</p>` : ''}
               <h1 class="title" style="margin:0 0 16px;font-family:${fontStack};font-size:24px;line-height:32px;font-weight:700;color:${headingColour};">${title}</h1>
               ${paragraphsHtml}
-              ${buttonHtml}
+              ${buttonLeadHtml}${buttonHtml}
               ${notesHtml}
             </td>
           </tr>
@@ -313,6 +322,7 @@ export function renderLayout(branding: EmailBranding, content: EmailContent): Re
     }
   }
   if (content.button) {
+    if (content.buttonLead) textLines.push(content.buttonLead);
     textLines.push(`${content.button.label}: ${content.button.url}`);
     textLines.push('');
   }
