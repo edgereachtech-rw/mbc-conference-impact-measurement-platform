@@ -237,7 +237,7 @@ describe.skipIf(!hasDatabase)('GET /events/:eventId/delegates (admin listing)', 
       }),
     ).toBe(1);
 
-    // Another name on a known address is another person: refused.
+    // Another name on a known address: both names go back, and the admin chooses.
     const mismatch = await post({
       name: 'Someone Else',
       email: `known-${tag}@example.com`,
@@ -245,6 +245,46 @@ describe.skipIf(!hasDatabase)('GET /events/:eventId/delegates (admin listing)', 
     });
     expect(mismatch.status).toBe(409);
     expect(mismatch.body.error.code).toBe('name_mismatch');
+    expect(mismatch.body.names).toEqual({ existing: 'Kofi Known', given: 'Someone Else' });
+
+    // Keeping the platform's name: the registration carries it, the person is untouched.
+    const ama = await createRegisteredIdentity(prisma, otherEventId, `ama-${tag}@example.com`, {
+      name: 'Ama Known',
+    });
+    const kept = await post({
+      name: 'A. Known',
+      email: `ama-${tag}@example.com`,
+      attendanceFormat: 'physical',
+      nameChoice: 'existing',
+    });
+    expect(kept.status, kept.text).toBe(201);
+    expect(kept.body.delegate.name).toBe('Ama Known');
+    expect(
+      (await prisma.delegateIdentity.findUniqueOrThrow({ where: { id: ama.identity.id } }))
+        .displayName,
+    ).toBe('Ama Known');
+
+    // Using the typed name: the registration and the person both take it, audited.
+    const yaw = await createRegisteredIdentity(prisma, otherEventId, `yaw-${tag}@example.com`, {
+      name: 'Yaw Known',
+    });
+    const renamed = await post({
+      name: 'Yaw Known-Mensah',
+      email: `yaw-${tag}@example.com`,
+      attendanceFormat: 'virtual',
+      nameChoice: 'given',
+    });
+    expect(renamed.status, renamed.text).toBe(201);
+    expect(renamed.body.delegate.name).toBe('Yaw Known-Mensah');
+    expect(
+      (await prisma.delegateIdentity.findUniqueOrThrow({ where: { id: yaw.identity.id } }))
+        .displayName,
+    ).toBe('Yaw Known-Mensah');
+    expect(
+      await prisma.auditLog.count({
+        where: { action: 'identity.renamed', entityId: yaw.identity.id, eventId },
+      }),
+    ).toBe(1);
 
     // A previous address of a person is never used for a new registration.
     await prisma.delegateIdentity.create({

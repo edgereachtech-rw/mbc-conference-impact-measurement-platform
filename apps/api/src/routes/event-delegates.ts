@@ -64,6 +64,16 @@ function toListItem({ nominatingOrganisation, ...r }: ListRow): DelegateListItem
  * Delegate listing per event for the admin console (E2-6 subset): search, filter by status and
  * format, sort, paginate. Admin-only; every record of the event is in scope for an admin (E3-6).
  */
+/** The address is a known person's, under another name: both names go back to the admin. */
+class NameMismatch extends Error {
+  constructor(
+    public readonly existing: string,
+    public readonly given: string,
+  ) {
+    super('name_mismatch');
+  }
+}
+
 export function eventDelegateRouter({ prisma, middleware }: Deps): Router {
   const router = Router();
 
@@ -164,140 +174,176 @@ export function eventDelegateRouter({ prisma, middleware }: Deps): Router {
       }
       const email = normaliseEmail(input.email);
 
-      const result = await prisma().$transaction(async (tx) => {
-        // Ownership of the address (D5.1): one identity per address, across every kind.
-        const owner = await tx.identityEmail.findUnique({
-          where: { emailNormalised: email },
-          select: {
-            identityId: true,
-            kind: true,
-            identity: {
-              select: {
-                displayName: true,
-                userAccountId: true,
-                userAccount: { select: { status: true } },
+      let result: { row: ListRow; identity: DelegateCreateResult['identity'] };
+      try {
+        result = await prisma().$transaction(async (tx) => {
+          // Ownership of the address (D5.1): one identity per address, across every kind.
+          const owner = await tx.identityEmail.findUnique({
+            where: { emailNormalised: email },
+            select: {
+              identityId: true,
+              kind: true,
+              identity: {
+                select: {
+                  displayName: true,
+                  userAccountId: true,
+                  userAccount: { select: { status: true } },
+                },
               },
             },
-          },
-        });
-        if (owner && owner.kind !== 'current') {
-          throw new HttpError(
-            409,
-            'email_not_current',
-            'This is a previous or provisional address of a person already on the platform. Use their current address.',
+          });
+          if (owner && owner.kind !== 'current') {
+            throw new HttpError(
+              409,
+              'email_not_current',
+              'This is a previous or provisional address of a person already on the platform. Use their current address.',
+            );
+          }
+          // The address belongs to a known person under another name (2026-11-19): the admin
+          // is shown both names and says which stands, rather than being refused outright.
+          const otherName = Boolean(
+            owner && normaliseNameKey(owner.identity.displayName) !== normaliseNameKey(input.name),
           );
-        }
-        if (
-          owner &&
-          normaliseNameKey(owner.identity.displayName) !== normaliseNameKey(input.name)
-        ) {
-          throw new HttpError(
-            409,
-            'name_mismatch',
-            `This address already belongs to ${owner.identity.displayName}. Check the name; a different person needs a different address.`,
-          );
-        }
-        if (owner?.identity.userAccount?.status === 'inactive') {
-          throw new HttpError(
-            409,
-            'account_inactive',
-            'This person’s account is deactivated. Reactivate it under Staff and accounts before adding a registration.',
-          );
-        }
-        const clash = await tx.delegate.findFirst({
-          where: {
-            eventId,
-            registrationStatus: { not: 'duplicate' },
-            OR: [
-              { email: { equals: email, mode: 'insensitive' } },
-              ...(owner ? [{ identityId: owner.identityId }] : []),
-            ],
-          },
-          select: { id: true },
-        });
-        if (clash) {
-          throw new HttpError(
-            409,
-            'registration_exists',
-            'This person is already registered for this event.',
-          );
-        }
-
-        let identityId: string;
-        let userAccountId: string | null = null;
-        let identity: DelegateCreateResult['identity'];
-        if (owner) {
-          identityId = owner.identityId;
-          userAccountId = owner.identity.userAccountId;
-          identity = 'linked';
-        } else {
-          const created = await tx.delegateIdentity.create({
-            data: { displayName: input.name },
+          if (owner && otherName && !input.nameChoice) {
+            throw new NameMismatch(owner.identity.displayName, input.name);
+          }
+          const name =
+            owner && otherName && input.nameChoice === 'existing'
+              ? owner.identity.displayName
+              : input.name;
+          if (owner?.identity.userAccount?.status === 'inactive') {
+            throw new HttpError(
+              409,
+              'account_inactive',
+              'This person’s account is deactivated. Reactivate it under Staff and accounts before adding a registration.',
+            );
+          }
+          const clash = await tx.delegate.findFirst({
+            where: {
+              eventId,
+              registrationStatus: { not: 'duplicate' },
+              OR: [
+                { email: { equals: email, mode: 'insensitive' } },
+                ...(owner ? [{ identityId: owner.identityId }] : []),
+              ],
+            },
             select: { id: true },
           });
-          identityId = created.id;
-          identity = 'created';
-          const entry = await audit(tx, {
-            action: 'identity.created',
-            entityType: 'delegate_identity',
-            entityId: identityId,
-            eventId,
-            actorUserId: principal.userId,
-            newValue: { identityId, by: 'admin' },
-            ...clientOf(res),
-          });
-          await tx.identityEmail.create({
-            data: {
-              identityId,
-              emailNormalised: email,
-              kind: 'current',
-              evidence: 'admin_decision',
-              auditLogId: entry.id,
+          if (clash) {
+            throw new HttpError(
+              409,
+              'registration_exists',
+              'This person is already registered for this event.',
+            );
+          }
+
+          let identityId: string;
+          let userAccountId: string | null = null;
+          let identity: DelegateCreateResult['identity'];
+          if (owner) {
+            identityId = owner.identityId;
+            userAccountId = owner.identity.userAccountId;
+            identity = 'linked';
+            if (otherName && input.nameChoice === 'given') {
+              // The admin chose the typed name: the person is renamed on the platform too, so
+              // their account and this registration agree.
+              await tx.delegateIdentity.update({
+                where: { id: identityId },
+                data: { displayName: name },
+              });
+              await audit(tx, {
+                action: 'identity.renamed',
+                entityType: 'delegate_identity',
+                entityId: identityId,
+                eventId,
+                actorUserId: principal.userId,
+                oldValue: { displayName: owner.identity.displayName },
+                newValue: { displayName: name, by: 'admin' },
+                ...clientOf(res),
+              });
+            }
+          } else {
+            const created = await tx.delegateIdentity.create({
+              data: { displayName: input.name },
+              select: { id: true },
+            });
+            identityId = created.id;
+            identity = 'created';
+            const entry = await audit(tx, {
+              action: 'identity.created',
+              entityType: 'delegate_identity',
+              entityId: identityId,
+              eventId,
               actorUserId: principal.userId,
+              newValue: { identityId, by: 'admin' },
+              ...clientOf(res),
+            });
+            await tx.identityEmail.create({
+              data: {
+                identityId,
+                emailNormalised: email,
+                kind: 'current',
+                evidence: 'admin_decision',
+                auditLogId: entry.id,
+                actorUserId: principal.userId,
+              },
+            });
+          }
+          const row = await tx.delegate.create({
+            data: {
+              eventId,
+              identityId,
+              userAccountId,
+              name,
+              email,
+              organisation: input.organisation,
+              nominatingOrganisation: input.nominatingOrganisation,
+              jobTitle: input.jobTitle,
+              country: input.country,
+              attendanceFormat: input.attendanceFormat,
+              capacity: input.capacity,
+              registrationStatus: input.registrationStatus,
+              registrationSource: 'manual',
             },
+            select: LIST_FIELDS,
           });
-        }
-        const row = await tx.delegate.create({
-          data: {
-            eventId,
-            identityId,
-            userAccountId,
-            name: input.name,
-            email,
-            organisation: input.organisation,
-            nominatingOrganisation: input.nominatingOrganisation,
-            jobTitle: input.jobTitle,
-            country: input.country,
-            attendanceFormat: input.attendanceFormat,
-            capacity: input.capacity,
-            registrationStatus: input.registrationStatus,
-            registrationSource: 'manual',
-          },
-          select: LIST_FIELDS,
-        });
-        if (identity === 'linked') {
+          if (identity === 'linked') {
+            await audit(tx, {
+              action: 'identity.linked',
+              entityType: 'delegate_identity',
+              entityId: identityId,
+              eventId,
+              actorUserId: principal.userId,
+              newValue: { identityId, delegateId: row.id, by: 'admin' },
+              ...clientOf(res),
+            });
+          }
+          // E2-4 / E17-4: who, when and which record; the values themselves stay on the record.
           await audit(tx, {
-            action: 'identity.linked',
-            entityType: 'delegate_identity',
-            entityId: identityId,
+            action: 'delegate.created',
+            entityType: 'delegate',
+            entityId: row.id,
             eventId,
             actorUserId: principal.userId,
-            newValue: { identityId, delegateId: row.id, by: 'admin' },
+            newValue: { delegateId: row.id, identityId, identity, source: 'manual' },
             ...clientOf(res),
           });
-        }
-        // E2-4 / E17-4: who, when and which record; the values themselves stay on the record.
-        await audit(tx, {
-          action: 'delegate.created',
-          entityType: 'delegate',
-          entityId: row.id,
-          eventId,
-          actorUserId: principal.userId,
-          newValue: { delegateId: row.id, identityId, identity, source: 'manual' },
-          ...clientOf(res),
+          return { row, identity };
         });
-        return { row, identity };
-      });
+      } catch (error) {
+        if (error instanceof NameMismatch) {
+          res.status(409).json({
+            error: {
+              code: 'name_mismatch',
+              message: `This address already belongs to ${error.existing}. Choose which name to use.`,
+              requestId: String(res.getHeader('x-request-id') ?? ''),
+            },
+            names: { existing: error.existing, given: error.given },
+          });
+          return;
+        }
+        throw error;
+      }
       const body: DelegateCreateResult = {
         delegate: toListItem(result.row),
         identity: result.identity,

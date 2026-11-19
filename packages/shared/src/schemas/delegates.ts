@@ -89,8 +89,21 @@ export const delegateCreateSchema = z.object({
   capacity: z.enum(['individual', 'nominee', 'other']).default('individual'),
   /** Active or pending; duplicate and test are never set by hand. */
   registrationStatus: z.enum(['active', 'pending']).default('active'),
+  /**
+   * When the address belongs to a known person under another name (2026-11-19): the server
+   * first answers 409 `name_mismatch` with both names, and the admin resubmits with the one to
+   * use. `existing` keeps the person's name on the platform; `given` renames them to the name
+   * typed here.
+   */
+  nameChoice: z.enum(['existing', 'given']).optional(),
 });
 export type DelegateCreate = z.infer<typeof delegateCreateSchema>;
+
+/** The body of a 409 `name_mismatch`: both names, for the admin to choose between. */
+export const delegateNameMismatchSchema = z.object({
+  names: z.object({ existing: z.string(), given: z.string() }),
+});
+export type DelegateNameMismatch = z.infer<typeof delegateNameMismatchSchema>;
 export type DelegateCreateInput = z.input<typeof delegateCreateSchema>;
 
 export const delegateCreateResultSchema = z.object({

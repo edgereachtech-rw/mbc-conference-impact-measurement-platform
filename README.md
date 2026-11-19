@@ -1213,6 +1213,12 @@ measures | evidence }`, the list replaced with ids kept; own actions only, 404 o
 
 ## Delegates added and corrected by hand (decision 2026-11-12, backlog E2-4)
 
+Since 2026-11-19, an address that belongs to a known person under another name is not refused
+outright: the 409 `name_mismatch` carries `names: { existing, given }`, the form shows both and
+the admin resubmits with `nameChoice`. `existing` registers the person under the name the
+platform knows; `given` registers them under the typed name and renames the person on the
+platform too (audited as `identity.renamed`), so their account and the registration agree.
+
 From the event's Delegates tab an admin can add one delegate without a file and edit any row.
 
 - `POST /api/v1/events/:eventId/delegates` (admin only; body: name, email, organisation,

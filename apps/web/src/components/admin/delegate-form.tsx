@@ -4,6 +4,7 @@ import type {
   DelegateCreateInput,
   DelegateCreateResult,
   DelegateListStatus,
+  DelegateNameMismatch,
   DelegatePatch,
   DelegateRecord,
 } from '@mbc/shared';
@@ -13,7 +14,7 @@ import { useEffect, useId, useState, type FormEvent } from 'react';
 import { Dialog } from '@/components/console/dialog';
 import { consoleButton } from '@/components/console/page';
 import { NativeSelect } from '@/components/imports/native-select';
-import { apiFetch } from '@/lib/api';
+import { ApiError, apiFetch } from '@/lib/api';
 import { describeError } from '@/lib/imports';
 
 const STATUS_LABEL: Record<DelegateListStatus, string> = {
@@ -66,6 +67,14 @@ function fieldsOf(record: DelegateRecord): Fields {
 
 const blank = (value: string) => (value.trim() ? value.trim() : null);
 
+/** The two names a 409 name_mismatch carries, when the body has them. */
+function namesOf(body: unknown): DelegateNameMismatch['names'] | null {
+  const names = (body as { names?: { existing?: unknown; given?: unknown } } | undefined)?.names;
+  return names && typeof names.existing === 'string' && typeof names.given === 'string'
+    ? { existing: names.existing, given: names.given }
+    : null;
+}
+
 /** The fields that changed, as the correction route takes them; empty when nothing changed. */
 function patchOf(before: Fields, after: Fields): DelegatePatch {
   const patch: DelegatePatch = {};
@@ -109,6 +118,8 @@ export function DelegateFormDialog({ eventId, mode, onClose, onSaved }: Props) {
   const [fields, setFields] = useState<Fields>(EMPTY);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  /** Both names when the address belongs to a known person under another name (2026-11-19). */
+  const [nameClash, setNameClash] = useState<DelegateNameMismatch['names'] | null>(null);
   const editing = mode.kind === 'edit';
   const delegateId = mode.kind === 'edit' ? mode.delegateId : null;
 
@@ -136,10 +147,11 @@ export function DelegateFormDialog({ eventId, mode, onClose, onSaved }: Props) {
     !editing || (loaded ? SETTABLE.includes(loaded.registrationStatus) : false);
   const ready = !editing || loaded !== null;
 
-  async function submit(e: FormEvent) {
+  async function submit(e: FormEvent, nameChoice?: 'existing' | 'given') {
     e.preventDefault();
     if (busy || !ready) return;
     setProblem(null);
+    setNameClash(null);
     setBusy(true);
     try {
       if (editing && loaded) {
@@ -164,6 +176,7 @@ export function DelegateFormDialog({ eventId, mode, onClose, onSaved }: Props) {
           attendanceFormat: fields.attendanceFormat,
           capacity: fields.capacity,
           registrationStatus: fields.registrationStatus === 'pending' ? 'pending' : 'active',
+          ...(nameChoice ? { nameChoice } : {}),
         };
         const result = await apiFetch<DelegateCreateResult>(`/events/${eventId}/delegates`, {
           method: 'POST',
@@ -177,12 +190,17 @@ export function DelegateFormDialog({ eventId, mode, onClose, onSaved }: Props) {
         );
       }
     } catch (e) {
-      setProblem(
-        describeError(
-          e,
-          editing ? 'The changes could not be saved.' : 'The delegate could not be added.',
-        ).message,
-      );
+      const names = e instanceof ApiError && e.code === 'name_mismatch' ? namesOf(e.body) : null;
+      if (names) {
+        setNameClash(names);
+      } else {
+        setProblem(
+          describeError(
+            e,
+            editing ? 'The changes could not be saved.' : 'The delegate could not be added.',
+          ).message,
+        );
+      }
     } finally {
       setBusy(false);
     }
@@ -249,6 +267,39 @@ export function DelegateFormDialog({ eventId, mode, onClose, onSaved }: Props) {
         <p role="alert" className="mb-3 text-sm font-semibold text-brand-danger">
           {problem}
         </p>
+      ) : null}
+      {nameClash ? (
+        <div
+          role="group"
+          aria-label="Which name should stand?"
+          className="mb-3 space-y-2 border-l-4 border-corp-accent bg-corp-accent-soft/40 p-3 text-sm"
+        >
+          <p className="font-semibold text-corp-ink">
+            This address already belongs to {nameClash.existing}. Which name should stand?
+          </p>
+          <p className="text-xs text-corp-muted">
+            Keeping their name registers this person as the platform knows them. Using the typed
+            name renames them on the platform as well, so their account and this registration agree.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={(e) => void submit(e, 'existing')}
+              className={consoleButton({ variant: 'accent' })}
+            >
+              Keep “{nameClash.existing}”
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={(e) => void submit(e, 'given')}
+              className={consoleButton({ variant: 'secondary' })}
+            >
+              Use “{nameClash.given}”
+            </button>
+          </div>
+        </div>
       ) : null}
       {editing && !loaded && !problem ? (
         <p className="flex items-center gap-2 text-sm text-corp-muted" role="status">

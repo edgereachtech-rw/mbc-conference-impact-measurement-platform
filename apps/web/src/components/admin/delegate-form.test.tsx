@@ -86,6 +86,60 @@ describe('DelegateFormDialog', () => {
     expect(onSaved).toHaveBeenCalledWith(expect.stringMatching(/Nia New added.*already known/));
   });
 
+  it('offers both names when the address belongs to a known person under another name', async () => {
+    const calls = stub((_url, init) => {
+      const body = JSON.parse(String(init?.body));
+      if (!body.nameChoice) {
+        return {
+          status: 409,
+          body: {
+            error: {
+              code: 'name_mismatch',
+              message: 'This address already belongs to Kofi Known.',
+            },
+            names: { existing: 'Kofi Known', given: 'K. Known-Mensah' },
+          },
+        };
+      }
+      return {
+        status: 201,
+        body: {
+          delegate: {
+            ...RECORD,
+            id: 'new',
+            name: body.nameChoice === 'existing' ? 'Kofi Known' : body.name,
+          },
+          identity: 'linked',
+        },
+      };
+    });
+    const user = userEvent.setup();
+    const onSaved = vi.fn();
+    render(
+      <DelegateFormDialog
+        eventId="e1"
+        mode={{ kind: 'create' }}
+        onClose={() => {}}
+        onSaved={onSaved}
+      />,
+    );
+    await user.type(screen.getByLabelText('Full name'), 'K. Known-Mensah');
+    await user.type(screen.getByLabelText('Email address'), 'known@example.com');
+    await user.click(screen.getByRole('button', { name: 'Add delegate' }));
+    const choice = await screen.findByRole('group', { name: 'Which name should stand?' });
+    expect(choice.textContent).toContain('This address already belongs to Kofi Known.');
+    expect(screen.queryByRole('alert')).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: 'Keep “Kofi Known”' }));
+    const posts = calls.filter((c) => c.init?.method === 'POST');
+    expect(posts).toHaveLength(2);
+    expect(JSON.parse(String(posts[1]?.init?.body))).toMatchObject({
+      name: 'K. Known-Mensah',
+      nameChoice: 'existing',
+    });
+    expect(onSaved).toHaveBeenCalledWith(expect.stringMatching(/^Kofi Known added/));
+  });
+
   it('shows the server’s refusal instead of pretending', async () => {
     stub(() => ({
       status: 409,
