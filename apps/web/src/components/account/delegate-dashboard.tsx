@@ -89,8 +89,11 @@ export function DelegateDashboard({ contactEmail, initialEvents }: Props) {
       >
         Need a correction to your registration details or want to change your registered email
         address? Write to{' '}
-        <a href={`mailto:${contactEmail}`} className="font-semibold text-corp-green-text underline">
-          {contactEmail}
+        <a
+          href={`mailto:support@mbryanconsultinggroup.com`}
+          className="font-semibold text-corp-green-text underline"
+        >
+          support@mbryanconsultinggroup.com
         </a>
       </aside>
     </div>

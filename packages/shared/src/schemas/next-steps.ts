@@ -70,17 +70,17 @@ export function nextSteps(journey: Journey): NextStep[] {
   // Every date open for check-in with nothing recorded yet, one step each, in day order: the one
   // thing only the delegate can do. Named by its day of the event ("Day 1"), not "today", so the
   // list reads the same ahead of the day.
-  const dates = [...journey.attendance.dates].sort((a, b) => a.date.localeCompare(b.date));
-  dates.forEach((d, i) => {
-    if (d.closed || d.status !== 'not_checked_in') return;
-    steps.push({
-      key: `attendance:${d.date}`,
-      label: `Check in for Day ${i + 1}`,
-      hint: 'Show your attendance QR code at the entrance. Joining online? The organisers record you.',
-      tab: 'attendance',
-      started: false,
-    });
-  });
+  // const dates = [...journey.attendance.dates].sort((a, b) => a.date.localeCompare(b.date));
+  // dates.forEach((d, i) => {
+  //   if (d.closed || d.status !== 'not_checked_in') return;
+  //   steps.push({
+  //     key: `attendance:${d.date}`,
+  //     label: `Check in for Day ${i + 1}`,
+  //     hint: 'Show your attendance QR code at the entrance. Joining online? The organisers record you.',
+  //     tab: 'attendance',
+  //     started: false,
+  //   });
+  // });
 
   // Session feedback comes straight after the check-ins (2026-11-07): it is asked for on the
   // day, as the sessions end.
