@@ -7,6 +7,7 @@ import {
   eventCreateSchema,
   eventDatesSchema,
   eventPatchSchema,
+  type ChecklistTemplate,
   eventProfileIssues,
   eventPublishIssues,
   eventStatusSchema,
@@ -24,7 +25,7 @@ import type { z } from 'zod';
 import { clientOf, principalOf, type createAuthMiddleware } from '../auth/middleware.js';
 import { canConfigureEvents, EVENT_SETUP_ROLES } from '../auth/policies.js';
 import type { PrismaClient } from '../db.js';
-import type { Prisma } from '../generated/prisma/client.js';
+import { Prisma } from '../generated/prisma/client.js';
 import { audit } from '../lib/audit.js';
 import { HttpError } from '../lib/errors.js';
 import { waveOf } from './assessments.js';
@@ -98,6 +99,9 @@ export function eventDetailOf(event: EventRow): EventDetail {
     countTestDelegates: event.countTestDelegates,
     transferPlanVisibility: event.transferPlanVisibility,
     transferPlanShownFrom: event.transferPlanShownFrom?.toISOString() ?? null,
+    transferPlanMode: event.transferPlanMode,
+    transferPlanPosition: event.transferPlanPosition,
+    transferPlanTemplate: (event.transferPlanTemplate as ChecklistTemplate | null) ?? null,
     startsOn: isoDate(event.startsOn),
     endsOn: isoDate(event.endsOn),
     dates: event.dates.map((d) => ({ id: d.id, date: isoDate(d.date) })),
@@ -302,7 +306,19 @@ export function eventSetupRouter({ prisma, middleware, now }: Deps): Router {
       res.json({ event: eventDetailOf(event) });
       return;
     }
-    const data: Prisma.EventUpdateInput = { ...fields };
+    // The checklist template is JSON: null clears it back to the default wording (2026-11-20).
+    const { transferPlanTemplate, ...scalars } = fields;
+    const data: Prisma.EventUpdateInput = {
+      ...scalars,
+      ...(transferPlanTemplate !== undefined
+        ? {
+            transferPlanTemplate:
+              transferPlanTemplate === null
+                ? Prisma.DbNull
+                : (transferPlanTemplate as Prisma.InputJsonValue),
+          }
+        : {}),
+    };
     const updated = await prisma().$transaction(async (tx) => {
       const row = await tx.event.update({ where: { id: event.id }, data, include: DETAIL_INCLUDE });
       await audit(tx, {

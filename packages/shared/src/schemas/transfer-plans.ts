@@ -182,6 +182,7 @@ export const reminderFrequencies = [
   'weekly',
   'fortnightly',
   'monthly',
+  'once',
 ] as const;
 export type ReminderFrequency = (typeof reminderFrequencies)[number];
 export const reminderFrequencyLabels: Record<ReminderFrequency, string> = {
@@ -192,6 +193,7 @@ export const reminderFrequencyLabels: Record<ReminderFrequency, string> = {
   weekly: 'Every week',
   fortnightly: 'Every two weeks',
   monthly: 'Every month',
+  once: 'Once, on a chosen date',
 };
 
 /** ISO weekdays, for the twice-weekly choice. */
@@ -245,6 +247,10 @@ export const reminderPreferenceSchema = z
   })
   .superRefine((r, ctx) => {
     if (r.frequency === 'none') return;
+    // One reminder needs its day (2026-11-20).
+    if (r.frequency === 'once' && !r.startOn) {
+      ctx.addIssue({ code: 'custom', path: ['startOn'], message: 'Choose the day.' });
+    }
     if (r.frequency === 'twice_weekly' && new Set(r.days).size !== 2) {
       ctx.addIssue({
         code: 'custom',
@@ -332,6 +338,226 @@ export function actionSubmissionGaps(
     }))
     .filter((g) => g.missing.length > 0);
 }
+
+// ------------------------------------------------------------------ checklist and commitment
+
+/**
+ * How delegates plan their transfer (2026-11-20). "full": the Transfer Plan of Appendix A5, any
+ * number of actions with their 13 fields, measures and evidence. "commitment": the checklist
+ * and one commitment a training programme asks of line managers: the training named, the
+ * actions they plan to take ticked, one of them committed to with a date and what will show it,
+ * and one reminder if they want it. Follow-ups, reminders and reports serve both the same way.
+ */
+export const transferPlanModes = ['full', 'commitment'] as const;
+export type TransferPlanMode = (typeof transferPlanModes)[number];
+export const transferPlanModeLabels: Record<TransferPlanMode, string> = {
+  full: 'Full Transfer Plan',
+  commitment: 'Checklist and commitment',
+};
+
+/**
+ * Where Transfer Planning sits in the delegate's journey (2026-11-20): last of all, or before
+ * the closing assessments (the end-of-event evaluation and the follow-ups), as a programme that
+ * asks for the commitment before its post-training assessment needs.
+ */
+export const transferPlanPositions = ['last', 'before_closing'] as const;
+export type TransferPlanPosition = (typeof transferPlanPositions)[number];
+export const transferPlanPositionLabels: Record<TransferPlanPosition, string> = {
+  last: 'After everything else',
+  before_closing: 'Before the closing assessments',
+};
+
+const wording = (max: number) => z.string().trim().min(1).max(max);
+const key = z.string().trim().min(1).max(40);
+
+/** The three answers a commitment's follow-up offers, as plan progress statuses. */
+export const commitmentStatuses = ['applied', 'started', 'not_started'] as const;
+export type CommitmentStatus = (typeof commitmentStatuses)[number];
+
+/**
+ * The checklist-and-commitment form's wording, set per event (2026-11-20) so another programme
+ * can have other groups, actions and prompts. Keys name the actions in saved checklists and
+ * exports, so a renamed action keeps its ticks; a removed key loses them.
+ */
+export const checklistTemplateSchema = z.object({
+  /** The name of the form, as the tab and the dashboard call it. */
+  title: wording(120),
+  /** The instruction above the whole form. */
+  intro: wording(1_000),
+  trainingNameLabel: wording(200),
+  tickHeading: wording(200),
+  tickHint: wording(500),
+  groups: z
+    .array(
+      z.object({
+        key,
+        title: wording(200),
+        actions: z
+          .array(z.object({ key, text: wording(500) }))
+          .min(1)
+          .max(20),
+      }),
+    )
+    .min(1)
+    .max(10),
+  commitment: z.object({
+    heading: wording(200),
+    hint: wording(500),
+    chooseLabel: wording(200),
+    whatLabel: wording(200),
+    whenLabel: wording(200),
+    evidenceLabel: wording(200),
+    reminderPrompt: wording(200),
+    reminderDateLabel: wording(200),
+  }),
+  buttonLabel: wording(60),
+  savedMessage: wording(500),
+  followUp: z.object({
+    intro: wording(500),
+    statusPrompt: wording(200),
+    statusLabels: z.object({
+      applied: wording(100),
+      started: wording(100),
+      not_started: wording(100),
+    }),
+    updatePrompt: wording(500),
+  }),
+});
+export type ChecklistTemplate = z.infer<typeof checklistTemplateSchema>;
+
+/** The wording a new event starts from; the organisers change any of it. */
+export const DEFAULT_CHECKLIST_TEMPLATE: ChecklistTemplate = {
+  title: 'My Training Checklist and Commitment',
+  intro:
+    'Choose one current or upcoming training involving your team. Enter its name and tick the actions you plan to take. Leave an action unticked if you have already done it or it doesn’t apply. You can skip an entire section.',
+  trainingNameLabel: 'What is the name of the training?',
+  tickHeading: 'Tick the actions you plan to take',
+  tickHint: 'A tick means “I plan to do this.”',
+  groups: [
+    {
+      key: 'request',
+      title: 'Before training, if you are considering a request',
+      actions: [
+        {
+          key: 'describe_need',
+          text: 'Describe the performance need and check what is getting in the way.',
+        },
+        {
+          key: 'decide_help',
+          text: 'Decide whether training, a change at work or both could help.',
+        },
+        {
+          key: 'submit_request',
+          text: 'Submit a training request to L&D that explains the performance need, gives an example of what I observed, and states why I think training could help.',
+        },
+      ],
+    },
+    {
+      key: 'confirmed',
+      title: 'Before training, once it is confirmed',
+      actions: [
+        { key: 'explain_why', text: 'Explain why the trainee is attending.' },
+        { key: 'agree_change', text: 'Agree what the trainee should do differently at work.' },
+        {
+          key: 'identify_task',
+          text: 'Identify a real task where the trainee can use what they learn.',
+        },
+      ],
+    },
+    {
+      key: 'during',
+      title: 'During training',
+      actions: [
+        { key: 'protect_time', text: 'Protect the trainee’s time to participate.' },
+        { key: 'provide_examples', text: 'Provide work examples or input if needed.' },
+      ],
+    },
+    {
+      key: 'after',
+      title: 'After training',
+      actions: [
+        {
+          key: 'meet_agree',
+          text: 'Meet with the trainee to agree what they will apply, what support they need and when we will check progress.',
+        },
+        {
+          key: 'practise_coach',
+          text: 'Give the trainee time to practise, coach them and help remove barriers.',
+        },
+        {
+          key: 'check_applied',
+          text: 'Check what the trainee has applied and what has changed. Recognise progress and share relevant evidence with L&D.',
+        },
+      ],
+    },
+  ],
+  commitment: {
+    heading: 'Commit to one action',
+    hint: 'Choose one of the actions you ticked and answer three questions.',
+    chooseLabel: 'Which action will you commit to?',
+    whatLabel: 'What will you do?',
+    whenLabel: 'By what date?',
+    evidenceLabel: 'What will show you have done it?',
+    reminderPrompt: 'Would you like a reminder?',
+    reminderDateLabel: 'Remind me on',
+  },
+  buttonLabel: 'Save my commitment',
+  savedMessage: 'Your checklist and commitment have been saved.',
+  followUp: {
+    intro: 'Here is the commitment you saved and its due date. Give us a short update.',
+    statusPrompt: 'Where are you with this action?',
+    statusLabels: {
+      applied: 'I have done it',
+      started: 'I have started',
+      not_started: 'I haven’t started',
+    },
+    updatePrompt:
+      'What is your update? If you have done it, tell us what you did and what shows you did it. If it is still open, tell us your next step or what support would help.',
+  },
+};
+
+/** Every action of a template, in order, with its group. */
+export function templateActions(
+  template: ChecklistTemplate,
+): Array<{ key: string; text: string; group: string }> {
+  return template.groups.flatMap((g) =>
+    g.actions.map((a) => ({ key: a.key, text: a.text, group: g.title })),
+  );
+}
+
+/** What a plan keeps of the checklist (2026-11-20): the ticked keys and the committed one. */
+export const planChecklistSchema = z.object({
+  ticked: z.array(key).max(200),
+  commitmentKey: key.nullable(),
+});
+export type PlanChecklist = z.infer<typeof planChecklistSchema>;
+
+/**
+ * The checklist-and-commitment form as the delegate saves it (2026-11-20): the training named,
+ * at least one action ticked, the commitment chosen among them with its three answers, and the
+ * reminder choice. Saved as the plan's one action and submitted at once.
+ */
+export const commitmentSaveSchema = z
+  .object({
+    version: z.number().int().min(1),
+    trainingName: wording(200),
+    ticked: z.array(key).min(1, 'Tick at least one action.').max(200),
+    commitmentKey: key,
+    what: wording(2_000),
+    byOn: isoDay,
+    evidence: wording(2_000),
+    reminderOn: isoDay.nullable().default(null),
+  })
+  .superRefine((c, ctx) => {
+    if (!c.ticked.includes(c.commitmentKey)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['commitmentKey'],
+        message: 'Commit to one of the actions you ticked.',
+      });
+    }
+  });
+export type CommitmentSave = z.infer<typeof commitmentSaveSchema>;
 
 export const transferPlanSaveSchema = z.object({
   /** The version the client last saw; a save against an older version is refused. */
@@ -922,6 +1148,9 @@ export const transferPlanViewSchema = z.object({
   sequence: z.number().int(),
   /** The delegate's own name for the plan; empty means "Plan n". */
   title: z.string(),
+  /** The checklist-and-commitment form's answers (2026-11-20); empty and null in the full mode. */
+  trainingName: z.string().optional(),
+  checklist: planChecklistSchema.nullable().optional(),
   status: z.enum(transferPlanStatuses),
   version: z.number().int(),
   submittedAt: z.string().nullable(),
@@ -964,6 +1193,9 @@ export type MyTransferPlans = z.infer<typeof myTransferPlansSchema>;
 
 export const myTransferPlanSchema = z.object({
   plan: transferPlanViewSchema,
+  /** The full plan or the checklist-and-commitment form (2026-11-20), with its wording. */
+  mode: z.enum(transferPlanModes).optional(),
+  template: checklistTemplateSchema.optional(),
   /** The event's Transfer Planning sessions in order; empty when none is scheduled. */
   sessions: z.array(transferPlanningSessionSchema),
   /** Submission is possible once the designated final session has started (or at any time when no session is scheduled). */
@@ -996,6 +1228,9 @@ export const transferPlanListItemSchema = z.object({
   priorityAction: z.string().nullable(),
   submittedAt: z.string().nullable(),
   updatedAt: z.string(),
+  /** The checklist-and-commitment form's training and ticks (2026-11-20); empty in the full mode. */
+  trainingName: z.string().optional(),
+  ticked: z.array(z.string()).optional(),
   /** Progress of the actions, counted by latest status. */
   progress: z.record(z.enum(actionProgressStatuses), z.number().int()),
   /** Actions with a reminder switched on (reminders are per action since 2026-11-11). */
@@ -1124,6 +1359,8 @@ const daysInMonth = (date: string) =>
 function reminderDueOn(pref: ReminderPreference, day: string, first: string): boolean {
   const diff = daysBetween(first, day);
   switch (pref.frequency) {
+    case 'once':
+      return diff === 0;
     case 'daily':
       return true;
     case 'every_other_day':

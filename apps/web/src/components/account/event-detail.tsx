@@ -73,7 +73,22 @@ function journeyTabs(
   reflections: readonly MyReflection[],
   planVisible: boolean,
   eventType: MyEvent['eventType'],
+  plan: MyEvent['transferPlan'],
 ): TabItem[] {
+  // The checklist-and-commitment form takes its own name (2026-11-20), and the organisers may
+  // place Transfer Planning before the closing assessments instead of last.
+  const planTab: TabItem[] = !planVisible
+    ? []
+    : plan?.mode === 'commitment'
+      ? [
+          {
+            id: 'transfer-plan',
+            label: plan.title || 'Checklist and commitment',
+            hint: 'The actions you plan to take and the one you commit to',
+          },
+        ]
+      : [STATIC['transfer-plan']];
+  const before = plan?.position === 'before_closing';
   const of = (stage: AssessmentStage): TabItem[] =>
     forms
       .filter((a) => a.stage === stage)
@@ -97,11 +112,12 @@ function journeyTabs(
         hint: `Reflection for ${formatDay(r.date)}`,
       })),
     STATIC.feedback,
+    ...(before ? planTab : []),
     ...of('end_of_conference'),
     ...of('follow_up'),
-    // One Transfer plans tab, last of all (2026-11-20); the plans are tabs inside it. None
-    // while the organisers hide Transfer Planning (2026-11-08).
-    ...(planVisible ? [STATIC['transfer-plan']] : []),
+    // One Transfer plans tab, last of all (2026-11-20) unless placed before the closing
+    // assessments; the plans are tabs inside it. None while the organisers hide it (2026-11-08).
+    ...(before ? [] : planTab),
   ];
 }
 
@@ -121,7 +137,7 @@ export function EventDetail({ event, contactEmail }: { event: MyEvent; contactEm
   const forms = assessments.state.kind === 'ready' ? assessments.state.assessments : [];
   const days = reflections.state.kind === 'ready' ? reflections.state.reflections : [];
   const plans = transferPlans.state.kind === 'ready' ? transferPlans.state.plans : [];
-  const tabs = journeyTabs(forms, days, planVisible, event.eventType);
+  const tabs = journeyTabs(forms, days, planVisible, event.eventType, event.transferPlan);
   // A plan's own id (`#transfer-plan-<id>`) is a known address: it opens the tab on that plan.
   const ids: Tab[] = [
     ...tabs.map((t) => t.id),

@@ -23,6 +23,7 @@ import {
   isBlankAnswer,
   multipleChoiceAnswer,
   pairedMarks,
+  commitmentStatuses,
   sectionKeyOf,
   type DelegateQuestionView,
   type KnowledgeFeedback,
@@ -1221,6 +1222,13 @@ function FollowUpActionStatuses({
   const recordedFor = (a: AssessmentPlanSummary['actions'][number]) =>
     a.followUps.find((f) => f.wave === wave) ?? null;
   const recorded = plan.actions.every((a) => recordedFor(a));
+  // The checklist-and-commitment form's follow-up (2026-11-20): three answers in the organisers'
+  // words and one update, no date; "done" is recorded as applied on the day of the update.
+  const commitment = plan.commitment ?? null;
+  const labelOf = (status: ActionProgressStatus) =>
+    commitment && (commitmentStatuses as readonly string[]).includes(status)
+      ? commitment.statusLabels[status as (typeof commitmentStatuses)[number]]
+      : actionProgressLabels[status];
   const [editing, setEditing] = useState(!recorded);
   const [rows, setRows] = useState<Record<string, StatusDraft>>(() =>
     Object.fromEntries(
@@ -1252,6 +1260,13 @@ function FollowUpActionStatuses({
   async function save() {
     for (const a of plan.actions) {
       const row = rows[a.id]!;
+      if (commitment) {
+        if (row.note.trim() === '') {
+          setProblem(`${nameOf(a)}: ${commitment.updatePrompt}`);
+          return;
+        }
+        continue;
+      }
       if (progressNeedsDetail(row.status) && row.note.trim() === '') {
         setProblem(`${nameOf(a)}: ${progressDetailPrompt[row.status]}`);
         return;
@@ -1261,6 +1276,7 @@ function FollowUpActionStatuses({
         return;
       }
     }
+    const today = new Date().toISOString().slice(0, 10);
     setBusy(true);
     setProblem(null);
     try {
@@ -1273,7 +1289,10 @@ function FollowUpActionStatuses({
               actionId: a.id,
               status: rows[a.id]!.status,
               note: rows[a.id]!.note,
-              occurredOn: rows[a.id]!.occurredOn || null,
+              occurredOn:
+                commitment && progressNeedsDate(rows[a.id]!.status)
+                  ? today
+                  : rows[a.id]!.occurredOn || null,
             })),
           }),
         },
@@ -1304,12 +1323,16 @@ function FollowUpActionStatuses({
           </button>
         ) : null}
       </div>
-      <p className="text-sm text-corp-text">
-        Choose one current status for each action of your {several ? 'plans' : 'plan'}. Started, in
-        progress and completed describe the action itself; if you have used the learning at work,
-        say so with “applied” or “applied consistently”. Each follow-up adds to the history on your
-        plan; nothing is overwritten.
-      </p>
+      {commitment ? (
+        <p className="text-sm text-corp-text">{commitment.intro}</p>
+      ) : (
+        <p className="text-sm text-corp-text">
+          Choose one current status for each action of your {several ? 'plans' : 'plan'}. Started,
+          in progress and completed describe the action itself; if you have used the learning at
+          work, say so with “applied” or “applied consistently”. Each follow-up adds to the history
+          on your plan; nothing is overwritten.
+        </p>
+      )}
       {problem ? (
         <p
           role="alert"
@@ -1331,7 +1354,7 @@ function FollowUpActionStatuses({
                       <StatusPill
                         tone={appliedStatuses.includes(mine.status) ? 'positive' : 'neutral'}
                       >
-                        {actionProgressLabels[mine.status]}
+                        {labelOf(mine.status)}
                       </StatusPill>
                       {mine.occurredOn ? (
                         <span className="text-xs text-corp-muted">
@@ -1352,8 +1375,8 @@ function FollowUpActionStatuses({
         <div className="space-y-4">
           {plan.actions.map((a, index) => {
             const row = rows[a.id]!;
-            const noteLabel = progressNoteLabel[row.status];
-            const dateLabel = progressDateLabel[row.status];
+            const noteLabel = commitment ? commitment.updatePrompt : progressNoteLabel[row.status];
+            const dateLabel = commitment ? null : progressDateLabel[row.status];
             const meta = actionProgressDefinitions[row.status];
             return (
               <fieldset
@@ -1362,33 +1385,66 @@ function FollowUpActionStatuses({
                 className="space-y-3 border border-corp-line bg-corp-surface p-3"
               >
                 <legend className="float-left text-sm font-semibold text-corp-ink">
-                  Action {index + 1}: {nameOf(a)}
+                  {commitment ? nameOf(a) : `Action ${index + 1}: ${nameOf(a)}`}
                 </legend>
-                <div className="clear-both space-y-1">
-                  <label
-                    htmlFor={`${id}-${a.id}-status`}
-                    className="text-sm font-semibold text-corp-ink"
-                  >
-                    Where does this action stand?
-                  </label>
-                  <NativeSelect
-                    id={`${id}-${a.id}-status`}
-                    value={row.status}
-                    disabled={busy || !editable}
-                    onChange={(e) =>
-                      update(a.id, { status: e.target.value as ActionProgressStatus })
-                    }
-                    className="rounded-none border-corp-line"
-                  >
-                    {actionProgressStatuses.map((s) => (
-                      <option key={s} value={s}>
-                        {actionProgressLabels[s]}
-                      </option>
+                {commitment ? (
+                  <p className="clear-both text-sm text-corp-text">
+                    {a.action}
+                    {a.targetDate ? (
+                      <span className="block text-xs text-corp-muted">
+                        Due {formatDateShort(a.targetDate)}
+                      </span>
+                    ) : null}
+                  </p>
+                ) : null}
+                {commitment ? (
+                  <div className="clear-both space-y-2">
+                    <p className="text-sm font-semibold text-corp-ink">{commitment.statusPrompt}</p>
+                    {commitmentStatuses.map((st) => (
+                      <label
+                        key={st}
+                        className="flex min-h-tap items-center gap-2 text-sm text-corp-ink"
+                      >
+                        <input
+                          type="radio"
+                          name={`${id}-${a.id}-status`}
+                          value={st}
+                          checked={row.status === st}
+                          disabled={busy || !editable}
+                          onChange={() => update(a.id, { status: st })}
+                          className="size-5 shrink-0 accent-corp-green"
+                        />
+                        {commitment.statusLabels[st]}
+                      </label>
                     ))}
-                  </NativeSelect>
-                  <p className="text-xs text-corp-text">{meta.definition}</p>
-                  <p className="text-xs text-corp-muted">Example: {meta.example}</p>
-                </div>
+                  </div>
+                ) : (
+                  <div className="clear-both space-y-1">
+                    <label
+                      htmlFor={`${id}-${a.id}-status`}
+                      className="text-sm font-semibold text-corp-ink"
+                    >
+                      Where does this action stand?
+                    </label>
+                    <NativeSelect
+                      id={`${id}-${a.id}-status`}
+                      value={row.status}
+                      disabled={busy || !editable}
+                      onChange={(e) =>
+                        update(a.id, { status: e.target.value as ActionProgressStatus })
+                      }
+                      className="rounded-none border-corp-line"
+                    >
+                      {actionProgressStatuses.map((s) => (
+                        <option key={s} value={s}>
+                          {actionProgressLabels[s]}
+                        </option>
+                      ))}
+                    </NativeSelect>
+                    <p className="text-xs text-corp-text">{meta.definition}</p>
+                    <p className="text-xs text-corp-muted">Example: {meta.example}</p>
+                  </div>
+                )}
                 {noteLabel ? (
                   <div className="space-y-1">
                     <label

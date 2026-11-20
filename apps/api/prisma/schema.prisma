@@ -38,6 +38,24 @@ enum TransferPlanVisibility {
   @@map("transfer_plan_visibility")
 }
 
+/// How delegates plan their transfer (2026-11-20): the full Transfer Plan, or a checklist with
+/// one commitment, as a training programme for line managers asks for.
+enum TransferPlanMode {
+  full
+  commitment
+
+  @@map("transfer_plan_mode")
+}
+
+/// Where Transfer Planning sits in the delegate's journey (2026-11-20): after everything, or
+/// before the closing assessments (the end-of-event evaluation and the follow-ups).
+enum TransferPlanPosition {
+  last
+  before_closing
+
+  @@map("transfer_plan_position")
+}
+
 enum EventStatus {
   draft
   active
@@ -177,6 +195,8 @@ enum ReminderFrequency {
   weekly
   fortnightly
   monthly
+  /// One reminder on the start date (2026-11-20), for a commitment's "would you like a reminder?".
+  once
 
   @@map("reminder_frequency")
 }
@@ -514,6 +534,11 @@ model Event {
   /// in the follow-ups; the plans and their data stay and come back when shown again.
   transferPlanVisibility TransferPlanVisibility @default(shown) @map("transfer_plan_visibility")
   transferPlanShownFrom  DateTime?              @map("transfer_plan_shown_from") @db.Timestamptz(3)
+  /// The full Transfer Plan or the checklist-and-commitment form (2026-11-20), where it sits in
+  /// the journey, and the checklist's own wording (ChecklistTemplate; null means the default).
+  transferPlanMode       TransferPlanMode       @default(full) @map("transfer_plan_mode")
+  transferPlanPosition   TransferPlanPosition   @default(last) @map("transfer_plan_position")
+  transferPlanTemplate   Json?                  @map("transfer_plan_template")
   /// Structured profile (E1 brief, section 3). The slug is the unique event code.
   description            String                 @default("")
   eventType              EventType              @default(conference) @map("event_type")
@@ -851,6 +876,10 @@ model TransferPlan {
   /// One plan per delegate (decision 2026-11-11); the column stays at 1.
   sequence          Int                @default(1)
   title             String             @default("")
+  /// The checklist-and-commitment form (2026-11-20): the training the delegate named, and the
+  /// actions they ticked with the one they committed to (PlanChecklist); null in the full mode.
+  trainingName      String             @default("") @map("training_name")
+  checklist         Json?
   completedAt       DateTime?          @map("completed_at") @db.Timestamptz(3)
   outcome           PlanOutcome        @default(pending)
   outcomeNote       String             @default("") @map("outcome_note")

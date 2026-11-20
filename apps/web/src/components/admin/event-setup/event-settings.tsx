@@ -21,6 +21,7 @@ import { consoleButton } from '@/components/console/page';
 import { apiFetch } from '@/lib/api';
 import { TabStrip, useTabState } from '@/components/console/tabs';
 import { TestDelegatesSetting } from './test-delegates-setting';
+import { TransferPlanModeSetting } from './transfer-plan-mode-setting';
 import { TransferPlanVisibilitySetting } from './transfer-plan-visibility-setting';
 import { describeError } from '@/lib/imports';
 
@@ -211,6 +212,7 @@ export function EventSettings({ initialEvent }: EventSettingsProps) {
         {tab === 'feedback' ? <FeedbackManager event={event} /> : null}
         {tab === 'transfer-plans' ? (
           <div className="space-y-8">
+            <TransferPlanModeSetting event={event} onSaved={saved} />
             <TransferPlanVisibilitySetting event={event} onSaved={saved} />
             <TransferPlansManager event={event} />
             <FollowUpsSection event={event} onSaved={saved} />

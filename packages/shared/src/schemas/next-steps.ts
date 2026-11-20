@@ -109,12 +109,22 @@ export function nextSteps(journey: Journey): NextStep[] {
     });
   }
 
-  assessments('end_of_conference');
-  assessments('follow_up');
-
-  // The Transfer plan comes last (2026-11-20): every assessment is asked before it.
-  if (!journey.transferPlanHidden && (!journey.plan || journey.plan.status === 'draft')) {
+  // The Transfer plan comes last (2026-11-20), unless the organisers place it before the
+  // closing assessments, as a programme that wants the commitment before its evaluation does.
+  const plan = () => {
+    if (journey.transferPlanHidden || (journey.plan && journey.plan.status !== 'draft')) return;
     const started = Boolean(journey.plan && journey.plan.actions > 0);
+    if (journey.transferPlanMode === 'commitment') {
+      const name = journey.transferPlanTitle || 'checklist and commitment';
+      steps.push({
+        key: 'transfer-plan',
+        label: `Complete your ${name}`,
+        hint: 'Name a training, tick the actions you plan to take and commit to one of them.',
+        tab: 'transfer-plan',
+        started,
+      });
+      return;
+    }
     steps.push({
       key: 'transfer-plan',
       label: started ? 'Finish your transfer plan' : 'Start your transfer plan',
@@ -124,7 +134,11 @@ export function nextSteps(journey: Journey): NextStep[] {
       tab: 'transfer-plan',
       started,
     });
-  }
+  };
+  if (journey.transferPlanPosition === 'before_closing') plan();
+  assessments('end_of_conference');
+  assessments('follow_up');
+  if (journey.transferPlanPosition !== 'before_closing') plan();
 
   return steps;
 }

@@ -49,6 +49,7 @@ import { formatDateShort, formatInstant } from '@/lib/events';
 import { useEventNoun, useStageLabels } from '@/lib/event-wording';
 import { describeError } from '@/lib/imports';
 
+import { CommitmentForm } from './commitment-form';
 import { ActionMeasures, EvidenceDialog, MeasuresDialog } from './measures-evidence';
 
 export type MyTransferPlansState =
@@ -142,7 +143,7 @@ export function TransferPlanPanel({
   const [plan, setPlan] = useState<{ id: string; state: PlanState } | null>(null);
   // Kept outside the editor, which remounts on every new plan version.
   const [notice, setNotice] = useState<string | null>(null);
-  const [done, setDone] = useState<'submitted' | 'completed' | null>(null);
+  const [done, setDone] = useState<'submitted' | 'completed' | { saved: string } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -221,6 +222,20 @@ export function TransferPlanPanel({
             </button>
           }
         />
+      ) : current.data.mode === 'commitment' && current.data.template ? (
+        // The checklist-and-commitment form (2026-11-20) in place of the full plan.
+        <CommitmentForm
+          key={`${current.data.plan.id}:${current.data.plan.version}`}
+          eventId={eventId}
+          timezone={timezone}
+          data={current.data}
+          template={current.data.template}
+          onSaved={(data, message) => {
+            updated(data);
+            setDone({ saved: message });
+          }}
+          onReload={() => setAttempt((n) => n + 1)}
+        />
       ) : (
         <PlanEditor
           key={`${current.data.plan.id}:${current.data.plan.version}`}
@@ -242,7 +257,13 @@ export function TransferPlanPanel({
       )}
       {done ? (
         <Dialog
-          title={done === 'completed' ? 'Plan completed' : 'Plan submitted'}
+          title={
+            typeof done === 'object'
+              ? 'Saved'
+              : done === 'completed'
+                ? 'Plan completed'
+                : 'Plan submitted'
+          }
           onClose={() => setDone(null)}
           size="md"
           footer={
@@ -256,9 +277,11 @@ export function TransferPlanPanel({
           }
         >
           <p className="text-sm text-corp-text">
-            {done === 'completed'
-              ? 'Thank you. Your plan is completed: every action applied, with evidence, and the organisers have been told. Its reminders have stopped. Next comes impact assessment: in about three months we will ask whether the actions have made a measurable difference, and later whether that has lasted.'
-              : 'Thank you. Your plan is submitted. Your 30, 60, 90-day and longer-term follow-ups will ask where each action stands, and what you tell them is shown here as your progress. You can still adjust the plan as things change.'}
+            {typeof done === 'object'
+              ? done.saved
+              : done === 'completed'
+                ? 'Thank you. Your plan is completed: every action applied, with evidence, and the organisers have been told. Its reminders have stopped. Next comes impact assessment: in about three months we will ask whether the actions have made a measurable difference, and later whether that has lasted.'
+                : 'Thank you. Your plan is submitted. Your 30, 60, 90-day and longer-term follow-ups will ask where each action stands, and what you tell them is shown here as your progress. You can still adjust the plan as things change.'}
           </p>
         </Dialog>
       ) : null}

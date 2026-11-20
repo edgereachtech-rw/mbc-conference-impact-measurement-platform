@@ -1013,7 +1013,7 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
     });
     const myEvent = await call('get', mine, undefined, cookies.dee);
     expect(myEvent.status, myEvent.text).toBe(200);
-    expect(myEvent.body.event.transferPlan).toEqual({ visible: false, shownFrom: null });
+    expect(myEvent.body.event.transferPlan).toMatchObject({ visible: false, shownFrom: null });
     const refused = await call('get', `${mine}/transfer-plans`, undefined, cookies.dee);
     expect(refused.status).toBe(409);
     expect(refused.body.error.code).toBe('transfer_plan_hidden');
@@ -1037,10 +1037,12 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
     });
     expect(later.status, later.text).toBe(200);
     expect(later.body.event.transferPlanShownFrom).toBe(soon.toISOString());
-    expect((await call('get', mine, undefined, cookies.dee)).body.event.transferPlan).toEqual({
-      visible: false,
-      shownFrom: soon.toISOString(),
-    });
+    expect((await call('get', mine, undefined, cookies.dee)).body.event.transferPlan).toMatchObject(
+      {
+        visible: false,
+        shownFrom: soon.toISOString(),
+      },
+    );
     expect((await call('get', `${mine}/transfer-plans`, undefined, cookies.dee)).status).toBe(409);
     await tick(new Date(soon.getTime() + 3_600_000).toISOString());
     const shown = await call('get', mine, undefined, cookies.dee);

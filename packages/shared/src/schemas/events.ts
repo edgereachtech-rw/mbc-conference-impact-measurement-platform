@@ -1,5 +1,11 @@
 import { z } from 'zod';
 
+import {
+  checklistTemplateSchema,
+  transferPlanModes,
+  transferPlanPositions,
+} from './transfer-plans.js';
+
 /**
  * Event creation and configuration (backlog E1, brief of 2026-10-30): a structured event profile,
  * dates picked one by one (consecutive or not), optional sessions that must sit on a selected
@@ -221,6 +227,10 @@ export const eventPatchSchema = eventProfileFieldsSchema
     transferPlanVisibility: z.enum(transferPlanVisibilities).optional(),
     /** The instant Transfer Planning becomes visible when scheduled (ISO 8601 with offset). */
     transferPlanShownFrom: z.iso.datetime({ offset: true }).nullable().optional(),
+    /** The plan mode, its place in the journey and the checklist's wording (2026-11-20). */
+    transferPlanMode: z.enum(transferPlanModes).optional(),
+    transferPlanPosition: z.enum(transferPlanPositions).optional(),
+    transferPlanTemplate: checklistTemplateSchema.nullable().optional(),
   })
   .superRefine((value, ctx) => {
     if (value.transferPlanVisibility === 'scheduled' && !value.transferPlanShownFrom) {
@@ -503,6 +513,10 @@ export const eventDetailSchema = z.object({
   /** Whether delegates see Transfer Planning (2026-11-08); see transferPlanVisible. */
   transferPlanVisibility: z.enum(transferPlanVisibilities),
   transferPlanShownFrom: z.string().nullable(),
+  /** The plan mode, its place in the journey and the checklist's wording (2026-11-20). */
+  transferPlanMode: z.enum(transferPlanModes).optional(),
+  transferPlanPosition: z.enum(transferPlanPositions).optional(),
+  transferPlanTemplate: checklistTemplateSchema.nullable().optional(),
   /** Derived: the earliest and latest selected dates (brief section 4, pending confirmation). */
   startsOn: isoDateSchema,
   endsOn: isoDateSchema,

@@ -1,4 +1,10 @@
-import { overallAttendance, transferPlanVisible, type MyEvent } from '@mbc/shared';
+import {
+  DEFAULT_CHECKLIST_TEMPLATE,
+  overallAttendance,
+  transferPlanVisible,
+  type ChecklistTemplate,
+  type MyEvent,
+} from '@mbc/shared';
 import { Router } from 'express';
 
 import type { AuthConfig } from '../auth/config.js';
@@ -40,6 +46,9 @@ const EVENT_SELECT = {
   status: true,
   transferPlanVisibility: true,
   transferPlanShownFrom: true,
+  transferPlanMode: true,
+  transferPlanPosition: true,
+  transferPlanTemplate: true,
 } as const;
 
 function isoDate(value: Date): string {
@@ -112,6 +121,14 @@ export function meEventsRouter({ prisma, config, middleware, now }: Deps): Route
       transferPlan: {
         visible: transferPlanVisible(r.event, clock()),
         shownFrom: r.event.transferPlanShownFrom?.toISOString() ?? null,
+        // The mode and its place in the journey (2026-11-20); the checklist's own name.
+        mode: r.event.transferPlanMode,
+        position: r.event.transferPlanPosition,
+        title:
+          r.event.transferPlanMode === 'commitment'
+            ? ((r.event.transferPlanTemplate as ChecklistTemplate | null)?.title ??
+              DEFAULT_CHECKLIST_TEMPLATE.title)
+            : undefined,
       },
       location: r.event.location,
       format: r.event.format,

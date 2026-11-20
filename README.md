@@ -634,6 +634,47 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   (`actionSubmissionGaps`; 422 `plan_incomplete` with the gaps by action; the form lists them
   under the submit button). The measure, baseline, evidence description and review date columns
   stay in the data but left the card: measures and evidence have their own records.
+- Checklist and commitment, a second plan mode as a template (task of 2026-11-20, from a line
+  managers' training programme brief; migration `20261120183500_commitment_plan_mode`). An
+  event chooses on the Transfer plans tab ("What delegates plan with", `transferPlanMode`
+  `full` | `commitment` on the event PATCH) between the full Transfer Plan and a form that asks a
+  line manager to name a training (required short text), tick the actions they plan to take
+  (groups of tick boxes, any group may stay empty) and commit to one of the ticked actions with
+  three answers (what, by what date, what will show it), then whether they want a reminder
+  (yes with a date, or no). "Save my commitment" saves and submits in one go, with the
+  organisers' confirmation; the manager can change it afterwards. Server rules: an event not
+  in this mode refuses the route (409 `wrong_plan_mode`), at least one tick, the commitment
+  among the ticks, only actions of the event's own checklist (422). It is stored as the
+  delegate's one plan (`transfer_plan.training_name`, `transfer_plan.checklist` = the ticked
+  keys and the committed one) with one action (title and priority learning = the checklist
+  action, action = what, `target_on` = by when, `evidence` = what will show it), so the
+  follow-ups, reminders, reports and the organisers' plan pages serve it unchanged. Route `PUT
+/me/events/:id/transfer-plans/:planId/commitment` (`commitmentSaveSchema`); the delegate's
+  plan view carries `mode` and `template`. **The wording is a template per event**
+  (`event.transfer_plan_template`, `checklistTemplateSchema`; null = `DEFAULT_CHECKLIST_TEMPLATE`
+  in `packages/shared`, the brief's wording): the form's name, the instruction, the training
+  question, the tick-box heading and hint, the groups with their actions (keys name the actions
+  in saved checklists and exports, so a renamed action keeps its ticks), the commitment heading,
+  hint and three questions, the reminder question and date label, the button, the confirmation,
+  and the follow-up's introduction, status question, its three answers and update question. The
+  organisers edit all of it on the Transfer plans tab (`TransferPlanModeSetting`), add or
+  remove groups and actions, and can reset to the default. **A reminder once** (2026-11-20):
+  `reminder_frequency` gains `once`, on the start date at the chosen time, never again; the
+  usual reminder email carries the commitment, its target date and the link to update progress,
+  and goes only while the action is still open. **The follow-ups** ask the commitment's status
+  with three answers in the template's words (recorded as the plan statuses `applied`,
+  `started` and `not_started`; "done" is dated the day of the update) and one required update,
+  no date; `context.plan.commitment` on the delegate's assessment list carries the wording.
+  **Position in the journey** (`transferPlanPosition` `last` | `before_closing`): the plan's tab,
+  the dashboard's "What to do next" and the delegate's event view (`transferPlan.mode`,
+  `position`, `title`; the journey's `transferPlanMode`, `transferPlanPosition`,
+  `transferPlanTitle`) put it last or before the end-of-event evaluation and the follow-ups. The
+  organisers' plan list shows the training named and the ticks, and **the export by name**
+  (`GET /events/:id/transfer-plans/commitments.csv`, admins only, audited
+  `transfer_plan.exported`) gives one row per delegate with batch and department, the training,
+  one column per checklist action (Yes when ticked), the commitment, its date, what will show
+  it, the reminder day and each follow-up's status and update. The welcome pack and the
+  invitation emails are unchanged. Nothing stored for an event in the full mode changes.
 - One Transfer Plan per delegate, reminders per action and completion (task of 2026-11-06,
   revised 2026-11-11; backlog E9-2, E10-1 to E10-5, E10-8, E10-9): the plan is created on first
   access and every delegate route takes its id (`/me/events/:id/transfer-plans/:planId...`).
@@ -1040,7 +1081,11 @@ measures | evidence }`, the list replaced with ids kept; own actions only, 404 o
 /events/:id/assessments/follow-ups/:wave/schedule` `{ inviteAt }`, migration
     `20261109075500_follow_up_invite_at`; the worker job `follow-up-invitations`, every five
     minutes, sends the invitation once the time has passed and the wave is enabled, scheduled or
-    open with questions, stamping `invites_sent_at` first so it never sends twice), "Send the
+    open with questions, stamping `invites_sent_at` first so it never sends twice; **in an event
+    with batches** (2026-11-20) each batch's delegates are invited as many days before the
+    scheduled time as their batch day comes before the event's last day (`batchInviteAt`), so
+    every batch hears 30 days after its own day, the wave opens with the first batch and is
+    stamped sent with the last; "Send the invitation" by hand still reaches everyone), "Send the
     invitation" (`POST
 /events/:id/assessments/follow-ups/:wave/invitations`: every eligible delegate not yet
     invited, once, idempotent through `assessment_invitation`) and "Remind those who have not

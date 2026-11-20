@@ -52,6 +52,62 @@ afterEach(() => {
 });
 
 describe('EventDetail', () => {
+  it('puts the checklist and commitment before the closing assessments when the organisers place it there', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const body = url.endsWith('/transfer-plans')
+          ? { plans: [] }
+          : url.endsWith('/assessments')
+            ? {
+                assessments: [
+                  form('follow_up', 1, '30-day follow-up', 'not_yet_open'),
+                  form('end_of_conference', 1, '', 'open'),
+                  form('pre_conference', 1, '', 'closed'),
+                ],
+              }
+            : url.endsWith('/reflections')
+              ? { reflections: [] }
+              : { sessions: [] };
+        return new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }),
+    );
+    render(
+      <EventDetail
+        event={{
+          ...lagos,
+          transferPlan: {
+            visible: true,
+            shownFrom: null,
+            mode: 'commitment',
+            position: 'before_closing',
+            title: 'My Training Checklist and Commitment',
+          },
+        }}
+        contactEmail="c@x"
+      />,
+    );
+    const tabs = await screen.findByRole('tablist', { name: 'Your records for this event' });
+    await vi.waitFor(() =>
+      expect(
+        within(tabs)
+          .getAllByRole('tab')
+          .map((t) => t.textContent),
+      ).toEqual([
+        'Overview',
+        'Pre-conference assessment',
+        'Attendance',
+        'Session feedback',
+        'My Training Checklist and Commitment',
+        'End-of-conference evaluation',
+        '30-day follow-up',
+      ]),
+    );
+  });
+
   it('shows the event facts, the registration, attendance only as not recorded, and the journey for an upcoming event', () => {
     render(<EventDetail event={lagos} contactEmail="conference@example.com" />);
     const facts = screen.getByRole('region', { name: 'Event' });

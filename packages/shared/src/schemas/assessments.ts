@@ -1,6 +1,10 @@
 import { z } from 'zod';
 
-import { actionProgressStatuses, transferPlanStatuses } from './transfer-plans.js';
+import {
+  actionProgressStatuses,
+  checklistTemplateSchema,
+  transferPlanStatuses,
+} from './transfer-plans.js';
 
 import {
   assessmentConfirmationSchema,
@@ -926,6 +930,11 @@ export type FollowUpProgressView = z.infer<typeof followUpProgressViewSchema>;
 export const assessmentPlanSummarySchema = z.object({
   id: z.uuid(),
   status: z.enum(transferPlanStatuses),
+  /**
+   * The checklist-and-commitment form's follow-up wording (2026-11-20): with it, a follow-up
+   * asks the three-answer question in the organisers' words; without it, the full statuses.
+   */
+  commitment: checklistTemplateSchema.shape.followUp.optional(),
   plans: z.array(
     z.object({
       id: z.uuid(),

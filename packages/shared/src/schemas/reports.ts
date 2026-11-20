@@ -18,6 +18,8 @@ import {
   measureSummaries,
   measureViewSchema,
   reminderFrequencies,
+  transferPlanModes,
+  transferPlanPositions,
   transferPlanStatuses,
 } from './transfer-plans.js';
 
@@ -638,6 +640,11 @@ export const journeySchema = z.object({
   feedback: z.object({ sessions: z.number().int(), submitted: z.number().int() }),
   /** Transfer Planning is hidden from the delegate right now (2026-11-08): no plan step. */
   transferPlanHidden: z.boolean().default(false),
+  /** The plan mode and its place in the journey (2026-11-20); absent means full and last. */
+  transferPlanMode: z.enum(transferPlanModes).optional(),
+  transferPlanPosition: z.enum(transferPlanPositions).optional(),
+  /** What the checklist-and-commitment form is called, from the event's template. */
+  transferPlanTitle: z.string().optional(),
   plan: z
     .object({
       status: z.enum(transferPlanStatuses),

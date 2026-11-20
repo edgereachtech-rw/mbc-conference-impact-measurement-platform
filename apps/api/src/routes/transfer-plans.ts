@@ -1,6 +1,17 @@
 import {
+  actionProgressLabels,
   actionProgressStatuses,
   actionSubmissionGaps,
+  commitmentSaveSchema,
+  commitmentStatuses,
+  DEFAULT_CHECKLIST_TEMPLATE,
+  NO_REMINDERS,
+  templateActions,
+  waveLabel,
+  type ChecklistTemplate,
+  type CommitmentSave,
+  type CommitmentStatus,
+  type PlanChecklist,
   evidenceSaveSchema,
   evidenceSupports,
   measureSummaries,
@@ -49,6 +60,7 @@ import type { PrismaClient } from '../db.js';
 import type { Prisma } from '../generated/prisma/client.js';
 import { referenceAnswersFor } from '../assessments/references.js';
 import { audit } from '../lib/audit.js';
+import { csvCell } from '../imports/service.js';
 import { HttpError } from '../lib/errors.js';
 import type { Logger } from '../lib/logger.js';
 import { brandingForEvent } from '../mail/branding.js';
@@ -267,6 +279,8 @@ export function planViewOf(p: PlanRow): TransferPlanView {
     eventId: p.eventId,
     sequence: p.sequence,
     title: p.title,
+    trainingName: p.trainingName,
+    checklist: (p.checklist as PlanChecklist | null) ?? null,
     status: p.status,
     version: p.version,
     submittedAt: iso(p.submittedAt),
@@ -396,6 +410,20 @@ export function transferPlanRouter({
     return { sessions: await planningSessions(eventId), canSubmit: true };
   }
 
+  /** The event's plan mode and, for the checklist-and-commitment form, its wording (2026-11-20). */
+  async function planSetup(eventId: string) {
+    const event = await prisma().event.findUniqueOrThrow({
+      where: { id: eventId },
+      select: { transferPlanMode: true, transferPlanTemplate: true, timezone: true, endsOn: true },
+    });
+    return {
+      mode: event.transferPlanMode,
+      template:
+        (event.transferPlanTemplate as ChecklistTemplate | null) ?? DEFAULT_CHECKLIST_TEMPLATE,
+      timezone: event.timezone,
+    };
+  }
+
   /** The delegate's pre-event answers to the event's reference questions. */
   const referencesFor = (eventId: string, delegateId: string) =>
     referenceAnswersFor(prisma(), eventId, delegateId);
@@ -472,8 +500,11 @@ export function transferPlanRouter({
       loadPlan(eventId, delegateId, planId),
       canSubmitAt(eventId),
     ]);
+    const setup = await planSetup(eventId);
     return {
       plan: planViewOf(plan),
+      mode: setup.mode,
+      ...(setup.mode === 'commitment' ? { template: setup.template } : {}),
       sessions,
       canSubmit: plan.status === 'draft' && canSubmit,
       references: await referencesFor(eventId, delegateId),
@@ -650,6 +681,130 @@ export function transferPlanRouter({
         return row;
       });
       void saved;
+      res.json(await myView(delegate.eventId, delegate.id, plan.id));
+    },
+  );
+
+  /**
+   * The checklist-and-commitment form (2026-11-20): the training named, the actions ticked, the
+   * one committed to with what, by when and what will show it, and the reminder choice. It is
+   * the plan's one action, submitted at once; saving again changes it. Only on an event in the
+   * commitment mode, and only actions of its own checklist count.
+   */
+  router.put(
+    '/me/events/:eventId/transfer-plans/:planId/commitment',
+    middleware.requireAuth,
+    validated(commitmentSaveSchema),
+    async (req, res) => {
+      const { principal, delegate } = await myRegistration(res, String(req.params.eventId));
+      const input = req.body as CommitmentSave;
+      const setup = await planSetup(delegate.eventId);
+      if (setup.mode !== 'commitment') {
+        throw new HttpError(
+          409,
+          'wrong_plan_mode',
+          'This event uses the full Transfer Plan, not the checklist and commitment.',
+        );
+      }
+      const plan = await loadPlan(delegate.eventId, delegate.id, String(req.params.planId));
+      assertEditable(plan);
+      if (input.version !== plan.version) throw stale();
+      const known = new Map(templateActions(setup.template).map((a) => [a.key, a]));
+      if (input.ticked.some((k) => !known.has(k))) {
+        throw new HttpError(
+          422,
+          'validation_failed',
+          'ticked: an action is not on this checklist.',
+        );
+      }
+      const chosen = known.get(input.commitmentKey)!;
+      const at = clock();
+      const reminder: ReminderPreference = input.reminderOn
+        ? {
+            frequency: 'once',
+            startOn: input.reminderOn,
+            endOn: input.reminderOn,
+            time: '09:00',
+            days: [],
+          }
+        : NO_REMINDERS;
+      // One action: the committed one. Its title and learning are the checklist action, its
+      // text the delegate's own answer, its evidence what will show it was done.
+      const data = {
+        order: 1,
+        isPriority: true,
+        title: chosen.text.slice(0, 120),
+        priorityLearning: chosen.text,
+        action: input.what,
+        targetOn: dayOf(input.byOn),
+        evidence: input.evidence,
+        ...reminderDataOf(reminder, at, setup.timezone),
+      };
+      const first = plan.actions[0];
+      const wasDraft = plan.status === 'draft';
+      await prisma().$transaction(async (tx) => {
+        if (plan.actions.length > 1) {
+          await tx.transferPlanAction.deleteMany({
+            where: { planId: plan.id, id: { in: plan.actions.slice(1).map((a) => a.id) } },
+          });
+        }
+        if (first) await tx.transferPlanAction.update({ where: { id: first.id }, data });
+        else await tx.transferPlanAction.create({ data: { ...data, planId: plan.id } });
+        await tx.transferPlan.update({
+          where: { id: plan.id },
+          data: {
+            version: plan.version + 1,
+            trainingName: input.trainingName,
+            checklist: {
+              ticked: input.ticked,
+              commitmentKey: input.commitmentKey,
+            } as Prisma.InputJsonValue,
+            updatedByUserId: principal.userId,
+          },
+        });
+        await audit(tx, {
+          action: 'transfer_plan.saved',
+          entityType: 'transfer_plan',
+          entityId: plan.id,
+          eventId: delegate.eventId,
+          actorUserId: principal.userId,
+          newValue: {
+            version: plan.version + 1,
+            commitment: true,
+            ticked: input.ticked.length,
+            remindersOn: input.reminderOn ? 1 : 0,
+          },
+          ...clientOf(res),
+        });
+      });
+      if (wasDraft) {
+        // Saved is submitted: the follow-ups and reminders start from here.
+        const fresh = await loadPlan(delegate.eventId, delegate.id, plan.id);
+        await prisma().$transaction(async (tx) => {
+          await tx.transferPlan.update({
+            where: { id: plan.id },
+            data: {
+              status: 'submitted',
+              submittedAt: at,
+              submittedSnapshot: planViewOf({
+                ...fresh,
+                status: 'submitted',
+                submittedAt: at,
+              }) as unknown as Prisma.InputJsonValue,
+              version: fresh.version + 1,
+            },
+          });
+          await audit(tx, {
+            action: 'transfer_plan.submitted',
+            entityType: 'transfer_plan',
+            entityId: plan.id,
+            eventId: delegate.eventId,
+            actorUserId: principal.userId,
+            newValue: { actions: 1, version: fresh.version + 1, commitment: true },
+            ...clientOf(res),
+          });
+        });
+      }
       res.json(await myView(delegate.eventId, delegate.id, plan.id));
     },
   );
@@ -1157,6 +1312,8 @@ export function transferPlanRouter({
         })(),
         submittedAt: iso(p.submittedAt),
         updatedAt: p.updatedAt.toISOString(),
+        trainingName: p.trainingName,
+        ticked: (p.checklist as PlanChecklist | null)?.ticked ?? [],
         progress,
         remindersOn: p.actions.filter((a) => a.reminderFrequency !== 'none').length,
         measures,
@@ -1165,6 +1322,109 @@ export function transferPlanRouter({
     });
     const sessions = await planningSessions(event.id);
     res.json({ plans: items, sessions });
+  });
+
+  /**
+   * The checklist-and-commitment answers by name (2026-11-20), for the organisers to share with
+   * a client's L&D: one row per delegate with a plan, their batch and department, the training
+   * named, one column per checklist action, the commitment with its date, what will show it and
+   * the reminder day, then each follow-up's answer and update. Personal data by name: admins
+   * only, and the download is audited like the other exports.
+   */
+  router.get('/events/:eventId/transfer-plans/commitments.csv', guard, async (req, res) => {
+    const principal = requireAdmin(res);
+    const event = await loadEvent(String(req.params.eventId));
+    const setup = await planSetup(event.id);
+    const [plans, waves] = await Promise.all([
+      prisma().transferPlan.findMany({
+        where: { eventId: event.id, delegate: { registrationStatus: { in: [...eligible()] } } },
+        include: {
+          delegate: {
+            select: {
+              name: true,
+              email: true,
+              organisation: true,
+              department: true,
+              batch: { select: { name: true } },
+            },
+          },
+          actions: {
+            orderBy: { order: 'asc' },
+            take: 1,
+            include: { progress: { orderBy: { recordedAt: 'asc' } } },
+          },
+        },
+        orderBy: { delegate: { name: 'asc' } },
+      }),
+      prisma().assessmentStageConfig.findMany({
+        where: { eventId: event.id, stage: 'follow_up' },
+        orderBy: { wave: 'asc' },
+        select: { wave: true, dueAfterDays: true, title: true },
+      }),
+    ]);
+    const actions = templateActions(setup.template);
+    const labels = setup.template.followUp.statusLabels;
+    const statusText = (status: string) =>
+      (commitmentStatuses as readonly string[]).includes(status)
+        ? labels[status as CommitmentStatus]
+        : actionProgressLabels[status as keyof typeof actionProgressLabels];
+    const waveName = (w: (typeof waves)[number]) =>
+      w.title?.trim() || waveLabel('follow_up', w.wave, w.dueAfterDays) || `Follow-up ${w.wave}`;
+    const header = [
+      'Name',
+      'Email',
+      'Organisation',
+      'Department',
+      'Batch',
+      setup.template.trainingNameLabel,
+      ...actions.map((a) => `${a.group} · ${a.text}`),
+      'Commitment',
+      setup.template.commitment.whatLabel,
+      setup.template.commitment.whenLabel,
+      setup.template.commitment.evidenceLabel,
+      'Reminder on',
+      'Saved',
+      ...waves.flatMap((w) => [`${waveName(w)}: status`, `${waveName(w)}: update`]),
+    ];
+    const day = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : '');
+    const rows = plans.map((plan) => {
+      const checklist = (plan.checklist as PlanChecklist | null) ?? null;
+      const ticked = new Set(checklist?.ticked ?? []);
+      const action = plan.actions[0] ?? null;
+      const committed = actions.find((a) => a.key === checklist?.commitmentKey);
+      return [
+        plan.delegate.name,
+        plan.delegate.email,
+        plan.delegate.organisation ?? '',
+        plan.delegate.department ?? '',
+        plan.delegate.batch?.name ?? '',
+        plan.trainingName,
+        ...actions.map((a) => (ticked.has(a.key) ? 'Yes' : '')),
+        committed?.text ?? '',
+        action?.action ?? '',
+        day(action?.targetOn ?? null),
+        action?.evidence ?? '',
+        action && action.reminderFrequency === 'once' ? day(action.reminderStartOn) : '',
+        plan.submittedAt ? plan.submittedAt.toISOString() : '',
+        ...waves.flatMap((w) => {
+          const update = action?.progress.find((x) => x.followUpWave === w.wave);
+          return [update ? statusText(update.status) : '', update?.note ?? ''];
+        }),
+      ];
+    });
+    await audit(prisma(), {
+      action: 'transfer_plan.exported',
+      entityType: 'event',
+      entityId: event.id,
+      eventId: event.id,
+      actorUserId: principal.userId,
+      newValue: { rows: rows.length, kind: 'commitments' },
+      ...clientOf(res),
+    });
+    const name = `commitments-${clock().toISOString().slice(0, 10)}.csv`;
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${name}"`);
+    res.send([header, ...rows].map((r) => r.map(csvCell).join(',')).join('\r\n') + '\r\n');
   });
 
   // Every planned action with its measures and evidence classification (backlog E14-4,

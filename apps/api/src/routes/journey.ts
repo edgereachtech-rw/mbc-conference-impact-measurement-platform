@@ -1,6 +1,8 @@
 import {
   appliedStatuses,
   assessmentStages,
+  DEFAULT_CHECKLIST_TEMPLATE,
+  type ChecklistTemplate,
   stageWindowState,
   waveLabel,
   type Journey,
@@ -75,6 +77,9 @@ export function journeyRouter({ prisma, config, middleware, now }: Deps): Router
             eventType: true,
             transferPlanVisibility: true,
             transferPlanShownFrom: true,
+            transferPlanMode: true,
+            transferPlanPosition: true,
+            transferPlanTemplate: true,
             dates: {
               orderBy: { date: 'asc' },
               select: { id: true, date: true, attendanceClosedAt: true },
@@ -227,6 +232,14 @@ export function journeyRouter({ prisma, config, middleware, now }: Deps): Router
       feedback: { sessions: feedbackSessions, submitted: feedback },
       // Transfer Planning hidden by the organisers (2026-11-08): no plan, no next step.
       transferPlanHidden: !transferPlanVisible(delegate.event, clock()),
+      // The mode and its place in the journey (2026-11-20); the checklist's own name.
+      transferPlanMode: delegate.event.transferPlanMode,
+      transferPlanPosition: delegate.event.transferPlanPosition,
+      transferPlanTitle:
+        delegate.event.transferPlanMode === 'commitment'
+          ? ((delegate.event.transferPlanTemplate as ChecklistTemplate | null)?.title ??
+            DEFAULT_CHECKLIST_TEMPLATE.title)
+          : undefined,
       plan:
         plan && transferPlanVisible(delegate.event, clock())
           ? {

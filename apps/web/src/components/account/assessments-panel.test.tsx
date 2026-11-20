@@ -1,4 +1,4 @@
-import type { AssessmentStage, MyAssessment } from '@mbc/shared';
+import { DEFAULT_CHECKLIST_TEMPLATE, type AssessmentStage, type MyAssessment } from '@mbc/shared';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -336,6 +336,60 @@ describe('AssessmentsPanel', () => {
     expect(summary.textContent).toMatch(/Used it in the Q1 programme/);
     expect(within(card).getByLabelText('What have you done so far?')).toBeTruthy();
     expect(within(section).getByRole('button', { name: 'Change' })).toBeTruthy();
+  });
+
+  it('asks the commitment’s three answers and an update in the organisers’ words, recording "done" as applied today', async () => {
+    const commitment: MyAssessment = {
+      ...followUpWithPlan,
+      context: {
+        ...followUpWithPlan.context,
+        plan: {
+          ...followUpWithPlan.context.plan!,
+          commitment: DEFAULT_CHECKLIST_TEMPLATE.followUp,
+        },
+      },
+    };
+    const calls: Array<{ url: string; body: unknown }> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (init?.method === 'PUT') {
+          calls.push({ url, body: JSON.parse(String(init.body)) });
+        }
+        return json({ assessments: [commitment] });
+      }),
+    );
+    const user = userEvent.setup();
+    render(<Harness stage="follow_up" />);
+    const card = await screen.findByRole('article', { name: '30-day follow-up' });
+    const section = within(card).getByRole('region', { name: 'Where your actions stand' });
+    expect(section.textContent).toMatch(/Here is the commitment you saved/);
+    const form = within(section).getByRole('group', { name: 'Faster handovers' });
+    expect(form.textContent).toMatch(/Brief stakeholders/);
+    // Three answers, as radios; no status list, no date.
+    expect(
+      within(form)
+        .getAllByRole('radio')
+        .map((r) => (r as HTMLInputElement).value),
+    ).toEqual(['applied', 'started', 'not_started']);
+    expect(within(form).queryByLabelText('Where does this action stand?')).toBeNull();
+    await user.click(within(form).getByLabelText('I have done it'));
+    await user.click(within(section).getByRole('button', { name: 'Save where my actions stand' }));
+    expect(within(section).getByRole('alert').textContent).toMatch(/What is your update\?/);
+    expect(calls).toHaveLength(0);
+    await user.type(within(form).getByLabelText(/^What is your update/), 'Briefed them on Monday');
+    await user.click(within(section).getByRole('button', { name: 'Save where my actions stand' }));
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.body).toEqual({
+      actions: [
+        {
+          actionId: PLAN_ACTION,
+          status: 'applied',
+          note: 'Briefed them on Monday',
+          occurredOn: new Date().toISOString().slice(0, 10),
+        },
+      ],
+    });
   });
 
   it('shows one stage per tab, flags missing answers in a banner, saves a draft and submits after a review popup', async () => {

@@ -37,7 +37,7 @@ import {
   TableScroll,
 } from '@/components/console/page';
 import { NativeSelect } from '@/components/imports/native-select';
-import { apiFetch } from '@/lib/api';
+import { apiFetch, apiUrl } from '@/lib/api';
 import { formatDateShort, formatInstant } from '@/lib/events';
 import { describeError } from '@/lib/imports';
 import { downloadWorkbook, workbookProblem } from '@/lib/workbook';
@@ -87,6 +87,8 @@ export function TransferPlansManager({ event }: TransferPlansManagerProps) {
   const readOnly = event.status === 'archived';
   const refresh = useCallback(() => setVersion((n) => n + 1), []);
   const id = useId();
+  /** The checklist-and-commitment form (2026-11-20): the training named and ticks, exported by name. */
+  const commitmentMode = event.transferPlanMode === 'commitment';
 
   useEffect(() => {
     let cancelled = false;
@@ -324,6 +326,15 @@ export function TransferPlansManager({ event }: TransferPlansManagerProps) {
           >
             <DownloadIcon aria-hidden="true" /> Export to Excel
           </button>
+          {commitmentMode ? (
+            <a
+              href={apiUrl(`/events/${event.id}/transfer-plans/commitments.csv`)}
+              download
+              className={consoleButton({ variant: 'ghost' })}
+            >
+              <DownloadIcon aria-hidden="true" /> Download commitments by name (CSV)
+            </a>
+          ) : null}
         </div>
         {exportProblem ? (
           <p role="alert" className="px-4 pb-3 text-sm font-semibold text-brand-danger">
@@ -343,7 +354,8 @@ export function TransferPlansManager({ event }: TransferPlansManagerProps) {
                 <tr>
                   <th className="px-4 py-2">Delegate</th>
                   <th className="px-4 py-2">Status</th>
-                  <th className="px-4 py-2">First priority</th>
+                  {commitmentMode ? <th className="px-4 py-2">Training</th> : null}
+                  <th className="px-4 py-2">{commitmentMode ? 'Commitment' : 'First priority'}</th>
                   <th className="px-4 py-2">Progress</th>
                   <th className="px-4 py-2">Business measures and evidence</th>
                   <th className="px-4 py-2">Reminders</th>
@@ -382,6 +394,14 @@ export function TransferPlansManager({ event }: TransferPlansManagerProps) {
                         </p>
                       ) : null}
                     </td>
+                    {commitmentMode ? (
+                      <td className="max-w-xs px-4 py-2 text-corp-text">
+                        <p className="line-clamp-2">{p.trainingName || '—'}</p>
+                        <p className="text-xs text-corp-muted">
+                          {p.ticked?.length ?? 0} action{p.ticked?.length === 1 ? '' : 's'} ticked
+                        </p>
+                      </td>
+                    ) : null}
                     <td className="max-w-xs px-4 py-2 text-corp-text">
                       <p className="line-clamp-2">{p.priorityAction ?? '—'}</p>
                       <p className="text-xs text-corp-muted">

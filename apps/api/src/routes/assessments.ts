@@ -26,6 +26,8 @@ import {
   responseSaveSchema,
   followUpProgressSchema,
   transferPlanVisible,
+  DEFAULT_CHECKLIST_TEMPLATE,
+  type ChecklistTemplate,
   sectionFieldsSchema,
   sectionKeyOf,
   sectionOrderSchema,
@@ -1527,12 +1529,27 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
 
   /** What the built-in blocks need: reference answers and the plan status, once per request. */
   /** Transfer Planning hidden by the organisers (2026-11-08): a follow-up shows no plan. */
-  async function planHiddenFor(eventId: string): Promise<boolean> {
+  /**
+   * Whether Transfer Planning is hidden right now, and the follow-up wording of the
+   * checklist-and-commitment form when the event uses it (2026-11-20).
+   */
+  async function planSetupFor(eventId: string) {
     const event = await prisma().event.findUnique({
       where: { id: eventId },
-      select: { transferPlanVisibility: true, transferPlanShownFrom: true },
+      select: {
+        transferPlanVisibility: true,
+        transferPlanShownFrom: true,
+        transferPlanMode: true,
+        transferPlanTemplate: true,
+      },
     });
-    return !event || !transferPlanVisible(event, clock());
+    const hidden = !event || !transferPlanVisible(event, clock());
+    const commitment =
+      event?.transferPlanMode === 'commitment'
+        ? ((event.transferPlanTemplate as ChecklistTemplate | null) ?? DEFAULT_CHECKLIST_TEMPLATE)
+            .followUp
+        : undefined;
+    return { hidden, commitment };
   }
 
   /**
@@ -1580,21 +1597,22 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
   }
 
   async function contextFor(eventId: string, delegateId: string) {
-    const [references, planStatus, plans, planHidden] = await Promise.all([
+    const [references, planStatus, plans, planSetup] = await Promise.all([
       referenceAnswersFor(prisma(), eventId, delegateId),
       planStatusFor(prisma(), eventId, delegateId),
       // The plans themselves, so a follow-up wave shows them beside its questions and the
       // delegate never retypes them (E12-2). Loaded once per request.
       followUpPlans(eventId, delegateId),
-      planHiddenFor(eventId),
+      planSetupFor(eventId),
     ]);
     const hasPreAnswer = Boolean(references[0]?.answer);
     const latest = plans.at(-1);
     const planSummary =
-      latest && !planHidden
+      latest && !planSetup.hidden
         ? {
             id: latest.id,
             status: latest.status,
+            commitment: planSetup.commitment,
             plans: plans.map((p) => ({
               id: p.id,
               sequence: p.sequence,
@@ -1835,7 +1853,7 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
     delegateId: string,
     wave: number,
   ): Promise<number> {
-    if (await planHiddenFor(eventId)) return 0;
+    if ((await planSetupFor(eventId)).hidden) return 0;
     const plans = await followUpPlans(eventId, delegateId);
     return plans
       .flatMap((p) => p.actions)

@@ -43,6 +43,8 @@ export async function sendFollowUpEmails(
   deps: FollowUpSendDeps,
   waveId: string,
   mode: FollowUpSendMode,
+  /** Invitations for these batches only (2026-11-20), when a scheduled send reaches them in turn. */
+  options: { batchIds?: readonly string[] } = {},
 ): Promise<{ sent: number; failed: number; skipped: number }> {
   const at = (deps.now ?? (() => new Date()))();
   const prisma = deps.prisma();
@@ -148,6 +150,7 @@ export async function sendFollowUpEmails(
       where: {
         eventId: wave.event.id,
         registrationStatus: { in: [...statuses] },
+        ...(options.batchIds ? { batchId: { in: [...options.batchIds] } } : {}),
         assessmentInvitations: {
           none: { stageConfigId: wave.id, kind: 'invitation', status: { in: ['sent', 'sending'] } },
         },
@@ -194,31 +197,68 @@ export async function sendFollowUpEmails(
 export async function sendScheduledFollowUpInvitations(deps: FollowUpSendDeps) {
   const at = (deps.now ?? (() => new Date()))();
   const prisma = deps.prisma();
-  const due = await prisma.assessmentStageConfig.findMany({
+  const scheduled = await prisma.assessmentStageConfig.findMany({
     where: {
       stage: 'follow_up',
-      inviteAt: { lte: at },
+      inviteAt: { not: null },
       invitesSentAt: null,
       // A closed follow-up is not sent; a draft is, since sending is what opens it.
       status: { not: 'closed' },
       questions: { some: { retiredAt: null } },
       event: { status: 'active' },
     },
-    select: { id: true },
+    select: {
+      id: true,
+      inviteAt: true,
+      event: {
+        select: {
+          endsOn: true,
+          batches: { select: { id: true, eventDate: { select: { date: true } } } },
+        },
+      },
+    },
   });
   let sent = 0;
   let failed = 0;
-  for (const wave of due) {
+  let waves = 0;
+  for (const wave of scheduled) {
+    const inviteAt = wave.inviteAt!;
+    // An event in batches (2026-11-20): a delegate's invitation goes as many days before the
+    // scheduled time as their batch day comes before the event's last day, so every batch hears
+    // 30 days after its own day. The wave counts as sent once the last batch has been.
+    const dueBatches = wave.event.batches
+      .filter((b) => batchInviteAt(inviteAt, wave.event.endsOn, b.eventDate.date) <= at)
+      .map((b) => b.id);
+    const allDue = inviteAt <= at;
+    if (!allDue && dueBatches.length === 0) continue;
+    waves += 1;
     await prisma.assessmentStageConfig.update({
       where: { id: wave.id },
-      data: { invitesSentAt: at, enabled: true, status: 'open', opensAt: null, closesAt: null },
+      data: {
+        ...(allDue ? { invitesSentAt: at } : {}),
+        enabled: true,
+        status: 'open',
+        opensAt: null,
+        closesAt: null,
+      },
     });
-    const result = await sendFollowUpEmails(deps, wave.id, 'invite');
+    const result = await sendFollowUpEmails(
+      deps,
+      wave.id,
+      'invite',
+      allDue ? {} : { batchIds: dueBatches },
+    );
     sent += result.sent;
     failed += result.failed;
   }
-  if (due.length) deps.logger.info({ waves: due.length, sent, failed }, 'scheduled follow-ups');
-  return { waves: due.length, sent, failed };
+  if (waves) deps.logger.info({ waves, sent, failed }, 'scheduled follow-ups');
+  return { waves, sent, failed };
+}
+
+/** The send time for a batch: the scheduled time, earlier by the days its day precedes the last. */
+export function batchInviteAt(inviteAt: Date, endsOn: Date, batchDay: Date): Date {
+  const days = Math.round((endsOn.getTime() - batchDay.getTime()) / 86_400_000);
+  return new Date(inviteAt.getTime() - Math.max(0, days) * 86_400_000);
 }
 
 export async function registerFollowUpInvitations(deps: FollowUpSendDeps & { boss: PgBoss }) {
