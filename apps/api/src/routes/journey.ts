@@ -85,6 +85,7 @@ export function journeyRouter({ prisma, config, middleware, now }: Deps): Router
                 stage: true,
                 wave: true,
                 dueAfterDays: true,
+                title: true,
                 enabled: true,
                 status: true,
                 opensAt: true,
@@ -210,6 +211,7 @@ export function journeyRouter({ prisma, config, middleware, now }: Deps): Router
             stage,
             wave: s.wave,
             waveLabel: waveLabel(s.stage, s.wave, s.dueAfterDays),
+            title: s.title,
             state,
             submittedAt: mine?.submittedAt?.toISOString() ?? null,
           };

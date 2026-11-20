@@ -731,7 +731,7 @@ describe.skipIf(!hasDatabase)('assessment questions and answers', () => {
       .trim()
       .split('\r\n');
     expect(lines[0]).toMatch(
-      /^Name,Email,Organisation,Job title,Country,Attendance format,Capacity,Submitted at \(UTC\),/,
+      /^Name,Email,Organisation,Job title,Department,Country,Attendance format,Capacity,Submitted at \(UTC\),/,
     );
     // One knowledge question in the stage (the quiz of the earlier test), answered (a): wrong.
     const knowledgeColumns = lines[0]!.match(/\(correct\?\)/g)?.length ?? 0;
@@ -759,7 +759,7 @@ describe.skipIf(!hasDatabase)('assessment questions and answers', () => {
     expect(lines[0]).toContain('How confident do you feel today?');
     expect(lines).toHaveLength(2); // header + the one submitted response
     expect(lines[1]).toMatch(
-      /^Dee Legate,[^,]+,,,,physical,individual,2026-11-07T10:00:00.000Z,5,/,
+      /^Dee Legate,[^,]+,,,,,physical,individual,2026-11-07T10:00:00.000Z,5,/,
     );
     expect(lines[1]).toContain(',Always,'); // the option label, not the code "always"
     expect(lines[1]).toContain(',Certificates issued,'); // the quiz answer as its label

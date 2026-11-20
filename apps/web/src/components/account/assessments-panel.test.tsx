@@ -693,6 +693,20 @@ describe('AssessmentsPanel', () => {
     expect((puts(calls).at(-1) as { answers: unknown }).answers).toEqual({ a: false });
   });
 
+  it('shows the organisers’ own title and description for the assessment when they set them', async () => {
+    const named: MyAssessment = {
+      ...open,
+      title: 'Where you start',
+      description: 'Ten minutes on where you stand before the day.',
+    };
+    stub([named]);
+    render(<Harness stage="pre_conference" />);
+    const card = await screen.findByRole('article', { name: 'Where you start' });
+    expect(within(card).getByRole('heading', { name: 'Where you start' })).toBeTruthy();
+    expect(card.textContent).toContain('Ten minutes on where you stand before the day.');
+    expect(card.textContent).not.toContain('Pre-conference assessment');
+  });
+
   it('shows the organisers’ own confirmation, in their words and look, once everything is submitted', async () => {
     const styled: MyAssessment = {
       ...open,

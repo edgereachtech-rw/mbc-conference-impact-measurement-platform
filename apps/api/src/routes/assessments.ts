@@ -1772,6 +1772,8 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
           opensAt: s.opensAt ? s.opensAt.toISOString() : null,
           closesAt: s.closesAt ? s.closesAt.toISOString() : null,
           confirmation: parseConfirmation(s.confirmation),
+          title: s.title,
+          description: s.description,
           sections: state === 'upcoming' ? [] : sections.map(sectionViewOf),
           questions: state === 'upcoming' ? [] : views.map(delegateViewOf),
           response: response

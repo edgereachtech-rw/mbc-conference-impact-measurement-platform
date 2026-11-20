@@ -914,6 +914,9 @@ export const myAssessmentSchema = z.object({
   closesAt: z.string().nullable(),
   /** The organisers' submission confirmation (2026-11-19); null means the platform's wording. */
   confirmation: assessmentConfirmationSchema.nullable().optional(),
+  /** The organisers' own name and purpose line (2026-11-20); null means the platform's. */
+  title: z.string().nullable().optional(),
+  description: z.string().nullable().optional(),
   /** Sections in order; questions whose sectionId is null form an untitled first group. */
   sections: z.array(assessmentSectionViewSchema),
   /** Questions in section order then question order; present when the stage is open or closed. */

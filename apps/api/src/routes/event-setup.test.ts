@@ -391,6 +391,40 @@ describe.skipIf(!hasDatabase)('event setup (E1 brief)', () => {
     expect(
       await prisma.auditLog.count({ where: { action: 'event.status_changed', entityId: id } }),
     ).toBe(1);
+    // The organisers' own name and purpose line (2026-11-20): kept across saves that omit
+    // them, cleared when sent blank.
+    const named = await call('put', `/events/${id}/assessments/pre_conference`, {
+      enabled: true,
+      title: 'Where you start',
+      description: 'Ten minutes on where you stand before the day.',
+    });
+    expect(named.status, named.text).toBe(200);
+    const preNamed = named.body.event.assessmentStages.find(
+      (s: { stage: string }) => s.stage === 'pre_conference',
+    );
+    expect(preNamed).toMatchObject({
+      title: 'Where you start',
+      description: 'Ten minutes on where you stand before the day.',
+    });
+    const untouched = await call('put', `/events/${id}/assessments/pre_conference`, {
+      enabled: true,
+    });
+    expect(
+      untouched.body.event.assessmentStages.find(
+        (s: { stage: string }) => s.stage === 'pre_conference',
+      ).title,
+    ).toBe('Where you start');
+    const clearedTitle = await call('put', `/events/${id}/assessments/pre_conference`, {
+      enabled: true,
+      title: '',
+      description: '',
+    });
+    expect(
+      clearedTitle.body.event.assessmentStages.find(
+        (s: { stage: string }) => s.stage === 'pre_conference',
+      ).title,
+    ).toBeNull();
+
     // The submission confirmation of a stage (2026-11-19): words and look, audited, served
     // with the event; a value outside the choices is refused.
     const confirmed = await call('put', `/events/${id}/assessments/pre_conference/confirmation`, {

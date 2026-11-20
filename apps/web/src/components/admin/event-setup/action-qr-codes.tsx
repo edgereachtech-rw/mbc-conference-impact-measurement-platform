@@ -1,7 +1,11 @@
 'use client';
 
-import type { EventDetail, FeedbackSessionView, ReflectionDateView } from '@mbc/shared';
-import { stageLabelsFor } from '@mbc/shared';
+import {
+  stageTitleOf,
+  type EventDetail,
+  type FeedbackSessionView,
+  type ReflectionDateView,
+} from '@mbc/shared';
 import { DownloadIcon, PrinterIcon } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
@@ -105,7 +109,7 @@ export function ActionQrCodes({ event }: { event: EventDetail }) {
       .map<Code>((s) => ({
         key: `assessment:${s.stage}:${s.wave}`,
         group: 'Assessments',
-        title: s.waveLabel || stageLabelsFor(event.eventType)[s.stage],
+        title: stageTitleOf(s, event.eventType),
         hint:
           s.stage === 'end_of_conference'
             ? 'For the closing session: the delegate lands on the evaluation.'

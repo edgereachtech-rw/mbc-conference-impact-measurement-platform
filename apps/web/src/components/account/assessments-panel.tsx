@@ -27,6 +27,7 @@ import {
   type KnowledgeFeedback,
   type MyAssessment,
   type AssessmentStage,
+  stageTitleOf,
 } from '@mbc/shared';
 import { AlertCircleIcon, CheckCircle2Icon, Loader2Icon, XCircleIcon } from 'lucide-react';
 import Link from 'next/link';
@@ -37,7 +38,7 @@ import { consoleButton, StatePanel, StatusPill } from '@/components/console/page
 import { NativeSelect } from '@/components/imports/native-select';
 import { ApiError, apiFetch } from '@/lib/api';
 import { formatDateShort, formatInstant, stagePurpose, stageWhen } from '@/lib/events';
-import { useEventNoun, useStageLabels } from '@/lib/event-wording';
+import { useEventNoun, useEventType } from '@/lib/event-wording';
 import { describeError } from '@/lib/imports';
 
 import { confirmationTitle, SubmissionConfirmation } from './submission-confirmation';
@@ -170,7 +171,7 @@ function AssessmentCard({
   assessment: MyAssessment;
   onUpdated: (assessments: MyAssessment[]) => void;
 }) {
-  const stageLabels = useStageLabels();
+  const eventType = useEventType();
   const noun = useEventNoun();
   const [answers, setAnswers] = useState<Record<string, unknown>>(() => {
     const stored = assessment.response?.answers ?? {};
@@ -423,7 +424,7 @@ function AssessmentCard({
   return (
     <article
       ref={top}
-      aria-label={assessment.waveLabel || stageLabels[assessment.stage]}
+      aria-label={stageTitleOf(assessment, eventType)}
       className={`space-y-4 rounded-none border border-corp-line bg-white p-4 shadow-panel md:p-5 ${
         assessment.status === 'open' && !submitted ? 'border-l-4 border-l-corp-accent' : ''
       }`}
@@ -437,10 +438,12 @@ function AssessmentCard({
       {step === 0 ? (
         <div>
           <h3 className="font-corporate text-base font-semibold text-corp-ink md:text-lg">
-            {assessment.waveLabel || stageLabels[assessment.stage]}
+            {stageTitleOf(assessment, eventType)}
           </h3>
-          {stagePurpose[assessment.stage] ? (
-            <p className="text-sm text-corp-text">{stagePurpose[assessment.stage]}</p>
+          {assessment.description?.trim() || stagePurpose[assessment.stage] ? (
+            <p className="text-sm text-corp-text">
+              {assessment.description?.trim() || stagePurpose[assessment.stage]}
+            </p>
           ) : null}
           {assessment.opensAt || assessment.closesAt ? (
             <p className="mt-1 text-xs text-corp-muted">
@@ -485,7 +488,7 @@ function AssessmentCard({
       ) : (
         <form
           noValidate
-          aria-label={`${assessment.waveLabel || stageLabels[assessment.stage]} questions`}
+          aria-label={`${stageTitleOf(assessment, eventType)} questions`}
           onSubmit={(e) => {
             e.preventDefault();
             if (currentLocked) return;

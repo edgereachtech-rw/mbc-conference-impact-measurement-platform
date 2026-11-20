@@ -276,6 +276,9 @@ export const assessmentStageConfigSchema = z
     target: z.enum(assessmentTargets).default('all_delegates'),
     targetGroup: optionalText(200),
     status: z.enum(assessmentStageStatuses).default('draft'),
+    /** The organisers' own name and purpose line (2026-11-20); absent keeps what is stored. */
+    title: optionalText(120),
+    description: optionalText(600),
   })
   .superRefine((value, ctx) => {
     if (value.opensAt && value.closesAt && value.closesAt <= value.opensAt) {
@@ -432,9 +435,23 @@ export const assessmentStageViewSchema = z.object({
   questionCount: z.number().int(),
   /** The submission confirmation's words and look (2026-11-19); null means the defaults. */
   confirmation: assessmentConfirmationSchema.nullable().optional(),
+  /** The organisers' own name and purpose line (2026-11-20); null means the platform's. */
+  title: z.string().nullable().optional(),
+  description: z.string().nullable().optional(),
   updatedAt: z.string(),
 });
 export type AssessmentStageView = z.infer<typeof assessmentStageViewSchema>;
+
+/**
+ * What an assessment is called (2026-11-20): the organisers' own title where set, else the
+ * wave's name ("30-day follow-up"), else the platform's title for the event's kind.
+ */
+export function stageTitleOf(
+  stage: { stage: AssessmentStage; waveLabel?: string | null; title?: string | null },
+  eventType: EventType | null | undefined,
+): string {
+  return stage.title?.trim() || stage.waveLabel || stageLabelsFor(eventType)[stage.stage];
+}
 
 export const stageWindowStates = ['hidden', 'upcoming', 'open', 'closed'] as const;
 export type StageWindowState = (typeof stageWindowStates)[number];

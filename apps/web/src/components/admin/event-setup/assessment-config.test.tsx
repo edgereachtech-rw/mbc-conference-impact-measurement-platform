@@ -87,6 +87,8 @@ describe('AssessmentConfig', () => {
       enabled: true,
       opensAt: '2026-11-05T08:00:00.000Z',
       closesAt: '2026-11-11T22:30:00.000Z',
+      title: null,
+      description: null,
       target: 'all_delegates',
       targetGroup: null,
       status: 'scheduled',

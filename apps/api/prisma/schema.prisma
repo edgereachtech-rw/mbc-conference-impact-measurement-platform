@@ -1129,6 +1129,10 @@ model AssessmentStageConfig {
   /// The submission confirmation's words and look (decision 2026-11-19); see
   /// assessmentConfirmationSchema in @mbc/shared. Null means the platform's defaults.
   confirmation      Json?
+  /// The organisers' own name and purpose line for the stage (2026-11-20); null means the
+  /// platform's wording for the event's kind ("Pre-training assessment").
+  title             String?
+  description       String?
   createdAt         DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt         DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
 

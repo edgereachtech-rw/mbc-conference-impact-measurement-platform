@@ -33,9 +33,10 @@ export default async function StagePage({
   const view =
     event?.assessmentStages.find((s) => s.stage === stageKey && s.wave === selectedWave) ?? null;
   const heading =
-    stageKey === 'follow_up'
+    view?.title?.trim() ||
+    (stageKey === 'follow_up'
       ? view?.waveLabel || `Follow-up round ${selectedWave}`
-      : stageLabelsFor(event?.eventType)[stageKey];
+      : stageLabelsFor(event?.eventType)[stageKey]);
 
   return (
     <>
@@ -49,11 +50,12 @@ export default async function StagePage({
         eyebrow={event ? `${event.name} · ${event.code}` : undefined}
         title={heading}
         description={
-          stageKey === 'follow_up'
+          view?.description?.trim() ||
+          (stageKey === 'follow_up'
             ? `Wave ${selectedWave} · ${
                 stagePurpose[stageKey] || 'Post-conference follow-up questions and responses.'
               }`
-            : stagePurpose[stageKey] || undefined
+            : stagePurpose[stageKey] || undefined)
         }
         meta={
           event && view ? (

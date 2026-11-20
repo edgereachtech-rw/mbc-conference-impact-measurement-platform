@@ -130,6 +130,8 @@ export function eventDetailOf(event: EventRow): EventDetail {
         status: s.status,
         questionCount: s._count.questions,
         confirmation: parseConfirmation(s.confirmation),
+        title: s.title,
+        description: s.description,
         updatedAt: s.updatedAt.toISOString(),
       })),
     createdAt: event.createdAt.toISOString(),
@@ -517,6 +519,9 @@ export function eventSetupRouter({ prisma, middleware, now }: Deps): Router {
         target: input.target,
         targetGroup: input.target === 'group' ? (input.targetGroup ?? null) : null,
         status: input.status,
+        // Absent keeps the stored wording (2026-11-20); blank clears it.
+        ...(input.title !== undefined ? { title: input.title } : {}),
+        ...(input.description !== undefined ? { description: input.description } : {}),
       };
       // Opening a stage whose deadline has passed would leave it closed for the delegates
       // (2026-11-08): the deadline is cleared or moved first. Reopening keeps every question

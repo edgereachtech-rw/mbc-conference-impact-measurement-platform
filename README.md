@@ -753,6 +753,14 @@ Every enabled assessment stage carries questions that delegates answer (decided 
 /me/dashboard-note/dismiss`, `dashboardNoteDismissedAt` on the session user) stay in place
   for when it returns; the component lives in git history
   (`apps/web/src/components/account/how-it-works-note.tsx`, commit 6d2415c).
+- Each assessment's own title and description (2026-11-20): `assessment_stage_config.title`
+  and `description` (migration `20261120125600_assessment_stage_title`), set on the stage
+  card of the Assessment configuration tab (blank keeps the platform's wording for the event's
+  kind) and carried by the stage view, the delegate's view and the journey. `stageTitleOf` in
+  `@mbc/shared` resolves the name everywhere: the organisers' title, else the wave's name,
+  else "Pre-training assessment" and the like; the description replaces the platform's purpose
+  line on the delegate's card and the stage page. The delegate's event page no longer repeats an
+  assessment's heading above its card.
 - Submission confirmation per assessment (decision 2026-11-19): the popup a delegate sees once
   every section of an assessment is submitted carries the organisers' own title, message and
   closing line, and a look (colour family green/accent/ink, centred or left, check icon on or

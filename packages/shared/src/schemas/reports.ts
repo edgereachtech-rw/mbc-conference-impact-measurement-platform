@@ -628,6 +628,8 @@ export const journeySchema = z.object({
       wave: z.number().int(),
       /** What this wave is called where a stage has several ("30-day follow-up"); else empty. */
       waveLabel: z.string(),
+      /** The organisers' own name for the stage (2026-11-20); null means the platform's. */
+      title: z.string().nullable().optional(),
       state: z.enum(['not_configured', 'not_yet_open', 'open', 'draft', 'submitted', 'closed']),
       submittedAt: z.string().nullable(),
     }),

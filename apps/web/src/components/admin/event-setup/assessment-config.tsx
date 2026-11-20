@@ -10,6 +10,7 @@ import {
   type EventDetail,
   type StageSummary,
   stageLabelsFor,
+  stageTitleOf,
 } from '@mbc/shared';
 import { ListChecksIcon, Loader2Icon } from 'lucide-react';
 import Link from 'next/link';
@@ -90,6 +91,8 @@ export function StageCard({
     target: stage.target,
     targetGroup: stage.targetGroup ?? '',
     status: stage.status,
+    title: stage.title ?? '',
+    description: stage.description ?? '',
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
@@ -163,6 +166,8 @@ export function StageCard({
       target: draft.target,
       targetGroup: draft.targetGroup,
       status: draft.enabled ? draft.status : 'draft',
+      title: draft.title,
+      description: draft.description,
     };
     const parsed = assessmentStageConfigSchema.safeParse(payload);
     if (!parsed.success) {
@@ -202,7 +207,7 @@ export function StageCard({
     <>
       <form
         noValidate
-        aria-label={stage.waveLabel || stageLabelsFor(event.eventType)[stage.stage]}
+        aria-label={stageTitleOf(stage, event.eventType)}
         onSubmit={(e) => {
           e.preventDefault();
           void save();
@@ -219,10 +224,12 @@ export function StageCard({
             </StatusPill>
           </div>
           <h3 className="font-corporate text-base font-semibold text-corp-ink">
-            {stage.waveLabel || stageLabelsFor(event.eventType)[stage.stage]}
+            {stageTitleOf(stage, event.eventType)}
           </h3>
-          {stagePurpose[stage.stage] ? (
-            <p className="text-sm text-corp-text">{stagePurpose[stage.stage]}</p>
+          {stage.description?.trim() || stagePurpose[stage.stage] ? (
+            <p className="text-sm text-corp-text">
+              {stage.description?.trim() || stagePurpose[stage.stage]}
+            </p>
           ) : null}
           {stage.enabled && seenText ? (
             <p
@@ -315,6 +322,44 @@ export function StageCard({
           />
           Enabled for this event
         </label>
+
+        {/* The organisers' own name and purpose line (2026-11-20); blank keeps the platform's. */}
+        <div className="space-y-1">
+          <label htmlFor={`${id}-title`} className="text-sm font-semibold text-corp-ink">
+            Title
+          </label>
+          <input
+            id={`${id}-title`}
+            value={draft.title}
+            maxLength={120}
+            placeholder={stageLabelsFor(event.eventType)[stage.stage]}
+            disabled={readOnly || busy}
+            onChange={(e) => set('title', e.target.value)}
+            className={inputClass}
+          />
+          {fieldError('title')}
+        </div>
+        <div className="space-y-1">
+          <label htmlFor={`${id}-description`} className="text-sm font-semibold text-corp-ink">
+            Description
+          </label>
+          <textarea
+            id={`${id}-description`}
+            rows={3}
+            value={draft.description}
+            maxLength={600}
+            placeholder={
+              stagePurpose[stage.stage] || 'What this assessment is for, in one or two sentences.'
+            }
+            disabled={readOnly || busy}
+            onChange={(e) => set('description', e.target.value)}
+            className="w-full rounded-none border border-corp-line bg-white px-3 py-2 text-base md:text-sm disabled:opacity-60"
+          />
+          <p className="text-xs text-corp-muted">
+            Shown to delegates above the questions. Leave blank for the platform&rsquo;s wording.
+          </p>
+          {fieldError('description')}
+        </div>
 
         <div className="space-y-1">
           <label htmlFor={`${id}-opens`} className="text-sm font-semibold text-corp-ink">

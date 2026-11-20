@@ -6,7 +6,7 @@ import {
   type MyAssessment,
   type MyEvent,
   type MyReflection,
-  stageLabelsFor,
+  stageTitleOf,
 } from '@mbc/shared';
 
 import { useEffect } from 'react';
@@ -74,14 +74,13 @@ function journeyTabs(
   planVisible: boolean,
   eventType: MyEvent['eventType'],
 ): TabItem[] {
-  const stageLabels = stageLabelsFor(eventType);
   const of = (stage: AssessmentStage): TabItem[] =>
     forms
       .filter((a) => a.stage === stage)
       .sort((a, b) => a.wave - b.wave)
       .map((a) => ({
         id: assessmentTabId(a),
-        label: a.waveLabel || stageLabels[a.stage],
+        label: stageTitleOf(a, eventType),
         hint: stageWhen[a.stage],
       }));
   return [
@@ -212,7 +211,9 @@ export function EventDetail({ event, contactEmail }: { event: MyEvent; contactEm
           aria-labelledby={`tab-${current.id}`}
           className="space-y-6"
         >
-          {current.id !== 'overview' ? (
+          {/* An assessment card carries its own heading and purpose (2026-11-20): the panel
+              heading would only repeat them. */}
+          {current.id !== 'overview' && !form ? (
             <div>
               <h2 className="font-corporate text-h3 text-corp-ink">{current.label}</h2>
               <p className="text-sm text-corp-muted">{current.hint}</p>

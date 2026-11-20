@@ -44,6 +44,7 @@ export function nextSteps(journey: Journey): NextStep[] {
       // A wave has its own name, and its own place in the list: three open follow-ups must not
       // read as three copies of "your follow-up assessment".
       const name =
+        a.title?.trim() ||
         a.waveLabel ||
         (a.stage === 'end_of_conference'
           ? 'end-of-conference evaluation'

@@ -75,7 +75,7 @@ export function StageWorkspace({ event, stage, wave = 1 }: StageWorkspaceProps) 
             eventId={event.id}
             stage={stage}
             wave={wave}
-            waveLabel={selectedWave?.waveLabel}
+            waveLabel={selectedWave?.title?.trim() || selectedWave?.waveLabel}
             eventType={event.eventType}
             readOnly={readOnly}
             onChanged={() => router.refresh()}
