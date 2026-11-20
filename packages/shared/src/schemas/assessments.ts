@@ -759,6 +759,56 @@ export function sectionMarkOf(
   return { scored, max, percent: Math.round((scored / max) * 100) };
 }
 
+/** One mark of the same section at another stage, for the comparison a delegate sees. */
+export interface PairedMark {
+  stage: AssessmentStage;
+  wave: number;
+  waveLabel: string;
+  title: string | null;
+  mark: SectionMark;
+}
+
+/**
+ * The delegate's marks on the same knowledge section in their other assessments of the event
+ * (2026-11-20). A repeated section and the one it repeats share a root (`sourceSectionId`), so
+ * a delegate who just submitted the post-event copy sees the pre-event mark beside it rather
+ * than one mark on its own. In journey order (stage, then wave); only a submitted, marked
+ * section carries a mark. Empty for the general group and for a section repeated nowhere.
+ */
+export function pairedMarks(
+  assessments: readonly MyAssessment[],
+  current: Pick<MyAssessment, 'stage' | 'wave'>,
+  sectionId: string,
+): PairedMark[] {
+  const rootOf = (sec: Pick<AssessmentSectionView, 'id' | 'sourceSectionId'>) =>
+    sec.sourceSectionId ?? sec.id;
+  const isCurrent = (a: Pick<MyAssessment, 'stage' | 'wave'>) =>
+    a.stage === current.stage && a.wave === current.wave;
+  const own = assessments.find(isCurrent)?.sections.find((sec) => sec.id === sectionId);
+  if (!own) return [];
+  const root = rootOf(own);
+  const out: PairedMark[] = [];
+  for (const a of assessments) {
+    if (isCurrent(a)) continue;
+    for (const sec of a.sections) {
+      const mark = rootOf(sec) === root ? a.response?.sectionMarks[sec.id] : undefined;
+      if (mark) {
+        out.push({
+          stage: a.stage,
+          wave: a.wave,
+          waveLabel: a.waveLabel,
+          title: a.title ?? null,
+          mark,
+        });
+      }
+    }
+  }
+  return out.sort(
+    (x, y) =>
+      assessmentStages.indexOf(x.stage) - assessmentStages.indexOf(y.stage) || x.wave - y.wave,
+  );
+}
+
 /** Key of the untitled first group (questions outside any section) in section submissions. */
 export const GENERAL_SECTION = 'general';
 /** The submission key of a question's section: its id, or the general group. */

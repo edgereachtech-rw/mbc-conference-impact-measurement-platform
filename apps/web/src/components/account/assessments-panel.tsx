@@ -22,6 +22,7 @@ import {
   groupQuestions,
   isBlankAnswer,
   multipleChoiceAnswer,
+  pairedMarks,
   sectionKeyOf,
   type DelegateQuestionView,
   type KnowledgeFeedback,
@@ -155,6 +156,7 @@ export function AssessmentsPanel({
       eventId={eventId}
       timezone={timezone}
       assessment={shown}
+      all={state.assessments}
       onUpdated={onUpdated}
     />
   );
@@ -164,11 +166,14 @@ function AssessmentCard({
   eventId,
   timezone,
   assessment,
+  all,
   onUpdated,
 }: {
   eventId: string;
   timezone: string;
   assessment: MyAssessment;
+  /** Every assessment of the delegate's for the event: the marks of a repeated section pair. */
+  all: MyAssessment[];
   onUpdated: (assessments: MyAssessment[]) => void;
 }) {
   const eventType = useEventType();
@@ -738,6 +743,12 @@ function AssessmentCard({
               scope={review.done}
               sectionTitle={reviewGroup.section?.title ?? null}
               mark={sectionMarks[review.key] ?? null}
+              // The same section's marks at the other stages, named as the delegate knows them
+              // (2026-11-20): a post-event mark is shown against the pre-event one.
+              earlier={pairedMarks(all, assessment, review.key).map((m) => ({
+                label: stageTitleOf(m, eventType),
+                mark: m.mark,
+              }))}
               nextText={
                 current && remaining > 0
                   ? `Next: “${current.section?.title ?? 'the remaining questions'}”. ${remaining} section${remaining === 1 ? '' : 's'} left; your responses save as you go.`

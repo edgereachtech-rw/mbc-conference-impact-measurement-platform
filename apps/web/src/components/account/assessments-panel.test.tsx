@@ -739,6 +739,52 @@ describe('AssessmentsPanel', () => {
     expect(status.querySelector('svg')).toBeNull();
   });
 
+  it('compares the mark of a repeated section with the mark at the stage it repeats', async () => {
+    // The pre-conference "About you" was submitted at 50%; the during-conference one repeats it.
+    const baseline: MyAssessment = {
+      ...open,
+      status: 'closed',
+      canAnswer: false,
+      sections: [{ ...sectioned.sections[1]!, id: 'p2' }],
+      questions: [
+        question('pd', { type: 'yes_no', prompt: 'Are you a manager?', sectionId: 'p2' }),
+      ] as MyAssessment['questions'],
+      response: {
+        submittedAt: '2026-11-01T10:00:00.000Z',
+        updatedAt: 'x',
+        answers: { pd: true },
+        submittedSections: ['p2'],
+        sectionMarks: { p2: { scored: 2, max: 4, percent: 50 } },
+      },
+    };
+    const repeated: MyAssessment = {
+      ...sectioned,
+      sections: [
+        {
+          ...sectioned.sections[1]!,
+          sourceSectionId: 'p2',
+          sourceLabel: 'Pre-conference assessment · About you',
+        },
+      ],
+      questions: [sectioned.questions[2]!],
+    };
+    stub([baseline, repeated]);
+    const user = userEvent.setup();
+    render(<Harness stage="during_conference" />);
+    const card = await screen.findByRole('article', { name: 'During-conference assessment' });
+    await user.click(within(card).getByLabelText('Yes'));
+    await user.click(within(card).getByRole('button', { name: 'Submit answers' }));
+    const review = await screen.findByRole('dialog', { name: 'Submit your responses?' });
+    await user.click(within(review).getByRole('button', { name: 'Submit now' }));
+    const all = await screen.findByRole('dialog', { name: 'All sections submitted' });
+    // Both marks, the earlier one named by its assessment, and how this one compares.
+    const marks = within(all).getByLabelText('Your marks');
+    expect(marks.textContent).toMatch(
+      /Pre-conference assessment50%2 of 4 pointsThis time75%3 of 4 pointsUp 25 points compared with the Pre-conference assessment\./,
+    );
+    expect(within(all).queryByLabelText('Your mark')).toBeNull();
+  });
+
   it('shows a section introduction plainly, or highlighted when the admin marked it so', async () => {
     // As it is: a subtitle under the title, no note role.
     stub([sectioned]);
