@@ -279,7 +279,7 @@ function Form({
                             checked={answers[q.id] === r}
                             disabled={!feedback.canSubmit || busy}
                             onChange={() => setAnswer(q.id, r)}
-                            className="size-4 accent-corp-green"
+                            className="size-4 shrink-0 accent-corp-green"
                           />
                           {feedbackRatingLabels[r]}
                         </label>

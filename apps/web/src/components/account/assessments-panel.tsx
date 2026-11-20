@@ -600,7 +600,7 @@ function AssessmentCard({
                               onChange={(e) =>
                                 setAnswer(q.id, e.target.checked ? PREFER_NOT_TO_ANSWER : '')
                               }
-                              className="size-5 accent-corp-green"
+                              className="size-5 shrink-0 accent-corp-green"
                             />
                             Prefer not to answer
                           </label>
@@ -954,7 +954,7 @@ function QuestionField({
                   else if (knowledge) onKnowledgeChoice(o.value);
                   else onChange(o.value);
                 }}
-                className="size-5 accent-corp-green"
+                className="size-5 shrink-0 accent-corp-green"
               />
               {o.label}
             </label>
@@ -1027,7 +1027,7 @@ function QuestionField({
                 checked={answer.selected.includes(o.value)}
                 disabled={disabled}
                 onChange={(e) => toggle(o, e.target.checked)}
-                className="size-5 accent-corp-green"
+                className="size-5 shrink-0 accent-corp-green"
               />
               {o.label}
             </label>
