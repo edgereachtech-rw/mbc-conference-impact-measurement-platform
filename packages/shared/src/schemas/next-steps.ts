@@ -109,6 +109,10 @@ export function nextSteps(journey: Journey): NextStep[] {
     });
   }
 
+  assessments('end_of_conference');
+  assessments('follow_up');
+
+  // The Transfer plan comes last (2026-11-20): every assessment is asked before it.
   if (!journey.transferPlanHidden && (!journey.plan || journey.plan.status === 'draft')) {
     const started = Boolean(journey.plan && journey.plan.actions > 0);
     steps.push({
@@ -121,9 +125,6 @@ export function nextSteps(journey: Journey): NextStep[] {
       started,
     });
   }
-
-  assessments('end_of_conference');
-  assessments('follow_up');
 
   return steps;
 }

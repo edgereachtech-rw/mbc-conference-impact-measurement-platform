@@ -65,8 +65,8 @@ const STATIC: Record<StaticTab, TabItem> = {
 /**
  * The tabs in the order the delegate meets them (2026-11-06): each assessment is a tab of its
  * own, placed where it falls in the journey. Before the event the pre-conference assessment; at
- * the event attendance, anything asked during the conference, reflections, session feedback and
- * the Transfer Plan; at the close the evaluation; after it each follow-up wave in turn.
+ * the event attendance, anything asked during the conference, reflections and session feedback;
+ * at the close the evaluation; after it each follow-up wave in turn; the Transfer Plan last.
  */
 function journeyTabs(
   forms: readonly MyAssessment[],
@@ -97,11 +97,11 @@ function journeyTabs(
         hint: `Reflection for ${formatDay(r.date)}`,
       })),
     STATIC.feedback,
-    // One Transfer plans tab (2026-11-07); the plans are tabs inside it. None while the
-    // organisers hide Transfer Planning (2026-11-08).
-    ...(planVisible ? [STATIC['transfer-plan']] : []),
     ...of('end_of_conference'),
     ...of('follow_up'),
+    // One Transfer plans tab, last of all (2026-11-20); the plans are tabs inside it. None
+    // while the organisers hide Transfer Planning (2026-11-08).
+    ...(planVisible ? [STATIC['transfer-plan']] : []),
   ];
 }
 

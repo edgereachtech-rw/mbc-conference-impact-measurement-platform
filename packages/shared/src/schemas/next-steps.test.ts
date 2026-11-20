@@ -75,11 +75,11 @@ describe('nextSteps', () => {
         ],
       }),
     );
-    // The follow-ups come last, after the transfer plan, as on the event page (2026-11-07).
+    // The transfer plan comes last, after the follow-ups, as on the event page (2026-11-20).
     expect(steps.map((x) => x.label)).toEqual([
-      'Start your transfer plan',
       'Finish your 30-day follow-up',
       'Complete your 60-day follow-up',
+      'Start your transfer plan',
     ]);
     // Distinct keys: two open waves are two things to do, not one row drawn twice.
     expect(new Set(steps.map((x) => x.key)).size).toBe(steps.length);
@@ -201,7 +201,7 @@ describe('nextSteps', () => {
     });
   });
 
-  it('runs in the dashboard order: pre-conference, each check-in day, feedback, during, reflections, plan, end of conference, follow-ups', () => {
+  it('runs in the dashboard order: pre-conference, feedback, during, reflections, end of conference, follow-ups, plan last', () => {
     const steps = nextSteps(
       journey({
         // Listed out of order on purpose: the list follows the journey, not the input.
@@ -222,20 +222,15 @@ describe('nextSteps', () => {
         feedback: { sessions: 1, submitted: 0 },
       }),
     );
+    // Check-in days are no longer steps; the plan comes last (2026-11-20).
     expect(steps.map((s) => s.label)).toEqual([
       'Finish your pre-conference assessment',
-      'Check in for Day 1',
-      'Check in for Day 2',
       'Give feedback on 1 session',
       'Complete your during-conference assessment',
       'Add your reflections',
-      'Start your transfer plan',
       'Complete your end-of-conference evaluation',
       'Complete your 30-day',
-    ]);
-    expect(steps.map((s) => s.key).slice(1, 3)).toEqual([
-      'attendance:2026-11-12',
-      'attendance:2026-11-13',
+      'Start your transfer plan',
     ]);
   });
 });

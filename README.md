@@ -412,7 +412,10 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   (2026-11-07; narrowed to knowledge sections on 2026-11-08): `response.sectionMarks` on the
   delegate's assessment view, one entry per submitted knowledge section (one point per knowledge
   question, computed by `sectionMarkOf` in `packages/shared`), shown in the submission popup
-  and on the section. A rating-scale section is averaged in the reports and never marked for the
+  and on the section. When the section repeats one of another stage (or is repeated by one), the
+  popup shows the delegate's marks on both side by side with the change in points, instead of
+  this mark alone (2026-11-20; `pairedMarks` in `packages/shared`, from the delegate's own
+  assessment list). A rating-scale section is averaged in the reports and never marked for the
   delegate. Since 2026-11-10 a knowledge answer's feedback says only right or wrong (the
   correct answer never reaches the delegate, so the question can be asked again later), and a
   knowledge section asks its questions in a random order fixed per delegate (`stableShuffle`
@@ -816,7 +819,8 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   day. The reflections list is loaded once by the page (`useMyReflections`) and each tab shows
   one activity (`ReflectionsPanel` with `activityId`).
 - One Transfer plans tab, the plans as tabs inside it (task of 2026-11-07): the delegate event
-  page keeps a single "Transfer plans" tab after Session feedback; within it a second strip
+  page keeps a single "Transfer plans" tab, last of all since 2026-11-20 (after every assessment
+  and follow-up, as on the dashboard's "What to do next" list); within it a second strip
   names each plan as the delegate named it ("Plan 1", "Coaching rollout") with its status or a
   waiting impact check, and the chosen plan's page sits beneath (`TransferPlansTabs`). Since
   2026-11-11 there is one plan, so the strip has one entry. The address names the chosen plan
@@ -1090,7 +1094,8 @@ measures | evidence }`, the list replaced with ids kept; own actions only, 404 o
 - The delegate dashboard says what to do next (task of 2026-11-03). `nextSteps` in the shared
   package reads a journey as a to-do list — an open or half-finished assessment, a date still open
   for check-in, missing reflections, feedback owed, a plan not started or not submitted — in
-  journey order, and only what the delegate can act on now. The dashboard calls the journey of the
+  journey order with the plan last (2026-11-20), and only what the delegate can act on now. The
+  dashboard calls the journey of the
   event in focus (the next one, else the most recent) and links each item straight to the tab that
   holds it. Before this, everything a delegate owed was two taps away behind the right tab.
 - Attendance is reported from the record, everywhere (fixed 2026-11-03). The event card and the

@@ -188,9 +188,9 @@ describe('EventDetail', () => {
         'Attendance',
         'Day 1 reflection',
         'Session feedback',
-        'Transfer plans',
         'End-of-conference evaluation',
         '30-day follow-up',
+        'Transfer plans',
       ]),
     );
     expect(
