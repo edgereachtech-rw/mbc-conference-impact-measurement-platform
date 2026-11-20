@@ -74,7 +74,11 @@ function afterState(journey: Journey): StepState {
   return { label: 'Opens later', tone: 'later' };
 }
 
-export function JourneyStrip({ event }: { event: Pick<MyEvent, 'id' | 'startsOn' | 'endsOn'> }) {
+export function JourneyStrip({
+  event,
+}: {
+  event: Pick<MyEvent, 'id' | 'startsOn' | 'endsOn'> & { eventType?: MyEvent['eventType'] };
+}) {
   const steps = journeyFor(event);
   const [journey, setJourney] = useState<Journey | null>(null);
 

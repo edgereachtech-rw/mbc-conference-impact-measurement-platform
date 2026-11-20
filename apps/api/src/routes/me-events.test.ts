@@ -76,6 +76,7 @@ describe.skipIf(!hasDatabase)('My Events (E3-10, D7, Increment 1c)', () => {
   let online: string;
   let past: string;
   let archived: string;
+  let draft: string;
   let alice: { cookie: string; identityId: string; delegateIds: string[] };
   let bob: { cookie: string; identityId: string; delegateId: string };
 
@@ -85,8 +86,10 @@ describe.skipIf(!hasDatabase)('My Events (E3-10, D7, Increment 1c)', () => {
     online = await event('online', '2027-02-01', '2027-02-02');
     past = await event('past', '2025-09-10', '2025-09-11');
     archived = await event('archived', '2026-12-01', '2026-12-02', 'archived');
+    draft = await event('draft', '2026-12-05', '2026-12-05', 'draft');
 
-    // Alice: one identity, registrations in four events (one archived), a cancelled one, and a second
+    // Alice: one identity, registrations in five events (one archived, one still a draft), a
+    // cancelled one, and a second
     // identity (Bob) with one registration. Both have signed in, so their accounts own their identities.
     const a = await sessionFor('delegate', `alice-${tag}@example.com`);
     const aliceLagos = await createRegisteredIdentity(prisma, lagos, `alice-${tag}@example.com`, {
@@ -114,15 +117,17 @@ describe.skipIf(!hasDatabase)('My Events (E3-10, D7, Increment 1c)', () => {
         attendanceFormat: 'virtual',
       },
     });
-    await prisma.delegate.create({
-      data: {
-        eventId: archived,
-        identityId: aliceLagos.identity.id,
-        name: 'Alice A',
-        email: `alice-${tag}@example.com`,
-        attendanceFormat: 'virtual',
-      },
-    });
+    for (const eventId of [archived, draft]) {
+      await prisma.delegate.create({
+        data: {
+          eventId,
+          identityId: aliceLagos.identity.id,
+          name: 'Alice A',
+          email: `alice-${tag}@example.com`,
+          attendanceFormat: 'virtual',
+        },
+      });
+    }
     alice = {
       cookie: a.cookie,
       identityId: aliceLagos.identity.id,
@@ -144,7 +149,7 @@ describe.skipIf(!hasDatabase)('My Events (E3-10, D7, Increment 1c)', () => {
     await prisma.$disconnect();
   });
 
-  it('lists only the caller’s own non-archived registrations, upcoming first then past, with attendance not recorded', async () => {
+  it('lists only the caller’s own registrations in published events, upcoming first then past, with attendance not recorded', async () => {
     const res = await request(app()).get('/api/v1/me/events').set('Cookie', alice.cookie);
     expect(res.status).toBe(200);
     expect(myEventsResponseSchema.safeParse(res.body).success).toBe(true);
@@ -162,6 +167,8 @@ describe.skipIf(!hasDatabase)('My Events (E3-10, D7, Increment 1c)', () => {
       organisation: 'Acme',
     });
     expect(events.some((e) => e.id === archived)).toBe(false);
+    // An unpublished event is the organisers' alone (2026-11-20): its delegate pages would fail.
+    expect(events.some((e) => e.id === draft)).toBe(false);
     // Only the caller's own registration ids are returned, never another identity's.
     expect(events.map((e) => e.registration.id).sort()).toEqual([...alice.delegateIds].sort());
     expect(JSON.stringify(res.body)).not.toContain(bob.delegateId);
@@ -182,6 +189,9 @@ describe.skipIf(!hasDatabase)('My Events (E3-10, D7, Increment 1c)', () => {
     expect(
       (await request(server).get(`/api/v1/me/events/${archived}`).set('Cookie', alice.cookie))
         .status,
+    ).toBe(404);
+    expect(
+      (await request(server).get(`/api/v1/me/events/${draft}`).set('Cookie', alice.cookie)).status,
     ).toBe(404);
     expect(
       (await request(server).get(`/api/v1/me/events/${randomUUID()}`).set('Cookie', alice.cookie))

@@ -15,7 +15,7 @@ import { StatusPill } from '@/components/admin/page-header';
 import { consoleButton, StatePanel } from '@/components/console/page';
 import { TabStrip, useTabState } from '@/components/console/tabs';
 import { EventWordingProvider } from '@/lib/event-wording';
-import { stageWhen, formatDateShort } from '@/lib/events';
+import { formatDateShort } from '@/lib/events';
 import {
   attendanceFormatLabel,
   capacityLabel,
@@ -81,7 +81,7 @@ function journeyTabs(
       .map((a) => ({
         id: assessmentTabId(a),
         label: stageTitleOf(a, eventType),
-        hint: stageWhen[a.stage],
+        hint: a.description?.trim() ?? '',
       }));
   return [
     STATIC.overview,

@@ -22,6 +22,7 @@ interface Deps {
 export const MY_EVENTS_VISIBILITY = {
   cancelledRegistrations: 'hidden',
   archivedEvents: 'hidden',
+  draftEvents: 'hidden',
   pendingDecision: 'OQ-25',
 } as const;
 
@@ -68,7 +69,9 @@ export function meEventsRouter({ prisma, config, middleware, now }: Deps): Route
       where: {
         identityId,
         registrationStatus: { in: [...eligibleStatuses()] },
-        event: { status: { not: 'archived' } },
+        // A draft event is the organisers' alone until published (2026-11-20): every other
+        // delegate route already requires it, so listing it only showed a page that fails.
+        event: { status: 'active' },
       },
       select: {
         id: true,

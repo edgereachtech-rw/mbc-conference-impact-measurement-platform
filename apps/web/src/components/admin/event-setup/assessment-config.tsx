@@ -5,7 +5,6 @@ import {
   assessmentStageStatuses,
   assessmentTargets,
   stageWindowState,
-  type AssessmentStage,
   type AssessmentStageView,
   type EventDetail,
   type StageSummary,
@@ -26,7 +25,6 @@ import {
   stageAreas,
   stagePurpose,
   stageStatusLabels,
-  stageWhen,
   targetLabels,
   zonedLocalToIso,
 } from '@/lib/events';
@@ -67,13 +65,6 @@ export function AssessmentConfig({ event, onSaved }: AssessmentConfigProps) {
     </div>
   );
 }
-
-const TONE: Record<AssessmentStage, 'positive' | 'neutral' | 'attention'> = {
-  pre_conference: 'neutral',
-  during_conference: 'positive',
-  end_of_conference: 'positive',
-  follow_up: 'attention',
-};
 
 export function StageCard({
   event,
@@ -217,7 +208,6 @@ export function StageCard({
       >
         <div className="space-y-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <StatusPill tone={TONE[stage.stage]}>{stageWhen[stage.stage]}</StatusPill>
             <StatusPill tone={stage.enabled ? 'positive' : 'neutral'}>
               {stage.enabled ? stageStatusLabels[stage.status] : 'Disabled'}
             </StatusPill>

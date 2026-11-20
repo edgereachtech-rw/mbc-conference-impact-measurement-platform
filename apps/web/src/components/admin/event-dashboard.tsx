@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react';
 
 import { consoleButton, Panel, StatusPill } from '@/components/console/page';
 import { apiFetch } from '@/lib/api';
-import { formatInstant, stageStatusLabels, stageWhen } from '@/lib/events';
+import { formatInstant, stageStatusLabels } from '@/lib/events';
 import { describeError } from '@/lib/imports';
 
 import { ReportWorkspace } from './reports/report-workspace';
@@ -98,7 +98,6 @@ function EventAdminPanels({ eventId, timezone, eventType }: EventDashboardProps)
             <Panel key={s.stage}>
               <article aria-label={stageLabels[s.stage]} className="space-y-2">
                 <div className="flex flex-wrap items-center gap-2">
-                  <StatusPill tone="neutral">{stageWhen[s.stage]}</StatusPill>
                   <StatusPill tone={s.enabled ? 'positive' : 'neutral'}>
                     {s.enabled ? stageStatusLabels[s.status] : 'Disabled'}
                   </StatusPill>

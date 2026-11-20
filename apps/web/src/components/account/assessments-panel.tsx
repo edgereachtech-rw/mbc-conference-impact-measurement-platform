@@ -37,7 +37,7 @@ import { Dialog } from '@/components/console/dialog';
 import { consoleButton, StatePanel, StatusPill } from '@/components/console/page';
 import { NativeSelect } from '@/components/imports/native-select';
 import { ApiError, apiFetch } from '@/lib/api';
-import { formatDateShort, formatInstant, stagePurpose, stageWhen } from '@/lib/events';
+import { formatDateShort, formatInstant, stagePurpose } from '@/lib/events';
 import { useEventNoun, useEventType } from '@/lib/event-wording';
 import { describeError } from '@/lib/imports';
 
@@ -430,7 +430,6 @@ function AssessmentCard({
       }`}
     >
       <div className="flex flex-wrap items-center gap-2">
-        <StatusPill tone="neutral">{stageWhen[assessment.stage]}</StatusPill>
         <StatusPill tone={submitted ? 'positive' : tone}>{statusText}</StatusPill>
       </div>
       {/* The name and purpose introduce the assessment once, on its first section (2026-11-07):
@@ -822,8 +821,12 @@ function QuestionField({
       {question.required ? <span className="text-brand-danger"> *</span> : null}
     </span>
   );
+  // The organisers' guidance stands out from the platform's own notes (2026-11-20): an amber
+  // band in the accent text colour, with room below it.
   const help = question.helpText ? (
-    <span className="block text-xs text-corp-muted">{question.helpText}</span>
+    <span className="mt-1 mb-2 block border-l-2 border-corp-accent bg-corp-accent-soft px-2 py-1 text-xs text-corp-accent-text">
+      {question.helpText}
+    </span>
   ) : null;
   const inputClass =
     'h-11 w-full min-w-0 rounded-none border border-corp-line bg-white px-3 text-base disabled:bg-corp-surface md:text-sm';
@@ -930,7 +933,7 @@ function QuestionField({
             {label}
             {help}
             {knowledge && !locked ? (
-              <span className="block text-xs text-corp-muted">
+              <span className="mt-1 block text-xs italic text-corp-muted">
                 Your answer is saved as soon as you choose it and cannot be changed.
               </span>
             ) : null}

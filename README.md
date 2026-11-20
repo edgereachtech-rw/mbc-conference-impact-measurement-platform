@@ -257,7 +257,8 @@ API answers CORS for the web origin.
   (status, attendance format, capacity, organisation, job title, country, first sign-in) and
   `attendance: not_recorded` until an attendance record exists (E6). Another identity's event id
   answers 404, staff accounts 403, an unlinked delegate account an empty list. Pending OQ-25,
-  cancelled registrations and archived events are left out (`MY_EVENTS_VISIBILITY` in
+  cancelled registrations, archived events and unpublished (draft) events are left out
+  (`MY_EVENTS_VISIBILITY` in
   `apps/api/src/routes/me-events.ts`). `/account` renders this list.
 - `POST /api/v1/events/:eventId/invitations` (E3-1, admin only; body `{ delegateIds? }`): sends
   the invitation email to every eligible registration of the event (or the listed ones) with a
