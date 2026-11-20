@@ -12,10 +12,11 @@ import {
   stageLabelsFor,
   stageTitleOf,
 } from '@mbc/shared';
-import { ListChecksIcon, Loader2Icon } from 'lucide-react';
+import { ListChecksIcon, Loader2Icon, PencilIcon } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useId, useState } from 'react';
 
+import { Dialog } from '@/components/console/dialog';
 import { consoleButton, StatusPill } from '@/components/console/page';
 import { NativeSelect } from '@/components/imports/native-select';
 import { apiFetch } from '@/lib/api';
@@ -91,11 +92,11 @@ export function StageCard({
     target: stage.target,
     targetGroup: stage.targetGroup ?? '',
     status: stage.status,
-    title: stage.title ?? '',
-    description: stage.description ?? '',
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
+  /** The popup for the stage's own name and description (2026-11-20). */
+  const [wording, setWording] = useState(false);
   const [notice, setNotice] = useState<{ ok: boolean; text: string; requestId?: string } | null>(
     null,
   );
@@ -166,8 +167,6 @@ export function StageCard({
       target: draft.target,
       targetGroup: draft.targetGroup,
       status: draft.enabled ? draft.status : 'draft',
-      title: draft.title,
-      description: draft.description,
     };
     const parsed = assessmentStageConfigSchema.safeParse(payload);
     if (!parsed.success) {
@@ -223,13 +222,36 @@ export function StageCard({
               {stage.enabled ? stageStatusLabels[stage.status] : 'Disabled'}
             </StatusPill>
           </div>
-          <h3 className="font-corporate text-base font-semibold text-corp-ink">
-            {stageTitleOf(stage, event.eventType)}
-          </h3>
+          <div className="flex items-start justify-between gap-2">
+            <h3 className="font-corporate text-base font-semibold text-corp-ink">
+              {stageTitleOf(stage, event.eventType)}
+            </h3>
+            {!readOnly ? (
+              <button
+                type="button"
+                onClick={() => setWording(true)}
+                aria-label={`Edit the name and description of ${stageTitleOf(stage, event.eventType)}`}
+                className={consoleButton({ variant: 'ghost', size: 'sm' })}
+              >
+                <PencilIcon aria-hidden="true" />
+              </button>
+            ) : null}
+          </div>
           {stage.description?.trim() || stagePurpose[stage.stage] ? (
             <p className="text-sm text-corp-text">
               {stage.description?.trim() || stagePurpose[stage.stage]}
             </p>
+          ) : null}
+          {wording ? (
+            <StageWordingDialog
+              event={event}
+              stage={stage}
+              onClose={() => setWording(false)}
+              onSaved={(next) => {
+                setWording(false);
+                onSaved(next);
+              }}
+            />
           ) : null}
           {stage.enabled && seenText ? (
             <p
@@ -322,44 +344,6 @@ export function StageCard({
           />
           Enabled for this event
         </label>
-
-        {/* The organisers' own name and purpose line (2026-11-20); blank keeps the platform's. */}
-        <div className="space-y-1">
-          <label htmlFor={`${id}-title`} className="text-sm font-semibold text-corp-ink">
-            Title
-          </label>
-          <input
-            id={`${id}-title`}
-            value={draft.title}
-            maxLength={120}
-            placeholder={stageLabelsFor(event.eventType)[stage.stage]}
-            disabled={readOnly || busy}
-            onChange={(e) => set('title', e.target.value)}
-            className={inputClass}
-          />
-          {fieldError('title')}
-        </div>
-        <div className="space-y-1">
-          <label htmlFor={`${id}-description`} className="text-sm font-semibold text-corp-ink">
-            Description
-          </label>
-          <textarea
-            id={`${id}-description`}
-            rows={3}
-            value={draft.description}
-            maxLength={600}
-            placeholder={
-              stagePurpose[stage.stage] || 'What this assessment is for, in one or two sentences.'
-            }
-            disabled={readOnly || busy}
-            onChange={(e) => set('description', e.target.value)}
-            className="w-full rounded-none border border-corp-line bg-white px-3 py-2 text-base md:text-sm disabled:opacity-60"
-          />
-          <p className="text-xs text-corp-muted">
-            Shown to delegates above the questions. Leave blank for the platform&rsquo;s wording.
-          </p>
-          {fieldError('description')}
-        </div>
 
         <div className="space-y-1">
           <label htmlFor={`${id}-opens`} className="text-sm font-semibold text-corp-ink">
@@ -479,5 +463,131 @@ export function StageCard({
         ) : null}
       </form>
     </>
+  );
+}
+
+/**
+ * The organisers' own name and purpose line for a stage (2026-11-20), edited in a popup so the
+ * card stays about the window and the status. Blank keeps the platform's wording for the
+ * event's kind. Saved with the stage's current window and status, which the route requires.
+ */
+function StageWordingDialog({
+  event,
+  stage,
+  onClose,
+  onSaved,
+}: {
+  event: EventDetail;
+  stage: AssessmentStageView;
+  onClose: () => void;
+  onSaved: (event: EventDetail) => void;
+}) {
+  const id = useId();
+  const [title, setTitle] = useState(stage.title ?? '');
+  const [description, setDescription] = useState(stage.description ?? '');
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const defaults = {
+    title: stageLabelsFor(event.eventType)[stage.stage],
+    description:
+      stagePurpose[stage.stage] || 'What this assessment is for, in one or two sentences.',
+  };
+
+  async function save() {
+    setBusy(true);
+    setProblem(null);
+    try {
+      const result = await apiFetch<{ event: EventDetail }>(
+        `/events/${event.id}/assessments/${stage.stage}?wave=${stage.wave}`,
+        {
+          method: 'PUT',
+          body: JSON.stringify({
+            enabled: stage.enabled,
+            opensAt: stage.opensAt,
+            closesAt: stage.closesAt,
+            target: stage.target,
+            targetGroup: stage.targetGroup ?? '',
+            status: stage.enabled ? stage.status : 'draft',
+            title: title.trim(),
+            description: description.trim(),
+          }),
+        },
+      );
+      onSaved(result.event);
+    } catch (e) {
+      setProblem(describeError(e, 'The name could not be saved.').message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const input =
+    'h-11 w-full rounded-none border border-corp-line bg-white px-3 text-base md:text-sm disabled:opacity-60';
+  return (
+    <Dialog
+      title="Name and description"
+      description="What delegates see as the assessment’s name and, above its questions, its purpose. Leave a field blank for the platform’s wording."
+      onClose={onClose}
+      closeDisabled={busy}
+      size="md"
+      footer={
+        <>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={busy}
+            className={consoleButton({ variant: 'secondary' })}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => void save()}
+            disabled={busy}
+            className={consoleButton({ variant: 'accent' })}
+          >
+            {busy ? <Loader2Icon className="animate-spin" aria-hidden="true" /> : null}
+            Save
+          </button>
+        </>
+      }
+    >
+      {problem ? (
+        <p role="alert" className="mb-3 text-sm font-semibold text-brand-danger">
+          {problem}
+        </p>
+      ) : null}
+      <div className="grid gap-3">
+        <div className="space-y-1">
+          <label htmlFor={`${id}-title`} className="text-sm font-semibold text-corp-ink">
+            Title
+          </label>
+          <input
+            id={`${id}-title`}
+            value={title}
+            maxLength={120}
+            placeholder={defaults.title}
+            disabled={busy}
+            onChange={(e) => setTitle(e.target.value)}
+            className={input}
+          />
+        </div>
+        <div className="space-y-1">
+          <label htmlFor={`${id}-description`} className="text-sm font-semibold text-corp-ink">
+            Description
+          </label>
+          <textarea
+            id={`${id}-description`}
+            rows={4}
+            value={description}
+            maxLength={600}
+            placeholder={defaults.description}
+            disabled={busy}
+            onChange={(e) => setDescription(e.target.value)}
+            className="w-full rounded-none border border-corp-line bg-white px-3 py-2 text-base md:text-sm disabled:opacity-60"
+          />
+        </div>
+      </div>
+    </Dialog>
   );
 }

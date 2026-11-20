@@ -320,8 +320,9 @@ export function QuestionBuilder({
   const waveQuery = stage === 'follow_up' ? `?wave=${wave}` : '';
   const endpoint = useCallback((path: string) => `${base}/${path}${waveQuery}`, [base, waveQuery]);
   const stageLabels = stageLabelsFor(eventType);
+  // The organisers' own title where set (2026-11-20), else the wave's name, else the kind's.
   const questionSetLabel =
-    stage === 'follow_up' ? waveLabel || `Follow-up round ${wave}` : stageLabels[stage];
+    waveLabel || (stage === 'follow_up' ? `Follow-up round ${wave}` : stageLabels[stage]);
   const [lists, setLists] = useState<Lists | null>(null);
   /**
    * Questions of the stages before this one: what a question here may refer to (10.5). Kept
