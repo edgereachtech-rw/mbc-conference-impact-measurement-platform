@@ -1,6 +1,6 @@
 'use client';
 
-import type { AssessmentStage, EventDetail } from '@mbc/shared';
+import { stageTitleOf, type AssessmentStage, type EventDetail } from '@mbc/shared';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
@@ -76,6 +76,11 @@ export function StageWorkspace({ event, stage, wave = 1 }: StageWorkspaceProps) 
             stage={stage}
             wave={wave}
             waveLabel={selectedWave?.title?.trim() || selectedWave?.waveLabel}
+            rounds={event.assessmentStages.map((s) => ({
+              stage: s.stage,
+              wave: s.wave,
+              label: stageTitleOf(s, event.eventType),
+            }))}
             eventType={event.eventType}
             readOnly={readOnly}
             onChanged={() => router.refresh()}
@@ -90,7 +95,7 @@ export function StageWorkspace({ event, stage, wave = 1 }: StageWorkspaceProps) 
             onSaved={() => router.refresh()}
           />
         ) : tab === 'paired' ? (
-          <PairedResults eventId={event.id} stage={stage} eventType={event.eventType} />
+          <PairedResults eventId={event.id} stage={stage} wave={wave} eventType={event.eventType} />
         ) : (
           <StageSubmissions
             eventId={event.id}

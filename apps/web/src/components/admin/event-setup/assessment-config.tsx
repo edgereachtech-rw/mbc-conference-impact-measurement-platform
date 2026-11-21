@@ -2,7 +2,9 @@
 
 import {
   assessmentStageConfigSchema,
+  assessmentStages,
   assessmentStageStatuses,
+  MAX_ASSESSMENT_ROUNDS,
   assessmentTargets,
   stageWindowState,
   type AssessmentStageView,
@@ -11,7 +13,7 @@ import {
   stageLabelsFor,
   stageTitleOf,
 } from '@mbc/shared';
-import { ListChecksIcon, Loader2Icon, PencilIcon } from 'lucide-react';
+import { ListChecksIcon, Loader2Icon, PencilIcon, PlusIcon, Trash2Icon } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useId, useState } from 'react';
 
@@ -43,25 +45,138 @@ interface AssessmentConfigProps {
  * cards live on the Transfer plans tab.
  */
 export function AssessmentConfig({ event, onSaved }: AssessmentConfigProps) {
-  const stages = event.assessmentStages.filter((s) => s.stage !== 'follow_up');
+  // Each assessment's rounds together, in journey order (2026-11-21).
+  const stages = event.assessmentStages
+    .filter((s) => s.stage !== 'follow_up')
+    .sort(
+      (a, b) =>
+        assessmentStages.indexOf(a.stage) - assessmentStages.indexOf(b.stage) || a.wave - b.wave,
+    );
+  const readOnly = event.status === 'archived';
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const [removing, setRemoving] = useState<AssessmentStageView | null>(null);
+  const lastOf = (stage: AssessmentStageView['stage']) =>
+    Math.max(...stages.filter((s) => s.stage === stage).map((s) => s.wave));
+
+  async function addRound(stage: AssessmentStageView['stage']) {
+    setBusy(true);
+    setProblem(null);
+    try {
+      const result = await apiFetch<{ event: EventDetail }>(
+        `/events/${event.id}/assessments/${stage}/rounds`,
+        { method: 'POST' },
+      );
+      onSaved(result.event);
+    } catch (e) {
+      setProblem(describeError(e, 'The round could not be added.').message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removeRound(round: AssessmentStageView) {
+    setBusy(true);
+    setProblem(null);
+    try {
+      const result = await apiFetch<{ event: EventDetail }>(
+        `/events/${event.id}/assessments/${round.stage}/rounds/${round.wave}`,
+        { method: 'DELETE' },
+      );
+      setRemoving(null);
+      onSaved(result.event);
+    } catch (e) {
+      setRemoving(null);
+      setProblem(describeError(e, 'The round could not be removed.').message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <p className="text-sm text-corp-text">
         Each stage applies only when it is enabled here; no stage is mandatory. Times are in{' '}
         <span className="font-semibold text-corp-ink">{event.timezone}</span>. Attendance is
         recorded separately and never inferred from a submitted assessment. The post-conference
-        follow-ups of the Transfer Plan are set up on the Transfer plans tab.
+        follow-ups of the Transfer Plan are set up on the Transfer plans tab. An assessment can be
+        asked again in another round, with its own questions, window and submissions: use “Add
+        another round” under it, and “Repeat a section” on the new round’s page to pair its answers
+        with the first round.
       </p>
+      {problem ? (
+        <p role="alert" className="text-sm font-semibold text-brand-danger">
+          {problem}
+        </p>
+      ) : null}
       <div className="grid gap-4 xl:grid-cols-3">
-        {stages.map((stage) => (
-          <StageCard
-            key={`${stage.stage}:${stage.wave}`}
-            event={event}
-            stage={stage}
-            onSaved={onSaved}
-          />
-        ))}
+        {stages.map((stage) => {
+          const rounds = stages.filter((s) => s.stage === stage.stage).length;
+          const last = stage.wave === lastOf(stage.stage);
+          return (
+            <div key={`${stage.stage}:${stage.wave}`} className="flex flex-col gap-2">
+              <StageCard event={event} stage={stage} onSaved={onSaved} />
+              {!readOnly && (stage.wave > 1 || last) ? (
+                <div className="flex flex-wrap gap-2">
+                  {last && rounds < MAX_ASSESSMENT_ROUNDS ? (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void addRound(stage.stage)}
+                      className={consoleButton({ variant: 'secondary', size: 'sm' })}
+                    >
+                      <PlusIcon aria-hidden="true" /> Add another round
+                    </button>
+                  ) : null}
+                  {stage.wave > 1 ? (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => setRemoving(stage)}
+                      aria-label={`Remove ${stageTitleOf(stage, event.eventType)}`}
+                      className={consoleButton({ variant: 'ghost', size: 'sm' })}
+                    >
+                      <Trash2Icon aria-hidden="true" /> Remove this round
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
       </div>
+      {removing ? (
+        <Dialog
+          title="Remove this round?"
+          description={`${stageTitleOf(removing, event.eventType)} and its questions are removed. A round that delegates have answered stays; disable or close it instead.`}
+          onClose={() => setRemoving(null)}
+          closeDisabled={busy}
+          size="md"
+          footer={
+            <>
+              <button
+                type="button"
+                onClick={() => setRemoving(null)}
+                disabled={busy}
+                className={consoleButton({ variant: 'secondary' })}
+              >
+                Keep it
+              </button>
+              <button
+                type="button"
+                onClick={() => void removeRound(removing)}
+                disabled={busy}
+                className={consoleButton({ variant: 'accent' })}
+              >
+                {busy ? <Loader2Icon className="animate-spin" aria-hidden="true" /> : null}
+                Remove the round
+              </button>
+            </>
+          }
+        >
+          <p className="text-sm text-corp-text">This cannot be undone.</p>
+        </Dialog>
+      ) : null}
     </div>
   );
 }
@@ -132,7 +247,7 @@ export function StageCard({
     return () => {
       cancelled = true;
     };
-  }, [event.id, stage.stage, countsApply, stage.updatedAt]);
+  }, [event.id, stage.stage, stage.wave, countsApply, stage.updatedAt]);
 
   function set<K extends keyof typeof draft>(key: K, value: (typeof draft)[K]) {
     setDraft((d) => ({ ...d, [key]: value }));

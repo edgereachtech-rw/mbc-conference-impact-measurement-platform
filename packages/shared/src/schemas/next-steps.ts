@@ -1,4 +1,4 @@
-import { eventNounOf, stageNamesFor, type AssessmentStage } from './events.js';
+import { eventNounOf, roundLabelOf, stageNamesFor, type AssessmentStage } from './events.js';
 import type { Journey } from './reports.js';
 
 /**
@@ -46,9 +46,12 @@ export function nextSteps(journey: Journey): NextStep[] {
       const name =
         a.title?.trim() ||
         a.waveLabel ||
-        (a.stage === 'end_of_conference'
-          ? 'end-of-conference evaluation'
-          : `${stageNamesFor(journey.event.eventType)[a.stage]} assessment`);
+        roundLabelOf(
+          a.stage === 'end_of_conference'
+            ? 'end-of-conference evaluation'
+            : `${stageNamesFor(journey.event.eventType)[a.stage]} assessment`,
+          a,
+        );
       steps.push({
         key: `assessment:${a.stage}:${a.wave}`,
         label: a.state === 'draft' ? `Finish your ${name}` : `Complete your ${name}`,

@@ -133,6 +133,54 @@ describe('AssessmentConfig', () => {
     });
   });
 
+  it('adds another round of an assessment, and removes an added round after a confirmation', async () => {
+    const calls: Array<{ url: string; method?: string }> = [];
+    const withRound: EventDetail = {
+      ...event,
+      assessmentStages: [
+        stage('pre_conference'),
+        stage('pre_conference', 2),
+        stage('during_conference'),
+      ],
+    };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        calls.push({ url, method: init?.method });
+        return new Response(JSON.stringify({ event: withRound }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }),
+    );
+    const onSaved = vi.fn();
+    const user = userEvent.setup();
+    render(<AssessmentConfig event={withRound} onSaved={onSaved} />);
+    // The added round has its own card, named after its kind.
+    expect(screen.getByRole('form', { name: 'Pre-summit assessment (round 2)' })).toBeTruthy();
+    // One add button per assessment, under its last round.
+    const add = screen.getAllByRole('button', { name: 'Add another round' });
+    expect(add).toHaveLength(2);
+    await user.click(add[0]!);
+    expect(calls.at(-1)).toEqual({
+      url: '/api/v1/events/e1/assessments/pre_conference/rounds',
+      method: 'POST',
+    });
+    expect(onSaved).toHaveBeenCalledTimes(1);
+    // Only an added round can be removed, after a confirmation.
+    expect(screen.getAllByRole('button', { name: /^Remove / })).toHaveLength(1);
+    await user.click(
+      screen.getByRole('button', { name: 'Remove Pre-summit assessment (round 2)' }),
+    );
+    const dialog = await screen.findByRole('dialog', { name: 'Remove this round?' });
+    await user.click(within(dialog).getByRole('button', { name: 'Remove the round' }));
+    expect(calls.at(-1)).toEqual({
+      url: '/api/v1/events/e1/assessments/pre_conference/rounds/2',
+      method: 'DELETE',
+    });
+    expect(onSaved).toHaveBeenCalledTimes(2);
+  });
+
   it('shows what delegates see, the response counts and the link to the stage page', async () => {
     // Scheduled with an opening time in the past: open to delegates although nobody flipped it.
     const live: EventDetail = {

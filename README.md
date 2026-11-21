@@ -634,6 +634,20 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   (`actionSubmissionGaps`; 422 `plan_incomplete` with the gaps by action; the form lists them
   under the submit button). The measure, baseline, evidence description and review date columns
   stay in the data but left the card: measures and evidence have their own records.
+- Additional rounds of an assessment (task of 2026-11-21): on the Assessment configuration tab
+  each assessment has "Add another round" under its last round (`POST
+/events/:id/assessments/:stage/rounds`, the next `wave` number, created disabled, as a draft
+  and empty; at most `MAX_ASSESSMENT_ROUNDS`, 10; not for the follow-ups, which keep their own
+  schedule). A round is a stage row of its own, so it has its own questions, window, status,
+  title, confirmation, submissions and downloads, and every admin call names it with `?wave=`
+  (the question builder now always does). Until it is named it is called "Pre-training
+  assessment (round 2)" (`roundLabelOf` in `packages/shared`), on the delegate's tabs and
+  dashboard too. "Repeat a section" lists every other round, this assessment's first round
+  included, so a round's answers pair with round 1 in its Paired results. "Remove this round"
+  (`DELETE .../rounds/:wave`, after a confirmation) deletes an added round with its questions
+  and sections while nobody has answered it (409 `round_has_responses`); round 1 is the
+  assessment itself and stays (409 `first_round`). The event reports read round 1 of each
+  assessment; the other rounds report on their own pages. Both actions are audited.
 - Submissions as documents (task of 2026-11-21): every assessment (and each follow-up round),
   the session feedback and the Transfer Plans download as a designed PDF or Word document, built
   once as blocks (`apps/api/src/export/submissions.ts`) and laid out by the same PDF and Word

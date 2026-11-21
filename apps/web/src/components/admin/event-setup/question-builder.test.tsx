@@ -83,7 +83,7 @@ describe('QuestionBuilder', () => {
       'fetch',
       vi.fn(async (url: string, init?: RequestInit) => {
         calls.push({ url, init });
-        if (init?.method === 'POST' && url.endsWith('/sections')) {
+        if (init?.method === 'POST' && url.split('?')[0]!.endsWith('/sections')) {
           const body = JSON.parse(String(init.body));
           sections = [
             ...sections,
@@ -104,7 +104,7 @@ describe('QuestionBuilder', () => {
           const body = JSON.parse(String(init.body));
           questions = [...questions, q('q4', body.prompt, { sectionId: body.sectionId })];
         }
-        if (init?.method === 'PUT' && url.endsWith('/questions/order')) {
+        if (init?.method === 'PUT' && url.split('?')[0]!.endsWith('/questions/order')) {
           const ids = JSON.parse(String(init.body)).questionIds as string[];
           questions = ids.map((id) => questions.find((x) => x.id === id)!);
         }
@@ -137,8 +137,11 @@ describe('QuestionBuilder', () => {
     await user.type(within(sectionForm).getByLabelText('Section title'), 'About the day');
     await user.selectOptions(within(sectionForm).getByLabelText('Questions Type'), 'scored');
     await user.click(within(sectionForm).getByRole('button', { name: 'Add section' }));
-    const post = calls.find((c) => c.init?.method === 'POST' && c.url.endsWith('/sections'));
-    expect(post?.url).toBe('/api/v1/events/e1/assessments/pre_conference/sections');
+    const post = calls.find(
+      (c) => c.init?.method === 'POST' && c.url.split('?')[0]!.endsWith('/sections'),
+    );
+    // Every call names the round (2026-11-21).
+    expect(post?.url).toBe('/api/v1/events/e1/assessments/pre_conference/sections?wave=1');
     expect(JSON.parse(String(post?.init?.body))).toMatchObject({
       title: 'About the day',
       marking: 'scored',
@@ -155,7 +158,9 @@ describe('QuestionBuilder', () => {
     await user.selectOptions(within(form).getByLabelText('Response type'), 'long_text');
     await user.type(within(form).getByLabelText('Question'), 'How was the day?');
     await user.click(within(form).getByRole('button', { name: 'Add question' }));
-    const postQ = calls.find((c) => c.init?.method === 'POST' && c.url.endsWith('/questions'));
+    const postQ = calls.find(
+      (c) => c.init?.method === 'POST' && c.url.split('?')[0]!.endsWith('/questions'),
+    );
     expect(JSON.parse(String(postQ?.init?.body))).toMatchObject({
       prompt: 'How was the day?',
       sectionId: 's2',
@@ -164,7 +169,9 @@ describe('QuestionBuilder', () => {
 
     // Moving within a section swaps only those two in the global order.
     await user.click(screen.getByRole('button', { name: 'Move up: Third question' }));
-    const put = calls.find((c) => c.init?.method === 'PUT' && c.url.endsWith('/questions/order'));
+    const put = calls.find(
+      (c) => c.init?.method === 'PUT' && c.url.split('?')[0]!.endsWith('/questions/order'),
+    );
     expect(JSON.parse(String(put?.init?.body))).toEqual({ questionIds: ['q1', 'q3', 'q2', 'q4'] });
   });
 
@@ -271,7 +278,9 @@ describe('QuestionBuilder', () => {
     await user.selectOptions(area, 'Knowledge gained');
     expect(within(form).queryByLabelText('Other measurement area')).toBeNull();
     await user.click(within(form).getByRole('button', { name: 'Add question' }));
-    const post = calls.find((c) => c.init?.method === 'POST' && c.url.endsWith('/questions'));
+    const post = calls.find(
+      (c) => c.init?.method === 'POST' && c.url.split('?')[0]!.endsWith('/questions'),
+    );
     expect(JSON.parse(String(post?.init?.body))).toMatchObject({
       type: 'single_choice',
       area: 'Knowledge gained',

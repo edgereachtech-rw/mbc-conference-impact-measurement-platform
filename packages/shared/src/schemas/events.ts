@@ -457,11 +457,37 @@ export type AssessmentStageView = z.infer<typeof assessmentStageViewSchema>;
  * wave's name ("30-day follow-up"), else the platform's title for the event's kind.
  */
 export function stageTitleOf(
-  stage: { stage: AssessmentStage; waveLabel?: string | null; title?: string | null },
+  stage: {
+    stage: AssessmentStage;
+    waveLabel?: string | null;
+    title?: string | null;
+    wave?: number;
+  },
   eventType: EventType | null | undefined,
 ): string {
-  return stage.title?.trim() || stage.waveLabel || stageLabelsFor(eventType)[stage.stage];
+  return (
+    stage.title?.trim() ||
+    stage.waveLabel ||
+    roundLabelOf(stageLabelsFor(eventType)[stage.stage], stage)
+  );
 }
+
+/**
+ * An added round of an assessment (2026-11-21), until the organisers name it: "Pre-conference
+ * assessment (round 2)". The first round, and the follow-ups (named by their interval), keep
+ * the plain name.
+ */
+export function roundLabelOf(
+  name: string,
+  stage: { stage: AssessmentStage; wave?: number },
+): string {
+  return stage.stage !== 'follow_up' && (stage.wave ?? 1) > 1
+    ? `${name} (round ${stage.wave})`
+    : name;
+}
+
+/** How many rounds one assessment may have (2026-11-21); the follow-ups have their own rule. */
+export const MAX_ASSESSMENT_ROUNDS = 10;
 
 export const stageWindowStates = ['hidden', 'upcoming', 'open', 'closed'] as const;
 export type StageWindowState = (typeof stageWindowStates)[number];

@@ -3,6 +3,7 @@ import {
   assessmentStageConfigSchema,
   parseConfirmation,
   assessmentStages,
+  MAX_ASSESSMENT_ROUNDS,
   eventCodeFromName,
   eventCreateSchema,
   eventDatesSchema,
@@ -590,6 +591,100 @@ export function eventSetupRouter({ prisma, middleware, now }: Deps): Router {
       res.json({ event: eventDetailOf(updated) });
     },
   );
+
+  // ---------------------------------------------------------------- rounds of an assessment
+
+  /**
+   * Another round of an assessment (2026-11-21): the same kind asked again, for example a
+   * second pre-training assessment for a later group. It is a row of its own with the next
+   * number, created disabled, as a draft and empty: its questions are added on its page (and
+   * "Repeat a section" pairs them with round 1 for paired results). The follow-ups have their
+   * own schedule on the Transfer plans tab.
+   */
+  router.post('/events/:eventId/assessments/:stage/rounds', guard, async (req, res) => {
+    const principal = requireAdmin(res);
+    const stage = String(req.params.stage) as AssessmentStage;
+    if (!assessmentStages.includes(stage) || stage === 'follow_up') {
+      throw new HttpError(404, 'not_found', 'Unknown assessment stage.');
+    }
+    const event = await loadEditable(String(req.params.eventId));
+    const rounds = event.assessmentStages.filter((s) => s.stage === stage);
+    if (rounds.length >= MAX_ASSESSMENT_ROUNDS) {
+      throw new HttpError(
+        409,
+        'too_many_rounds',
+        `An assessment can have at most ${MAX_ASSESSMENT_ROUNDS} rounds.`,
+      );
+    }
+    const wave = Math.max(0, ...rounds.map((s) => s.wave)) + 1;
+    const updated = await prisma().$transaction(async (tx) => {
+      const row = await tx.assessmentStageConfig.create({
+        data: { eventId: event.id, stage, wave, enabled: false, status: 'draft' },
+      });
+      await audit(tx, {
+        action: 'event.assessment_round_added',
+        entityType: 'assessment_stage_config',
+        entityId: row.id,
+        eventId: event.id,
+        actorUserId: principal.userId,
+        newValue: { stage, wave },
+        ...clientOf(res),
+      });
+      return tx.event.findUniqueOrThrow({ where: { id: event.id }, include: DETAIL_INCLUDE });
+    });
+    res.status(201).json({ event: eventDetailOf(updated), wave });
+  });
+
+  /**
+   * Removes an added round (2026-11-21), with its questions and sections, while nobody has
+   * answered it. Round 1 stays: it is the assessment itself (disable it instead).
+   */
+  router.delete('/events/:eventId/assessments/:stage/rounds/:wave', guard, async (req, res) => {
+    const principal = requireAdmin(res);
+    const stage = String(req.params.stage) as AssessmentStage;
+    const wave = Number(req.params.wave);
+    if (!assessmentStages.includes(stage) || stage === 'follow_up' || !Number.isInteger(wave)) {
+      throw new HttpError(404, 'not_found', 'Unknown assessment round.');
+    }
+    if (wave === 1) {
+      throw new HttpError(
+        409,
+        'first_round',
+        'The first round is the assessment itself and stays. Disable it instead.',
+      );
+    }
+    const event = await loadEditable(String(req.params.eventId));
+    const row = await prisma().assessmentStageConfig.findUnique({
+      where: { eventId_stage_wave: { eventId: event.id, stage, wave } },
+      select: { id: true, _count: { select: { responses: true } } },
+    });
+    if (!row) throw new HttpError(404, 'not_found', 'Unknown assessment round.');
+    if (row._count.responses > 0) {
+      throw new HttpError(
+        409,
+        'round_has_responses',
+        'Delegates have answered this round, so it stays. Disable or close it instead.',
+      );
+    }
+    const updated = await prisma().$transaction(async (tx) => {
+      // A section of another round that repeats one of these loses its source (SetNull) and
+      // keeps its own questions.
+      await tx.assessmentQuestion.deleteMany({ where: { stageConfigId: row.id } });
+      await tx.assessmentSection.deleteMany({ where: { stageConfigId: row.id } });
+      await tx.assessmentStageConfig.delete({ where: { id: row.id } });
+      await audit(tx, {
+        action: 'event.assessment_round_removed',
+        entityType: 'assessment_stage_config',
+        entityId: row.id,
+        eventId: event.id,
+        actorUserId: principal.userId,
+        oldValue: { stage, wave },
+        ...clientOf(res),
+      });
+      return tx.event.findUniqueOrThrow({ where: { id: event.id }, include: DETAIL_INCLUDE });
+    });
+    res.json({ event: eventDetailOf(updated) });
+  });
 
   // ---------------------------------------------------------------- publication
 

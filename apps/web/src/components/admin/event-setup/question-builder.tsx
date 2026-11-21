@@ -10,6 +10,7 @@ import {
   questionTypes,
   sectionFieldsSchema,
   assessmentStages,
+  roundLabelOf,
   builtinBlockKinds,
   builtinBlocks,
   builtinBlockLabels,
@@ -61,6 +62,11 @@ interface QuestionBuilderProps {
   stage: AssessmentStage;
   wave?: number;
   waveLabel?: string;
+  /**
+   * Every other round of the event's assessments, named (2026-11-21): the sections this one may
+   * repeat. Without it, the first round of each other stage, as before.
+   */
+  rounds?: ReadonlyArray<{ stage: AssessmentStage; wave: number; label: string }>;
   /** The event's kind, so the stage names read "pre-training" (2026-11-19). */
   eventType?: EventType;
   readOnly?: boolean;
@@ -312,17 +318,22 @@ export function QuestionBuilder({
   stage,
   wave = 1,
   waveLabel,
+  rounds,
   eventType,
   readOnly = false,
   onChanged,
 }: QuestionBuilderProps) {
   const base = `/events/${eventId}/assessments/${stage}`;
-  const waveQuery = stage === 'follow_up' ? `?wave=${wave}` : '';
+  // Every call names the round (2026-11-21): an assessment may have several, not only the follow-ups.
+  const waveQuery = `?wave=${wave}`;
   const endpoint = useCallback((path: string) => `${base}/${path}${waveQuery}`, [base, waveQuery]);
   const stageLabels = stageLabelsFor(eventType);
   // The organisers' own title where set (2026-11-20), else the wave's name, else the kind's.
   const questionSetLabel =
-    waveLabel || (stage === 'follow_up' ? `Follow-up round ${wave}` : stageLabels[stage]);
+    waveLabel ||
+    (stage === 'follow_up'
+      ? `Follow-up round ${wave}`
+      : roundLabelOf(stageLabels[stage], { stage, wave }));
   const [lists, setLists] = useState<Lists | null>(null);
   /**
    * Questions of the stages before this one: what a question here may refer to (10.5). Kept
@@ -347,7 +358,11 @@ export function QuestionBuilder({
   }>(null);
   /** "Repeat a section": the other stages' sections, loaded when the popup opens. */
   const [mirroring, setMirroring] = useState<null | {
-    sections: Array<{ stage: AssessmentStage; section: AssessmentSectionView }> | null;
+    sections: Array<{
+      stage: AssessmentStage;
+      label: string;
+      section: AssessmentSectionView;
+    }> | null;
   }>(null);
   const [addingBlock, setAddingBlock] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -553,13 +568,24 @@ export function QuestionBuilder({
     setFailure(null);
     setMirroring({ sections: null });
     try {
-      const others = assessmentStages.filter((s) => s !== stage);
+      // Every other round, this assessment's own earlier rounds included (2026-11-21).
+      const others =
+        rounds?.filter((r) => !(r.stage === stage && r.wave === wave)) ??
+        assessmentStages
+          .filter((s) => s !== stage)
+          .map((s) => ({ stage: s, wave: 1, label: stageLabels[s] }));
       const results = await Promise.all(
-        others.map((s) => apiFetch<Lists>(`/events/${eventId}/assessments/${s}/questions`)),
+        others.map((r) =>
+          apiFetch<Lists>(`/events/${eventId}/assessments/${r.stage}/questions?wave=${r.wave}`),
+        ),
       );
       setMirroring({
         sections: results.flatMap((r, i) =>
-          r.sections.map((section) => ({ stage: others[i]!, section })),
+          r.sections.map((section) => ({
+            stage: others[i]!.stage,
+            label: others[i]!.label,
+            section,
+          })),
         ),
       });
     } catch (e) {
@@ -938,7 +964,7 @@ export function QuestionBuilder({
             <p className="text-sm text-corp-muted">The other stages have no sections yet.</p>
           ) : (
             <ul className="divide-y divide-corp-line" aria-label="Sections of other stages">
-              {mirroring.sections.map(({ stage: s, section }) => {
+              {mirroring.sections.map(({ label, section }) => {
                 const already = lists?.sections.some((x) => x.sourceSectionId === section.id);
                 return (
                   <li
@@ -948,7 +974,7 @@ export function QuestionBuilder({
                     <div className="min-w-0">
                       <p className="font-semibold text-corp-ink">{section.title}</p>
                       <p className="text-xs text-corp-muted">
-                        {stageLabels[s]} · {sectionMarkingLabels[section.marking]}
+                        {label} · {sectionMarkingLabels[section.marking]}
                       </p>
                     </div>
                     <button

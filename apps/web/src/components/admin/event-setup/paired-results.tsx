@@ -11,6 +11,8 @@ import { describeError } from '@/lib/imports';
 interface PairedResultsProps {
   eventId: string;
   stage: AssessmentStage;
+  /** The round whose paired results these are (2026-11-21). */
+  wave?: number;
   eventType?: EventType;
 }
 
@@ -24,7 +26,7 @@ const signed = (n: number | null, unit = '') =>
  * the change in percentage points; rating-scale sections report each statement, labelled as
  * self-reported.
  */
-export function PairedResults({ eventId, stage, eventType }: PairedResultsProps) {
+export function PairedResults({ eventId, stage, wave = 1, eventType }: PairedResultsProps) {
   const stageLabels = stageLabelsFor(eventType);
   const [data, setData] = useState<PairedResults | null>(null);
   const [error, setError] = useState<{ message: string; requestId?: string } | null>(null);
@@ -32,7 +34,9 @@ export function PairedResults({ eventId, stage, eventType }: PairedResultsProps)
 
   useEffect(() => {
     let cancelled = false;
-    apiFetch<{ paired: PairedResults }>(`/events/${eventId}/assessments/${stage}/paired`).then(
+    apiFetch<{ paired: PairedResults }>(
+      `/events/${eventId}/assessments/${stage}/paired?wave=${wave}`,
+    ).then(
       (r) => {
         if (!cancelled) {
           setData(r.paired);
@@ -46,7 +50,7 @@ export function PairedResults({ eventId, stage, eventType }: PairedResultsProps)
     return () => {
       cancelled = true;
     };
-  }, [eventId, stage, attempt]);
+  }, [eventId, stage, wave, attempt]);
 
   if (error) {
     return (

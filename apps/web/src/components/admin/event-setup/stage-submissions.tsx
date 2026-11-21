@@ -65,13 +65,15 @@ export function StageSubmissions({
     | { kind: 'error'; name: string; message: string }
   >(null);
   const base = `/events/${eventId}/assessments/${stage}`;
+  /** Every call names the round (2026-11-21); round 1 keeps the plain addresses. */
+  const roundQuery = wave !== 1 ? `?wave=${wave}` : '';
 
   useEffect(() => {
     let cancelled = false;
     Promise.all([
-      apiFetch<{ summary?: StageSummary }>(`${base}/summary`),
-      apiFetch<{ delegates?: StageNonCompleter[] }>(`${base}/non-completers`),
-      apiFetch<{ responses?: StageResponseListItem[] }>(`${base}/responses`),
+      apiFetch<{ summary?: StageSummary }>(`${base}/summary${roundQuery}`),
+      apiFetch<{ delegates?: StageNonCompleter[] }>(`${base}/non-completers${roundQuery}`),
+      apiFetch<{ responses?: StageResponseListItem[] }>(`${base}/responses${roundQuery}`),
     ]).then(
       ([s, p, r]) => {
         if (cancelled) return;
@@ -87,13 +89,13 @@ export function StageSubmissions({
     return () => {
       cancelled = true;
     };
-  }, [base, attempt]);
+  }, [base, roundQuery, attempt]);
 
   async function view(item: StageResponseListItem) {
     setViewing({ kind: 'loading', delegateId: item.delegateId, name: item.name });
     try {
       const result = await apiFetch<{ response: StageResponseDetail }>(
-        `${base}/responses/${item.delegateId}`,
+        `${base}/responses/${item.delegateId}${roundQuery}`,
       );
       setViewing({ kind: 'ready', detail: result.response });
     } catch (e) {
@@ -242,7 +244,7 @@ export function StageSubmissions({
             {(['pdf', 'docx', 'xlsx'] as const).map((format) => (
               <a
                 key={format}
-                href={apiUrl(`${base}/responses.${format}${wave !== 1 ? `?wave=${wave}` : ''}`)}
+                href={apiUrl(`${base}/responses.${format}${roundQuery}`)}
                 download
                 className={consoleButton({ variant: format === 'pdf' ? 'secondary' : 'ghost' })}
               >

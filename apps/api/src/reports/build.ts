@@ -143,6 +143,7 @@ export async function buildReport(input: BuildInput): Promise<BuiltReport> {
           id: true,
           eventId: true,
           stage: true,
+          wave: true,
           enabled: true,
           status: true,
           opensAt: true,
@@ -225,6 +226,9 @@ export async function buildReport(input: BuildInput): Promise<BuiltReport> {
 
   const stageRows = new Map<AssessmentStage, StageRow & { questions: number }>();
   for (const s of event.assessmentStages) {
+    // An assessment with added rounds (2026-11-21) is reported from its first round; the other
+    // rounds have their own submissions and downloads on their pages.
+    if (s.stage !== 'follow_up' && s.wave !== 1) continue;
     stageRows.set(s.stage, { ...s, questions: s._count.questions });
   }
   const configured = (stage: AssessmentStage) => {
