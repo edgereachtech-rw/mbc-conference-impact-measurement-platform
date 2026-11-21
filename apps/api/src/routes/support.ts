@@ -1,4 +1,7 @@
 import {
+  supportRequestKindLabels,
+  supportRequestSourceLabels,
+  supportRequestStatusLabels,
   groupBarriers,
   supportRequestCreateSchema,
   supportRequestUpdateSchema,
@@ -14,6 +17,13 @@ import { clientOf, principalOf, type createAuthMiddleware } from '../auth/middle
 import { canConfigureEvents, EVENT_SETUP_ROLES } from '../auth/policies.js';
 import type { PrismaClient } from '../db.js';
 import type { Prisma } from '../generated/prisma/client.js';
+import {
+  isDocumentFormat,
+  responsesDocument,
+  sendDocument,
+  whenIn,
+} from '../export/submissions.js';
+import { organiserName } from '../mail/branding.js';
 import { audit } from '../lib/audit.js';
 import { HttpError } from '../lib/errors.js';
 
@@ -113,6 +123,116 @@ export function supportRouter({ prisma, config, middleware, now }: Deps): Router
   }
 
   // ---------------------------------------------------------------- organisers
+
+  /**
+   * The support requests and barriers as a designed PDF or Word document (2026-11-21): open ones
+   * first, then those addressed, each with who asked, what for, what stands in the way and what
+   * was done. Audited.
+   */
+  router.get('/events/:eventId/support-requests/submissions.:format', guard, async (req, res) => {
+    const principal = requireAdmin(res);
+    const format = String(req.params.format);
+    if (!isDocumentFormat(format)) throw new HttpError(404, 'not_found', 'No such format.');
+    const event = await loadEvent(String(req.params.eventId));
+    const [detail, rows] = await Promise.all([
+      prisma().event.findUniqueOrThrow({
+        where: { id: event.id },
+        select: { name: true, timezone: true },
+      }),
+      prisma().supportRequest.findMany({
+        where: { eventId: event.id, delegate: { registrationStatus: { in: [...eligible()] } } },
+        include: {
+          delegate: {
+            select: {
+              name: true,
+              organisation: true,
+              jobTitle: true,
+              department: true,
+              attendanceFormat: true,
+              batch: { select: { name: true } },
+            },
+          },
+        },
+        orderBy: { createdAt: 'asc' },
+      }),
+    ]);
+    const decorated = await decorate(
+      rows.map((r) => ({
+        ...r,
+        delegate: {
+          id: r.delegateId,
+          name: r.delegate.name,
+          email: '',
+          organisation: r.delegate.organisation,
+        },
+      })),
+    );
+    const byId = new Map(rows.map((r) => [r.id, r.delegate]));
+    const group = (status: 'open' | 'addressed') => {
+      const items = decorated.filter((r) => r.status === status);
+      return {
+        heading: status === 'open' ? `Open (${items.length})` : `Addressed (${items.length})`,
+        empty: status === 'open' ? 'Nothing is open.' : 'Nothing has been addressed yet.',
+        respondents: items.map((r) => ({
+          delegate: byId.get(r.id)!,
+          extra: [
+            supportRequestKindLabels[r.kind],
+            `Raised ${whenIn(r.createdAt, detail.timezone)}`,
+          ],
+          rows: [
+            {
+              question: 'Where it came from',
+              answer: [supportRequestSourceLabels[r.source], r.context].filter(Boolean).join(' · '),
+            },
+            { question: 'The action it concerns', answer: r.action ?? '' },
+            {
+              question: r.kind === 'barrier' ? 'The barrier' : 'Support requested',
+              answer: r.request,
+            },
+            ...(r.kind === 'barrier'
+              ? []
+              : [{ question: 'What stands in the way', answer: r.barrier }]),
+            { question: 'Status', answer: supportRequestStatusLabels[r.status] },
+            { question: 'What was done', answer: r.actionTaken },
+            ...(r.addressedAt
+              ? [
+                  {
+                    question: 'Addressed',
+                    answer: `${whenIn(r.addressedAt, detail.timezone)}${r.addressedBy ? ` by ${r.addressedBy}` : ''}`,
+                  },
+                ]
+              : []),
+          ],
+        })),
+      };
+    };
+    const open = rows.filter((r) => r.status === 'open').length;
+    const { blocks, meta } = responsesDocument({
+      organiser: organiserName(),
+      eventName: detail.name,
+      timezone: detail.timezone,
+      generatedAt: clock(),
+      eyebrow: 'Transfer support',
+      title: 'Support requests and barriers',
+      lead: 'Every request for support and every barrier delegates reported, with what was done about it.',
+      figures: [
+        { value: String(rows.length), label: 'Requests and barriers' },
+        { value: String(open), label: 'Still open' },
+        { value: String(rows.length - open), label: 'Addressed' },
+      ],
+      groups: [group('open'), group('addressed')],
+    });
+    await audit(prisma(), {
+      action: 'support_request.exported',
+      entityType: 'event',
+      entityId: event.id,
+      eventId: event.id,
+      actorUserId: principal.userId,
+      newValue: { format, rows: rows.length },
+      ...clientOf(res),
+    });
+    await sendDocument(res, format, blocks, meta, `${detail.name} support requests`);
+  });
 
   router.get('/events/:eventId/support-requests', guard, async (req, res) => {
     requireAdmin(res);

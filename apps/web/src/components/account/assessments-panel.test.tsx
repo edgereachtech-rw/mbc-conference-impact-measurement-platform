@@ -768,6 +768,7 @@ describe('AssessmentsPanel', () => {
         question('t', { type: 'long_text', prompt: 'Anything to add?', required: false }),
       ] as MyAssessment['questions'],
       confirmation: {
+        submitLabel: 'Send my baseline',
         title: 'Baseline recorded',
         message: 'Thank you, your starting point is saved.',
         detail: 'See you at the conference.',
@@ -781,7 +782,8 @@ describe('AssessmentsPanel', () => {
     const user = userEvent.setup();
     render(<Harness stage="pre_conference" />);
     const card = await screen.findByRole('article');
-    await user.click(within(card).getByRole('button', { name: 'Submit answers' }));
+    // The organisers' own words on the submit button (2026-11-22).
+    await user.click(within(card).getByRole('button', { name: 'Send my baseline' }));
     const dialog = await screen.findByRole('dialog', { name: 'Submit your responses?' });
     await user.click(within(dialog).getByRole('button', { name: 'Submit now' }));
     const done = await screen.findByRole('dialog', { name: 'Baseline recorded' });

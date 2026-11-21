@@ -425,7 +425,10 @@ function AssessmentCard({
   const top = useRef<HTMLElement>(null);
   const visibleGroups = canAnswer && stepped && current ? [current] : groups;
   const reviewGroup = review ? groups.find((g) => keyOf(g) === review.key) : null;
-  const submitLabel = groups.length > 1 ? 'Submit section' : 'Submit answers';
+  // The organisers' own words for the button (2026-11-22), else the platform's.
+  const submitLabel =
+    assessment.confirmation?.submitLabel?.trim() ||
+    (groups.length > 1 ? 'Submit section' : 'Submit answers');
 
   return (
     <article

@@ -16,6 +16,8 @@ import { canWriteDelegate, DELEGATE_READ_ROLES, hasRole } from '../auth/policies
 import type { PrismaClient } from '../db.js';
 import type { Prisma } from '../generated/prisma/client.js';
 import { normaliseNameKey } from '../imports/normalise.js';
+import { isDocumentFormat, sendDocument, tableDocument } from '../export/submissions.js';
+import { organiserName } from '../mail/branding.js';
 import { audit } from '../lib/audit.js';
 import { normaliseEmail } from '../lib/email.js';
 import { HttpError } from '../lib/errors.js';
@@ -78,6 +80,121 @@ class NameMismatch extends Error {
 
 export function eventDelegateRouter({ prisma, middleware }: Deps): Router {
   const router = Router();
+
+  /**
+   * The delegate list as a designed PDF or Word document (2026-11-21): everyone registered, in
+   * name order, with organisation, role, department, batch, format and registration status,
+   * grouped by batch when the event has batches. Audited.
+   */
+  router.get(
+    '/events/:eventId/delegates/register.:format',
+    middleware.requireRole(...DELEGATE_READ_ROLES),
+    async (req, res) => {
+      const principal = principalOf(res);
+      if (!hasRole(principal, DELEGATE_READ_ROLES)) {
+        throw new HttpError(403, 'forbidden', 'Admins only.');
+      }
+      const format = String(req.params.format);
+      if (!isDocumentFormat(format)) throw new HttpError(404, 'not_found', 'No such format.');
+      const eventId = String(req.params.eventId);
+      const event = /^[0-9a-f-]{36}$/i.test(eventId)
+        ? await prisma().event.findUnique({
+            where: { id: eventId },
+            select: {
+              id: true,
+              name: true,
+              timezone: true,
+              batches: { orderBy: { order: 'asc' }, select: { id: true, name: true } },
+            },
+          })
+        : null;
+      if (!event) throw new HttpError(404, 'not_found', 'Event not found.');
+      const delegates = await prisma().delegate.findMany({
+        where: { eventId: event.id, registrationStatus: { in: ['active', 'test', 'pending'] } },
+        select: {
+          name: true,
+          email: true,
+          organisation: true,
+          jobTitle: true,
+          department: true,
+          attendanceFormat: true,
+          registrationStatus: true,
+          batchId: true,
+        },
+        orderBy: { name: 'asc' },
+      });
+      const header = [
+        'Name',
+        'Email',
+        'Organisation',
+        'Job title',
+        'Department',
+        'Format',
+        'Registration',
+      ];
+      const rowOf = (d: (typeof delegates)[number]) => [
+        d.name,
+        d.email,
+        d.organisation ?? '',
+        d.jobTitle ?? '',
+        d.department ?? '',
+        d.attendanceFormat === 'virtual' ? 'Online' : 'In person',
+        d.registrationStatus === 'active'
+          ? 'Registered'
+          : d.registrationStatus === 'test'
+            ? 'Test'
+            : 'Pending',
+      ];
+      const groups = event.batches.length
+        ? [
+            ...event.batches.map((b) => ({
+              heading: b.name,
+              list: delegates.filter((d) => d.batchId === b.id),
+            })),
+            { heading: 'Every day (no batch)', list: delegates.filter((d) => !d.batchId) },
+          ].filter((g) => g.list.length > 0)
+        : [{ heading: undefined, list: delegates }];
+      const { blocks, meta } = tableDocument({
+        organiser: organiserName(),
+        eventName: event.name,
+        timezone: event.timezone,
+        generatedAt: new Date(),
+        eyebrow: 'Delegate list',
+        title: `${event.name}: delegates`,
+        lead: 'Everyone registered for the event, with their organisation, role and how they attend.',
+        figures: [
+          { value: String(delegates.length), label: 'Delegates' },
+          {
+            value: String(delegates.filter((d) => d.attendanceFormat !== 'virtual').length),
+            label: 'In person',
+          },
+          {
+            value: String(delegates.filter((d) => d.attendanceFormat === 'virtual').length),
+            label: 'Online',
+          },
+        ],
+        sections: groups.map((g) => ({
+          heading: g.heading,
+          summary: g.heading
+            ? `${g.list.length} delegate${g.list.length === 1 ? '' : 's'}.`
+            : undefined,
+          header,
+          rows: g.list.map(rowOf),
+          empty: 'No delegate is registered yet.',
+        })),
+      });
+      await audit(prisma(), {
+        action: 'delegate.list_exported',
+        entityType: 'event',
+        entityId: event.id,
+        eventId: event.id,
+        actorUserId: principal.userId,
+        newValue: { format, delegates: delegates.length },
+        ...clientOf(res),
+      });
+      await sendDocument(res, format, blocks, meta, `${event.name} delegates`);
+    },
+  );
 
   router.get(
     '/events/:eventId/delegates',

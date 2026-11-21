@@ -1,4 +1,10 @@
-import { assessmentStages, type AssessmentStage, stageLabelsFor } from '@mbc/shared';
+import {
+  assessmentStages,
+  MAX_ASSESSMENT_ROUNDS,
+  roundLabelOf,
+  type AssessmentStage,
+  stageLabelsFor,
+} from '@mbc/shared';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
@@ -24,8 +30,11 @@ export default async function StagePage({
   const [{ eventId, stage }, query] = await Promise.all([params, searchParams]);
   if (!(assessmentStages as readonly string[]).includes(stage)) notFound();
   const stageKey = stage as AssessmentStage;
-  const selectedWave =
-    stageKey === 'follow_up' ? Math.max(1, Math.min(4, Number(query.wave) || 1)) : 1;
+  // Every assessment can have waves (2026-11-21), not only the follow-ups: the address names it.
+  const selectedWave = Math.max(
+    1,
+    Math.min(stageKey === 'follow_up' ? 4 : MAX_ASSESSMENT_ROUNDS, Number(query.wave) || 1),
+  );
   const session = await getSession();
   const access = importsAccess(session);
   const event = access === 'allowed' ? await loadAdminEvent(eventId) : null;
@@ -36,7 +45,10 @@ export default async function StagePage({
     view?.title?.trim() ||
     (stageKey === 'follow_up'
       ? view?.waveLabel || `Follow-up round ${selectedWave}`
-      : stageLabelsFor(event?.eventType)[stageKey]);
+      : roundLabelOf(stageLabelsFor(event?.eventType)[stageKey], {
+          stage: stageKey,
+          wave: selectedWave,
+        }));
 
   return (
     <>

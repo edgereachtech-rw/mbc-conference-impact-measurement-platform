@@ -20,6 +20,14 @@ import { clientOf, principalOf, type createAuthMiddleware } from '../auth/middle
 import { canConfigureEvents, EVENT_SETUP_ROLES } from '../auth/policies.js';
 import type { PrismaClient } from '../db.js';
 import type { Prisma } from '../generated/prisma/client.js';
+import {
+  dayOf,
+  isDocumentFormat,
+  responsesDocument,
+  sendDocument,
+  whenIn,
+} from '../export/submissions.js';
+import { organiserName } from '../mail/branding.js';
 import { audit } from '../lib/audit.js';
 import { figureStatuses } from '../lib/eligible.js';
 import { HttpError } from '../lib/errors.js';
@@ -611,6 +619,109 @@ export function reflectionRouter({ prisma, config, middleware, now }: Deps): Rou
       ...clientOf(res),
     });
     res.json(result);
+  });
+
+  /**
+   * Every Daily Learning Reflection as a designed PDF or Word document (2026-11-21): day by day,
+   * delegate by delegate, each question with its answer, and who has not submitted. `?day=`
+   * (an activity id) narrows it to one day. Audited like the responses view.
+   */
+  router.get('/events/:eventId/reflections/submissions.:format', guard, async (req, res) => {
+    const principal = requireAdmin(res);
+    const format = String(req.params.format);
+    if (!isDocumentFormat(format)) throw new HttpError(404, 'not_found', 'No such format.');
+    const event = await loadEvent(String(req.params.eventId));
+    const day = typeof req.query.day === 'string' ? req.query.day : null;
+    if (day !== null && !UUID.test(day))
+      throw new HttpError(404, 'not_found', 'Reflection not found.');
+    const statuses = [...(await figureStatusesFor(event.id))];
+    const [detail, activities, registered] = await Promise.all([
+      prisma().event.findUniqueOrThrow({
+        where: { id: event.id },
+        select: { name: true, timezone: true },
+      }),
+      prisma().reflectionActivity.findMany({
+        where: { eventId: event.id, ...(day ? { id: day } : {}) },
+        orderBy: { eventDate: { date: 'asc' } },
+        include: {
+          ...ACTIVITY_INCLUDE,
+          responses: {
+            where: { delegate: { registrationStatus: { in: statuses } } },
+            select: {
+              submittedAt: true,
+              delegateId: true,
+              delegate: {
+                select: {
+                  name: true,
+                  organisation: true,
+                  jobTitle: true,
+                  department: true,
+                  attendanceFormat: true,
+                  batch: { select: { name: true } },
+                },
+              },
+              answers: { select: { value: true, question: { select: { questionKey: true } } } },
+            },
+          },
+        },
+      }),
+      prisma().delegate.findMany({
+        where: { eventId: event.id, registrationStatus: { in: statuses } },
+        select: { id: true, name: true },
+        orderBy: { name: 'asc' },
+      }),
+    ]);
+    if (day && activities.length === 0)
+      throw new HttpError(404, 'not_found', 'Reflection not found.');
+    const total = activities.reduce((n, a) => n + a.responses.length, 0);
+    const { blocks, meta } = responsesDocument({
+      organiser: organiserName(),
+      eventName: detail.name,
+      timezone: detail.timezone,
+      generatedAt: clock(),
+      eyebrow: 'Daily Learning Reflections',
+      title: activities.length === 1 ? activities[0]!.title : 'Daily Learning Reflections',
+      lead: 'Every reflection submitted, day by day and delegate by delegate, with each question and its answer.',
+      facts: [{ label: 'Days', value: String(activities.length) }],
+      figures: [
+        { value: String(total), label: 'Reflections submitted' },
+        { value: String(registered.length), label: 'Delegates in scope' },
+        { value: String(activities.length), label: 'Days in this document' },
+      ],
+      groups: activities.map((a) => {
+        const answered = new Set(a.responses.map((r) => r.delegateId));
+        const missing = registered.filter((d) => !answered.has(d.id)).map((d) => d.name);
+        return {
+          heading: `${dayOf(a.eventDate.date)} · ${a.title}`,
+          summary: `${a.responses.length} of ${registered.length} delegates submitted (${registered.length ? Math.round((a.responses.length / registered.length) * 100) : 0}%).`,
+          empty: 'No reflection has been submitted for this day yet.',
+          respondents: a.responses.map((r) => {
+            const byKey = new Map(r.answers.map((x) => [x.question.questionKey, x.value]));
+            return {
+              delegate: r.delegate,
+              extra: [`Submitted ${whenIn(r.submittedAt, detail.timezone)}`],
+              rows: a.questions.map((q) => ({
+                question: q.prompt,
+                answer: byKey.get(q.questionKey) ?? '',
+              })),
+            };
+          }),
+          after: missing.length
+            ? `Not submitted (${missing.length}): ${missing.join(', ')}.`
+            : undefined,
+        };
+      }),
+    });
+    await audit(prisma(), {
+      action: 'reflection.exported',
+      entityType: day ? 'reflection_activity' : 'event',
+      entityId: day ?? event.id,
+      eventId: event.id,
+      actorUserId: principal.userId,
+      newValue: { format, responses: total, days: activities.length },
+      ...clientOf(res),
+    });
+    await sendDocument(res, format, blocks, meta, `${detail.name} reflections`);
   });
 
   // ---------------------------------------------------------------- delegate

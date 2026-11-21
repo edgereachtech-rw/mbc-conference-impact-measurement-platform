@@ -398,6 +398,8 @@ const confirmationText = (max: number) =>
     .optional()
     .transform((v) => (v ? v : null));
 export const assessmentConfirmationSchema = z.object({
+  /** The submit button's words (2026-11-22); null keeps "Submit answers" / "Submit section". */
+  submitLabel: confirmationText(40).optional(),
   title: confirmationText(120),
   message: confirmationText(600),
   detail: confirmationText(600),
@@ -473,20 +475,20 @@ export function stageTitleOf(
 }
 
 /**
- * An added round of an assessment (2026-11-21), until the organisers name it: "Pre-conference
- * assessment (round 2)". The first round, and the follow-ups (named by their interval), keep
- * the plain name.
+ * An added wave of an assessment (2026-11-21), until the organisers name it: "Pre-conference
+ * assessment (wave 2)". The first wave, and the follow-ups (named by their interval), keep the
+ * plain name.
  */
 export function roundLabelOf(
   name: string,
   stage: { stage: AssessmentStage; wave?: number },
 ): string {
   return stage.stage !== 'follow_up' && (stage.wave ?? 1) > 1
-    ? `${name} (round ${stage.wave})`
+    ? `${name} (wave ${stage.wave})`
     : name;
 }
 
-/** How many rounds one assessment may have (2026-11-21); the follow-ups have their own rule. */
+/** How many waves one assessment may have (2026-11-21); the follow-ups have their own rule. */
 export const MAX_ASSESSMENT_ROUNDS = 10;
 
 export const stageWindowStates = ['hidden', 'upcoming', 'open', 'closed'] as const;

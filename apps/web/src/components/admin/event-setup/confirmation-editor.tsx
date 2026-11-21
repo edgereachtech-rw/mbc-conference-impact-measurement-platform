@@ -26,6 +26,7 @@ import { apiFetch } from '@/lib/api';
 import { describeError } from '@/lib/imports';
 
 interface Draft {
+  submitLabel: string;
   title: string;
   message: string;
   detail: string;
@@ -36,6 +37,7 @@ interface Draft {
 }
 
 const draftOf = (c: AssessmentConfirmation | null | undefined): Draft => ({
+  submitLabel: c?.submitLabel ?? '',
   title: c?.title ?? '',
   message: c?.message ?? '',
   detail: c?.detail ?? '',
@@ -50,6 +52,7 @@ const blank = (v: string) => (v.trim() ? v.trim() : null);
 /** What the server is sent: blanks become null, which means "the default wording". */
 export function confirmationPayload(d: Draft): AssessmentConfirmationInput {
   return {
+    submitLabel: blank(d.submitLabel),
     title: blank(d.title),
     message: blank(d.message),
     detail: blank(d.detail),
@@ -128,6 +131,24 @@ export function ConfirmationEditor({ event, stage, wave, readOnly, onSaved }: Pr
             <p className="mt-1 text-sm text-corp-muted">
               Shown in the popup once the delegate has submitted every section of this assessment.
               Leave a field blank to keep the platform&rsquo;s wording.
+            </p>
+          </div>
+          <div className="space-y-1">
+            <label htmlFor={`${id}-submit`} className={label}>
+              Submit button text
+            </label>
+            <input
+              id={`${id}-submit`}
+              value={draft.submitLabel}
+              maxLength={40}
+              placeholder="Submit answers"
+              disabled={disabled}
+              onChange={(e) => set('submitLabel', e.target.value)}
+              className={input}
+            />
+            <p className="text-xs text-corp-muted">
+              The words on the button delegates press to submit this assessment, and each of its
+              sections. Blank keeps “Submit answers” (“Submit section” when it has several).
             </p>
           </div>
           <div className="space-y-1">

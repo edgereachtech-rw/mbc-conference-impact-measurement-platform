@@ -1,6 +1,8 @@
 import { createHmac } from 'node:crypto';
 
 import {
+  attendanceMethodLabels,
+  attendanceStatusLabels,
   attendanceBulkSchema,
   attendanceCloseSchema,
   attendanceCorrectionSchema,
@@ -29,6 +31,14 @@ import { canRunImports, IMPORT_ROLES } from '../auth/policies.js';
 import { hashToken } from '../auth/tokens.js';
 import type { PrismaClient } from '../db.js';
 import type { Prisma } from '../generated/prisma/client.js';
+import {
+  dayOf,
+  isDocumentFormat,
+  sendDocument,
+  tableDocument,
+  whenIn,
+} from '../export/submissions.js';
+import { organiserName } from '../mail/branding.js';
 import { audit } from '../lib/audit.js';
 import { HttpError } from '../lib/errors.js';
 
@@ -319,6 +329,110 @@ export function attendanceRouter({ prisma, config, middleware, now }: Deps): Rou
   }
 
   // ---------------------------------------------------------------- admin: overview and lists
+
+  /**
+   * The attendance register as a designed PDF or Word document (2026-11-21): one table per
+   * date, every delegate expected that day (their batch's day, or every day) with their status,
+   * how it was recorded and when. Audited.
+   */
+  router.get('/events/:eventId/attendance/register.:format', guard, async (req, res) => {
+    const principal = requireAdmin(res);
+    const format = String(req.params.format);
+    if (!isDocumentFormat(format)) throw new HttpError(404, 'not_found', 'No such format.');
+    const event = await loadEvent(String(req.params.eventId));
+    const [detail, delegates, records] = await Promise.all([
+      prisma().event.findUniqueOrThrow({
+        where: { id: event.id },
+        select: { name: true, timezone: true },
+      }),
+      prisma().delegate.findMany({
+        where: { eventId: event.id, registrationStatus: { in: [...eligible] } },
+        select: {
+          id: true,
+          name: true,
+          organisation: true,
+          attendanceFormat: true,
+          batch: { select: { name: true, eventDateId: true } },
+        },
+        orderBy: { name: 'asc' },
+      }),
+      prisma().attendanceRecord.findMany({
+        where: { eventId: event.id },
+        select: {
+          delegateId: true,
+          eventDateId: true,
+          status: true,
+          method: true,
+          recordedAt: true,
+          note: true,
+        },
+      }),
+    ]);
+    const recordOf = new Map(records.map((r) => [`${r.delegateId}:${r.eventDateId}`, r]));
+    const sections = event.dates.map((d) => {
+      const expected = delegates.filter((x) => !x.batch || x.batch.eventDateId === d.id);
+      const rows = expected.map((x) => {
+        const r = recordOf.get(`${x.id}:${d.id}`);
+        return [
+          x.name,
+          x.organisation ?? '',
+          x.batch?.name ?? '',
+          x.attendanceFormat === 'virtual' ? 'Online' : 'In person',
+          attendanceStatusLabels[r ? r.status : 'not_checked_in'],
+          r ? attendanceMethodLabels[r.method] : '',
+          r ? whenIn(r.recordedAt, detail.timezone) : '',
+        ];
+      });
+      const present = expected.filter((x) => {
+        const st = recordOf.get(`${x.id}:${d.id}`)?.status;
+        return st === 'attended' || st === 'partial';
+      }).length;
+      return {
+        heading: dayOf(d.date),
+        summary: `${present} of ${expected.length} expected delegates present${d.attendanceClosedAt ? '; the day is closed' : '; the day is still open'}.`,
+        header: ['Delegate', 'Organisation', 'Batch', 'Format', 'Status', 'Recorded by', 'When'],
+        rows,
+        empty: 'No delegate is expected on this day.',
+      };
+    });
+    const attendedAny = new Set(
+      records
+        .filter((r) => r.status === 'attended' || r.status === 'partial')
+        .map((r) => r.delegateId),
+    );
+    const { blocks, meta } = tableDocument({
+      organiser: organiserName(),
+      eventName: detail.name,
+      timezone: detail.timezone,
+      generatedAt: clock(),
+      eyebrow: 'Attendance register',
+      title: `${detail.name}: attendance`,
+      lead: 'Who attended each day, from the attendance records: check-in, the organisers’ marking and corrections.',
+      facts: [{ label: 'Days', value: String(event.dates.length) }],
+      figures: [
+        { value: String(delegates.length), label: 'Registered delegates' },
+        {
+          value: String(delegates.filter((x) => attendedAny.has(x.id)).length),
+          label: 'Attended at least one day',
+        },
+        {
+          value: String(event.dates.filter((d) => d.attendanceClosedAt).length),
+          label: 'Days closed',
+        },
+      ],
+      sections,
+    });
+    await audit(prisma(), {
+      action: 'attendance.exported',
+      entityType: 'event',
+      entityId: event.id,
+      eventId: event.id,
+      actorUserId: principal.userId,
+      newValue: { format, delegates: delegates.length },
+      ...clientOf(res),
+    });
+    await sendDocument(res, format, blocks, meta, `${detail.name} attendance`);
+  });
 
   router.get('/events/:eventId/attendance', guard, async (req, res) => {
     requireAdmin(res);

@@ -7,7 +7,13 @@ import { describe, expect, it } from 'vitest';
 
 import { blocksText, toDocx } from './docx.js';
 import { toPdf } from './pdf.js';
-import { assessmentDocument, feedbackDocument, planDocument } from './submissions.js';
+import {
+  assessmentDocument,
+  feedbackDocument,
+  planDocument,
+  responsesDocument,
+  tableDocument,
+} from './submissions.js';
 
 /**
  * Submissions as documents (2026-11-21): one block per delegate, every question as asked with
@@ -327,5 +333,63 @@ describe('Transfer Plans document', () => {
     expect(text).toContain(
       '30-day follow-up: Where are you with this action?: I have done it, on 10 Dec 2026',
     );
+  });
+});
+
+describe('reflections and support, attendance and delegate list documents', () => {
+  it('lays out answers delegate by delegate with who has not submitted', () => {
+    const doc = responsesDocument({
+      ...base,
+      eyebrow: 'Daily Learning Reflections',
+      title: 'Daily Learning Reflections',
+      lead: 'Every reflection.',
+      figures: [{ value: '1', label: 'Reflections submitted' }],
+      groups: [
+        {
+          heading: '23 Nov 2026 · Day 1 reflection',
+          summary: '1 of 2 delegates submitted (50%).',
+          respondents: [
+            {
+              delegate: { name: 'Dee Manager', attendanceFormat: 'physical' },
+              extra: ['Submitted 23 Nov 2026, 16:00'],
+              rows: [
+                { question: 'What stood out today?', answer: 'The transfer plan.' },
+                { question: 'What will you try?', answer: '' },
+              ],
+            },
+          ],
+          after: 'Not submitted (1): Ada Lead.',
+        },
+      ],
+    });
+    const text = blocksText(doc.blocks);
+    expect(text).toContain('23 Nov 2026 · Day 1 reflection');
+    expect(text).toContain('Dee Manager\nIn person · Submitted 23 Nov 2026, 16:00');
+    expect(text).toContain('Q1 What stood out today?: The transfer plan.');
+    expect(text).toContain('Q2 What will you try?: No answer');
+    expect(text).toContain('Not submitted (1): Ada Lead.');
+    expect(doc.meta.footnote).toMatch(/personal data/);
+  });
+
+  it('lays out a register as a table per section, or says it is empty', () => {
+    const doc = tableDocument({
+      ...base,
+      eyebrow: 'Attendance register',
+      title: 'Attendance',
+      lead: 'Who attended.',
+      figures: [{ value: '2', label: 'Registered delegates' }],
+      sections: [
+        {
+          heading: '23 Nov 2026',
+          header: ['Delegate', 'Status'],
+          rows: [['Dee Manager', 'Attended']],
+        },
+        { heading: '24 Nov 2026', header: ['Delegate', 'Status'], rows: [], empty: 'Nobody.' },
+      ],
+    });
+    const text = blocksText(doc.blocks);
+    expect(text).toContain('Delegate | Status\nDee Manager | Attended');
+    expect(text).toContain('Nobody.');
+    expect(doc.blocks.filter((b) => b.kind === 'pagebreak')).toHaveLength(1);
   });
 });

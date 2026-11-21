@@ -133,7 +133,7 @@ describe('AssessmentConfig', () => {
     });
   });
 
-  it('adds another round of an assessment, and removes an added round after a confirmation', async () => {
+  it('adds another wave of an assessment, and removes an added wave after a confirmation', async () => {
     const calls: Array<{ url: string; method?: string }> = [];
     const withRound: EventDetail = {
       ...event,
@@ -156,26 +156,24 @@ describe('AssessmentConfig', () => {
     const onSaved = vi.fn();
     const user = userEvent.setup();
     render(<AssessmentConfig event={withRound} onSaved={onSaved} />);
-    // The added round has its own card, named after its kind.
-    expect(screen.getByRole('form', { name: 'Pre-summit assessment (round 2)' })).toBeTruthy();
-    // One add button per assessment, under its last round.
-    const add = screen.getAllByRole('button', { name: 'Add another round' });
+    // The added wave has its own card, named after its kind.
+    expect(screen.getByRole('form', { name: 'Pre-summit assessment (wave 2)' })).toBeTruthy();
+    // One add button per assessment, under its last wave.
+    const add = screen.getAllByRole('button', { name: 'Add another wave' });
     expect(add).toHaveLength(2);
     await user.click(add[0]!);
     expect(calls.at(-1)).toEqual({
-      url: '/api/v1/events/e1/assessments/pre_conference/rounds',
+      url: '/api/v1/events/e1/assessments/pre_conference/waves',
       method: 'POST',
     });
     expect(onSaved).toHaveBeenCalledTimes(1);
-    // Only an added round can be removed, after a confirmation.
+    // Only an added wave can be removed, after a confirmation.
     expect(screen.getAllByRole('button', { name: /^Remove / })).toHaveLength(1);
-    await user.click(
-      screen.getByRole('button', { name: 'Remove Pre-summit assessment (round 2)' }),
-    );
-    const dialog = await screen.findByRole('dialog', { name: 'Remove this round?' });
-    await user.click(within(dialog).getByRole('button', { name: 'Remove the round' }));
+    await user.click(screen.getByRole('button', { name: 'Remove Pre-summit assessment (wave 2)' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Remove this wave?' });
+    await user.click(within(dialog).getByRole('button', { name: 'Remove the wave' }));
     expect(calls.at(-1)).toEqual({
-      url: '/api/v1/events/e1/assessments/pre_conference/rounds/2',
+      url: '/api/v1/events/e1/assessments/pre_conference/waves/2',
       method: 'DELETE',
     });
     expect(onSaved).toHaveBeenCalledTimes(2);

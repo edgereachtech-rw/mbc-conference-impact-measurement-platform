@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
 import { ActionQrCodes } from '@/components/admin/event-setup/action-qr-codes';
+import { DocumentDownloads } from '@/components/admin/document-downloads';
 import { AttendanceManager } from '@/components/admin/attendance/attendance-manager';
 import { EventWorkspace } from '@/components/admin/event-workspace';
 import { OnboardingSender } from '@/components/admin/onboarding-sender';
@@ -204,11 +205,31 @@ export function EventSettings({ initialEvent }: EventSettingsProps) {
           <div className="space-y-8">
             <OnboardingSender eventId={event.id} timezone={event.timezone} />
             <TestDelegatesSetting event={event} onSaved={saved} />
+            <DocumentDownloads
+              path={`/events/${event.id}/delegates/register`}
+              label="Delegate list"
+            />
             <EventWorkspace eventId={event.id} eventName={event.name} />
           </div>
         ) : null}
-        {tab === 'attendance' ? <AttendanceManager event={event} /> : null}
-        {tab === 'reflections' ? <ReflectionsManager event={event} /> : null}
+        {tab === 'attendance' ? (
+          <div className="space-y-6">
+            <DocumentDownloads
+              path={`/events/${event.id}/attendance/register`}
+              label="Attendance register"
+            />
+            <AttendanceManager event={event} />
+          </div>
+        ) : null}
+        {tab === 'reflections' ? (
+          <div className="space-y-6">
+            <DocumentDownloads
+              path={`/events/${event.id}/reflections/submissions`}
+              label="All reflections"
+            />
+            <ReflectionsManager event={event} />
+          </div>
+        ) : null}
         {tab === 'feedback' ? <FeedbackManager event={event} /> : null}
         {tab === 'transfer-plans' ? (
           <div className="space-y-8">
@@ -218,8 +239,15 @@ export function EventSettings({ initialEvent }: EventSettingsProps) {
             <FollowUpsSection event={event} onSaved={saved} />
           </div>
         ) : null}
-        {tab === 'support' ? <SupportManager event={event} /> : null}
-        {tab === 'support' ? <SupportManager event={event} /> : null}
+        {tab === 'support' ? (
+          <div className="space-y-6">
+            <DocumentDownloads
+              path={`/events/${event.id}/support-requests/submissions`}
+              label="Support requests and barriers"
+            />
+            <SupportManager event={event} />
+          </div>
+        ) : null}
         {tab === 'qr-codes' ? <ActionQrCodes event={event} /> : null}
         {tab === 'emails' ? <EventEmails event={event} /> : null}
         {tab === 'reports' ? (

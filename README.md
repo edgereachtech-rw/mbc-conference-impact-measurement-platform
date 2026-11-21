@@ -634,20 +634,20 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   (`actionSubmissionGaps`; 422 `plan_incomplete` with the gaps by action; the form lists them
   under the submit button). The measure, baseline, evidence description and review date columns
   stay in the data but left the card: measures and evidence have their own records.
-- Additional rounds of an assessment (task of 2026-11-21): on the Assessment configuration tab
-  each assessment has "Add another round" under its last round (`POST
-/events/:id/assessments/:stage/rounds`, the next `wave` number, created disabled, as a draft
+- Additional waves of an assessment (task of 2026-11-21): on the Assessment configuration tab
+  each assessment has "Add another wave" under its last wave (`POST
+/events/:id/assessments/:stage/waves`, the next `wave` number, created disabled, as a draft
   and empty; at most `MAX_ASSESSMENT_ROUNDS`, 10; not for the follow-ups, which keep their own
-  schedule). A round is a stage row of its own, so it has its own questions, window, status,
+  schedule). A wave is a stage row of its own, so it has its own questions, window, status,
   title, confirmation, submissions and downloads, and every admin call names it with `?wave=`
   (the question builder now always does). Until it is named it is called "Pre-training
-  assessment (round 2)" (`roundLabelOf` in `packages/shared`), on the delegate's tabs and
-  dashboard too. "Repeat a section" lists every other round, this assessment's first round
-  included, so a round's answers pair with round 1 in its Paired results. "Remove this round"
-  (`DELETE .../rounds/:wave`, after a confirmation) deletes an added round with its questions
-  and sections while nobody has answered it (409 `round_has_responses`); round 1 is the
-  assessment itself and stays (409 `first_round`). The event reports read round 1 of each
-  assessment; the other rounds report on their own pages. Both actions are audited.
+  assessment (wave 2)" (`waveLabelOf` in `packages/shared`), on the delegate's tabs and
+  dashboard too. "Repeat a section" lists every other wave, this assessment's first wave
+  included, so a wave's answers pair with wave 1 in its Paired results. "Remove this wave"
+  (`DELETE .../waves/:wave`, after a confirmation) deletes an added wave with its questions
+  and sections while nobody has answered it (409 `wave_has_responses`); wave 1 is the
+  assessment itself and stays (409 `first_wave`). The event reports read wave 1 of each
+  assessment; the other waves report on their own pages. Both actions are audited. Renamed from "rounds" to "waves" on 2026-11-22; the stored rows were already waves, so nothing was converted.
 - Submissions as documents (task of 2026-11-21): every assessment (and each follow-up round),
   the session feedback and the Transfer Plans download as a designed PDF or Word document, built
   once as blocks (`apps/api/src/export/submissions.ts`) and laid out by the same PDF and Word
@@ -666,6 +666,17 @@ Every enabled assessment stage carries questions that delegates answer (decided 
 /events/:id/transfer-plans/submissions.pdf|docx` (submitted and completed; `?drafts=true` adds
   drafts). Every page says it contains personal data. Buttons: the stage page's Submissions tab,
   each feedback session card and an "All sessions' feedback" line, and the Transfer plans list.
+  The other tabs followed the same day (2026-11-21), each with a "PDF / Word" bar at its top
+  (`DocumentDownloads`): **Daily reflections** (`GET /events/:id/reflections/submissions.pdf|docx`,
+  `?day=` for one day; day by day, every delegate's answers, then who has not submitted),
+  **Support** (`GET /events/:id/support-requests/submissions.pdf|docx`; open first, then
+  addressed; who asked, what for, the barrier, what was done and by whom), **Attendance**
+  (`GET /events/:id/attendance/register.pdf|docx`; a table per date of every delegate expected
+  that day, by batch, with status, how and when recorded) and **Delegates** (`GET
+/events/:id/delegates/register.pdf|docx`; the list by batch with organisation, role,
+  department, format and registration). Admins only, each download audited
+  (`reflection.exported`, `support_request.exported`, `attendance.exported`,
+  `delegate.list_exported`). The Support tab no longer renders its list twice.
 - Checklist and commitment, a second plan mode as a template (task of 2026-11-20, from a line
   managers' training programme brief; migration `20261120183500_commitment_plan_mode`). An
   event chooses on the Transfer plans tab ("What delegates plan with", `transferPlanMode`
@@ -838,6 +849,10 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   else "Pre-training assessment" and the like; the description replaces the platform's purpose
   line on the delegate's card and the stage page. The delegate's event page no longer repeats an
   assessment's heading above its card.
+- The submit button's words per assessment (2026-11-22): "Submit button text" on the same
+  Confirmation editor (`confirmation.submitLabel`, up to 40 characters, stored with the
+  confirmation settings, no migration) replaces "Submit answers" / "Submit section" on the
+  delegate's form; blank keeps the platform's words.
 - Submission confirmation per assessment (decision 2026-11-19): the popup a delegate sees once
   every section of an assessment is submitted carries the organisers' own title, message and
   closing line, and a look (colour family green/accent/ink, centred or left, check icon on or

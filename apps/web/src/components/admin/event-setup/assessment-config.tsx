@@ -64,12 +64,12 @@ export function AssessmentConfig({ event, onSaved }: AssessmentConfigProps) {
     setProblem(null);
     try {
       const result = await apiFetch<{ event: EventDetail }>(
-        `/events/${event.id}/assessments/${stage}/rounds`,
+        `/events/${event.id}/assessments/${stage}/waves`,
         { method: 'POST' },
       );
       onSaved(result.event);
     } catch (e) {
-      setProblem(describeError(e, 'The round could not be added.').message);
+      setProblem(describeError(e, 'The wave could not be added.').message);
     } finally {
       setBusy(false);
     }
@@ -80,14 +80,14 @@ export function AssessmentConfig({ event, onSaved }: AssessmentConfigProps) {
     setProblem(null);
     try {
       const result = await apiFetch<{ event: EventDetail }>(
-        `/events/${event.id}/assessments/${round.stage}/rounds/${round.wave}`,
+        `/events/${event.id}/assessments/${round.stage}/waves/${round.wave}`,
         { method: 'DELETE' },
       );
       setRemoving(null);
       onSaved(result.event);
     } catch (e) {
       setRemoving(null);
-      setProblem(describeError(e, 'The round could not be removed.').message);
+      setProblem(describeError(e, 'The wave could not be removed.').message);
     } finally {
       setBusy(false);
     }
@@ -100,9 +100,9 @@ export function AssessmentConfig({ event, onSaved }: AssessmentConfigProps) {
         <span className="font-semibold text-corp-ink">{event.timezone}</span>. Attendance is
         recorded separately and never inferred from a submitted assessment. The post-conference
         follow-ups of the Transfer Plan are set up on the Transfer plans tab. An assessment can be
-        asked again in another round, with its own questions, window and submissions: use “Add
-        another round” under it, and “Repeat a section” on the new round’s page to pair its answers
-        with the first round.
+        asked again as a separate wave, with its own questions, window and submissions: use “Add
+        another wave” under it, and “Repeat a section” on the new wave’s page to pair its answers
+        with the first wave.
       </p>
       {problem ? (
         <p role="alert" className="text-sm font-semibold text-brand-danger">
@@ -125,7 +125,7 @@ export function AssessmentConfig({ event, onSaved }: AssessmentConfigProps) {
                       onClick={() => void addRound(stage.stage)}
                       className={consoleButton({ variant: 'secondary', size: 'sm' })}
                     >
-                      <PlusIcon aria-hidden="true" /> Add another round
+                      <PlusIcon aria-hidden="true" /> Add another wave
                     </button>
                   ) : null}
                   {stage.wave > 1 ? (
@@ -136,7 +136,7 @@ export function AssessmentConfig({ event, onSaved }: AssessmentConfigProps) {
                       aria-label={`Remove ${stageTitleOf(stage, event.eventType)}`}
                       className={consoleButton({ variant: 'ghost', size: 'sm' })}
                     >
-                      <Trash2Icon aria-hidden="true" /> Remove this round
+                      <Trash2Icon aria-hidden="true" /> Remove this wave
                     </button>
                   ) : null}
                 </div>
@@ -147,8 +147,8 @@ export function AssessmentConfig({ event, onSaved }: AssessmentConfigProps) {
       </div>
       {removing ? (
         <Dialog
-          title="Remove this round?"
-          description={`${stageTitleOf(removing, event.eventType)} and its questions are removed. A round that delegates have answered stays; disable or close it instead.`}
+          title="Remove this wave?"
+          description={`${stageTitleOf(removing, event.eventType)} and its questions are removed. A wave that delegates have answered stays; disable or close it instead.`}
           onClose={() => setRemoving(null)}
           closeDisabled={busy}
           size="md"
@@ -169,7 +169,7 @@ export function AssessmentConfig({ event, onSaved }: AssessmentConfigProps) {
                 className={consoleButton({ variant: 'accent' })}
               >
                 {busy ? <Loader2Icon className="animate-spin" aria-hidden="true" /> : null}
-                Remove the round
+                Remove the wave
               </button>
             </>
           }

@@ -54,6 +54,8 @@ describe('ConfirmationEditor', () => {
     expect(within(preview).getByRole('status').querySelector('svg')).toBeTruthy();
 
     const form = screen.getByRole('form', { name: 'Submission confirmation' });
+    // The submit button's own words (2026-11-22).
+    await user.type(within(form).getByLabelText('Submit button text'), 'Send my baseline');
     await user.type(within(form).getByLabelText('Title'), 'Baseline recorded');
     await user.type(
       within(form).getByLabelText('Message'),
@@ -74,6 +76,7 @@ describe('ConfirmationEditor', () => {
     const put = calls.find((c) => c.init?.method === 'PUT');
     expect(put?.url).toBe('/api/v1/events/e1/assessments/pre_conference/confirmation?wave=1');
     expect(JSON.parse(String(put?.init?.body))).toEqual({
+      submitLabel: 'Send my baseline',
       title: 'Baseline recorded',
       message: 'Thank you, your starting point is saved.',
       detail: null,

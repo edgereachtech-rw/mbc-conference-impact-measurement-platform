@@ -693,3 +693,124 @@ export function planDocument(input: PlanDocumentInput): { blocks: Block[]; meta:
     },
   };
 }
+
+// ------------------------------------------------------------------ generic layouts
+
+interface DocumentHead {
+  organiser: string;
+  eventName: string;
+  timezone: string;
+  generatedAt: Date;
+  /** What kind of record it is, above the title on the cover. */
+  eyebrow: string;
+  title: string;
+  lead: string;
+  facts?: Fact[];
+  figures: Array<{ value: string; label: string }>;
+}
+
+export interface ResponsesDocumentInput extends DocumentHead {
+  /** One group per day, status or other split; each opens a new page after the first. */
+  groups: ReadonlyArray<{
+    heading?: string;
+    summary?: string;
+    /** Said when the group has no respondent. */
+    empty?: string;
+    respondents: ReadonlyArray<{
+      delegate: RespondentDelegate;
+      /** What follows "who they are" in the band: a date, a kind, a status. */
+      extra: string[];
+      rows: ReadonlyArray<{ question: string; answer: string }>;
+    }>;
+    /** A closing line, e.g. who has not submitted. */
+    after?: string;
+  }>;
+}
+
+/**
+ * Answers delegate by delegate (2026-11-21): the layout of the reflections and the support
+ * requests, the same cover, figures, delegate band and question-answer rows as the others.
+ */
+export function responsesDocument(input: ResponsesDocumentInput): {
+  blocks: Block[];
+  meta: DocumentMeta;
+} {
+  const blocks: Block[] = [
+    coverOf(input),
+    { kind: 'figures', items: input.figures },
+    { kind: 'paragraph', spans: [{ text: READING_NOTE, italic: true }] },
+  ];
+  input.groups.forEach((group, index) => {
+    if (group.heading) {
+      if (index > 0) blocks.push({ kind: 'pagebreak' });
+      blocks.push({ kind: 'heading', level: 2, spans: [{ text: group.heading }] });
+    }
+    if (group.summary) blocks.push({ kind: 'paragraph', spans: [{ text: group.summary }] });
+    if (group.respondents.length === 0 && group.empty) {
+      blocks.push({ kind: 'paragraph', spans: [{ text: group.empty, italic: true }] });
+    }
+    for (const r of [...group.respondents].sort(byName)) {
+      blocks.push({
+        kind: 'respondent',
+        name: r.delegate.name,
+        details: detailsOf(r.delegate, ...r.extra),
+      });
+      r.rows.forEach((row, i) =>
+        blocks.push({
+          kind: 'qa',
+          number: `Q${i + 1}`,
+          question: row.question,
+          answer: row.answer,
+          empty: row.answer.trim() === '',
+        }),
+      );
+    }
+    if (group.after)
+      blocks.push({ kind: 'paragraph', spans: [{ text: group.after, italic: true }] });
+  });
+  return {
+    blocks,
+    meta: {
+      title: input.title,
+      organiser: input.organiser,
+      subtitle: input.eventName,
+      footnote: PERSONAL_DATA,
+    },
+  };
+}
+
+export interface TableDocumentInput extends DocumentHead {
+  sections: ReadonlyArray<{
+    heading?: string;
+    summary?: string;
+    header: string[];
+    rows: string[][];
+    empty?: string;
+  }>;
+}
+
+/** A register as tables (2026-11-21): the attendance by date and the delegate list. */
+export function tableDocument(input: TableDocumentInput): { blocks: Block[]; meta: DocumentMeta } {
+  const blocks: Block[] = [coverOf(input), { kind: 'figures', items: input.figures }];
+  input.sections.forEach((section, index) => {
+    if (section.heading) {
+      if (index > 0) blocks.push({ kind: 'pagebreak' });
+      blocks.push({ kind: 'heading', level: 2, spans: [{ text: section.heading }] });
+    }
+    if (section.summary) blocks.push({ kind: 'paragraph', spans: [{ text: section.summary }] });
+    if (section.rows.length) {
+      blocks.push({ kind: 'table', header: section.header, rows: section.rows });
+    } else if (section.empty) {
+      blocks.push({ kind: 'paragraph', spans: [{ text: section.empty, italic: true }] });
+    }
+  });
+  return {
+    blocks,
+    meta: {
+      title: input.title,
+      organiser: input.organiser,
+      subtitle: input.eventName,
+      footnote: PERSONAL_DATA,
+    },
+  };
+}

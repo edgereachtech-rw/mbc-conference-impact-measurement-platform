@@ -11,7 +11,7 @@ describe('assessment rounds', () => {
       'Pre-training assessment',
     );
     expect(stageTitleOf({ stage: 'pre_conference', wave: 2 }, 'training')).toBe(
-      'Pre-training assessment (round 2)',
+      'Pre-training assessment (wave 2)',
     );
     expect(
       stageTitleOf({ stage: 'pre_conference', wave: 2, title: 'Batch 2 baseline' }, null),
@@ -38,7 +38,7 @@ describe('assessment rounds', () => {
     };
     expect(nextSteps(journey).map((s) => [s.label, s.tab])).toEqual([
       ['Complete your pre-conference assessment', 'assessment-pre_conference-1'],
-      ['Complete your pre-conference assessment (round 2)', 'assessment-pre_conference-2'],
+      ['Complete your pre-conference assessment (wave 2)', 'assessment-pre_conference-2'],
     ]);
   });
 });

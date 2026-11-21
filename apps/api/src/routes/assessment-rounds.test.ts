@@ -129,11 +129,9 @@ describe.skipIf(!hasDatabase)('assessment rounds', () => {
   }
 
   it('adds a round with the next number, as a disabled empty draft, admins only', async () => {
-    const path = `/events/${eventId}/assessments/pre_conference/rounds`;
+    const path = `/events/${eventId}/assessments/pre_conference/waves`;
     expect((await call('post', path, undefined, cookies.dee)).status).toBe(403);
-    expect((await call('post', `/events/${eventId}/assessments/follow_up/rounds`)).status).toBe(
-      404,
-    );
+    expect((await call('post', `/events/${eventId}/assessments/follow_up/waves`)).status).toBe(404);
     const res = await call('post', path);
     expect(res.status, res.text).toBe(201);
     expect(res.body.wave).toBe(2);
@@ -142,7 +140,7 @@ describe.skipIf(!hasDatabase)('assessment rounds', () => {
     );
     expect(round).toMatchObject({ enabled: false, status: 'draft', questionCount: 0 });
     expect(
-      await prisma.auditLog.count({ where: { eventId, action: 'event.assessment_round_added' } }),
+      await prisma.auditLog.count({ where: { eventId, action: 'event.assessment_wave_added' } }),
     ).toBe(1);
   });
 
@@ -205,9 +203,9 @@ describe.skipIf(!hasDatabase)('assessment rounds', () => {
   });
 
   it('removes an added round only while nobody has answered it, and never the first', async () => {
-    const base = `/events/${eventId}/assessments/pre_conference/rounds`;
+    const base = `/events/${eventId}/assessments/pre_conference/waves`;
     expect((await call('delete', `${base}/1`)).status).toBe(409);
-    expect((await call('delete', `${base}/2`)).body.error.code).toBe('round_has_responses');
+    expect((await call('delete', `${base}/2`)).body.error.code).toBe('wave_has_responses');
     const third = await call('post', base);
     expect(third.body.wave).toBe(3);
     await questionFor(3, 'Anything else?');

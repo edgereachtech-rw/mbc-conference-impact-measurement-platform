@@ -592,7 +592,7 @@ export function eventSetupRouter({ prisma, middleware, now }: Deps): Router {
     },
   );
 
-  // ---------------------------------------------------------------- rounds of an assessment
+  // ---------------------------------------------------------------- waves of an assessment
 
   /**
    * Another round of an assessment (2026-11-21): the same kind asked again, for example a
@@ -601,7 +601,7 @@ export function eventSetupRouter({ prisma, middleware, now }: Deps): Router {
    * "Repeat a section" pairs them with round 1 for paired results). The follow-ups have their
    * own schedule on the Transfer plans tab.
    */
-  router.post('/events/:eventId/assessments/:stage/rounds', guard, async (req, res) => {
+  router.post('/events/:eventId/assessments/:stage/waves', guard, async (req, res) => {
     const principal = requireAdmin(res);
     const stage = String(req.params.stage) as AssessmentStage;
     if (!assessmentStages.includes(stage) || stage === 'follow_up') {
@@ -612,8 +612,8 @@ export function eventSetupRouter({ prisma, middleware, now }: Deps): Router {
     if (rounds.length >= MAX_ASSESSMENT_ROUNDS) {
       throw new HttpError(
         409,
-        'too_many_rounds',
-        `An assessment can have at most ${MAX_ASSESSMENT_ROUNDS} rounds.`,
+        'too_many_waves',
+        `An assessment can have at most ${MAX_ASSESSMENT_ROUNDS} waves.`,
       );
     }
     const wave = Math.max(0, ...rounds.map((s) => s.wave)) + 1;
@@ -622,7 +622,7 @@ export function eventSetupRouter({ prisma, middleware, now }: Deps): Router {
         data: { eventId: event.id, stage, wave, enabled: false, status: 'draft' },
       });
       await audit(tx, {
-        action: 'event.assessment_round_added',
+        action: 'event.assessment_wave_added',
         entityType: 'assessment_stage_config',
         entityId: row.id,
         eventId: event.id,
@@ -639,18 +639,18 @@ export function eventSetupRouter({ prisma, middleware, now }: Deps): Router {
    * Removes an added round (2026-11-21), with its questions and sections, while nobody has
    * answered it. Round 1 stays: it is the assessment itself (disable it instead).
    */
-  router.delete('/events/:eventId/assessments/:stage/rounds/:wave', guard, async (req, res) => {
+  router.delete('/events/:eventId/assessments/:stage/waves/:wave', guard, async (req, res) => {
     const principal = requireAdmin(res);
     const stage = String(req.params.stage) as AssessmentStage;
     const wave = Number(req.params.wave);
     if (!assessmentStages.includes(stage) || stage === 'follow_up' || !Number.isInteger(wave)) {
-      throw new HttpError(404, 'not_found', 'Unknown assessment round.');
+      throw new HttpError(404, 'not_found', 'Unknown assessment wave.');
     }
     if (wave === 1) {
       throw new HttpError(
         409,
-        'first_round',
-        'The first round is the assessment itself and stays. Disable it instead.',
+        'first_wave',
+        'The first wave is the assessment itself and stays. Disable it instead.',
       );
     }
     const event = await loadEditable(String(req.params.eventId));
@@ -658,12 +658,12 @@ export function eventSetupRouter({ prisma, middleware, now }: Deps): Router {
       where: { eventId_stage_wave: { eventId: event.id, stage, wave } },
       select: { id: true, _count: { select: { responses: true } } },
     });
-    if (!row) throw new HttpError(404, 'not_found', 'Unknown assessment round.');
+    if (!row) throw new HttpError(404, 'not_found', 'Unknown assessment wave.');
     if (row._count.responses > 0) {
       throw new HttpError(
         409,
-        'round_has_responses',
-        'Delegates have answered this round, so it stays. Disable or close it instead.',
+        'wave_has_responses',
+        'Delegates have answered this wave, so it stays. Disable or close it instead.',
       );
     }
     const updated = await prisma().$transaction(async (tx) => {
@@ -673,7 +673,7 @@ export function eventSetupRouter({ prisma, middleware, now }: Deps): Router {
       await tx.assessmentSection.deleteMany({ where: { stageConfigId: row.id } });
       await tx.assessmentStageConfig.delete({ where: { id: row.id } });
       await audit(tx, {
-        action: 'event.assessment_round_removed',
+        action: 'event.assessment_wave_removed',
         entityType: 'assessment_stage_config',
         entityId: row.id,
         eventId: event.id,
