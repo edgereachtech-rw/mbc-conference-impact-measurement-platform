@@ -641,6 +641,15 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
     const { blocks, meta } = assessmentDocument({
       organiser: organiserName(),
       batch: scope?.name ?? null,
+      batchOrder: scope
+        ? undefined
+        : (
+            await prisma().eventBatch.findMany({
+              where: { eventId: stage.eventId },
+              orderBy: { order: 'asc' },
+              select: { name: true },
+            })
+          ).map((b) => b.name),
       eventName: event.name,
       timezone: event.timezone,
       generatedAt: clock(),
@@ -1568,6 +1577,25 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
       ...(knowledge.length ? [`Knowledge score (of ${knowledge.length})`] : []),
     ];
     const rows: Array<Array<string | number>> = [];
+    // Every batch: batch by batch, then by name (2026-11-22).
+    const order = scope
+      ? []
+      : (
+          await prisma().eventBatch.findMany({
+            where: { eventId: stage.eventId },
+            orderBy: { order: 'asc' },
+            select: { name: true },
+          })
+        ).map((b) => b.name);
+    const rank = (name: string | undefined) => {
+      const i = name ? order.indexOf(name) : -1;
+      return i < 0 ? order.length : i;
+    };
+    responses.sort(
+      (a, b) =>
+        rank(a.delegate.batch?.name) - rank(b.delegate.batch?.name) ||
+        a.delegate.name.localeCompare(b.delegate.name, 'en', { sensitivity: 'base' }),
+    );
     for (const r of responses) {
       const byId = new Map(r.answers.map((a) => [a.questionId, a]));
       const answerOf = (q: AssessmentQuestionView) => answerTo(byId, versions.get(q.id), q.id);

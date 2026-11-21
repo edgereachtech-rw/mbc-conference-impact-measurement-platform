@@ -116,6 +116,55 @@ export function detailsOf(d: RespondentDelegate, ...extra: string[]): string {
     .join(' · ');
 }
 
+/** Said for a delegate who comes every day of an event in batches. */
+export const NO_BATCH = 'Every day (no batch)';
+
+/** The batch a delegate's block falls under when a document covers every batch. */
+const batchOf = (d: RespondentDelegate, order: readonly string[]) =>
+  d.batch && order.includes(d.batch.name) ? d.batch.name : NO_BATCH;
+
+/**
+ * Items in batch order, then by name (2026-11-22): a document of every batch of an event in
+ * batches reads batch by batch. Without an order, by name alone.
+ */
+export function inBatchOrder<T extends { delegate: RespondentDelegate }>(
+  items: readonly T[],
+  order: readonly string[] | undefined,
+): T[] {
+  const sorted = [...items].sort(byName);
+  if (!order?.length) return sorted;
+  const rank = (t: T) => {
+    const i = order.indexOf(batchOf(t.delegate, order));
+    return i < 0 ? order.length : i;
+  };
+  return sorted.sort((a, b) => rank(a) - rank(b));
+}
+
+/**
+ * The heading that opens each batch in a document of every batch (2026-11-22): a new page and
+ * the batch's name with how many it holds, whenever the next delegate's batch differs.
+ */
+function batchHeadings<T extends { delegate: RespondentDelegate }>(
+  items: readonly T[],
+  order: readonly string[] | undefined,
+  noun: [string, string],
+) {
+  let last: string | null = null;
+  return (item: T, blocks: Block[]) => {
+    if (!order?.length) return;
+    const name = batchOf(item.delegate, order);
+    if (name === last) return;
+    const count = items.filter((x) => batchOf(x.delegate, order) === name).length;
+    if (last !== null) blocks.push({ kind: 'pagebreak' });
+    blocks.push({ kind: 'heading', level: 2, spans: [{ text: name }] });
+    blocks.push({
+      kind: 'paragraph',
+      spans: [{ text: `${count} ${count === 1 ? noun[0] : noun[1]}.` }],
+    });
+    last = name;
+  };
+}
+
 const byName = <T extends { delegate: { name: string } }>(a: T, b: T) =>
   a.delegate.name.localeCompare(b.delegate.name, 'en', { sensitivity: 'base' });
 
@@ -156,6 +205,8 @@ const READING_NOTE =
 
 export interface AssessmentDocumentInput {
   organiser: string;
+  /** The event's batches in order, to group a document of every batch by batch (2026-11-22). */
+  batchOrder?: readonly string[];
   /** The one batch it covers (2026-11-22). */
   batch?: string | null;
   eventName: string;
@@ -197,7 +248,8 @@ export function assessmentDocument(input: AssessmentDocumentInput): {
   blocks: Block[];
   meta: DocumentMeta;
 } {
-  const responses = [...input.responses].sort(byName);
+  const responses = inBatchOrder(input.responses, input.batchOrder);
+  const openBatch = batchHeadings(responses, input.batchOrder, ['submission', 'submissions']);
   const knowledge = input.questions.filter((q) => q.isKnowledge);
   const groups = [
     { section: null, questions: input.questions.filter((q) => !q.sectionId) },
@@ -259,6 +311,7 @@ export function assessmentDocument(input: AssessmentDocumentInput): {
   }
 
   for (const r of responses) {
+    openBatch(r, blocks);
     blocks.push({
       kind: 'respondent',
       name: r.delegate.name,
@@ -324,6 +377,8 @@ export interface FeedbackDocumentInput {
   sessions: ReadonlyArray<{
     title: string;
     date: string;
+    /** The batches whose day it is (2026-11-22), named in the heading. */
+    batches?: string;
     startTime: string;
     endTime: string;
     speaker: string | null;
@@ -385,7 +440,11 @@ export function feedbackDocument(input: FeedbackDocumentInput): {
       blocks.push({
         kind: 'heading',
         level: 2,
-        spans: [{ text: `${dayOf(session.date)} · ${session.title}` }],
+        spans: [
+          {
+            text: `${dayOf(session.date)}${session.batches ? ` · ${session.batches}` : ''} · ${session.title}`,
+          },
+        ],
       });
       blocks.push({
         kind: 'paragraph',
@@ -447,6 +506,8 @@ export function feedbackDocument(input: FeedbackDocumentInput): {
 
 export interface PlanDocumentInput {
   organiser: string;
+  /** The event's batches in order, to group a document of every batch by batch (2026-11-22). */
+  batchOrder?: readonly string[];
   /** The one batch it covers (2026-11-22). */
   batch?: string | null;
   eventName: string;
@@ -513,7 +574,8 @@ function progressText(
 export function planDocument(input: PlanDocumentInput): { blocks: Block[]; meta: DocumentMeta } {
   const commitment = input.mode === 'commitment';
   const name = commitment ? input.template.title : 'Transfer Plans';
-  const plans = [...input.plans].sort(byName);
+  const plans = inBatchOrder(input.plans, input.batchOrder);
+  const openBatch = batchHeadings(plans, input.batchOrder, ['plan', 'plans']);
   const actions = plans.flatMap((p) => p.plan.actions);
   const applied = actions.filter((a) =>
     ['applied', 'applied_consistently', 'completed'].includes(a.progressStatus),
@@ -560,7 +622,9 @@ export function planDocument(input: PlanDocumentInput): { blocks: Block[]; meta:
     blocks.push({ kind: 'paragraph', spans: [{ text: 'No plan has been submitted yet.' }] });
   }
 
-  for (const { delegate, plan } of plans) {
+  for (const item of plans) {
+    const { delegate, plan } = item;
+    openBatch(item, blocks);
     blocks.push({
       kind: 'respondent',
       name: delegate.name,
@@ -710,6 +774,8 @@ export function planDocument(input: PlanDocumentInput): { blocks: Block[]; meta:
 
 interface DocumentHead {
   organiser: string;
+  /** The event's batches in order, to group a document of every batch by batch (2026-11-22). */
+  batchOrder?: readonly string[];
   /** The one batch it covers (2026-11-22). */
   batch?: string | null;
   eventName: string;

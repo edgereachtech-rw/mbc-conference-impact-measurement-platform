@@ -727,6 +727,12 @@ export function feedbackRouter({ prisma, config, middleware, now }: Deps): Route
       prisma().event.findUniqueOrThrow({ where: { id: event.id }, select: { name: true } }),
     ]);
     if (only && sessions.length === 0) throw new HttpError(404, 'not_found', 'Session not found.');
+    // The batches whose day each session is on, named in its heading (2026-11-22).
+    const batchRows = await prisma().eventBatch.findMany({
+      where: { eventId: event.id },
+      orderBy: { order: 'asc' },
+      select: { name: true, eventDateId: true },
+    });
     const attendedBy = new Map<string, number>();
     for (const dateId of new Set(sessions.map((x) => x.eventDateId))) {
       attendedBy.set(
@@ -754,6 +760,10 @@ export function feedbackRouter({ prisma, config, middleware, now }: Deps): Route
       sessions: sessions.map((x) => ({
         title: x.title,
         date: x.eventDate.date.toISOString().slice(0, 10),
+        batches: batchRows
+          .filter((b) => b.eventDateId === x.eventDateId)
+          .map((b) => b.name)
+          .join(', '),
         startTime: x.startTime,
         endTime: x.endTime,
         speaker: x.speaker,

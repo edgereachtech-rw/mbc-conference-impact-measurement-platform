@@ -370,6 +370,16 @@ export function attendanceRouter({ prisma, config, middleware, now }: Deps): Rou
         },
       }),
     ]);
+    // The batches whose day it is, named in the day's heading (2026-11-22).
+    const batchRows = await prisma().eventBatch.findMany({
+      where: { eventId: event.id },
+      orderBy: { order: 'asc' },
+      select: { name: true, eventDateId: true },
+    });
+    const batchesOn = (dateId: string) => {
+      const names = batchRows.filter((b) => b.eventDateId === dateId).map((b) => b.name);
+      return names.length ? ` · ${names.join(', ')}` : '';
+    };
     const recordOf = new Map(records.map((r) => [`${r.delegateId}:${r.eventDateId}`, r]));
     // A batch's register is its own day (2026-11-22).
     const days = scope ? event.dates.filter((d) => d.id === scope.eventDateId) : event.dates;
@@ -392,7 +402,7 @@ export function attendanceRouter({ prisma, config, middleware, now }: Deps): Rou
         return st === 'attended' || st === 'partial';
       }).length;
       return {
-        heading: dayOf(d.date),
+        heading: `${dayOf(d.date)}${batchesOn(d.id)}`,
         summary: `${present} of ${expected.length} expected delegates present${d.attendanceClosedAt ? '; the day is closed' : '; the day is still open'}.`,
         header: ['Delegate', 'Organisation', 'Batch', 'Format', 'Status', 'Recorded by', 'When'],
         rows,

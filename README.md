@@ -686,7 +686,12 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   another event is 404, never everyone). The reflections, session feedback and attendance
   downloads also keep to the batch's own day. Each document names its batch on the cover, and the
   assessment responses spreadsheet gains a Batch column. The event reports already had their
-  own batch filter. No migration.
+  own batch filter. No migration. With "All batches" chosen on an event in batches, the
+  downloads read batch by batch (2026-11-22): the assessment, Transfer Plan and support documents
+  open each batch on a new page with its name and count, delegates without a batch last under
+  "Every day (no batch)" (`inBatchOrder`, `batchHeadings`); the reflections, session feedback and
+  attendance documents, which go day by day, name each day's batches in its heading; the
+  assessment responses spreadsheet and the commitments CSV list rows batch by batch, then by name.
 - Checklist and commitment, a second plan mode as a template (task of 2026-11-20, from a line
   managers' training programme brief; migration `20261120183500_commitment_plan_mode`). An
   event chooses on the Transfer plans tab ("What delegates plan with", `transferPlanMode`

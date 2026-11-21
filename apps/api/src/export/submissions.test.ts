@@ -393,3 +393,38 @@ describe('reflections and support, attendance and delegate list documents', () =
     expect(doc.blocks.filter((b) => b.kind === 'pagebreak')).toHaveLength(1);
   });
 });
+
+describe('a document of every batch', () => {
+  it('reads batch by batch, each opening with its name and count, then by name', () => {
+    const answerOf = () => ({ value: 'Yes', correct: null });
+    const person = (name: string, batch?: string) => ({
+      delegate: {
+        name,
+        attendanceFormat: 'physical' as const,
+        ...(batch ? { batch: { name: batch } } : {}),
+      },
+      submittedAt: AT,
+      answerOf,
+    });
+    const doc = assessmentDocument({
+      ...base,
+      title: 'Programme Evaluation',
+      sections: [],
+      questions: [question('a', { prompt: 'Useful?' })],
+      invited: null,
+      batchOrder: ['Batch 1', 'Batch 2'],
+      responses: [
+        person('Zed', 'Batch 2'),
+        person('Ann', 'Batch 2'),
+        person('Bo', 'Batch 1'),
+        person('Cy'),
+      ],
+    });
+    const order = doc.blocks
+      .filter((b) => b.kind === 'heading' || b.kind === 'respondent')
+      .map((b) => (b.kind === 'respondent' ? b.name : blocksText([b])));
+    expect(order).toEqual(['Batch 1', 'Bo', 'Batch 2', 'Ann', 'Zed', 'Every day (no batch)', 'Cy']);
+    expect(blocksText(doc.blocks)).toContain('2 submissions.');
+    expect(doc.blocks.filter((b) => b.kind === 'pagebreak')).toHaveLength(2);
+  });
+});

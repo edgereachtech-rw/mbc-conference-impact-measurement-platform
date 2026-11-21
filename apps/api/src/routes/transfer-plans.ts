@@ -1398,6 +1398,25 @@ export function transferPlanRouter({
       ...waves.flatMap((w) => [`${waveName(w)}: status`, `${waveName(w)}: update`]),
     ];
     const day = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : '');
+    // Every batch: batch by batch, then by name (2026-11-22).
+    const order = scope
+      ? []
+      : (
+          await prisma().eventBatch.findMany({
+            where: { eventId: event.id },
+            orderBy: { order: 'asc' },
+            select: { name: true },
+          })
+        ).map((b) => b.name);
+    const rank = (name: string | undefined) => {
+      const i = name ? order.indexOf(name) : -1;
+      return i < 0 ? order.length : i;
+    };
+    plans.sort(
+      (a, b) =>
+        rank(a.delegate.batch?.name) - rank(b.delegate.batch?.name) ||
+        a.delegate.name.localeCompare(b.delegate.name, 'en', { sensitivity: 'base' }),
+    );
     const rows = plans.map((plan) => {
       const checklist = (plan.checklist as PlanChecklist | null) ?? null;
       const ticked = new Set(checklist?.ticked ?? []);
@@ -1478,6 +1497,15 @@ export function transferPlanRouter({
     const { blocks, meta } = planDocument({
       organiser: organiserName(),
       batch: scope?.name ?? null,
+      batchOrder: scope
+        ? undefined
+        : (
+            await prisma().eventBatch.findMany({
+              where: { eventId: event.id },
+              orderBy: { order: 'asc' },
+              select: { name: true },
+            })
+          ).map((b) => b.name),
       eventName: detail.name,
       timezone: event.timezone,
       generatedAt: clock(),

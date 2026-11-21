@@ -681,6 +681,16 @@ export function reflectionRouter({ prisma, config, middleware, now }: Deps): Rou
     if (day && activities.length === 0)
       throw new HttpError(404, 'not_found', 'Reflection not found.');
     const total = activities.reduce((n, a) => n + a.responses.length, 0);
+    // The batches whose day it is, named in the day's heading (2026-11-22).
+    const dayBatches = await prisma().eventBatch.findMany({
+      where: { eventId: event.id },
+      orderBy: { order: 'asc' },
+      select: { name: true, eventDateId: true },
+    });
+    const batchesOn = (dateId: string) => {
+      const names = dayBatches.filter((b) => b.eventDateId === dateId).map((b) => b.name);
+      return names.length ? ` · ${names.join(', ')}` : '';
+    };
     const { blocks, meta } = responsesDocument({
       organiser: organiserName(),
       batch: scope?.name ?? null,
@@ -700,7 +710,7 @@ export function reflectionRouter({ prisma, config, middleware, now }: Deps): Rou
         const answered = new Set(a.responses.map((r) => r.delegateId));
         const missing = registered.filter((d) => !answered.has(d.id)).map((d) => d.name);
         return {
-          heading: `${dayOf(a.eventDate.date)} · ${a.title}`,
+          heading: `${dayOf(a.eventDate.date)}${batchesOn(a.eventDateId)} · ${a.title}`,
           summary: `${a.responses.length} of ${registered.length} delegates submitted (${registered.length ? Math.round((a.responses.length / registered.length) * 100) : 0}%).`,
           empty: 'No reflection has been submitted for this day yet.',
           respondents: a.responses.map((r) => {

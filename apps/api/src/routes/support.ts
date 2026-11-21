@@ -19,6 +19,7 @@ import type { PrismaClient } from '../db.js';
 import type { Prisma } from '../generated/prisma/client.js';
 import {
   isDocumentFormat,
+  NO_BATCH,
   responsesDocument,
   sendDocument,
   whenIn,
@@ -182,6 +183,7 @@ export function supportRouter({ prisma, config, middleware, now }: Deps): Router
           delegate: byId.get(r.id)!,
           extra: [
             supportRequestKindLabels[r.kind],
+            supportRequestStatusLabels[r.status],
             `Raised ${whenIn(r.createdAt, detail.timezone)}`,
           ],
           rows: [
@@ -226,7 +228,34 @@ export function supportRouter({ prisma, config, middleware, now }: Deps): Router
         { value: String(open), label: 'Still open' },
         { value: String(rows.length - open), label: 'Addressed' },
       ],
-      groups: [group('open'), group('addressed')],
+      // Every batch of an event in batches: batch by batch, open ones first (2026-11-22).
+      groups: await (async () => {
+        const order = scope
+          ? []
+          : (
+              await prisma().eventBatch.findMany({
+                where: { eventId: event.id },
+                orderBy: { order: 'asc' },
+                select: { name: true },
+              })
+            ).map((b) => b.name);
+        if (!order.length) return [group('open'), group('addressed')];
+        const all = [...group('open').respondents, ...group('addressed').respondents];
+        return [...order, NO_BATCH]
+          .map((name) => {
+            const respondents = all.filter((r) =>
+              name === NO_BATCH
+                ? !r.delegate.batch || !order.includes(r.delegate.batch.name)
+                : r.delegate.batch?.name === name,
+            );
+            return {
+              heading: name,
+              summary: `${respondents.length} request${respondents.length === 1 ? '' : 's'}, ${respondents.filter((r) => r.extra.includes('Open')).length} open.`,
+              respondents,
+            };
+          })
+          .filter((g) => g.respondents.length > 0);
+      })(),
     });
     await audit(prisma(), {
       action: 'support_request.exported',
