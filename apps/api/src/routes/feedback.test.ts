@@ -541,6 +541,36 @@ describe.skipIf(!hasDatabase)('session feedback', () => {
       3,
     );
 
+    // Every response as a designed document (2026-11-21): all sessions, or one; admins only.
+
+    const download = (path: string, cookie = cookies.admin) =>
+      request(app())
+        .get(`/api/v1${path}`)
+        .set('Origin', ORIGIN)
+        .set('Cookie', cookie ?? '')
+        .buffer(true)
+        .parse((r, done) => {
+          const chunks: Buffer[] = [];
+          r.on('data', (c: Buffer) => chunks.push(c));
+          r.on('end', () => done(null, Buffer.concat(chunks)));
+        });
+
+    const all = await download(`/events/${eventId}/feedback/submissions.pdf`);
+    expect(all.status).toBe(200);
+    expect(all.headers['content-type']).toBe('application/pdf');
+    expect((all.body as Buffer).subarray(0, 4).toString()).toBe('%PDF');
+    const one = await download(
+      `/events/${eventId}/feedback/submissions.docx?session=${base.split('/').pop()}`,
+    );
+    expect(one.status).toBe(200);
+    expect((one.body as Buffer).subarray(0, 2).toString()).toBe('PK');
+    expect(
+      (await download(`/events/${eventId}/feedback/submissions.pdf?session=nope`)).status,
+    ).toBe(404);
+    expect(
+      (await download(`/events/${eventId}/feedback/submissions.pdf`, cookies.dee)).status,
+    ).toBe(403);
+
     // Editing an answered rating question's wording versions it; the distribution follows the key.
     const versioned = await call('patch', `/events/${eventId}/feedback/questions/${q1!.id}`, {
       prompt: 'How relevant was this session to your work?',

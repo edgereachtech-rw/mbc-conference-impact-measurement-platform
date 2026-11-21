@@ -326,6 +326,18 @@ export function TransferPlansManager({ event }: TransferPlansManagerProps) {
           >
             <DownloadIcon aria-hidden="true" /> Export to Excel
           </button>
+          {/* Every submitted plan as a designed document, delegate by delegate (2026-11-21). */}
+          {(['pdf', 'docx'] as const).map((format) => (
+            <a
+              key={format}
+              href={apiUrl(`/events/${event.id}/transfer-plans/submissions.${format}`)}
+              download
+              className={consoleButton({ variant: 'ghost' })}
+            >
+              <DownloadIcon aria-hidden="true" /> Submitted plans (
+              {format === 'pdf' ? 'PDF' : 'Word'})
+            </a>
+          ))}
           {commitmentMode ? (
             <a
               href={apiUrl(`/events/${event.id}/transfer-plans/commitments.csv`)}

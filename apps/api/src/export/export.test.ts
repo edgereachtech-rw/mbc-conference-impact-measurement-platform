@@ -49,7 +49,7 @@ describe('markdown blocks', () => {
     const [h1, note, bullet, h2, paragraph, table, h3] = blocks as Block[];
     expect(h1).toMatchObject({ level: 1 });
     const textOf = (block: Block | undefined) =>
-      block && block.kind !== 'table' ? spansText(block.spans) : '';
+      block && 'spans' in block ? spansText(block.spans) : '';
     expect(textOf(h1)).toBe('Event: Immediate conference report');
     expect(h2).toMatchObject({ level: 2 });
     expect(h3).toMatchObject({ level: 3 });

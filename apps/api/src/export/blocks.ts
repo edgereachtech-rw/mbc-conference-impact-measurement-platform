@@ -24,7 +24,33 @@ export type Block =
   | { kind: 'bullet'; spans: Span[] }
   /** A blockquote: the DRAFT banner on an unapproved external report, and nothing else so far. */
   | { kind: 'note'; spans: Span[] }
-  | { kind: 'table'; header: string[]; rows: string[][] };
+  | { kind: 'table'; header: string[]; rows: string[][] }
+  // The submissions documents (2026-11-21): built directly, never parsed from Markdown.
+  /** The first page's title block: what the document is, its title and the key facts. */
+  | { kind: 'cover'; eyebrow: string; title: string; lead?: string; facts: Fact[] }
+  /** A row of headline figures, each a value with what it counts. */
+  | { kind: 'figures'; items: Array<{ value: string; label: string }> }
+  /** The band that opens one delegate's response: the name and who they are. */
+  | { kind: 'respondent'; name: string; details: string }
+  /** A small heading inside a response: a section title, an action, a session. */
+  | { kind: 'label'; text: string }
+  /** One question as asked and the delegate's answer; a line break in the answer is kept. */
+  | {
+      kind: 'qa';
+      number: string;
+      question: string;
+      answer: string;
+      /** A knowledge answer's result. */
+      mark?: 'correct' | 'incorrect';
+      /** Nothing was answered: shown as "No answer". */
+      empty?: boolean;
+    }
+  | { kind: 'pagebreak' };
+
+export interface Fact {
+  label: string;
+  value: string;
+}
 
 /** `**bold**` and `_italic_`, which is all the renderer uses. Markers are never nested. */
 export function parseSpans(line: string): Span[] {
@@ -130,4 +156,6 @@ export interface DocumentMeta {
   organiser: string;
   /** One line under the running head, e.g. the event and the reporting date. */
   subtitle?: string;
+  /** A line at the foot of every page, e.g. "Confidential: contains personal data". */
+  footnote?: string;
 }

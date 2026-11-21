@@ -60,7 +60,9 @@ import type { PrismaClient } from '../db.js';
 import type { Prisma } from '../generated/prisma/client.js';
 import { referenceAnswersFor } from '../assessments/references.js';
 import { audit } from '../lib/audit.js';
+import { isDocumentFormat, planDocument, sendDocument } from '../export/submissions.js';
 import { csvCell } from '../imports/service.js';
+import { organiserName } from '../mail/branding.js';
 import { HttpError } from '../lib/errors.js';
 import type { Logger } from '../lib/logger.js';
 import { brandingForEvent } from '../mail/branding.js';
@@ -1425,6 +1427,64 @@ export function transferPlanRouter({
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${name}"`);
     res.send([header, ...rows].map((r) => r.map(csvCell).join(',')).join('\r\n') + '\r\n');
+  });
+
+  /**
+   * The Transfer Plans as a designed PDF or Word document (2026-11-21): every submitted or
+   * completed plan (`?drafts=true` adds drafts), delegate by delegate, every action with all
+   * its answers, its reminder and each follow-up's record; for the checklist-and-commitment
+   * form, the training, the ticks, the commitment and the updates. Audited.
+   */
+  router.get('/events/:eventId/transfer-plans/submissions.:format', guard, async (req, res) => {
+    const principal = requireAdmin(res);
+    const format = String(req.params.format);
+    if (!isDocumentFormat(format)) throw new HttpError(404, 'not_found', 'No such format.');
+    const event = await loadEvent(String(req.params.eventId));
+    const drafts = String(req.query.drafts ?? '') === 'true';
+    const [setup, detail, plans] = await Promise.all([
+      planSetup(event.id),
+      prisma().event.findUniqueOrThrow({ where: { id: event.id }, select: { name: true } }),
+      prisma().transferPlan.findMany({
+        where: {
+          eventId: event.id,
+          delegate: { registrationStatus: { in: [...eligible()] } },
+          ...(drafts ? {} : { status: { in: ['submitted', 'completed'] } }),
+        },
+        include: {
+          ...PLAN_INCLUDE,
+          delegate: {
+            select: {
+              name: true,
+              organisation: true,
+              jobTitle: true,
+              department: true,
+              attendanceFormat: true,
+              batch: { select: { name: true } },
+            },
+          },
+        },
+      }),
+    ]);
+    const { blocks, meta } = planDocument({
+      organiser: organiserName(),
+      eventName: detail.name,
+      timezone: event.timezone,
+      generatedAt: clock(),
+      mode: setup.mode,
+      template: setup.template,
+      includesDrafts: drafts,
+      plans: plans.map((p) => ({ delegate: p.delegate, plan: planViewOf(p) })),
+    });
+    await audit(prisma(), {
+      action: 'transfer_plan.exported',
+      entityType: 'event',
+      entityId: event.id,
+      eventId: event.id,
+      actorUserId: principal.userId,
+      newValue: { rows: plans.length, kind: 'submissions', format, drafts },
+      ...clientOf(res),
+    });
+    await sendDocument(res, format, blocks, meta, `${detail.name} transfer plans`);
   });
 
   // Every planned action with its measures and evidence classification (backlog E14-4,

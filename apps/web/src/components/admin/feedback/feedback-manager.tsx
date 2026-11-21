@@ -148,6 +148,22 @@ export function FeedbackManager({ event }: FeedbackManagerProps) {
           {error.message}
         </p>
       ) : null}
+      {sessions.some((s) => s.enabled) ? (
+        // Every session's responses in one document, session by session (2026-11-21).
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-sm font-semibold text-corp-ink">All sessions’ feedback:</span>
+          {(['pdf', 'docx'] as const).map((format) => (
+            <a
+              key={format}
+              href={apiUrl(`/events/${event.id}/feedback/submissions.${format}`)}
+              download
+              className={consoleButton({ variant: 'secondary', size: 'sm' })}
+            >
+              <DownloadIcon aria-hidden="true" /> {format === 'pdf' ? 'PDF' : 'Word'}
+            </a>
+          ))}
+        </div>
+      ) : null}
       <div className="grid gap-4 xl:grid-cols-2">
         {sessions.map((s) => (
           <SessionCard
@@ -491,6 +507,19 @@ function SessionCard({
               >
                 <DownloadIcon aria-hidden="true" /> Export to Excel
               </a>
+              {/* This session's responses as a designed document (2026-11-21). */}
+              {(['pdf', 'docx'] as const).map((format) => (
+                <a
+                  key={format}
+                  href={apiUrl(
+                    `/events/${event.id}/feedback/submissions.${format}?session=${session.id}`,
+                  )}
+                  download
+                  className={consoleButton({ variant: 'ghost', size: 'sm' })}
+                >
+                  <DownloadIcon aria-hidden="true" /> {format === 'pdf' ? 'PDF' : 'Word'}
+                </a>
+              ))}
             </div>
             <FeedbackInvite
               eventId={event.id}

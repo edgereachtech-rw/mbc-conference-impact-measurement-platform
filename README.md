@@ -634,6 +634,24 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   (`actionSubmissionGaps`; 422 `plan_incomplete` with the gaps by action; the form lists them
   under the submit button). The measure, baseline, evidence description and review date columns
   stay in the data but left the card: measures and evidence have their own records.
+- Submissions as documents (task of 2026-11-21): every assessment (and each follow-up round),
+  the session feedback and the Transfer Plans download as a designed PDF or Word document, built
+  once as blocks (`apps/api/src/export/submissions.ts`) and laid out by the same PDF and Word
+  writers as the reports, which gained a cover, headline figures, a delegate band, section labels
+  and question-answer rows. Each document: a cover (what it is, the event, when generated), the
+  totals, then one block per delegate in name order (name, job, organisation, department, batch,
+  format, submitted at) with every question exactly as asked and the answer beside it. A skipped
+  question says "No answer"; one never asked (another format's section, a follow-up question
+  whose condition was not met) is left out. Knowledge answers are marked correct or incorrect,
+  with the section's mark; ratings carry their scale's end labels. Session feedback goes session
+  by session; the Transfer Plans print every plan question of each action, its reminder, measures,
+  evidence and each follow-up's record, or for the checklist-and-commitment form the training,
+  the ticks, the commitment and the updates in the form's own words. Routes (admins only,
+  audited): `GET /events/:id/assessments/:stage/responses.pdf|docx` (`?wave=`), `GET
+/events/:id/feedback/submissions.pdf|docx` (`?session=` for one), `GET
+/events/:id/transfer-plans/submissions.pdf|docx` (submitted and completed; `?drafts=true` adds
+  drafts). Every page says it contains personal data. Buttons: the stage page's Submissions tab,
+  each feedback session card and an "All sessions' feedback" line, and the Transfer plans list.
 - Checklist and commitment, a second plan mode as a template (task of 2026-11-20, from a line
   managers' training programme brief; migration `20261120183500_commitment_plan_mode`). An
   event chooses on the Transfer plans tab ("What delegates plan with", `transferPlanMode`

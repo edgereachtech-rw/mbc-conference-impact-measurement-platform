@@ -199,9 +199,16 @@ describe('StageSubmissions', () => {
     expect(screen.getByText(/Rating-scale statements/).closest('table')?.textContent).toMatch(
       /I follow up after training\.14/,
     );
+    // The submissions as a designed PDF and Word document, and the spreadsheet (2026-11-21).
     expect(
-      screen.getByRole('link', { name: 'Download responses (Excel)' }).getAttribute('href'),
-    ).toBe('/api/v1/events/e1/assessments/pre_conference/responses.xlsx');
+      ['Submissions (PDF)', 'Submissions (Word)', 'Responses (Excel)'].map((name) =>
+        screen.getByRole('link', { name }).getAttribute('href'),
+      ),
+    ).toEqual([
+      '/api/v1/events/e1/assessments/pre_conference/responses.pdf',
+      '/api/v1/events/e1/assessments/pre_conference/responses.docx',
+      '/api/v1/events/e1/assessments/pre_conference/responses.xlsx',
+    ]);
 
     // Responses by delegate, with section progress, and one delegate's answers in a popup.
     const table = screen.getByRole('table', { name: 'Responses by delegate' });

@@ -21,7 +21,196 @@ const INK = {
   band: '#eef3f5',
   stripe: '#f8fafb',
   white: '#ffffff',
+  danger: '#a3471f',
 };
+
+/** Starts a new page when fewer than `needed` points are left on this one. */
+function room(doc: Doc, needed: number) {
+  if (doc.y + needed > doc.page.height - doc.page.margins.bottom) doc.addPage();
+}
+
+/** The first page's title block (2026-11-21): a navy band, the title, a lead and the facts. */
+function writeCover(doc: Doc, block: Extract<Block, { kind: 'cover' }>, width: number) {
+  const left = doc.page.margins.left;
+  doc.rect(0, 0, doc.page.width, 96).fill(INK.navy);
+  doc
+    .font(FONT.bold)
+    .fontSize(SIZE.small)
+    .fillColor(INK.white)
+    .text(block.eyebrow.toUpperCase(), left, 40, { width, characterSpacing: 1.2 });
+  doc.y = 128;
+  doc.font(FONT.bold).fontSize(24).fillColor(INK.navy).text(block.title, left, doc.y, { width });
+  if (block.lead) {
+    doc.moveDown(0.5);
+    doc.font(FONT.body).fontSize(11).fillColor(INK.muted).text(block.lead, { width });
+  }
+  doc.moveDown(1);
+  doc
+    .moveTo(left, doc.y)
+    .lineTo(left + width, doc.y)
+    .strokeColor(INK.green)
+    .lineWidth(2)
+    .stroke();
+  doc.moveDown(0.9);
+  const column = (width - 24) / 2;
+  for (let i = 0; i < block.facts.length; i += 2) {
+    const top = doc.y;
+    let tallest = 0;
+    block.facts.slice(i, i + 2).forEach((fact, j) => {
+      const x = left + j * (column + 24);
+      doc
+        .font(FONT.bold)
+        .fontSize(SIZE.small)
+        .fillColor(INK.muted)
+        .text(fact.label.toUpperCase(), x, top, { width: column, characterSpacing: 0.6 });
+      doc
+        .font(FONT.bold)
+        .fontSize(11)
+        .fillColor(INK.text)
+        .text(fact.value, x, doc.y + 2, {
+          width: column,
+        });
+      tallest = Math.max(tallest, doc.y - top);
+    });
+    doc.y = top + tallest + 12;
+  }
+  doc.x = left;
+  doc.moveDown(0.6);
+}
+
+/** Headline figures in tiles of up to three a row, each with a green rule above. */
+function writeFigures(doc: Doc, items: Array<{ value: string; label: string }>, width: number) {
+  const left = doc.page.margins.left;
+  const perRow = Math.min(3, Math.max(1, items.length));
+  const gap = 12;
+  const tile = (width - gap * (perRow - 1)) / perRow;
+  for (let i = 0; i < items.length; i += perRow) {
+    room(doc, 64);
+    const top = doc.y;
+    let tallest = 0;
+    items.slice(i, i + perRow).forEach((item, j) => {
+      const x = left + j * (tile + gap);
+      const labelHeight = doc
+        .font(FONT.body)
+        .fontSize(SIZE.small + 0.5)
+        .heightOfString(item.label, { width: tile - 20 });
+      const height = 42 + labelHeight;
+      tallest = Math.max(tallest, height);
+      doc.rect(x, top, tile, height).fill(INK.band);
+      doc.rect(x, top, tile, 3).fill(INK.green);
+      doc
+        .font(FONT.bold)
+        .fontSize(18)
+        .fillColor(INK.navy)
+        .text(item.value, x + 10, top + 12, {
+          width: tile - 20,
+          lineBreak: false,
+        });
+      doc
+        .font(FONT.body)
+        .fontSize(SIZE.small + 0.5)
+        .fillColor(INK.muted)
+        .text(item.label, x + 10, top + 36, { width: tile - 20 });
+    });
+    doc.y = top + tallest + gap;
+  }
+  doc.x = left;
+  doc.moveDown(0.4);
+}
+
+/** The band that opens one delegate's response; never left alone at the foot of a page. */
+function writeRespondent(doc: Doc, name: string, details: string, width: number) {
+  const left = doc.page.margins.left;
+  doc.fontSize(SIZE.small + 0.5);
+  const detailsHeight = doc.font(FONT.body).heightOfString(details || ' ', { width: width - 24 });
+  const height = 26 + detailsHeight;
+  room(doc, height + 70);
+  doc.moveDown(0.6);
+  const top = doc.y;
+  doc.rect(left, top, width, height).fill(INK.band);
+  doc.rect(left, top, 3, height).fill(INK.navy);
+  doc
+    .font(FONT.bold)
+    .fontSize(12)
+    .fillColor(INK.navy)
+    .text(name, left + 12, top + 7, {
+      width: width - 24,
+    });
+  doc
+    .font(FONT.body)
+    .fontSize(SIZE.small + 0.5)
+    .fillColor(INK.muted)
+    .text(details, left + 12, doc.y + 1, { width: width - 24 });
+  doc.y = top + height + 6;
+  doc.x = left;
+}
+
+/** A small green heading inside a response. */
+function writeLabel(doc: Doc, text: string, width: number) {
+  room(doc, 44);
+  doc.moveDown(0.35);
+  doc
+    .font(FONT.bold)
+    .fontSize(SIZE.small + 0.5)
+    .fillColor(INK.green)
+    .text(text.toUpperCase(), doc.page.margins.left, doc.y, { width, characterSpacing: 0.6 });
+  doc.moveDown(0.25);
+}
+
+/** One question and its answer, in three columns: number, question as asked, answer. */
+function writeQa(doc: Doc, block: Extract<Block, { kind: 'qa' }>, width: number) {
+  const left = doc.page.margins.left;
+  const numberWidth = 26;
+  const questionWidth = Math.round(width * 0.4);
+  const answerWidth = width - numberWidth - questionWidth - 10;
+  const answer = block.empty ? 'No answer' : block.answer;
+  const markText =
+    block.mark === 'correct' ? '  (correct)' : block.mark === 'incorrect' ? '  (incorrect)' : '';
+  doc.fontSize(SIZE.body);
+  const questionHeight = doc
+    .font(FONT.body)
+    .heightOfString(block.question, { width: questionWidth - 8 });
+  const answerHeight = doc
+    .font(block.empty ? FONT.italic : FONT.body)
+    .heightOfString(answer + markText, { width: answerWidth });
+  const height = Math.max(questionHeight, answerHeight);
+  room(doc, height + 10);
+  const top = doc.y + 3;
+  doc
+    .font(FONT.body)
+    .fontSize(SIZE.small + 0.5)
+    .fillColor(INK.muted)
+    .text(block.number, left, top + 1, {
+      width: numberWidth,
+    });
+  doc
+    .font(FONT.body)
+    .fontSize(SIZE.body)
+    .fillColor(INK.muted)
+    .text(block.question, left + numberWidth, top, {
+      width: questionWidth - 8,
+    });
+  const x = left + numberWidth + questionWidth + 10;
+  doc
+    .font(block.empty ? FONT.italic : FONT.body)
+    .fontSize(SIZE.body)
+    .fillColor(block.empty ? INK.muted : INK.text)
+    .text(answer, x, top, { width: answerWidth, continued: Boolean(markText) });
+  if (markText) {
+    doc
+      .font(FONT.bold)
+      .fillColor(block.mark === 'correct' ? INK.green : INK.danger)
+      .text(markText, { continued: false });
+  }
+  doc.y = top + height + 5;
+  doc
+    .moveTo(left, doc.y)
+    .lineTo(left + width, doc.y)
+    .strokeColor(INK.rule)
+    .lineWidth(0.25)
+    .stroke();
+  doc.x = left;
+}
 
 type Doc = PDFKit.PDFDocument;
 
@@ -235,49 +424,87 @@ export function toPdf(blocks: readonly Block[], meta: DocumentMeta): Promise<Buf
         doc.fontSize(SIZE.body);
         writeTable(doc, block.header, block.rows, width);
         break;
+      case 'cover':
+        writeCover(doc, block, width);
+        break;
+      case 'figures':
+        writeFigures(doc, block.items, width);
+        break;
+      case 'respondent':
+        writeRespondent(doc, block.name, block.details, width);
+        break;
+      case 'label':
+        writeLabel(doc, block.text, width);
+        break;
+      case 'qa':
+        writeQa(doc, block, width);
+        break;
+      case 'pagebreak':
+        if (doc.y > doc.page.margins.top + 4) doc.addPage();
+        break;
     }
   }
 
-  // Running foot on every page: who it is about and which page, so a printout stays identifiable.
+  // Running head and foot on every page: who it is about and which page, so a printout stays
+  // identifiable. They sit in the margins, so the bottom margin is lifted while they are written:
+  // text below it would otherwise make the writer start a new, empty page (2026-11-21).
   const range = doc.bufferedPageRange();
+  const coverFirst = blocks[0]?.kind === 'cover';
   for (let i = 0; i < range.count; i += 1) {
     doc.switchToPage(range.start + i);
-    doc
-      .font(FONT.bold)
-      .fontSize(SIZE.small)
-      .fillColor(INK.navy)
-      .text(meta.organiser.toUpperCase(), doc.page.margins.left, 22, {
-        width: width * 0.45,
-        lineBreak: false,
-      });
-    if (meta.subtitle) {
+    const bottom = doc.page.margins.bottom;
+    doc.page.margins.bottom = 0;
+    const foot = doc.page.height - bottom + 14;
+    if (meta.footnote) {
+      doc
+        .font(FONT.body)
+        .fontSize(SIZE.small - 1)
+        .fillColor(INK.muted)
+        .text(meta.footnote, doc.page.margins.left, foot + 12, { width, lineBreak: false });
+    }
+    if (!(coverFirst && i === 0)) {
+      // The cover's own band carries the organiser; the other pages carry it in the head.
+      doc
+        .font(FONT.bold)
+        .fontSize(SIZE.small)
+        .fillColor(INK.navy)
+        .text(meta.organiser.toUpperCase(), doc.page.margins.left, 22, {
+          width: width * 0.45,
+          lineBreak: false,
+        });
+      if (meta.subtitle) {
+        doc
+          .font(FONT.body)
+          .fontSize(SIZE.small)
+          .fillColor(INK.muted)
+          .text(meta.subtitle, doc.page.margins.left + width * 0.45, 22, {
+            width: width * 0.55,
+            align: 'right',
+            lineBreak: false,
+          });
+      }
+      doc
+        .moveTo(doc.page.margins.left, 38)
+        .lineTo(doc.page.margins.left + width, 38)
+        .strokeColor(INK.rule)
+        .lineWidth(0.5)
+        .stroke();
       doc
         .font(FONT.body)
         .fontSize(SIZE.small)
         .fillColor(INK.muted)
-        .text(meta.subtitle, doc.page.margins.left + width * 0.45, 22, {
-          width: width * 0.55,
-          align: 'right',
-          lineBreak: false,
-        });
+        .text(meta.title, doc.page.margins.left, foot, { width: width - 60, lineBreak: false });
     }
-    doc
-      .moveTo(doc.page.margins.left, 38)
-      .lineTo(doc.page.margins.left + width, 38)
-      .strokeColor(INK.rule)
-      .lineWidth(0.5)
-      .stroke();
-    const y = doc.page.height - doc.page.margins.bottom + 14;
     doc
       .font(FONT.body)
       .fontSize(SIZE.small)
       .fillColor(INK.muted)
-      .text(meta.title, doc.page.margins.left, y, { width: width - 60, lineBreak: false })
-      .text(`Page ${i + 1} of ${range.count}`, doc.page.margins.left, y, {
+      .text(`Page ${i + 1} of ${range.count}`, doc.page.margins.left, foot, {
         width,
         align: 'right',
         lineBreak: false,
       });
+    doc.page.margins.bottom = bottom;
   }
 
   doc.end();

@@ -307,6 +307,29 @@ describe.skipIf(!hasDatabase)('checklist and commitment', () => {
         )
       ).status,
     ).toBe(403);
+    // The checklists and commitments as a designed document (2026-11-21).
+
+    const download = (path: string, cookie = cookies.admin) =>
+      request(app())
+        .get(`/api/v1${path}`)
+        .set('Origin', ORIGIN)
+        .set('Cookie', cookie ?? '')
+        .buffer(true)
+        .parse((r, done) => {
+          const chunks: Buffer[] = [];
+          r.on('data', (c: Buffer) => chunks.push(c));
+          r.on('end', () => done(null, Buffer.concat(chunks)));
+        });
+
+    const pdf = await download(`/events/${eventId}/transfer-plans/submissions.pdf`);
+    expect(pdf.status).toBe(200);
+    expect((pdf.body as Buffer).subarray(0, 4).toString()).toBe('%PDF');
+    const word = await download(`/events/${eventId}/transfer-plans/submissions.docx?drafts=true`);
+    expect(word.status).toBe(200);
+    expect((word.body as Buffer).subarray(0, 2).toString()).toBe('PK');
+    expect(
+      (await download(`/events/${eventId}/transfer-plans/submissions.pdf`, cookies.dee)).status,
+    ).toBe(403);
     // The organisers' list shows the training and the ticks.
     const list = await call('get', `/events/${eventId}/transfer-plans`);
     const row = (list.body.plans as Array<Record<string, unknown>>).find(

@@ -18,10 +18,19 @@ import { apiFetch, apiUrl } from '@/lib/api';
 import { formatInstant } from '@/lib/events';
 import { describeError } from '@/lib/imports';
 
+/** What each download is called on its button. */
+const DOWNLOAD_LABEL = {
+  pdf: 'Submissions (PDF)',
+  docx: 'Submissions (Word)',
+  xlsx: 'Responses (Excel)',
+} as const;
+
 interface StageSubmissionsProps {
   eventId: string;
   eventName: string;
   stage: AssessmentStage;
+  /** The follow-up round whose downloads these are; 1 for every other stage. */
+  wave?: number;
   timezone: string;
   /** Archived events show the figures but offer no reminders. */
   readOnly?: boolean;
@@ -38,6 +47,7 @@ export function StageSubmissions({
   eventId,
   eventName,
   stage,
+  wave = 1,
   timezone,
   readOnly,
 }: StageSubmissionsProps) {
@@ -227,13 +237,19 @@ export function StageSubmissions({
 
       <div className="flex flex-wrap items-center gap-2">
         {summary.submitted > 0 ? (
-          <a
-            href={apiUrl(`${base}/responses.xlsx`)}
-            download
-            className={consoleButton({ variant: 'secondary' })}
-          >
-            <DownloadIcon aria-hidden="true" /> Download responses (Excel)
-          </a>
+          <>
+            {/* Every submission as a designed document, delegate by delegate (2026-11-21). */}
+            {(['pdf', 'docx', 'xlsx'] as const).map((format) => (
+              <a
+                key={format}
+                href={apiUrl(`${base}/responses.${format}${wave !== 1 ? `?wave=${wave}` : ''}`)}
+                download
+                className={consoleButton({ variant: format === 'pdf' ? 'secondary' : 'ghost' })}
+              >
+                <DownloadIcon aria-hidden="true" /> {DOWNLOAD_LABEL[format]}
+              </a>
+            ))}
+          </>
         ) : (
           <p className="text-sm text-corp-muted">
             The download appears once the first response is submitted.

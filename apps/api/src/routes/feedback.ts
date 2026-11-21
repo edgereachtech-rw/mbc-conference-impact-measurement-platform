@@ -26,6 +26,7 @@ import { canConfigureEvents, EVENT_SETUP_ROLES } from '../auth/policies.js';
 import type { PrismaClient } from '../db.js';
 import type { Prisma } from '../generated/prisma/client.js';
 import { MEDIA_TYPES, toXlsx } from '../export/xlsx.js';
+import { feedbackDocument, isDocumentFormat, sendDocument } from '../export/submissions.js';
 import { csvCell } from '../imports/service.js';
 import { organiserName } from '../mail/branding.js';
 import { audit } from '../lib/audit.js';
@@ -664,6 +665,120 @@ export function feedbackRouter({ prisma, config, middleware, now }: Deps): Route
       );
     },
   );
+
+  /**
+   * The session feedback as a designed PDF or Word document (2026-11-21): every response,
+   * session by session and delegate by delegate, each question with its answer. `?session=`
+   * narrows it to one session. The latest revision of each response; audited.
+   */
+  router.get('/events/:eventId/feedback/submissions.:format', guard, async (req, res) => {
+    const principal = requireAdmin(res);
+    const format = String(req.params.format);
+    if (!isDocumentFormat(format)) throw new HttpError(404, 'not_found', 'No such format.');
+    const event = await loadEvent(String(req.params.eventId));
+    const only = typeof req.query.session === 'string' ? req.query.session : null;
+    if (only !== null && !UUID.test(only))
+      throw new HttpError(404, 'not_found', 'Session not found.');
+    const [questions, sessions, detail] = await Promise.all([
+      eventQuestions(event.id),
+      prisma().eventSession.findMany({
+        where: { eventId: event.id, feedbackEnabled: true, ...(only ? { id: only } : {}) },
+        orderBy: [{ eventDate: { date: 'asc' } }, { startTime: 'asc' }],
+        select: {
+          id: true,
+          title: true,
+          startTime: true,
+          endTime: true,
+          speaker: true,
+          eventDateId: true,
+          eventDate: { select: { date: true } },
+          feedbackResponses: {
+            where: { delegate: { registrationStatus: { in: [...eligible()] } } },
+            select: {
+              submittedAt: true,
+              delegate: {
+                select: {
+                  name: true,
+                  organisation: true,
+                  jobTitle: true,
+                  department: true,
+                  attendanceFormat: true,
+                  batch: { select: { name: true } },
+                },
+              },
+              answers: {
+                select: {
+                  value: true,
+                  question: { select: { questionKey: true, prompt: true, type: true } },
+                },
+              },
+            },
+          },
+        },
+      }),
+      prisma().event.findUniqueOrThrow({ where: { id: event.id }, select: { name: true } }),
+    ]);
+    if (only && sessions.length === 0) throw new HttpError(404, 'not_found', 'Session not found.');
+    const attendedBy = new Map<string, number>();
+    for (const dateId of new Set(sessions.map((x) => x.eventDateId))) {
+      attendedBy.set(
+        dateId,
+        await prisma().attendanceRecord.count({
+          where: {
+            eventDateId: dateId,
+            status: { in: ['attended', 'partial'] },
+            delegate: { registrationStatus: { in: [...eligible()] } },
+          },
+        }),
+      );
+    }
+    const { blocks, meta } = feedbackDocument({
+      organiser: organiserName(),
+      eventName: detail.name,
+      timezone: event.timezone,
+      generatedAt: new Date(),
+      questions: questions.map((q) => ({
+        questionKey: q.questionKey,
+        prompt: q.prompt,
+        type: q.type,
+      })),
+      sessions: sessions.map((x) => ({
+        title: x.title,
+        date: x.eventDate.date.toISOString().slice(0, 10),
+        startTime: x.startTime,
+        endTime: x.endTime,
+        speaker: x.speaker,
+        attended: attendedBy.get(x.eventDateId) ?? 0,
+        responses: x.feedbackResponses.map((r) => ({
+          delegate: r.delegate,
+          submittedAt: r.submittedAt,
+          answers: r.answers.map((a) => ({
+            questionKey: a.question.questionKey,
+            prompt: a.question.prompt,
+            type: a.question.type,
+            value: a.value,
+          })),
+        })),
+      })),
+    });
+    const responses = sessions.reduce((n, x) => n + x.feedbackResponses.length, 0);
+    await audit(prisma(), {
+      action: 'feedback.exported',
+      entityType: only ? 'event_session' : 'event',
+      entityId: only ?? event.id,
+      eventId: event.id,
+      actorUserId: principal.userId,
+      newValue: { format, responses, sessions: sessions.length },
+      ...clientOf(res),
+    });
+    await sendDocument(
+      res,
+      format,
+      blocks,
+      meta,
+      `${detail.name} ${only && sessions[0] ? sessions[0].title : 'session'} feedback`,
+    );
+  });
 
   // ---------------------------------------------------------------- delegate
 

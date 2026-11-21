@@ -17,6 +17,7 @@ import {
   isKnowledgeQuestion,
   parseConfirmation,
   sectionMarkOf,
+  stageTitleOf,
   stableShuffle,
   markedOptions,
   questionCreateSchema,
@@ -60,6 +61,7 @@ import { canConfigureEvents, EVENT_SETUP_ROLES } from '../auth/policies.js';
 import type { PrismaClient } from '../db.js';
 import { Prisma } from '../generated/prisma/client.js';
 import { MEDIA_TYPES, toXlsx } from '../export/xlsx.js';
+import { assessmentDocument, isDocumentFormat, sendDocument } from '../export/submissions.js';
 import { csvCell } from '../imports/service.js';
 import { organiserName } from '../mail/branding.js';
 import { audit } from '../lib/audit.js';
@@ -566,6 +568,99 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
     loadStage(String(req.params.eventId), stageOf(String(req.params.stage)), forWrite, waveOf(req));
 
   const activeQuestions = (stageConfigId: string) => activeQuestionsOf(prisma(), stageConfigId);
+
+  /**
+   * One assessment's submissions as a designed PDF or Word document (2026-11-21): every
+   * submitted response, delegate by delegate, each question as asked with its answer. Counted
+   * delegates only (the event's test-delegate choice), and audited like the other exports.
+   */
+  async function sendAssessmentDocument(
+    res: Response,
+    actorUserId: string,
+    stage: Awaited<ReturnType<typeof loadStage>>,
+    format: 'pdf' | 'docx',
+  ) {
+    const statuses = await figureStatusesFor(stage.eventId);
+    const [event, questions, sections, responses, invitations, registered] = await Promise.all([
+      prisma().event.findUniqueOrThrow({
+        where: { id: stage.eventId },
+        select: { name: true, timezone: true, eventType: true },
+      }),
+      activeQuestions(stage.id),
+      activeSections(stage.id),
+      prisma().assessmentResponse.findMany({
+        where: {
+          stageConfigId: stage.id,
+          submittedAt: { not: null },
+          delegate: { registrationStatus: { in: [...statuses] } },
+        },
+        select: {
+          submittedAt: true,
+          delegate: {
+            select: {
+              name: true,
+              organisation: true,
+              jobTitle: true,
+              department: true,
+              attendanceFormat: true,
+              batch: { select: { name: true } },
+            },
+          },
+          answers: { select: { questionId: true, value: true, correct: true } },
+        },
+      }),
+      stage.stage === 'follow_up'
+        ? prisma().assessmentInvitation.count({
+            where: {
+              stageConfigId: stage.id,
+              kind: 'invitation',
+              status: 'sent',
+              delegate: { registrationStatus: { in: [...statuses] } },
+            },
+          })
+        : Promise.resolve(null),
+      prisma().delegate.count({
+        where: { eventId: stage.eventId, registrationStatus: { in: [...statuses] } },
+      }),
+    ]);
+    const versions = await versionIdsOf(stage.id, questions);
+    const title = stageTitleOf(
+      {
+        stage: stage.stage,
+        title: stage.title,
+        waveLabel: waveLabel(stage.stage, stage.wave, stage.dueAfterDays),
+      },
+      event.eventType,
+    );
+    const { blocks, meta } = assessmentDocument({
+      organiser: organiserName(),
+      eventName: event.name,
+      timezone: event.timezone,
+      generatedAt: clock(),
+      title,
+      sections,
+      questions,
+      invited: invitations ?? registered,
+      responses: responses.map((r) => {
+        const byId = new Map(r.answers.map((a) => [a.questionId, a]));
+        return {
+          delegate: r.delegate,
+          submittedAt: r.submittedAt,
+          answerOf: (q: AssessmentQuestionView) => answerTo(byId, versions.get(q.id), q.id),
+        };
+      }),
+    });
+    await audit(prisma(), {
+      action: 'assessment.exported',
+      entityType: 'assessment_stage_config',
+      entityId: stage.id,
+      eventId: stage.eventId,
+      actorUserId,
+      newValue: { stage: stage.stage, wave: stage.wave, format, rows: responses.length },
+      ...clientOf(res),
+    });
+    await sendDocument(res, format, blocks, meta, `${event.name} ${title} submissions`);
+  }
 
   async function activeSections(stageConfigId: string): Promise<AssessmentSectionView[]> {
     const rows = await prisma().assessmentSection.findMany({
@@ -1397,9 +1492,13 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
   router.get('/events/:eventId/assessments/:stage/responses.:format', guard, async (req, res) => {
     const principal = requireAdmin(res);
     const format = String(req.params.format);
-    if (format !== 'csv' && format !== 'xlsx')
+    if (format !== 'csv' && format !== 'xlsx' && !isDocumentFormat(format))
       throw new HttpError(404, 'not_found', 'No such format.');
     const stage = await stageFromReq(req, false);
+    if (isDocumentFormat(format)) {
+      await sendAssessmentDocument(res, principal.userId, stage, format);
+      return;
+    }
     const [questions, sections, responses] = await Promise.all([
       activeQuestions(stage.id),
       activeSections(stage.id),

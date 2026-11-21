@@ -96,6 +96,7 @@ export function StageWorkspace({ event, stage, wave = 1 }: StageWorkspaceProps) 
             eventId={event.id}
             eventName={event.name}
             stage={stage}
+            wave={wave}
             timezone={event.timezone}
             readOnly={readOnly}
           />

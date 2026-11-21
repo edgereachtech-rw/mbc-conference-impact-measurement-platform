@@ -766,9 +766,34 @@ describe.skipIf(!hasDatabase)('assessment questions and answers', () => {
     expect(lines[1]).toContain('"A transfer plan; Other, please specify: A coaching log"');
     const tail = lines[1]!.split(',').slice(-(knowledgeColumns + 1));
     expect(tail).toEqual(['No', '0']);
-    // Two downloads in this test: the CSV and the spreadsheet; each is audited with its format.
+
+    // The same submissions as designed documents (2026-11-21): PDF and Word, admins only.
+
+    const download = (path: string, cookie = cookies.admin) =>
+      request(app())
+        .get(`/api/v1${path}`)
+        .set('Origin', ORIGIN)
+        .set('Cookie', cookie ?? '')
+        .buffer(true)
+        .parse((r, done) => {
+          const chunks: Buffer[] = [];
+          r.on('data', (c: Buffer) => chunks.push(c));
+          r.on('end', () => done(null, Buffer.concat(chunks)));
+        });
+
+    const pdf = await download(`${stageUrl}/responses.pdf`);
+    expect(pdf.status).toBe(200);
+    expect(pdf.headers['content-type']).toBe('application/pdf');
+    expect(pdf.headers['content-disposition']).toMatch(/submissions\.pdf"$/);
+    expect((pdf.body as Buffer).subarray(0, 4).toString()).toBe('%PDF');
+    const word = await download(`${stageUrl}/responses.docx`);
+    expect(word.status).toBe(200);
+    expect(word.headers['content-type']).toContain('wordprocessingml.document');
+    expect((word.body as Buffer).subarray(0, 2).toString()).toBe('PK');
+    expect((await download(`${stageUrl}/responses.pdf`, cookies.delegate)).status).toBe(403);
+    // Four downloads in this test: CSV, spreadsheet, PDF and Word; each audited with its format.
     expect(await prisma.auditLog.count({ where: { eventId, action: 'assessment.exported' } })).toBe(
-      2,
+      4,
     );
   });
 
