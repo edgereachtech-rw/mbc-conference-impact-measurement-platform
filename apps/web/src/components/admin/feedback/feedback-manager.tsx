@@ -29,6 +29,7 @@ import { useCallback, useEffect, useId, useState } from 'react';
 import { Dialog } from '@/components/console/dialog';
 import { consoleButton, Panel, StatePanel, StatusPill } from '@/components/console/page';
 import { NativeSelect } from '@/components/imports/native-select';
+import { useDownloadBatch, withBatch } from '@/components/admin/download-batch';
 import { apiFetch, apiUrl } from '@/lib/api';
 import { formatDateShort, formatInstant } from '@/lib/events';
 import { qrImages, type QrImages } from '@/lib/qr-image';
@@ -54,6 +55,7 @@ type DialogState =
  * anonymised view for the speaker) or export it. Admins only.
  */
 export function FeedbackManager({ event }: FeedbackManagerProps) {
+  const batch = useDownloadBatch();
   const [sessions, setSessions] = useState<FeedbackSessionView[] | null>(null);
   const [error, setError] = useState<{ message: string; requestId?: string } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -155,7 +157,7 @@ export function FeedbackManager({ event }: FeedbackManagerProps) {
           {(['pdf', 'docx'] as const).map((format) => (
             <a
               key={format}
-              href={apiUrl(`/events/${event.id}/feedback/submissions.${format}`)}
+              href={apiUrl(withBatch(`/events/${event.id}/feedback/submissions.${format}`, batch))}
               download
               className={consoleButton({ variant: 'secondary', size: 'sm' })}
             >
@@ -357,6 +359,7 @@ function SessionCard({
   onError: (message: string) => void;
   onDialog: (d: DialogState) => void;
 }) {
+  const batch = useDownloadBatch();
   const [busy, setBusy] = useState(false);
   const base = `/events/${event.id}/feedback/sessions/${session.id}`;
 
@@ -512,7 +515,10 @@ function SessionCard({
                 <a
                   key={format}
                   href={apiUrl(
-                    `/events/${event.id}/feedback/submissions.${format}?session=${session.id}`,
+                    withBatch(
+                      `/events/${event.id}/feedback/submissions.${format}?session=${session.id}`,
+                      batch,
+                    ),
                   )}
                   download
                   className={consoleButton({ variant: 'ghost', size: 'sm' })}

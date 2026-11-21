@@ -25,6 +25,7 @@ import {
 } from '../export/submissions.js';
 import { organiserName } from '../mail/branding.js';
 import { audit } from '../lib/audit.js';
+import { batchScopeOf, inBatch } from '../lib/batch-scope.js';
 import { HttpError } from '../lib/errors.js';
 
 interface Deps {
@@ -134,13 +135,17 @@ export function supportRouter({ prisma, config, middleware, now }: Deps): Router
     const format = String(req.params.format);
     if (!isDocumentFormat(format)) throw new HttpError(404, 'not_found', 'No such format.');
     const event = await loadEvent(String(req.params.eventId));
+    const scope = await batchScopeOf(prisma(), event.id, req.query.batch);
     const [detail, rows] = await Promise.all([
       prisma().event.findUniqueOrThrow({
         where: { id: event.id },
         select: { name: true, timezone: true },
       }),
       prisma().supportRequest.findMany({
-        where: { eventId: event.id, delegate: { registrationStatus: { in: [...eligible()] } } },
+        where: {
+          eventId: event.id,
+          delegate: { registrationStatus: { in: [...eligible()] }, ...inBatch(scope) },
+        },
         include: {
           delegate: {
             select: {
@@ -209,6 +214,7 @@ export function supportRouter({ prisma, config, middleware, now }: Deps): Router
     const open = rows.filter((r) => r.status === 'open').length;
     const { blocks, meta } = responsesDocument({
       organiser: organiserName(),
+      batch: scope?.name ?? null,
       eventName: detail.name,
       timezone: detail.timezone,
       generatedAt: clock(),

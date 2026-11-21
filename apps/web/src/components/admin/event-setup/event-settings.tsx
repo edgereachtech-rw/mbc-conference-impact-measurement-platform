@@ -7,6 +7,7 @@ import { useState } from 'react';
 
 import { ActionQrCodes } from '@/components/admin/event-setup/action-qr-codes';
 import { DocumentDownloads } from '@/components/admin/document-downloads';
+import { DownloadBatchPicker, DownloadBatchProvider } from '@/components/admin/download-batch';
 import { AttendanceManager } from '@/components/admin/attendance/attendance-manager';
 import { EventWorkspace } from '@/components/admin/event-workspace';
 import { OnboardingSender } from '@/components/admin/onboarding-sender';
@@ -142,123 +143,140 @@ export function EventSettings({ initialEvent }: EventSettingsProps) {
           make changes.
         </p>
       ) : null}
-      <div
-        role="tabpanel"
-        id={`panel-${tab}`}
-        aria-labelledby={`tab-${tab}`}
-        className="rounded-none border border-corp-line bg-white p-4 md:p-6"
-      >
-        {tab === 'profile' ? (
-          <EventProfileForm
-            key={event.updatedAt}
-            mode="edit"
-            code={event.code}
-            initial={event}
-            busy={busy || readOnly}
-            submitLabel="Save profile"
-            error={failure}
-            onSubmit={(profile) => void saveProfile(profile)}
-          />
-        ) : null}
-        {tab === 'dates' ? (
-          <div className="space-y-4">
-            <DatePicker value={dates} onChange={setDates} locked={locked} disabled={readOnly} />
-            {failure ? (
-              <div
-                role="alert"
-                className="rounded-none border border-brand-danger/40 bg-white p-3 text-sm"
-              >
-                <p className="font-semibold text-brand-danger">{failure.message}</p>
-                {failure.requestId ? (
-                  <p className="mt-1 text-xs text-corp-muted">Request id {failure.requestId}</p>
-                ) : null}
-              </div>
-            ) : null}
-            {!readOnly ? (
-              <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
-                <button
-                  type="button"
-                  disabled={busy || !datesChanged}
-                  onClick={() => setDates(event.dates.map((d) => d.date))}
-                  className={consoleButton({ variant: 'ghost' })}
+      <DownloadBatchProvider eventId={event.id}>
+        <div
+          role="tabpanel"
+          id={`panel-${tab}`}
+          aria-labelledby={`tab-${tab}`}
+          className="rounded-none border border-corp-line bg-white p-4 md:p-6"
+        >
+          {/* On an event in batches, every download of these tabs can cover one batch (2026-11-22). */}
+          {(
+            [
+              'delegates',
+              'attendance',
+              'reflections',
+              'feedback',
+              'transfer-plans',
+              'support',
+            ] as const
+          ).includes(tab as 'delegates') ? (
+            <div className="mb-6">
+              <DownloadBatchPicker />
+            </div>
+          ) : null}
+          {tab === 'profile' ? (
+            <EventProfileForm
+              key={event.updatedAt}
+              mode="edit"
+              code={event.code}
+              initial={event}
+              busy={busy || readOnly}
+              submitLabel="Save profile"
+              error={failure}
+              onSubmit={(profile) => void saveProfile(profile)}
+            />
+          ) : null}
+          {tab === 'dates' ? (
+            <div className="space-y-4">
+              <DatePicker value={dates} onChange={setDates} locked={locked} disabled={readOnly} />
+              {failure ? (
+                <div
+                  role="alert"
+                  className="rounded-none border border-brand-danger/40 bg-white p-3 text-sm"
                 >
-                  Discard changes
-                </button>
-                <button
-                  type="button"
-                  disabled={busy || !datesChanged || dates.length === 0}
-                  onClick={() => void saveDates()}
-                  className={consoleButton({ variant: 'accent' })}
-                >
-                  {busy ? <Loader2Icon className="animate-spin" aria-hidden="true" /> : null}
-                  Save dates
-                </button>
-              </div>
-            ) : null}
-            <BatchesEditor event={event} readOnly={readOnly} onSaved={saved} />
-          </div>
-        ) : null}
-        {tab === 'sessions' ? <SessionsEditor event={event} onSaved={saved} /> : null}
-        {tab === 'assessments' ? <AssessmentConfig event={event} onSaved={saved} /> : null}
-        {tab === 'publish' ? <PublishPanel event={event} onSaved={saved} /> : null}
-        {tab === 'delegates' ? (
-          <div className="space-y-8">
-            <OnboardingSender eventId={event.id} timezone={event.timezone} />
-            <TestDelegatesSetting event={event} onSaved={saved} />
-            <DocumentDownloads
-              path={`/events/${event.id}/delegates/register`}
-              label="Delegate list"
+                  <p className="font-semibold text-brand-danger">{failure.message}</p>
+                  {failure.requestId ? (
+                    <p className="mt-1 text-xs text-corp-muted">Request id {failure.requestId}</p>
+                  ) : null}
+                </div>
+              ) : null}
+              {!readOnly ? (
+                <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+                  <button
+                    type="button"
+                    disabled={busy || !datesChanged}
+                    onClick={() => setDates(event.dates.map((d) => d.date))}
+                    className={consoleButton({ variant: 'ghost' })}
+                  >
+                    Discard changes
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy || !datesChanged || dates.length === 0}
+                    onClick={() => void saveDates()}
+                    className={consoleButton({ variant: 'accent' })}
+                  >
+                    {busy ? <Loader2Icon className="animate-spin" aria-hidden="true" /> : null}
+                    Save dates
+                  </button>
+                </div>
+              ) : null}
+              <BatchesEditor event={event} readOnly={readOnly} onSaved={saved} />
+            </div>
+          ) : null}
+          {tab === 'sessions' ? <SessionsEditor event={event} onSaved={saved} /> : null}
+          {tab === 'assessments' ? <AssessmentConfig event={event} onSaved={saved} /> : null}
+          {tab === 'publish' ? <PublishPanel event={event} onSaved={saved} /> : null}
+          {tab === 'delegates' ? (
+            <div className="space-y-8">
+              <OnboardingSender eventId={event.id} timezone={event.timezone} />
+              <TestDelegatesSetting event={event} onSaved={saved} />
+              <DocumentDownloads
+                path={`/events/${event.id}/delegates/register`}
+                label="Delegate list"
+              />
+              <EventWorkspace eventId={event.id} eventName={event.name} />
+            </div>
+          ) : null}
+          {tab === 'attendance' ? (
+            <div className="space-y-6">
+              <DocumentDownloads
+                path={`/events/${event.id}/attendance/register`}
+                label="Attendance register"
+              />
+              <AttendanceManager event={event} />
+            </div>
+          ) : null}
+          {tab === 'reflections' ? (
+            <div className="space-y-6">
+              <DocumentDownloads
+                path={`/events/${event.id}/reflections/submissions`}
+                label="All reflections"
+              />
+              <ReflectionsManager event={event} />
+            </div>
+          ) : null}
+          {tab === 'feedback' ? <FeedbackManager event={event} /> : null}
+          {tab === 'transfer-plans' ? (
+            <div className="space-y-8">
+              <TransferPlanModeSetting event={event} onSaved={saved} />
+              <TransferPlanVisibilitySetting event={event} onSaved={saved} />
+              <TransferPlansManager event={event} />
+              <FollowUpsSection event={event} onSaved={saved} />
+            </div>
+          ) : null}
+          {tab === 'support' ? (
+            <div className="space-y-6">
+              <DocumentDownloads
+                path={`/events/${event.id}/support-requests/submissions`}
+                label="Support requests and barriers"
+              />
+              <SupportManager event={event} />
+            </div>
+          ) : null}
+          {tab === 'qr-codes' ? <ActionQrCodes event={event} /> : null}
+          {tab === 'emails' ? <EventEmails event={event} /> : null}
+          {tab === 'reports' ? (
+            <ReportWorkspace
+              eventId={event.id}
+              timezone={event.timezone}
+              kinds={['conference', 'follow_up', 'organisation', 'sponsor']}
+              readOnly={event.status === 'archived'}
             />
-            <EventWorkspace eventId={event.id} eventName={event.name} />
-          </div>
-        ) : null}
-        {tab === 'attendance' ? (
-          <div className="space-y-6">
-            <DocumentDownloads
-              path={`/events/${event.id}/attendance/register`}
-              label="Attendance register"
-            />
-            <AttendanceManager event={event} />
-          </div>
-        ) : null}
-        {tab === 'reflections' ? (
-          <div className="space-y-6">
-            <DocumentDownloads
-              path={`/events/${event.id}/reflections/submissions`}
-              label="All reflections"
-            />
-            <ReflectionsManager event={event} />
-          </div>
-        ) : null}
-        {tab === 'feedback' ? <FeedbackManager event={event} /> : null}
-        {tab === 'transfer-plans' ? (
-          <div className="space-y-8">
-            <TransferPlanModeSetting event={event} onSaved={saved} />
-            <TransferPlanVisibilitySetting event={event} onSaved={saved} />
-            <TransferPlansManager event={event} />
-            <FollowUpsSection event={event} onSaved={saved} />
-          </div>
-        ) : null}
-        {tab === 'support' ? (
-          <div className="space-y-6">
-            <DocumentDownloads
-              path={`/events/${event.id}/support-requests/submissions`}
-              label="Support requests and barriers"
-            />
-            <SupportManager event={event} />
-          </div>
-        ) : null}
-        {tab === 'qr-codes' ? <ActionQrCodes event={event} /> : null}
-        {tab === 'emails' ? <EventEmails event={event} /> : null}
-        {tab === 'reports' ? (
-          <ReportWorkspace
-            eventId={event.id}
-            timezone={event.timezone}
-            kinds={['conference', 'follow_up', 'organisation', 'sponsor']}
-            readOnly={event.status === 'archived'}
-          />
-        ) : null}
-      </div>
+          ) : null}
+        </div>
+      </DownloadBatchProvider>
     </section>
   );
 }

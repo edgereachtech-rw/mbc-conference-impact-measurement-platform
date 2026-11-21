@@ -677,6 +677,16 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   department, format and registration). Admins only, each download audited
   (`reflection.exported`, `support_request.exported`, `attendance.exported`,
   `delegate.list_exported`). The Support tab no longer renders its list twice.
+- Every download per batch (2026-11-22): on an event in batches, the event page's Delegates,
+  Attendance, Daily reflections, Session feedback, Transfer plans and Support tabs, and each
+  assessment's Submissions tab, show "Downloads and lists for: All batches / Batch n"
+  (`DownloadBatchPicker`, one choice per page); every PDF, Word, Excel and CSV download there,
+  and the Transfer plans list with its Excel export, then covers that batch's delegates only
+  (`?batch=<id>`, checked by `batchScopeOf` in `apps/api/src/lib/batch-scope.ts`: a batch of
+  another event is 404, never everyone). The reflections, session feedback and attendance
+  downloads also keep to the batch's own day. Each document names its batch on the cover, and the
+  assessment responses spreadsheet gains a Batch column. The event reports already had their
+  own batch filter. No migration.
 - Checklist and commitment, a second plan mode as a template (task of 2026-11-20, from a line
   managers' training programme brief; migration `20261120183500_commitment_plan_mode`). An
   event chooses on the Transfer plans tab ("What delegates plan with", `transferPlanMode`

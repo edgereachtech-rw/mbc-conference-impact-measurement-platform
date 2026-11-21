@@ -65,6 +65,7 @@ import { assessmentDocument, isDocumentFormat, sendDocument } from '../export/su
 import { csvCell } from '../imports/service.js';
 import { organiserName } from '../mail/branding.js';
 import { audit } from '../lib/audit.js';
+import { batchScopeOf, inBatch } from '../lib/batch-scope.js';
 import { figureStatuses } from '../lib/eligible.js';
 import { HttpError } from '../lib/errors.js';
 import { raiseFollowUpSupportRequests } from '../support/requests.js';
@@ -579,6 +580,7 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
     actorUserId: string,
     stage: Awaited<ReturnType<typeof loadStage>>,
     format: 'pdf' | 'docx',
+    scope: Awaited<ReturnType<typeof batchScopeOf>> = null,
   ) {
     const statuses = await figureStatusesFor(stage.eventId);
     const [event, questions, sections, responses, invitations, registered] = await Promise.all([
@@ -592,7 +594,7 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
         where: {
           stageConfigId: stage.id,
           submittedAt: { not: null },
-          delegate: { registrationStatus: { in: [...statuses] } },
+          delegate: { registrationStatus: { in: [...statuses] }, ...inBatch(scope) },
         },
         select: {
           submittedAt: true,
@@ -615,12 +617,16 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
               stageConfigId: stage.id,
               kind: 'invitation',
               status: 'sent',
-              delegate: { registrationStatus: { in: [...statuses] } },
+              delegate: { registrationStatus: { in: [...statuses] }, ...inBatch(scope) },
             },
           })
         : Promise.resolve(null),
       prisma().delegate.count({
-        where: { eventId: stage.eventId, registrationStatus: { in: [...statuses] } },
+        where: {
+          eventId: stage.eventId,
+          registrationStatus: { in: [...statuses] },
+          ...inBatch(scope),
+        },
       }),
     ]);
     const versions = await versionIdsOf(stage.id, questions);
@@ -634,6 +640,7 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
     );
     const { blocks, meta } = assessmentDocument({
       organiser: organiserName(),
+      batch: scope?.name ?? null,
       eventName: event.name,
       timezone: event.timezone,
       generatedAt: clock(),
@@ -656,10 +663,22 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
       entityId: stage.id,
       eventId: stage.eventId,
       actorUserId,
-      newValue: { stage: stage.stage, wave: stage.wave, format, rows: responses.length },
+      newValue: {
+        stage: stage.stage,
+        wave: stage.wave,
+        format,
+        rows: responses.length,
+        batch: scope?.name ?? null,
+      },
       ...clientOf(res),
     });
-    await sendDocument(res, format, blocks, meta, `${event.name} ${title} submissions`);
+    await sendDocument(
+      res,
+      format,
+      blocks,
+      meta,
+      `${event.name} ${title}${scope ? ` ${scope.name}` : ''} submissions`,
+    );
   }
 
   async function activeSections(stageConfigId: string): Promise<AssessmentSectionView[]> {
@@ -1495,15 +1514,16 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
     if (format !== 'csv' && format !== 'xlsx' && !isDocumentFormat(format))
       throw new HttpError(404, 'not_found', 'No such format.');
     const stage = await stageFromReq(req, false);
+    const scope = await batchScopeOf(prisma(), stage.eventId, req.query.batch);
     if (isDocumentFormat(format)) {
-      await sendAssessmentDocument(res, principal.userId, stage, format);
+      await sendAssessmentDocument(res, principal.userId, stage, format, scope);
       return;
     }
     const [questions, sections, responses] = await Promise.all([
       activeQuestions(stage.id),
       activeSections(stage.id),
       prisma().assessmentResponse.findMany({
-        where: { stageConfigId: stage.id, submittedAt: { not: null } },
+        where: { stageConfigId: stage.id, submittedAt: { not: null }, delegate: inBatch(scope) },
         orderBy: { submittedAt: 'asc' },
         select: {
           submittedAt: true,
@@ -1514,6 +1534,7 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
               organisation: true,
               jobTitle: true,
               department: true,
+              batch: { select: { name: true } },
               country: true,
               attendanceFormat: true,
               capacity: true,
@@ -1537,6 +1558,7 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
       'Organisation',
       'Job title',
       'Department',
+      'Batch',
       'Country',
       'Attendance format',
       'Capacity',
@@ -1556,6 +1578,7 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
         d.organisation ?? '',
         d.jobTitle ?? '',
         d.department ?? '',
+        d.batch?.name ?? '',
         d.country ?? '',
         d.attendanceFormat,
         d.capacity,
@@ -1586,7 +1609,7 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
       },
       ...clientOf(res),
     });
-    const name = `${stage.stage}-responses-${clock().toISOString().slice(0, 10)}`;
+    const name = `${stage.stage}-responses${scope ? `-${scope.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}` : ''}-${clock().toISOString().slice(0, 10)}`;
     res.setHeader('Content-Type', format === 'xlsx' ? MEDIA_TYPES.xlsx : 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${name}.${format}"`);
     if (format === 'xlsx') {

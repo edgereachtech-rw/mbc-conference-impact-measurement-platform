@@ -1,6 +1,9 @@
+'use client';
+
 import { DownloadIcon } from 'lucide-react';
 
 import { consoleButton } from '@/components/console/page';
+import { useDownloadBatch, withBatch } from '@/components/admin/download-batch';
 import { apiUrl } from '@/lib/api';
 
 /**
@@ -9,6 +12,7 @@ import { apiUrl } from '@/lib/api';
  * `/events/e1/attendance/register`.
  */
 export function DocumentDownloads({ path, label }: { path: string; label: string }) {
+  const batch = useDownloadBatch();
   return (
     <div
       role="group"
@@ -19,7 +23,7 @@ export function DocumentDownloads({ path, label }: { path: string; label: string
       {(['pdf', 'docx'] as const).map((format) => (
         <a
           key={format}
-          href={apiUrl(`${path}.${format}`)}
+          href={apiUrl(withBatch(`${path}.${format}`, batch))}
           download
           className={consoleButton({ variant: 'secondary', size: 'sm' })}
         >

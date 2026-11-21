@@ -14,6 +14,11 @@ import { useEffect, useState } from 'react';
 import { MessageComposer } from '@/components/admin/message-composer';
 import { Dialog } from '@/components/console/dialog';
 import { consoleButton, Panel, StatePanel, StatTile, StatusPill } from '@/components/console/page';
+import {
+  DownloadBatchPicker,
+  useDownloadBatch,
+  withBatch,
+} from '@/components/admin/download-batch';
 import { apiFetch, apiUrl } from '@/lib/api';
 import { formatInstant } from '@/lib/events';
 import { describeError } from '@/lib/imports';
@@ -67,6 +72,7 @@ export function StageSubmissions({
   const base = `/events/${eventId}/assessments/${stage}`;
   /** Every call names the round (2026-11-21); round 1 keeps the plain addresses. */
   const roundQuery = wave !== 1 ? `?wave=${wave}` : '';
+  const batch = useDownloadBatch();
 
   useEffect(() => {
     let cancelled = false;
@@ -237,6 +243,7 @@ export function StageSubmissions({
         </Panel>
       ) : null}
 
+      <DownloadBatchPicker />
       <div className="flex flex-wrap items-center gap-2">
         {summary.submitted > 0 ? (
           <>
@@ -244,7 +251,7 @@ export function StageSubmissions({
             {(['pdf', 'docx', 'xlsx'] as const).map((format) => (
               <a
                 key={format}
-                href={apiUrl(`${base}/responses.${format}${roundQuery}`)}
+                href={apiUrl(withBatch(`${base}/responses.${format}${roundQuery}`, batch))}
                 download
                 className={consoleButton({ variant: format === 'pdf' ? 'secondary' : 'ghost' })}
               >

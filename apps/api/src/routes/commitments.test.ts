@@ -281,6 +281,47 @@ describe.skipIf(!hasDatabase)('checklist and commitment', () => {
     expect(mailer.sent.length).toBe(before + 1);
   });
 
+  it('narrows every list and download to one batch, and refuses a batch of no such kind', async () => {
+    const [one, two] = await prisma.eventBatch.findMany({
+      where: { eventId },
+      orderBy: { order: 'asc' },
+      select: { id: true },
+    });
+    const names = async (batch: string) =>
+      (
+        (await call('get', `/events/${eventId}/transfer-plans?batch=${batch}`)).body
+          .plans as Array<{
+          delegate: { name: string };
+        }>
+      ).map((p) => p.delegate.name);
+    // Dee is in batch 1 and has a plan; batch 2 has none.
+    expect(await names(one!.id)).toEqual(['Dee Manager']);
+    expect(await names(two!.id)).toEqual([]);
+    const csv = await call(
+      'get',
+      `/events/${eventId}/transfer-plans/commitments.csv?batch=${two!.id}`,
+    );
+    expect(csv.text).not.toContain('Dee Manager');
+    for (const path of [
+      'transfer-plans/submissions.pdf',
+      'attendance/register.pdf',
+      'delegates/register.docx',
+      'reflections/submissions.pdf',
+      'support-requests/submissions.docx',
+      'feedback/submissions.pdf',
+    ]) {
+      const res = await call('get', `/events/${eventId}/${path}?batch=${one!.id}`);
+      expect(res.status, path).toBe(200);
+    }
+    // A batch of another event, or none at all, is not quietly everyone.
+    expect(
+      (await call('get', `/events/${eventId}/transfer-plans?batch=${randomUUID()}`)).status,
+    ).toBe(404);
+    expect((await call('get', `/events/${eventId}/delegates/register.pdf?batch=nope`)).status).toBe(
+      404,
+    );
+  });
+
   it('exports the checklists and commitments by name, with the batch and department', async () => {
     const res = await call('get', `/events/${eventId}/transfer-plans/commitments.csv`);
     expect(res.status, res.text).toBe(200);

@@ -30,6 +30,7 @@ import { feedbackDocument, isDocumentFormat, sendDocument } from '../export/subm
 import { csvCell } from '../imports/service.js';
 import { organiserName } from '../mail/branding.js';
 import { audit } from '../lib/audit.js';
+import { batchScopeOf, inBatch } from '../lib/batch-scope.js';
 import { HttpError } from '../lib/errors.js';
 
 interface Deps {
@@ -677,12 +678,19 @@ export function feedbackRouter({ prisma, config, middleware, now }: Deps): Route
     if (!isDocumentFormat(format)) throw new HttpError(404, 'not_found', 'No such format.');
     const event = await loadEvent(String(req.params.eventId));
     const only = typeof req.query.session === 'string' ? req.query.session : null;
+    // A batch keeps its own day's sessions and its own delegates (2026-11-22).
+    const scope = await batchScopeOf(prisma(), event.id, req.query.batch);
     if (only !== null && !UUID.test(only))
       throw new HttpError(404, 'not_found', 'Session not found.');
     const [questions, sessions, detail] = await Promise.all([
       eventQuestions(event.id),
       prisma().eventSession.findMany({
-        where: { eventId: event.id, feedbackEnabled: true, ...(only ? { id: only } : {}) },
+        where: {
+          eventId: event.id,
+          feedbackEnabled: true,
+          ...(only ? { id: only } : {}),
+          ...(scope ? { eventDateId: scope.eventDateId } : {}),
+        },
         orderBy: [{ eventDate: { date: 'asc' } }, { startTime: 'asc' }],
         select: {
           id: true,
@@ -693,7 +701,7 @@ export function feedbackRouter({ prisma, config, middleware, now }: Deps): Route
           eventDateId: true,
           eventDate: { select: { date: true } },
           feedbackResponses: {
-            where: { delegate: { registrationStatus: { in: [...eligible()] } } },
+            where: { delegate: { registrationStatus: { in: [...eligible()] }, ...inBatch(scope) } },
             select: {
               submittedAt: true,
               delegate: {
@@ -727,13 +735,14 @@ export function feedbackRouter({ prisma, config, middleware, now }: Deps): Route
           where: {
             eventDateId: dateId,
             status: { in: ['attended', 'partial'] },
-            delegate: { registrationStatus: { in: [...eligible()] } },
+            delegate: { registrationStatus: { in: [...eligible()] }, ...inBatch(scope) },
           },
         }),
       );
     }
     const { blocks, meta } = feedbackDocument({
       organiser: organiserName(),
+      batch: scope?.name ?? null,
       eventName: detail.name,
       timezone: event.timezone,
       generatedAt: new Date(),
@@ -776,7 +785,7 @@ export function feedbackRouter({ prisma, config, middleware, now }: Deps): Route
       format,
       blocks,
       meta,
-      `${detail.name} ${only && sessions[0] ? sessions[0].title : 'session'} feedback`,
+      `${detail.name} ${only && sessions[0] ? sessions[0].title : 'session'}${scope ? ` ${scope.name}` : ''} feedback`,
     );
   });
 

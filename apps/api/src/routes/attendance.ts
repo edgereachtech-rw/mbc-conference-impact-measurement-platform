@@ -40,6 +40,7 @@ import {
 } from '../export/submissions.js';
 import { organiserName } from '../mail/branding.js';
 import { audit } from '../lib/audit.js';
+import { batchScopeOf, inBatch } from '../lib/batch-scope.js';
 import { HttpError } from '../lib/errors.js';
 
 interface Deps {
@@ -340,13 +341,14 @@ export function attendanceRouter({ prisma, config, middleware, now }: Deps): Rou
     const format = String(req.params.format);
     if (!isDocumentFormat(format)) throw new HttpError(404, 'not_found', 'No such format.');
     const event = await loadEvent(String(req.params.eventId));
+    const scope = await batchScopeOf(prisma(), event.id, req.query.batch);
     const [detail, delegates, records] = await Promise.all([
       prisma().event.findUniqueOrThrow({
         where: { id: event.id },
         select: { name: true, timezone: true },
       }),
       prisma().delegate.findMany({
-        where: { eventId: event.id, registrationStatus: { in: [...eligible] } },
+        where: { eventId: event.id, registrationStatus: { in: [...eligible] }, ...inBatch(scope) },
         select: {
           id: true,
           name: true,
@@ -369,7 +371,9 @@ export function attendanceRouter({ prisma, config, middleware, now }: Deps): Rou
       }),
     ]);
     const recordOf = new Map(records.map((r) => [`${r.delegateId}:${r.eventDateId}`, r]));
-    const sections = event.dates.map((d) => {
+    // A batch's register is its own day (2026-11-22).
+    const days = scope ? event.dates.filter((d) => d.id === scope.eventDateId) : event.dates;
+    const sections = days.map((d) => {
       const expected = delegates.filter((x) => !x.batch || x.batch.eventDateId === d.id);
       const rows = expected.map((x) => {
         const r = recordOf.get(`${x.id}:${d.id}`);
@@ -402,6 +406,7 @@ export function attendanceRouter({ prisma, config, middleware, now }: Deps): Rou
     );
     const { blocks, meta } = tableDocument({
       organiser: organiserName(),
+      batch: scope?.name ?? null,
       eventName: detail.name,
       timezone: detail.timezone,
       generatedAt: clock(),

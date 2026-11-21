@@ -19,6 +19,7 @@ import { normaliseNameKey } from '../imports/normalise.js';
 import { isDocumentFormat, sendDocument, tableDocument } from '../export/submissions.js';
 import { organiserName } from '../mail/branding.js';
 import { audit } from '../lib/audit.js';
+import { batchScopeOf, inBatch } from '../lib/batch-scope.js';
 import { normaliseEmail } from '../lib/email.js';
 import { HttpError } from '../lib/errors.js';
 import { delegateSearchFilter, displayOrganisation } from '../lib/organisation.js';
@@ -109,8 +110,13 @@ export function eventDelegateRouter({ prisma, middleware }: Deps): Router {
           })
         : null;
       if (!event) throw new HttpError(404, 'not_found', 'Event not found.');
+      const scope = await batchScopeOf(prisma(), event.id, req.query.batch);
       const delegates = await prisma().delegate.findMany({
-        where: { eventId: event.id, registrationStatus: { in: ['active', 'test', 'pending'] } },
+        where: {
+          eventId: event.id,
+          registrationStatus: { in: ['active', 'test', 'pending'] },
+          ...inBatch(scope),
+        },
         select: {
           name: true,
           email: true,
@@ -145,17 +151,19 @@ export function eventDelegateRouter({ prisma, middleware }: Deps): Router {
             ? 'Test'
             : 'Pending',
       ];
-      const groups = event.batches.length
-        ? [
-            ...event.batches.map((b) => ({
-              heading: b.name,
-              list: delegates.filter((d) => d.batchId === b.id),
-            })),
-            { heading: 'Every day (no batch)', list: delegates.filter((d) => !d.batchId) },
-          ].filter((g) => g.list.length > 0)
-        : [{ heading: undefined, list: delegates }];
+      const groups =
+        event.batches.length && !scope
+          ? [
+              ...event.batches.map((b) => ({
+                heading: b.name,
+                list: delegates.filter((d) => d.batchId === b.id),
+              })),
+              { heading: 'Every day (no batch)', list: delegates.filter((d) => !d.batchId) },
+            ].filter((g) => g.list.length > 0)
+          : [{ heading: undefined, list: delegates }];
       const { blocks, meta } = tableDocument({
         organiser: organiserName(),
+        batch: scope?.name ?? null,
         eventName: event.name,
         timezone: event.timezone,
         generatedAt: new Date(),

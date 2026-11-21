@@ -123,6 +123,8 @@ const percent = (part: number, whole: number) =>
   whole > 0 ? `${Math.round((part / whole) * 100)}%` : '–';
 
 interface CoverInput {
+  /** The one batch the document covers (2026-11-22); absent for every delegate. */
+  batch?: string | null;
   eyebrow: string;
   title: string;
   lead: string;
@@ -141,6 +143,7 @@ function coverOf(c: CoverInput): Block {
     facts: [
       { label: 'Event', value: c.eventName },
       { label: 'Generated', value: `${whenIn(c.generatedAt, c.timezone)} (${c.timezone})` },
+      ...(c.batch ? [{ label: 'Batch', value: c.batch }] : []),
       ...(c.facts ?? []),
     ],
   };
@@ -153,6 +156,8 @@ const READING_NOTE =
 
 export interface AssessmentDocumentInput {
   organiser: string;
+  /** The one batch it covers (2026-11-22). */
+  batch?: string | null;
   eventName: string;
   timezone: string;
   generatedAt: Date;
@@ -213,6 +218,7 @@ export function assessmentDocument(input: AssessmentDocumentInput): {
 
   const blocks: Block[] = [
     coverOf({
+      batch: input.batch,
       eyebrow: 'Assessment submissions',
       title: input.title,
       lead: 'Every submitted response, delegate by delegate, with each question and its answer.',
@@ -308,6 +314,8 @@ export function assessmentDocument(input: AssessmentDocumentInput): {
 
 export interface FeedbackDocumentInput {
   organiser: string;
+  /** The one batch it covers (2026-11-22). */
+  batch?: string | null;
   eventName: string;
   timezone: string;
   generatedAt: Date;
@@ -346,6 +354,7 @@ export function feedbackDocument(input: FeedbackDocumentInput): {
   const one = input.sessions.length === 1 ? input.sessions[0] : null;
   const blocks: Block[] = [
     coverOf({
+      batch: input.batch,
       eyebrow: 'Session feedback',
       title: one ? one.title : 'Session feedback by session',
       lead: 'Every feedback response, session by session and delegate by delegate, with each question and its answer.',
@@ -438,6 +447,8 @@ export function feedbackDocument(input: FeedbackDocumentInput): {
 
 export interface PlanDocumentInput {
   organiser: string;
+  /** The one batch it covers (2026-11-22). */
+  batch?: string | null;
   eventName: string;
   timezone: string;
   generatedAt: Date;
@@ -514,6 +525,7 @@ export function planDocument(input: PlanDocumentInput): { blocks: Block[]; meta:
 
   const blocks: Block[] = [
     coverOf({
+      batch: input.batch,
       eyebrow: commitment ? 'Checklists and commitments' : 'Transfer Plan submissions',
       title: name,
       lead: commitment
@@ -698,6 +710,8 @@ export function planDocument(input: PlanDocumentInput): { blocks: Block[]; meta:
 
 interface DocumentHead {
   organiser: string;
+  /** The one batch it covers (2026-11-22). */
+  batch?: string | null;
   eventName: string;
   timezone: string;
   generatedAt: Date;

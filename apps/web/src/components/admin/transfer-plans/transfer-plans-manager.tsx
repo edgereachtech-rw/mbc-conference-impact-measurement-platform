@@ -37,6 +37,7 @@ import {
   TableScroll,
 } from '@/components/console/page';
 import { NativeSelect } from '@/components/imports/native-select';
+import { useDownloadBatch, withBatch } from '@/components/admin/download-batch';
 import { apiFetch, apiUrl } from '@/lib/api';
 import { formatDateShort, formatInstant } from '@/lib/events';
 import { describeError } from '@/lib/imports';
@@ -89,11 +90,13 @@ export function TransferPlansManager({ event }: TransferPlansManagerProps) {
   const id = useId();
   /** The checklist-and-commitment form (2026-11-20): the training named and ticks, exported by name. */
   const commitmentMode = event.transferPlanMode === 'commitment';
+  /** The batch the list and its downloads cover (2026-11-22); '' for everyone. */
+  const batch = useDownloadBatch();
 
   useEffect(() => {
     let cancelled = false;
     Promise.all([
-      apiFetch<ListResponse>(`/events/${event.id}/transfer-plans`),
+      apiFetch<ListResponse>(withBatch(`/events/${event.id}/transfer-plans`, batch)),
       apiFetch<ReferencesResponse>(`/events/${event.id}/reference-questions`),
     ]).then(
       ([l, r]) => {
@@ -109,7 +112,7 @@ export function TransferPlansManager({ event }: TransferPlansManagerProps) {
     return () => {
       cancelled = true;
     };
-  }, [event.id, version]);
+  }, [event.id, version, batch]);
 
   if (error) {
     return (
@@ -330,7 +333,9 @@ export function TransferPlansManager({ event }: TransferPlansManagerProps) {
           {(['pdf', 'docx'] as const).map((format) => (
             <a
               key={format}
-              href={apiUrl(`/events/${event.id}/transfer-plans/submissions.${format}`)}
+              href={apiUrl(
+                withBatch(`/events/${event.id}/transfer-plans/submissions.${format}`, batch),
+              )}
               download
               className={consoleButton({ variant: 'ghost' })}
             >
@@ -340,7 +345,7 @@ export function TransferPlansManager({ event }: TransferPlansManagerProps) {
           ))}
           {commitmentMode ? (
             <a
-              href={apiUrl(`/events/${event.id}/transfer-plans/commitments.csv`)}
+              href={apiUrl(withBatch(`/events/${event.id}/transfer-plans/commitments.csv`, batch))}
               download
               className={consoleButton({ variant: 'ghost' })}
             >

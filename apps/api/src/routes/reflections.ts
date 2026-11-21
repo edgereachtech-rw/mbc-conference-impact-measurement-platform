@@ -29,6 +29,7 @@ import {
 } from '../export/submissions.js';
 import { organiserName } from '../mail/branding.js';
 import { audit } from '../lib/audit.js';
+import { batchScopeOf, inBatch } from '../lib/batch-scope.js';
 import { figureStatuses } from '../lib/eligible.js';
 import { HttpError } from '../lib/errors.js';
 
@@ -635,18 +636,24 @@ export function reflectionRouter({ prisma, config, middleware, now }: Deps): Rou
     if (day !== null && !UUID.test(day))
       throw new HttpError(404, 'not_found', 'Reflection not found.');
     const statuses = [...(await figureStatusesFor(event.id))];
+    // A batch keeps its own day and its own delegates (2026-11-22).
+    const scope = await batchScopeOf(prisma(), event.id, req.query.batch);
     const [detail, activities, registered] = await Promise.all([
       prisma().event.findUniqueOrThrow({
         where: { id: event.id },
         select: { name: true, timezone: true },
       }),
       prisma().reflectionActivity.findMany({
-        where: { eventId: event.id, ...(day ? { id: day } : {}) },
+        where: {
+          eventId: event.id,
+          ...(day ? { id: day } : {}),
+          ...(scope ? { eventDateId: scope.eventDateId } : {}),
+        },
         orderBy: { eventDate: { date: 'asc' } },
         include: {
           ...ACTIVITY_INCLUDE,
           responses: {
-            where: { delegate: { registrationStatus: { in: statuses } } },
+            where: { delegate: { registrationStatus: { in: statuses }, ...inBatch(scope) } },
             select: {
               submittedAt: true,
               delegateId: true,
@@ -666,7 +673,7 @@ export function reflectionRouter({ prisma, config, middleware, now }: Deps): Rou
         },
       }),
       prisma().delegate.findMany({
-        where: { eventId: event.id, registrationStatus: { in: statuses } },
+        where: { eventId: event.id, registrationStatus: { in: statuses }, ...inBatch(scope) },
         select: { id: true, name: true },
         orderBy: { name: 'asc' },
       }),
@@ -676,6 +683,7 @@ export function reflectionRouter({ prisma, config, middleware, now }: Deps): Rou
     const total = activities.reduce((n, a) => n + a.responses.length, 0);
     const { blocks, meta } = responsesDocument({
       organiser: organiserName(),
+      batch: scope?.name ?? null,
       eventName: detail.name,
       timezone: detail.timezone,
       generatedAt: clock(),
