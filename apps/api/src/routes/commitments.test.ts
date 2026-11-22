@@ -273,9 +273,21 @@ describe.skipIf(!hasDatabase)('checklist and commitment', () => {
     await job('2026-12-10T08:05:00.000Z');
     expect(mailer.sent.length).toBe(before + 1);
     const mail = mailer.sent.at(-1)!;
-    expect(mail.subject).toContain('Protect the trainee');
-    expect(mail.text).toContain('Block both afternoons');
-    expect(mail.text).toContain('15 December 2026');
+    // The commitment's own reminder (2026-11-22), not the Transfer Plan's.
+    expect(mail.subject).toBe('Reminder: your commitment for Coaching skills');
+    expect(mail.text).toContain(
+      'You asked for a reminder today about the commitment you made in your My Training Checklist and Commitment.',
+    );
+    expect(mail.text).toContain('Training: Coaching skills');
+    expect(mail.text).toContain('Your commitment: Protect the trainee’s time to participate.');
+    expect(mail.text).toContain('What you will do: Block both afternoons');
+    expect(mail.text).toContain('By: 15 December 2026');
+    expect(mail.text).toContain('What will show you have done it: The calendar entries');
+    // A reminder only: it asks for nothing (2026-11-22).
+    expect(mail.text).toContain('View my commitment');
+    expect(mail.text).toContain('Nothing is needed from you now.');
+    expect(mail.text).not.toMatch(/update (my|your) progress/i);
+    expect(mail.text).not.toContain('Transfer Plan');
     expect(mail.text).toContain(`/account/events/${eventId}#transfer-plan`);
     await job('2026-12-11T08:05:00.000Z');
     expect(mailer.sent.length).toBe(before + 1);

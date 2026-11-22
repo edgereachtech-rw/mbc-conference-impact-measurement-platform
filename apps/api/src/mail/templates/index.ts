@@ -1,4 +1,9 @@
-import type { EmailCustomisation } from '@mbc/shared';
+import {
+  actionProgressDefinitions,
+  actionProgressLabels,
+  actionProgressStatuses,
+  type EmailCustomisation,
+} from '@mbc/shared';
 
 import {
   greetingOf,
@@ -234,6 +239,12 @@ export function renderTransferPlanReminder(
   if (input.targetOn) paragraphs.push(`Target date: ${input.targetOn}`);
   paragraphs.push(
     'Nothing is needed from you now. Whenever you wish, you can go to the platform to update your plan: where the action stands, its measures and your evidence.',
+    // Every status an action can have, with what it means (2026-11-22), so the delegate knows
+    // which to choose when they next say where the action stands.
+    'What each status means:',
+    ...actionProgressStatuses.map(
+      (s) => `${actionProgressLabels[s]}: ${actionProgressDefinitions[s].definition}`,
+    ),
   );
   return {
     ...renderCustomisable(
@@ -245,6 +256,82 @@ export function renderTransferPlanReminder(
         title: w.title,
         paragraphs,
         button: { label: w.buttonLabel, url: input.planUrl },
+        notes: w.closing,
+      },
+      custom,
+      values,
+    ),
+    parts: w.parts,
+  };
+}
+
+// ------------------------------------------------------------------ commitment reminder (2026-11-22)
+
+export interface CommitmentReminderInput {
+  recipientName?: string;
+  /** What the form is called on the event, e.g. "My Training Checklist and Commitment". */
+  formTitle: string;
+  trainingName: string;
+  /** The checklist action committed to. */
+  committedAction: string;
+  /** What the delegate said they will do. */
+  what: string;
+  dueOn?: string;
+  /** What will show it has been done. */
+  evidence: string;
+  /** Absolute link to the delegate's form, where progress is updated. */
+  formUrl: string;
+}
+
+/**
+ * The one reminder a delegate asked for about their commitment (checklist and commitment form,
+ * 2026-11-22): not the Transfer Plan's reminder, which speaks of an action, a frequency and a
+ * plan. It names the training, the commitment, its due date and what will show it is done, and
+ * sends them to update their progress.
+ */
+export function renderCommitmentReminder(
+  branding: EmailBranding,
+  input: CommitmentReminderInput,
+  custom?: EmailCustomisation | null,
+): RenderedEmail {
+  const values = {
+    ...recipientValues(branding, input.recipientName),
+    trainingName: input.trainingName,
+    commitment: input.what,
+    dueDate: input.dueOn ?? '',
+  };
+  const w = wordingOf(
+    {
+      subject: `Reminder: your commitment for ${input.trainingName || branding.eventName}`,
+      title: 'A reminder about your commitment',
+      intro: [
+        `You asked for a reminder today about the commitment you made in your ${input.formTitle}.`,
+      ],
+      closing: [
+        // A reminder only (2026-11-22): progress is asked in the follow-ups, not here.
+        'Nothing is needed from you now. This is the only reminder you will get; your follow-ups will ask where you are.',
+      ],
+      buttonLabel: 'View my commitment',
+    },
+    custom,
+    values,
+  );
+  const paragraphs = [greetingOf(input.recipientName), ...w.intro];
+  if (input.trainingName) paragraphs.push(`Training: ${input.trainingName}`);
+  if (input.committedAction) paragraphs.push(`Your commitment: ${input.committedAction}`);
+  if (input.what) paragraphs.push(`What you will do: ${input.what}`);
+  if (input.dueOn) paragraphs.push(`By: ${input.dueOn}`);
+  if (input.evidence) paragraphs.push(`What will show you have done it: ${input.evidence}`);
+  return {
+    ...renderCustomisable(
+      branding,
+      {
+        subject: w.subject,
+        preheader: `The reminder you asked for about your commitment${input.dueOn ? `, due ${input.dueOn}` : ''}.`,
+        eyebrow: 'Your commitment',
+        title: w.title,
+        paragraphs,
+        button: { label: w.buttonLabel, url: input.formUrl },
         notes: w.closing,
       },
       custom,

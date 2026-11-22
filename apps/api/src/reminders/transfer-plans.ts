@@ -1,4 +1,8 @@
 import {
+  DEFAULT_CHECKLIST_TEMPLATE,
+  templateActions,
+  type ChecklistTemplate,
+  type PlanChecklist,
   dateIn,
   nextReminderAfter,
   planOutcomeLabels,
@@ -13,7 +17,11 @@ import type { Logger } from '../lib/logger.js';
 import { brandingForEvent } from '../mail/branding.js';
 import type { MailConfig } from '../mail/config.js';
 import type { Mailer } from '../mail/mailer.js';
-import { renderImpactCheck, renderTransferPlanReminder } from '../mail/templates/index.js';
+import {
+  renderCommitmentReminder,
+  renderImpactCheck,
+  renderTransferPlanReminder,
+} from '../mail/templates/index.js';
 import { emailCustomisationFor } from '../mail/customisation.js';
 
 export interface ReminderDeps {
@@ -76,6 +84,8 @@ export async function sendDueTransferPlanReminders(deps: ReminderDeps) {
       plan: {
         select: {
           id: true,
+          trainingName: true,
+          checklist: true,
           event: {
             select: {
               id: true,
@@ -84,6 +94,8 @@ export async function sendDueTransferPlanReminders(deps: ReminderDeps) {
               endsOn: true,
               timezone: true,
               location: true,
+              transferPlanMode: true,
+              transferPlanTemplate: true,
             },
           },
           delegate: { select: { name: true, email: true } },
@@ -106,19 +118,43 @@ export async function sendDueTransferPlanReminders(deps: ReminderDeps) {
     };
     const { event, delegate } = action.plan;
     const branding = brandingForEvent(deps.mailConfig, event);
-    const rendered = renderTransferPlanReminder(
-      branding,
-      {
-        recipientName: delegate.name,
-        actionName: action.title.trim() || action.action.trim() || 'Your planned action',
-        actionText: action.title.trim() && action.action.trim() ? action.action.trim() : undefined,
-        firstStep: action.firstStep.trim() || undefined,
-        targetOn: formatDay(action.targetOn),
-        frequency: reminderFrequencyLabels[action.reminderFrequency].toLowerCase(),
-        planUrl: `${appUrl}/account/events/${event.id}#transfer-plan`,
-      },
-      await emailCustomisationFor(prisma, event.id, 'transfer_plan_reminder'),
-    );
+    // An event with the checklist and commitment form sends its own reminder (2026-11-22).
+    const template =
+      event.transferPlanMode === 'commitment'
+        ? ((event.transferPlanTemplate as ChecklistTemplate | null) ?? DEFAULT_CHECKLIST_TEMPLATE)
+        : null;
+    const rendered = template
+      ? renderCommitmentReminder(
+          branding,
+          {
+            recipientName: delegate.name,
+            formTitle: template.title,
+            trainingName: action.plan.trainingName,
+            committedAction:
+              templateActions(template).find(
+                (a) => a.key === (action.plan.checklist as PlanChecklist | null)?.commitmentKey,
+              )?.text ?? action.title.trim(),
+            what: action.action.trim(),
+            dueOn: formatDay(action.targetOn),
+            evidence: action.evidence.trim(),
+            formUrl: `${appUrl}/account/events/${event.id}#transfer-plan`,
+          },
+          await emailCustomisationFor(prisma, event.id, 'commitment_reminder'),
+        )
+      : renderTransferPlanReminder(
+          branding,
+          {
+            recipientName: delegate.name,
+            actionName: action.title.trim() || action.action.trim() || 'Your planned action',
+            actionText:
+              action.title.trim() && action.action.trim() ? action.action.trim() : undefined,
+            firstStep: action.firstStep.trim() || undefined,
+            targetOn: formatDay(action.targetOn),
+            frequency: reminderFrequencyLabels[action.reminderFrequency].toLowerCase(),
+            planUrl: `${appUrl}/account/events/${event.id}#transfer-plan`,
+          },
+          await emailCustomisationFor(prisma, event.id, 'transfer_plan_reminder'),
+        );
     // Move the pointer first so a crash mid-send cannot resend the same reminder. Null once
     // the window has closed: the reminders stop by themselves.
     const next = nextReminderAfter(preference, at, event.timezone);

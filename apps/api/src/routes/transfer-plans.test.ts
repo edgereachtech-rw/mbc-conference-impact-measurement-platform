@@ -1110,6 +1110,25 @@ describe.skipIf(!hasDatabase)('individual transfer plans', () => {
     expect(mail.text).toMatch(/go to the platform to update your plan/);
     expect(mail.text).not.toMatch(/last updated|status recorded|fill/i);
     expect(mail.text).toContain(`${ORIGIN}/account/events/${eventId}#transfer-plan`);
+    // Every status with its definition, and no examples (2026-11-22).
+    expect(mail.text).toContain('What each status means:');
+    expect(mail.text).toContain('Not yet started: You have not begun the planned action.');
+    expect(mail.text).toContain(
+      'Applied: You have used the learning or practice at least once in a real work situation.',
+    );
+    expect(mail.text).toContain(
+      'No longer applicable: The original action is no longer relevant or possible in your circumstances.',
+    );
+    for (const label of [
+      'Started:',
+      'In progress:',
+      'Applied consistently:',
+      'Completed:',
+      'Changed:',
+    ]) {
+      expect(mail.text).toContain(label);
+    }
+    expect(mail.text).not.toContain('Example');
     expect(await sendDueTransferPlanReminders(deps)).toMatchObject({ due: 0 });
     const after = await prisma.transferPlanAction.findMany({
       where: { planId },

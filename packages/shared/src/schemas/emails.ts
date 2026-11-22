@@ -14,6 +14,7 @@ export const emailKinds = [
   'follow_up_invitation',
   'follow_up_reminder',
   'transfer_plan_reminder',
+  'commitment_reminder',
   'session_feedback',
   'impact_check',
   'impact_check_sustaining',
@@ -58,6 +59,12 @@ export const emailKindInfo: Record<EmailKind, EmailKindInfo> = {
     description: 'The reminder a delegate asked for about one action of their plan.',
     placeholders: [...commonEmailPlaceholders, 'actionName', 'firstStep', 'targetDate'],
   },
+  commitment_reminder: {
+    label: 'Commitment reminder',
+    description:
+      'The one reminder a delegate asked for about their commitment, on an event that uses the checklist and commitment form.',
+    placeholders: [...commonEmailPlaceholders, 'trainingName', 'commitment', 'dueDate'],
+  },
   session_feedback: {
     label: 'Session feedback request',
     description: 'Sent to delegates recorded at a session, with the link to its feedback form.',
@@ -88,6 +95,9 @@ export const emailPlaceholderLabels: Record<string, string> = {
   actionName: 'Planned action',
   firstStep: 'First step of the action',
   targetDate: 'Target date of the action',
+  trainingName: 'The training the delegate named',
+  commitment: 'What the delegate will do',
+  dueDate: 'The commitment’s due date',
   sessionTitle: 'Session title',
   speaker: 'Speaker',
   when: 'Session date and time',

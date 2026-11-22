@@ -305,7 +305,7 @@ export function CommitmentForm({
               />
               <p className="text-xs text-corp-muted">
                 One email that day, at 09:00 ({timezone}), if your commitment is still open. It
-                shows your commitment and due date, with a link to update your progress.
+                shows your commitment and its due date, with a link to view it.
               </p>
             </div>
           ) : null}

@@ -18,6 +18,7 @@ import {
   renderImpactCheck,
   renderInvitation,
   renderSessionFeedback,
+  renderCommitmentReminder,
   renderTransferPlanReminder,
   type EmailBranding,
   type RenderedEmail,
@@ -174,6 +175,21 @@ export function renderSample(
           targetOn: '15 January 2027',
           frequency: 'weekly',
           planUrl: `${base}/account`,
+        },
+        custom,
+      );
+    case 'commitment_reminder':
+      return renderCommitmentReminder(
+        branding,
+        {
+          recipientName,
+          formTitle: 'My Training Checklist and Commitment',
+          trainingName: 'Coaching skills for new supervisors',
+          committedAction: 'Protect the trainee’s time to participate.',
+          what: 'Block both afternoons in the team calendar and cover their calls.',
+          dueOn: '15 December 2026',
+          evidence: 'The calendar entries and the cover rota',
+          formUrl: `${base}/account`,
         },
         custom,
       );

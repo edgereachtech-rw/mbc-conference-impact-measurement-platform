@@ -864,6 +864,14 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   else "Pre-training assessment" and the like; the description replaces the platform's purpose
   line on the delegate's card and the stage page. The delegate's event page no longer repeats an
   assessment's heading above its card.
+- The commitment's own reminder (2026-11-22): on an event with the checklist and commitment
+  form, the reminder a delegate asked for is a "Commitment reminder" (email kind
+  `commitment_reminder`, `renderCommitmentReminder`), not the Transfer Plan reminder: it names
+  the training, the commitment, what they will do, the due date and what will show it is done,
+  says it is the only reminder and asks for nothing (progress is asked in the follow-ups only), and
+  its button reads "View my commitment". Its words are edited on
+  the Emails tab like the others (placeholders `trainingName`, `commitment`, `dueDate`). Events
+  with the full Transfer Plan keep the "Transfer plan reminder". No migration.
 - The submit button's words per assessment (2026-11-22): "Submit button text" on the same
   Confirmation editor (`confirmation.submitLabel`, up to 40 characters, stored with the
   confirmation settings, no migration) replaces "Submit answers" / "Submit section" on the
