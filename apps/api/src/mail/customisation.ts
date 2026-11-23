@@ -11,7 +11,7 @@ import {
 } from '@mbc/shared';
 
 import type { PrismaClient } from '../db.js';
-import { brandingForEvent } from './branding.js';
+import { brandingForEvent, PLATFORM_NAME } from './branding.js';
 import type { MailConfig } from './config.js';
 import {
   renderFollowUpInvitation,
@@ -141,10 +141,14 @@ export function renderSample(
         custom,
       );
     case 'invitation':
+      // The platform's own invitation, naming this event (2026-11-23).
       return renderInvitation(
-        branding,
+        { ...branding, eventName: PLATFORM_NAME, eventFullName: undefined, footerLine: undefined },
         {
           recipientName,
+          registeredFor: branding.eventFullName
+            ? `${branding.eventName}: ${branding.eventFullName}`
+            : branding.eventName,
           inviteUrl: `${base}/signin?invite=sample`,
           expiresInMinutes: 7 * 24 * 60,
           eventSummary: branding.footerLine?.split(' | ').pop() ?? undefined,

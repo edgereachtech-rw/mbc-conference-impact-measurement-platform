@@ -147,7 +147,10 @@ describe.skipIf(!hasDatabase)('invitations (E3-1)', () => {
     expect(res.status, res.text).toBe(200);
     expect(res.body).toEqual({ sent: 1, failed: 0, total: 1 }); // the cancelled registration is not invited
     expect(mailer.sent[0]?.to).toBe(email);
-    expect(mailer.sent[0]?.subject).toMatch(/invitation/i);
+    // The platform's own invitation, naming the delegate's own event (2026-11-23).
+    expect(mailer.sent[0]?.subject).toBe('Your MBC Impact Intelligence Platform (IIP) invitation');
+    const invitedEvent = await prisma.event.findUniqueOrThrow({ where: { id: eventId } });
+    expect(mailer.sent[0]?.text).toContain(`You are registered for ${invitedEvent.name}`);
     const token = inviteTokenFrom(mailer.sent[0]?.text ?? '');
     expect(token.length).toBeGreaterThan(20);
     const stored = await prisma.invitation.findFirstOrThrow({

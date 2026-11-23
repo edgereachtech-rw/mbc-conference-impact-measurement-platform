@@ -864,6 +864,14 @@ Every enabled assessment stage carries questions that delegates answer (decided 
   else "Pre-training assessment" and the like; the description replaces the platform's purpose
   line on the delegate's card and the stage page. The delegate's event page no longer repeats an
   assessment's heading above its card.
+- The platform's own emails carry its name (decision 2026-11-23): the sign-in email ("Sign in
+  to MBC Impact Intelligence Platform (IIP)") and the account invitation ("Your MBC Impact
+  Intelligence Platform (IIP) invitation", whose body still says which event the delegate is
+  registered for, from that event) use `genericBranding` and `PLATFORM_NAME` in
+  `apps/api/src/mail/branding.ts`. They used to take the name of the latest active event on the
+  platform, so a delegate of one event could be told they were signing in to, or registered for,
+  another. `loadEventBranding` and the `MAIL_EVENT_NAME` setting are gone. Emails about one event
+  (welcome pack, reminders, follow-ups, feedback) keep that event's name.
 - The commitment's own reminder (2026-11-22): on an event with the checklist and commitment
   form, the reminder a delegate asked for is a "Commitment reminder" (email kind
   `commitment_reminder`, `renderCommitmentReminder`), not the Transfer Plan reminder: it names

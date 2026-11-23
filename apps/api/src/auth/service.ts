@@ -5,7 +5,7 @@ import { audit } from '../lib/audit.js';
 import { normaliseEmail } from '../lib/email.js';
 import { HttpError, RateLimitError } from '../lib/errors.js';
 import type { Logger } from '../lib/logger.js';
-import { genericBranding, loadEventBranding } from '../mail/branding.js';
+import { genericBranding } from '../mail/branding.js';
 import type { MailConfig } from '../mail/config.js';
 import type { Mailer } from '../mail/mailer.js';
 import { renderMagicLink } from '../mail/templates/index.js';
@@ -178,9 +178,8 @@ export class AuthService {
       },
     });
 
-    const branding =
-      (await loadEventBranding(this.prisma, this.deps.mailConfig)) ??
-      genericBranding(this.deps.mailConfig);
+    // The platform's name, whoever signs in and however many events they have (2026-11-23).
+    const branding = genericBranding(this.deps.mailConfig);
     const linkedDelegate =
       delegate ??
       (account

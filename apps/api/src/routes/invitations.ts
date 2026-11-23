@@ -1,4 +1,4 @@
-import { invitationSendSchema, type InvitationSend } from '@mbc/shared';
+import { eventNounOf, invitationSendSchema, type InvitationSend } from '@mbc/shared';
 import { Router } from 'express';
 
 import type { AuthConfig } from '../auth/config.js';
@@ -9,7 +9,7 @@ import type { PrismaClient } from '../db.js';
 import { audit } from '../lib/audit.js';
 import { HttpError } from '../lib/errors.js';
 import type { Logger } from '../lib/logger.js';
-import { genericBranding, loadEventBranding } from '../mail/branding.js';
+import { genericBranding } from '../mail/branding.js';
 import type { MailConfig } from '../mail/config.js';
 import type { Mailer } from '../mail/mailer.js';
 import { renderInvitation } from '../mail/templates/index.js';
@@ -86,6 +86,7 @@ export function invitationRouter({
           startsOn: true,
           endsOn: true,
           location: true,
+          eventType: true,
         },
       });
       if (!event) throw new HttpError(404, 'not_found', 'Event not found.');
@@ -118,8 +119,11 @@ export function invitationRouter({
         );
       }
 
-      const branding =
-        (await loadEventBranding(prisma(), mailConfig())) ?? genericBranding(mailConfig());
+      // The platform's own invitation, naming the delegate's own event (2026-11-23).
+      const branding = {
+        ...genericBranding(mailConfig()),
+        eventNoun: eventNounOf(event.eventType),
+      };
       const eventSummary = `${event.startsOn.toISOString().slice(0, 10)} to ${event.endsOn.toISOString().slice(0, 10)}${event.location ? `, ${event.location}` : ''}`;
       const now = clock();
       const expiresAt = new Date(now.getTime() + ttlDays * 86_400_000);
@@ -141,6 +145,7 @@ export function invitationRouter({
         const rendered = renderInvitation(
           branding,
           {
+            registeredFor: event.name,
             recipientName: delegate.name,
             inviteUrl: `${config.appUrl}/signin?invite=${encodeURIComponent(rawToken)}`,
             expiresInMinutes: ttlDays * 24 * 60,

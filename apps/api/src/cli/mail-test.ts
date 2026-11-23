@@ -12,7 +12,7 @@
 import 'dotenv/config';
 
 import { getPrisma } from '../db.js';
-import { genericBranding, loadEventBranding } from '../mail/branding.js';
+import { genericBranding } from '../mail/branding.js';
 import { createMailer, mailConfigFromEnv } from '../mail/index.js';
 import {
   renderInvitation,
@@ -49,17 +49,8 @@ async function main() {
   }
 
   const config = mailConfigFromEnv();
-  let branding = genericBranding(config);
-  if (process.env.DATABASE_URL) {
-    try {
-      const fromDb = await loadEventBranding(getPrisma(), config);
-      if (fromDb) branding = fromDb;
-    } catch (error) {
-      console.warn(
-        `warning: could not load event branding from the database (${error instanceof Error ? error.message : String(error)}); using generic branding`,
-      );
-    }
-  }
+  // The platform's own name (2026-11-23), as the sign-in email uses.
+  const branding = genericBranding(config);
 
   const sampleUrl = `${config.appUrl}/signin?token=sample-token-not-valid`;
   const rendered =

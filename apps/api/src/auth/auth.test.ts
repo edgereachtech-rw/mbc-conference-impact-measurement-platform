@@ -118,6 +118,8 @@ describe.skipIf(!hasDatabase)('passwordless sign-in (E3-2..5)', () => {
     expect(mailer.sent[0]?.to).toBe(email);
     expect(mailer.sent[0]?.text).toContain(`${ORIGIN}/signin/verify?token=`);
     expect(mailer.sent[0]?.text).toContain('conference@mbryanconsultinggroup.com');
+    // The platform's name, never an event's, however many events the person has (2026-11-23).
+    expect(mailer.sent[0]?.subject).toBe('Sign in to MBC Impact Intelligence Platform (IIP)');
     const stored = await prisma.signInToken.findFirst({ where: { email } });
     expect(stored?.tokenHash).toBe(hashToken(linkTokenFrom(mailer)));
     expect(stored?.tokenHash).not.toContain(linkTokenFrom(mailer));

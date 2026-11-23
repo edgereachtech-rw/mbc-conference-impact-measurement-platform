@@ -1,6 +1,5 @@
 import { eventNounOf, eventTypes, type EventType } from '@mbc/shared';
 
-import type { PrismaClient } from '../db.js';
 import type { MailConfig } from './config.js';
 import type { EmailBranding } from './templates/layout.js';
 
@@ -55,24 +54,20 @@ export function brandingForEvent(
 }
 
 /** Used when no database is configured (local preview, CI): generic, clearly non-event branding. */
+/** What the platform is called in its own emails (decision 2026-11-23). */
+export const PLATFORM_NAME = 'MBC Impact Intelligence Platform (IIP)';
+
+/**
+ * The platform's own branding (decision 2026-11-23): the sign-in email and the account
+ * invitation carry the platform's name, never an event's. A person may be registered for several
+ * events and one sign-in opens them all; naming the latest event on the platform (as these emails
+ * did) told some delegates they were signing in to an event that was not theirs.
+ */
 export function genericBranding(config: MailConfig): EmailBranding {
   return {
-    eventName: process.env.MAIL_EVENT_NAME ?? 'MBC Impact Intelligence Platform',
+    eventName: PLATFORM_NAME,
     organiser: organiser(),
     contactEmail: config.contactEmail,
     appUrl: config.appUrl,
   };
-}
-
-/** Loads the active event (or the most recent one) for email branding; null when none exists. */
-export async function loadEventBranding(
-  prisma: PrismaClient,
-  config: MailConfig,
-): Promise<EmailBranding | null> {
-  const event =
-    (await prisma.event.findFirst({
-      where: { status: 'active' },
-      orderBy: { startsOn: 'desc' },
-    })) ?? (await prisma.event.findFirst({ orderBy: { startsOn: 'desc' } }));
-  return event ? brandingForEvent(config, event) : null;
 }

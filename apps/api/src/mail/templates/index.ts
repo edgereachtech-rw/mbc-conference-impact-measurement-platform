@@ -49,6 +49,8 @@ export interface InvitationInput {
   expiresInMinutes: number;
   /** Shown as the first paragraph; e.g. "12-13 November 2026, Lagos Oriental Hotel". */
   eventSummary?: string;
+  /** The event the delegate is registered for (2026-11-23); the email itself is the platform's. */
+  registeredFor?: string;
 }
 
 export function renderInvitation(
@@ -57,16 +59,19 @@ export function renderInvitation(
   custom?: EmailCustomisation | null,
 ): RenderedEmail {
   const noun = nounOf(branding);
+  const event = input.registeredFor ?? branding.eventName;
   const values = {
     ...recipientValues(branding, input.recipientName),
+    // {{eventName}} is the delegate's own event, not the platform.
+    eventName: event,
     eventDates: input.eventSummary ?? '',
   };
   const w = wordingOf(
     {
-      subject: `Your ${branding.eventName} impact platform invitation`,
-      title: `Welcome to the ${branding.eventName} impact platform`,
+      subject: `Your ${branding.eventName} invitation`,
+      title: `Welcome to the ${branding.eventName}`,
       intro: [
-        `You are registered for ${branding.eventName}${input.eventSummary ? ` (${input.eventSummary})` : ''}. This platform follows your journey from a short pre-${noun} check-in, through the ${noun} days, to brief follow-ups afterwards, so that your learning turns into measurable results at work.`,
+        `You are registered for ${event}${input.eventSummary ? ` (${input.eventSummary})` : ''}. This platform follows your journey from a short pre-${noun} check-in, through the ${noun} days, to brief follow-ups afterwards, so that your learning turns into measurable results at work.`,
         'Use the button below to activate your account. The link is personal and works once.',
       ],
       closing: [
@@ -83,7 +88,7 @@ export function renderInvitation(
       branding,
       {
         subject: w.subject,
-        preheader: `Activate your ${branding.eventName} account to record what you will take back to work.`,
+        preheader: `Activate your ${branding.eventName} account for ${event}.`,
         eyebrow: 'Invitation',
         title: w.title,
         paragraphs: [greetingOf(input.recipientName), ...w.intro],
@@ -111,7 +116,7 @@ export interface MagicLinkInput {
 export function renderMagicLink(branding: EmailBranding, input: MagicLinkInput): RenderedEmail {
   const paragraphs = [
     input.recipientName ? `Hello ${input.recipientName},` : 'Hello,',
-    `Here is your sign-in link for the ${branding.eventName} impact platform. It works once and only on this email address.`,
+    `Here is your sign-in link for the ${branding.eventName}. It works once and only on this email address.`,
   ];
   if (input.code) {
     paragraphs.push(`Prefer to type? Enter this one-time code on the sign-in page: ${input.code}`);
