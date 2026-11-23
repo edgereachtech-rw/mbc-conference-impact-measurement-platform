@@ -8,13 +8,19 @@ import { z } from 'zod';
  * the platform records who has had one so a second send can skip them.
  */
 
-export const onboardingScopes = ['not_yet_sent', 'all', 'selected'] as const;
+/**
+ * Who a send reaches (2026-11-23): those with no pack yet, those who have not signed in even once
+ * (whether or not they had a pack), or a named list. "Everyone" was removed: a pack again to
+ * delegates already using the platform only cluttered their inbox.
+ */
+export const onboardingScopes = ['not_yet_sent', 'not_signed_in', 'selected'] as const;
 export type OnboardingScope = (typeof onboardingScopes)[number];
 
 export const onboardingSendRequestSchema = z
   .object({
-    /** Who to send to: those with no pack yet, everyone eligible, or a named list. */
     scope: z.enum(onboardingScopes).default('not_yet_sent'),
+    /** One batch's delegates only, on an event in batches (2026-11-23); absent for every batch. */
+    batch: z.uuid().optional(),
     delegateIds: z.array(z.uuid()).max(2_000).optional(),
   })
   .refine((v) => v.scope !== 'selected' || (v.delegateIds?.length ?? 0) > 0, {
@@ -32,6 +38,8 @@ export const onboardingStateSchema = z.object({
   pending: z.number().int(),
   /** Attempts that failed and have not since succeeded. */
   failed: z.number().int(),
+  /** Eligible delegates who have not signed in even once (2026-11-23). */
+  notSignedIn: z.number().int(),
   lastSentAt: z.string().nullable(),
 });
 export type OnboardingState = z.infer<typeof onboardingStateSchema>;

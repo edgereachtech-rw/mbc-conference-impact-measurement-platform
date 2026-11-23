@@ -145,15 +145,27 @@ describe.skipIf(!hasDatabase)('onboarding pack', () => {
   it('reports who is waiting before anything is sent', async () => {
     const state = await call('get', `/events/${eventId}/onboarding`);
     expect(state.status, state.text).toBe(200);
-    expect(state.body).toMatchObject({ eligible: 2, sent: 0, pending: 2, failed: 0 });
+    expect(state.body).toMatchObject({
+      eligible: 2,
+      sent: 0,
+      pending: 2,
+      failed: 0,
+      notSignedIn: 2,
+    });
     expect(state.body.lastSentAt).toBeNull();
   });
 
   it('is admin-only', async () => {
     expect((await call('get', `/events/${eventId}/onboarding`, undefined, '')).status).toBe(401);
     expect(
-      (await call('post', `/events/${eventId}/onboarding/send`, { scope: 'all' }, cookies.dee))
-        .status,
+      (
+        await call(
+          'post',
+          `/events/${eventId}/onboarding/send`,
+          { scope: 'not_signed_in' },
+          cookies.dee,
+        )
+      ).status,
     ).toBe(403);
   });
 
@@ -181,7 +193,7 @@ describe.skipIf(!hasDatabase)('onboarding pack', () => {
     expect(toDee.html).toMatch(/Friday,? 13 November 2026/);
     expect(toDee.html).toContain('Lagos Oriental Hotel');
     // What the pack is for, and the honest line about what a code is not.
-    expect(toDee.html).toMatch(/30, 60 and 90 days, and later on/);
+    expect(toDee.html).toMatch(/30, 60, 90 days, and beyond/);
     expect(toDee.html).toMatch(/holding the code is not attendance/);
     expect(toDee.text).toContain('WHAT HAPPENS WHEN');
     // The cancelled registration is not among the recipients.
@@ -198,24 +210,83 @@ describe.skipIf(!hasDatabase)('onboarding pack', () => {
     expect(mailer.sent).toHaveLength(0);
   });
 
-  it('sends again to everyone when an admin asks for it, and records every attempt', async () => {
+  it('sends again only to those who have not signed in, by batch, and records every attempt', async () => {
+    // Dee has signed in; Bo has not, and is in Batch B.
+    const dee = await prisma.delegate.findFirstOrThrow({
+      where: { eventId, email: `dee-ob-${tag}@example.com` },
+    });
+    await prisma.delegate.update({ where: { id: dee.id }, data: { signedUpAt: now } });
+    const days = await prisma.eventDate.findMany({ where: { eventId }, orderBy: { date: 'asc' } });
+    const batchA = await prisma.eventBatch.create({
+      data: { eventId, eventDateId: days[0]!.id, name: `A-${tag}` },
+    });
+    const batchB = await prisma.eventBatch.create({
+      data: { eventId, eventDateId: days[1]!.id, name: `B-${tag}` },
+    });
+    await prisma.delegate.updateMany({
+      where: { eventId, email: `bo-ob-${tag}@example.com` },
+      data: { batchId: batchB.id },
+    });
+    await prisma.delegate.update({ where: { id: dee.id }, data: { batchId: batchA.id } });
+
+    // The figures follow the batch chosen.
+    const stateB = await call('get', `/events/${eventId}/onboarding?batch=${batchB.id}`);
+    expect(stateB.body).toMatchObject({ eligible: 1, sent: 1, notSignedIn: 1 });
+    const stateA = await call('get', `/events/${eventId}/onboarding?batch=${batchA.id}`);
+    expect(stateA.body).toMatchObject({ eligible: 1, sent: 1, notSignedIn: 0 });
+    expect((await call('get', `/events/${eventId}/onboarding?batch=${randomUUID()}`)).status).toBe(
+      404,
+    );
+
+    // Batch A: Dee has signed in, so nobody is emailed.
     mailer.sent.length = 0;
-    const resend = await call('post', `/events/${eventId}/onboarding/send`, { scope: 'all' });
-    expect(resend.body.justSent).toBe(2);
-    expect(mailer.sent).toHaveLength(2);
-    // Two attempts each, kept as history rather than overwritten.
+    const none = await call('post', `/events/${eventId}/onboarding/send`, {
+      scope: 'not_signed_in',
+      batch: batchA.id,
+    });
+    expect(none.status, none.text).toBe(201);
+    expect(none.body.justSent).toBe(0);
+    expect(mailer.sent).toHaveLength(0);
+
+    // Every batch: only Bo, who never signed in.
+    const resend = await call('post', `/events/${eventId}/onboarding/send`, {
+      scope: 'not_signed_in',
+    });
+    expect(resend.body.justSent).toBe(1);
+    expect(mailer.sent.map((m) => m.to)).toEqual([`bo-ob-${tag}@example.com`]);
+    // Batch B alone reaches Bo again.
+    mailer.sent.length = 0;
+    const inB = await call('post', `/events/${eventId}/onboarding/send`, {
+      scope: 'not_signed_in',
+      batch: batchB.id,
+    });
+    expect(inB.body).toMatchObject({ justSent: 1, eligible: 1 });
+    expect(mailer.sent.map((m) => m.to)).toEqual([`bo-ob-${tag}@example.com`]);
+    // Everyone is gone as a scope.
+    expect(
+      (await call('post', `/events/${eventId}/onboarding/send`, { scope: 'all' })).status,
+    ).toBe(422);
+
+    // Every attempt kept as history rather than overwritten.
     const rows = await prisma.onboardingSend.count({
       where: { delegate: { eventId }, status: 'sent' },
     });
     expect(rows).toBe(4);
-
     const audits = await prisma.auditLog.findMany({
       where: { eventId, action: 'onboarding.sent' },
+      orderBy: { occurredAt: 'asc' },
     });
-    expect(audits.length).toBeGreaterThanOrEqual(2);
-    // Counts, never an address.
+    // Counts and the batch's name, never an address.
     expect(JSON.stringify(audits.map((a) => a.newValue))).not.toContain('@example.com');
-    expect(audits.at(-1)?.newValue).toMatchObject({ scope: 'all', sent: 2, failed: 0 });
+    expect(audits.at(-1)?.newValue).toMatchObject({
+      scope: 'not_signed_in',
+      sent: 1,
+      batch: `B-${tag}`,
+    });
+
+    // Back as they were for the tests below.
+    await prisma.delegate.updateMany({ where: { eventId }, data: { batchId: null } });
+    await prisma.eventBatch.deleteMany({ where: { eventId } });
   });
 
   it('gives a delegate their own card, and nobody else one', async () => {

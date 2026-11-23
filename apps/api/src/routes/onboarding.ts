@@ -6,6 +6,7 @@ import { clientOf, principalOf, type createAuthMiddleware } from '../auth/middle
 import { canConfigureEvents, EVENT_SETUP_ROLES } from '../auth/policies.js';
 import type { PrismaClient } from '../db.js';
 import { audit } from '../lib/audit.js';
+import { batchScopeOf, inBatch, type BatchScope } from '../lib/batch-scope.js';
 import { HttpError } from '../lib/errors.js';
 import type { Logger } from '../lib/logger.js';
 import { validate } from '../lib/validate.js';
@@ -110,9 +111,10 @@ export function onboardingRouter({
     return out;
   }
 
-  async function stateOf(eventId: string): Promise<OnboardingState> {
-    const where = { eventId, registrationStatus: { in: [...eligible()] } };
-    const [eligibleCount, sent, failed, last] = await Promise.all([
+  /** The figures of the event, or of one batch's delegates (2026-11-23). */
+  async function stateOf(eventId: string, batch: BatchScope | null): Promise<OnboardingState> {
+    const where = { eventId, registrationStatus: { in: [...eligible()] }, ...inBatch(batch) };
+    const [eligibleCount, sent, failed, notSignedIn, last] = await Promise.all([
       prisma().delegate.count({ where }),
       prisma().delegate.count({
         where: { ...where, onboardingSends: { some: { status: 'sent' } } },
@@ -123,8 +125,9 @@ export function onboardingRouter({
           onboardingSends: { some: { status: 'failed' }, none: { status: 'sent' } },
         },
       }),
+      prisma().delegate.count({ where: { ...where, signedUpAt: null } }),
       prisma().onboardingSend.findFirst({
-        where: { status: 'sent', delegate: { eventId } },
+        where: { status: 'sent', delegate: { eventId, ...inBatch(batch) } },
         orderBy: { sentAt: 'desc' },
         select: { sentAt: true },
       }),
@@ -134,6 +137,7 @@ export function onboardingRouter({
       sent,
       pending: eligibleCount - sent,
       failed,
+      notSignedIn,
       lastSentAt: last?.sentAt?.toISOString() ?? null,
     };
   }
@@ -141,7 +145,7 @@ export function onboardingRouter({
   router.get('/events/:eventId/onboarding', guard, async (req, res) => {
     requireAdmin(res);
     const event = await loadEvent(String(req.params.eventId));
-    res.json(await stateOf(event.id));
+    res.json(await stateOf(event.id, await batchScopeOf(prisma(), event.id, req.query.batch)));
   });
 
   router.post(
@@ -155,12 +159,16 @@ export function onboardingRouter({
         throw new HttpError(409, 'event_archived', 'An archived event sends nothing.');
       }
       const { scope, delegateIds } = req.body;
+      const batch = await batchScopeOf(prisma(), event.id, req.body.batch);
 
       const recipients = await prisma().delegate.findMany({
         where: {
           eventId: event.id,
           registrationStatus: { in: [...eligible()] },
+          ...inBatch(batch),
           ...(scope === 'not_yet_sent' ? { onboardingSends: { none: { status: 'sent' } } } : {}),
+          // Not signed in even once on this event's registration (2026-11-23).
+          ...(scope === 'not_signed_in' ? { signedUpAt: null } : {}),
           ...(scope === 'selected' ? { id: { in: delegateIds ?? [] } } : {}),
         },
         select: {
@@ -223,14 +231,20 @@ export function onboardingRouter({
         entityId: event.id,
         eventId: event.id,
         actorUserId: principal.userId,
-        newValue: { scope, sent: justSent, failed: justFailed, batch: BATCH },
+        newValue: {
+          scope,
+          sent: justSent,
+          failed: justFailed,
+          limit: BATCH,
+          ...(batch ? { batch: batch.name } : {}),
+        },
         ...clientOf(res),
       });
       if (justSent || justFailed) {
         logger.info({ sent: justSent, failed: justFailed }, 'onboarding packs sent');
       }
 
-      res.status(201).json({ ...(await stateOf(event.id)), justSent, justFailed });
+      res.status(201).json({ ...(await stateOf(event.id, batch)), justSent, justFailed });
     },
   );
 

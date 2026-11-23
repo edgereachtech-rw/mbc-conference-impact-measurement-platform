@@ -250,7 +250,9 @@ describe.skipIf(!hasDatabase)('event batches', () => {
 
     // The welcome pack carries one code for Dee, three for Cy.
     mailer.sent.length = 0;
-    const sent = await call('post', `/events/${eventId}/onboarding/send`, { scope: 'all' });
+    const sent = await call('post', `/events/${eventId}/onboarding/send`, {
+      scope: 'not_signed_in',
+    });
     expect(sent.status, sent.text).toBe(201);
     const toDee = mailer.sent.find((m) => m.to.startsWith('dee-b-'))!;
     const toCy = mailer.sent.find((m) => m.to.startsWith('cy-b-'))!;
