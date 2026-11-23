@@ -87,9 +87,15 @@ describe.skipIf(!hasDatabase)('event setup (E1 brief)', () => {
     ).toBe(422);
     expect((await call('post', '/events', { ...body, dates: ['2026-02-30'] })).status).toBe(422);
     expect((await call('post', '/events', { ...body, timezone: 'Mars/Olympus' })).status).toBe(422);
-    const noVenue = await call('post', '/events', { ...body, location: '' });
-    expect(noVenue.status).toBe(422);
-    expect(noVenue.body.error.message).toMatch(/venue or location/i);
+    // The venue is optional for every format (2026-11-23); this one is deleted below with the rest.
+    const noVenue = await call('post', '/events', {
+      ...body,
+      location: '',
+      name: `No venue ${tag}`,
+    });
+    expect(noVenue.status, noVenue.text).toBe(201);
+    expect(noVenue.body.event.location).toBeNull();
+    eventIds.push(noVenue.body.event.id);
     // The code is generated from the name; a second event with the same name gets a numbered code.
     const first = await call('post', '/events', { ...body, format: 'virtual', location: '' });
     expect(first.status).toBe(201);
@@ -175,9 +181,13 @@ describe.skipIf(!hasDatabase)('event setup (E1 brief)', () => {
         ?.eventType,
     ).toBe('summit');
 
-    // Profile patch: the code cannot be changed, venue rule on the merged profile, audit.
+    // Profile patch: the code cannot be changed, the venue can be cleared (optional since
+    // 2026-11-23), audit.
     expect((await call('patch', `/events/${ev.id}`, { code: 'other' })).body.event.code).toBe(code);
-    expect((await call('patch', `/events/${ev.id}`, { location: '' })).status).toBe(422);
+    const cleared = await call('patch', `/events/${ev.id}`, { location: '' });
+    expect(cleared.status, cleared.text).toBe(200);
+    expect(cleared.body.event.location).toBeNull();
+    await call('patch', `/events/${ev.id}`, { location: 'Lagos Oriental Hotel' });
     const patched = await call('patch', `/events/${ev.id}`, {
       name: 'Transfer Summit 2026',
       theme: 'Impact',
@@ -186,7 +196,7 @@ describe.skipIf(!hasDatabase)('event setup (E1 brief)', () => {
     expect(patched.body.event).toMatchObject({ name: 'Transfer Summit 2026', theme: 'Impact' });
     expect(
       await prisma.auditLog.count({ where: { action: 'event.updated', entityId: ev.id } }),
-    ).toBe(1);
+    ).toBe(3); // clearing the venue, setting it back, then the name and theme
   });
 
   it('binds sessions to selected dates, enforces times, blocks removing a date with sessions, and keeps the schedule in order', async () => {
@@ -379,12 +389,9 @@ describe.skipIf(!hasDatabase)('event setup (E1 brief)', () => {
       }),
     ).toBe(2);
 
-    // Publish: refused without a venue for a hybrid event, allowed once complete; archived events are frozen.
+    // Publish: a hybrid event without a venue publishes (optional since 2026-11-23); archived
+    // events are frozen.
     await prisma.event.update({ where: { id }, data: { location: null } });
-    const refused = await call('post', `/events/${id}/status`, { status: 'active' });
-    expect(refused.status).toBe(422);
-    expect(refused.body.error.code).toBe('not_publishable');
-    await prisma.event.update({ where: { id }, data: { location: 'Lagos' } });
     const published = await call('post', `/events/${id}/status`, { status: 'active' });
     expect(published.status).toBe(200);
     expect(published.body.event.status).toBe('active');

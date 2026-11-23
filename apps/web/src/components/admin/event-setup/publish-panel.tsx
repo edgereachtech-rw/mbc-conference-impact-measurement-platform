@@ -52,8 +52,9 @@ export function PublishPanel({ event, onSaved }: PublishPanelProps) {
     },
     {
       label: 'Venue',
-      value: event.location ?? (event.format === 'virtual' ? 'Online event' : 'Not set'),
-      ok: Boolean(event.location) || event.format === 'virtual',
+      value: event.location ?? (event.format === 'virtual' ? 'Online event' : 'Not set (optional)'),
+      // Optional for every format (2026-11-23).
+      ok: true,
     },
     {
       label: 'Sessions',

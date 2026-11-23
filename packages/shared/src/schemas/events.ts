@@ -163,16 +163,16 @@ export const eventProfileFieldsSchema = z.object({
 });
 export type EventProfileFields = z.infer<typeof eventProfileFieldsSchema>;
 
-/** Rules that span fields; the API applies them to the merged profile on create, patch and publish. */
-export function eventProfileIssues(profile: {
+/**
+ * Rules that span fields; the API applies them to the merged profile on create, patch and publish.
+ * None today: the venue is optional for every format (decision 2026-11-23), so an event whose
+ * venue is not yet known can still be set up and published. Emails and pages leave it out.
+ */
+export function eventProfileIssues(_profile: {
   format: EventFormat;
   location?: string | null;
 }): string[] {
-  const issues: string[] = [];
-  if (formatNeedsVenue(profile.format) && !profile.location?.trim()) {
-    issues.push('A venue or location is required for an in-person or hybrid event.');
-  }
-  return issues;
+  return [];
 }
 
 const noDuplicateDates = (value: { dates: string[] }, ctx: z.RefinementCtx) => {

@@ -5,8 +5,16 @@ import type {
   DelegateListResponse,
   DelegateListStatus,
   DelegateTestMarkResult,
+  OnboardingSendResult,
 } from '@mbc/shared';
-import { Loader2Icon, MailIcon, PencilIcon, SearchIcon, UserPlusIcon } from 'lucide-react';
+import {
+  GiftIcon,
+  Loader2Icon,
+  MailIcon,
+  PencilIcon,
+  SearchIcon,
+  UserPlusIcon,
+} from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 import { NativeSelect } from '@/components/imports/native-select';
@@ -96,6 +104,9 @@ export function DelegateTable({ eventId, eventName = 'this event', onMessageSent
   /** "Every delegate matching the current filter", beyond the page on screen. */
   const [allMatching, setAllMatching] = useState(false);
   const [marking, setMarking] = useState(false);
+  /** The welcome pack to the ticked delegates (2026-11-23): asked once more before sending. */
+  const [packConfirm, setPackConfirm] = useState(false);
+  const [packing, setPacking] = useState(false);
   const [composer, setComposer] = useState<Composer | null>(null);
   const [form, setForm] = useState<DelegateFormMode | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -193,9 +204,38 @@ export function DelegateTable({ eventId, eventName = 'this event', onMessageSent
       setMarking(false);
     }
   }
+  /** Sends the welcome pack to the ticked delegates, whether or not they had one (2026-11-23). */
+  async function sendPack() {
+    if (allMatching || selected.size === 0) return;
+    setPacking(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const chosen = [...selected];
+      const result = await apiFetch<OnboardingSendResult>(`/events/${eventId}/onboarding/send`, {
+        method: 'POST',
+        body: JSON.stringify({ scope: 'selected', delegateIds: chosen }),
+      });
+      const skipped = Math.max(0, chosen.length - result.justSent - result.justFailed);
+      setNotice(
+        `Welcome pack sent to ${result.justSent} delegate${result.justSent === 1 ? '' : 's'}` +
+          (result.justFailed ? `; ${result.justFailed} could not be delivered` : '') +
+          (skipped ? `; ${skipped} not sent (only active and test registrations get a pack)` : '') +
+          '.',
+      );
+      setSelected(new Set());
+      setPackConfirm(false);
+      setReload((n) => n + 1);
+    } catch (e) {
+      setError(describeError(e, 'The welcome pack could not be sent.'));
+    } finally {
+      setPacking(false);
+    }
+  }
   function clearSelection() {
     setSelected(new Set());
     setAllMatching(false);
+    setPackConfirm(false);
   }
   function openComposer() {
     if (!data) return;
@@ -448,6 +488,37 @@ export function DelegateTable({ eventId, eventName = 'this event', onMessageSent
             >
               Mark as real delegates
             </button>
+            {/*
+              The welcome pack to exactly these delegates (2026-11-23), whether or not they already
+              had one. An explicit selection only, as for marking test delegates.
+            */}
+            {packConfirm ? (
+              <button
+                type="button"
+                onClick={() => void sendPack()}
+                disabled={packing || allMatching || selected.size === 0}
+                className={consoleButton({ variant: 'accent', size: 'sm' })}
+              >
+                {packing ? (
+                  <Loader2Icon className="size-4 animate-spin" aria-hidden="true" />
+                ) : (
+                  <GiftIcon className="size-4" aria-hidden="true" />
+                )}
+                Confirm: send {selected.size} welcome pack{selected.size === 1 ? '' : 's'}
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setPackConfirm(true)}
+                disabled={packing || allMatching || selected.size === 0}
+                title={
+                  allMatching ? 'Tick the delegates one by one to send them the pack' : undefined
+                }
+                className="inline-flex min-h-10 items-center gap-1 rounded-none border border-white/40 px-3 font-medium hover:bg-white/10 disabled:opacity-50"
+              >
+                <GiftIcon className="size-4" aria-hidden="true" /> Send welcome pack
+              </button>
+            )}
             <button
               type="button"
               onClick={openComposer}

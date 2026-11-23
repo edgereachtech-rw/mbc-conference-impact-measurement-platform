@@ -42,9 +42,8 @@ describe('EventProfileForm', () => {
       expect(screen.queryByLabelText('Event code')).toBeNull();
       await user.type(screen.getByLabelText('Description'), 'One day on transfer.');
       await user.type(screen.getByLabelText('Organiser'), 'M.Bryan');
-      await user.click(screen.getByRole('button', { name: 'Create event' }));
-      expect(onSubmit).not.toHaveBeenCalled();
-      expect(screen.getByRole('alert').textContent).toMatch(/venue or location is required/i);
+      // The venue is optional even for an in-person event (2026-11-23).
+      expect(screen.getByLabelText(/Venue or location \(optional\)/)).toBeTruthy();
 
       await user.selectOptions(screen.getByLabelText('Event format'), 'virtual');
       expect(screen.getByLabelText(/Venue or location \(optional\)/)).toBeTruthy();

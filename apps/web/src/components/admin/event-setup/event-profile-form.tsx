@@ -307,10 +307,11 @@ export function EventProfileForm({
         </div>
         {field(
           'location',
-          venueRequired ? 'Venue or location' : 'Venue or location (optional)',
+          'Venue or location (optional)',
           input('location', { maxLength: 300, placeholder: 'Venue, area, city' }),
+          // Optional for every format (2026-11-23); emails and pages leave it out when empty.
           venueRequired
-            ? 'Required for in-person and hybrid events.'
+            ? 'Leave empty if the venue is not known yet; emails and pages leave it out.'
             : 'Online events need no venue; add a platform or meeting note here if useful.',
         )}
       </fieldset>
