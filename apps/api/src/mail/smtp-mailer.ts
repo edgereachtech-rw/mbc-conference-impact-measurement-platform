@@ -30,7 +30,9 @@ export class SmtpMailer implements Mailer {
     const info = await this.transporter.sendMail({
       from: this.config.from,
       to: message.to,
-      replyTo: message.replyTo ?? 'no-reply@mbryancondultinggroup.com',
+      // Replies go to MAIL_CONTACT_EMAIL (2026-11-23). A hard-coded, misspelled look-alike domain
+      // used to stand here; a reply address on another domain is a phishing signal to filters.
+      replyTo: message.replyTo ?? this.config.contactEmail,
       subject: message.subject,
       text: message.text,
       html: message.html,
