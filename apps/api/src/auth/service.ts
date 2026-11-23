@@ -185,9 +185,15 @@ export class AuthService {
       (account
         ? await this.prisma.delegate.findFirst({ where: { userAccountId: account.id } })
         : null);
+    const signInUrl = `${config.appUrl}/signin/verify?token=${encodeURIComponent(rawToken)}`;
+    if (config.logSignInLinks) {
+      // Emergency switch (2026-11-23): written past the scrubbing logger on purpose, so the link
+      // and code can be read with `docker compose logs api` while email is not delivered.
+      writeSignInLink({ email, signInUrl, code, expiresAt: now.getTime() + config.magicLinkTtlMs });
+    }
     const rendered = renderMagicLink(branding, {
       recipientName: linkedDelegate?.name,
-      signInUrl: `${config.appUrl}/signin/verify?token=${encodeURIComponent(rawToken)}`,
+      signInUrl,
       expiresInMinutes: Math.round(config.magicLinkTtlMs / 60_000),
       code,
     });
@@ -551,4 +557,28 @@ export function toSessionUser(account: AccountLike, delegate: DelegateLike | nul
         }
       : null,
   };
+}
+
+/**
+ * One line on standard output with a sign-in link and its code (AUTH_LOG_SIGNIN_LINKS, 2026-11-23).
+ * It bypasses the logger's scrubbing deliberately: that is the whole point of the switch.
+ */
+function writeSignInLink(entry: {
+  email: string;
+  signInUrl: string;
+  code: string;
+  expiresAt: number;
+}): void {
+  process.stdout.write(
+    `${JSON.stringify({
+      level: 40,
+      time: new Date().toISOString(),
+      service: 'api',
+      msg: 'SIGN-IN LINK (AUTH_LOG_SIGNIN_LINKS is on)',
+      email: entry.email,
+      code: entry.code,
+      link: entry.signInUrl,
+      expiresAt: new Date(entry.expiresAt).toISOString(),
+    })}\n`,
+  );
 }

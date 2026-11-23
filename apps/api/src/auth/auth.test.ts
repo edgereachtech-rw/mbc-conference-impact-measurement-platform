@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { pino } from 'pino';
 import request, { type Agent } from 'supertest';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createApp } from '../app.js';
 import type { PrismaClient } from '../db.js';
@@ -246,6 +246,43 @@ describe.skipIf(!hasDatabase)('passwordless sign-in (E3-2..5)', () => {
       .set('Origin', ORIGIN)
       .send({ token: 'short' });
     expect(malformed.status).toBe(422);
+  });
+
+  it('writes the link and code to the output only when AUTH_LOG_SIGNIN_LINKS is on (2026-11-23)', async () => {
+    const email = `logged-${unique()}@example.com`;
+    await registeredDelegate(email);
+    const lines: string[] = [];
+    const spy = vi.spyOn(process.stdout, 'write').mockImplementation((chunk: unknown) => {
+      lines.push(String(chunk));
+      return true;
+    });
+    try {
+      // Off (the default): nothing about the link reaches the output.
+      expect(config.logSignInLinks).toBe(false);
+      await requestLink(request(app()), email);
+      expect(lines.join('')).not.toContain('SIGN-IN LINK');
+
+      const on = authConfigFromEnv({
+        NODE_ENV: 'test',
+        APP_URL: ORIGIN,
+        AUTH_RATE_LIMIT_PER_IP: '1000',
+        AUTH_VERIFY_LIMIT_PER_IP: '1000',
+        AUTH_LOG_SIGNIN_LINKS: 'true',
+      });
+      mailer = new MemoryMailer();
+      expect((await requestLink(request(app(on)), email)).status).toBe(202);
+    } finally {
+      spy.mockRestore();
+    }
+    const line = lines.find((l) => l.includes('SIGN-IN LINK'));
+    expect(line).toBeDefined();
+    const entry = JSON.parse(line!);
+    expect(entry.email).toBe(email);
+    // The same link and code the email carries.
+    const sent = mailer.sent[0]?.text ?? '';
+    expect(sent).toContain(entry.link);
+    expect(sent).toContain(entry.code);
+    expect(entry.code).toMatch(/^\d{6}$/);
   });
 
   it('rate-limits link requests per email without changing the response', async () => {

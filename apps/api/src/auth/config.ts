@@ -21,6 +21,11 @@ import { withoutBlankValues } from '../lib/env.js';
  *                               the sign-in attempt ledger and the audit log (32+ chars in production)
  *   AUTH_ALLOW_TEST_REGISTRATIONS "true" lets registrations with status test sign in (development
  *                               and staging rehearsals, OQ-27). Refused in production; never a default.
+ *   AUTH_LOG_SIGNIN_LINKS       "true" writes every sign-in link and code to the API's output
+ *                               (docker compose logs api), for when email cannot be delivered
+ *                               (2026-11-23). Anyone who can read the logs can then sign in as
+ *                               anyone: switch it on only while mail is down, then off. Never a
+ *                               default.
  *   TRUST_PROXY                 Express `trust proxy` value naming a reverse proxy network, for
  *                               a load balancer or TLS terminator in front of the container;
  *                               "false" or unset trusts nobody, so forwarded headers are ignored.
@@ -41,6 +46,7 @@ const schema = z.object({
   SESSION_SECRET: z.string().optional(),
   TRUST_PROXY: z.string().optional(),
   AUTH_ALLOW_TEST_REGISTRATIONS: z.enum(['true', 'false']).optional(),
+  AUTH_LOG_SIGNIN_LINKS: z.enum(['true', 'false']).optional(),
 });
 
 export interface AuthConfig {
@@ -64,6 +70,8 @@ export interface AuthConfig {
   production: boolean;
   /** Registrations with status test may sign in (never in production; D8 item 1, OQ-27). */
   allowTestRegistrations: boolean;
+  /** Emergency: sign-in links and codes are written to the output (2026-11-23). */
+  logSignInLinks: boolean;
 }
 
 export const COOKIE_NAME = 'mbc_session';
@@ -177,6 +185,7 @@ export function authConfigFromEnv(env: NodeJS.ProcessEnv = process.env): AuthCon
     trustProxy,
     production,
     allowTestRegistrations,
+    logSignInLinks: e.AUTH_LOG_SIGNIN_LINKS === 'true',
   };
 }
 
