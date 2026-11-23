@@ -48,6 +48,7 @@ const LIST_FIELDS = {
   identityId: true,
   batch: { select: { id: true, name: true } },
   signedUpAt: true,
+  userAccount: { select: { lastSignInAt: true } },
   importedAt: true,
   createdAt: true,
 } as const;
@@ -55,11 +56,14 @@ const LIST_FIELDS = {
 type ListRow = Prisma.DelegateGetPayload<{ select: typeof LIST_FIELDS }>;
 
 /** A delegate without an organisation of their own is shown under the nominating one. */
-function toListItem({ nominatingOrganisation, ...r }: ListRow): DelegateListItem {
+function toListItem({ nominatingOrganisation, userAccount, ...r }: ListRow): DelegateListItem {
+  // The latest sign-in (2026-11-23); the first one stands in for an account without a record.
+  const last = userAccount?.lastSignInAt ?? r.signedUpAt;
   return {
     ...r,
     organisation: displayOrganisation({ organisation: r.organisation, nominatingOrganisation }),
     signedUpAt: r.signedUpAt ? r.signedUpAt.toISOString() : null,
+    lastSignedInAt: last ? last.toISOString() : null,
     importedAt: r.importedAt ? r.importedAt.toISOString() : null,
     createdAt: r.createdAt.toISOString(),
   };

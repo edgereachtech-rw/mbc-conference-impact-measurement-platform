@@ -45,6 +45,28 @@ const SENT = { messageId: 'm1', total: 2, sent: 2, failed: 0, skipped: 0 };
 afterEach(() => vi.unstubAllGlobals());
 
 describe('DelegateTable', () => {
+  it('shows when each delegate last signed in, with the time in the event’s zone (2026-11-23)', async () => {
+    stub(() => ({
+      status: 200,
+      body: {
+        delegates: [
+          { ...row('d1', 'Zara Zed', 'active'), lastSignedInAt: '2026-11-23T17:45:00.000Z' },
+          row('d2', 'Adam Able', 'active'),
+        ],
+        page: 1,
+        pageSize: 10,
+        total: 2,
+        counts: COUNTS,
+      },
+    }));
+    render(<DelegateTable eventId="e1" timezone="Africa/Lagos" />);
+    const table = await screen.findByRole('table', { name: 'Delegates' });
+    expect(within(table).getByRole('columnheader', { name: 'Last signed in' })).toBeTruthy();
+    // 17:45 UTC is 18:45 in Lagos.
+    expect(within(table).getByText(/23 Nov 2026, 18:45/)).toBeTruthy();
+    expect(within(table).getByText('Not yet')).toBeTruthy();
+  });
+
   it('lists the active event’s delegates with counts, searches, filters, and changes a status through the API', async () => {
     const calls = stub((url, init) => {
       if (init?.method === 'PATCH') return { status: 200, body: { delegate: { id: 'd2' } } };

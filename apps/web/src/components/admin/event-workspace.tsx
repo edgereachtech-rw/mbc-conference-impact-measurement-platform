@@ -8,10 +8,11 @@ import { MessagesHistory } from './messages-history';
 interface Props {
   eventId: string;
   eventName: string;
+  timezone?: string;
 }
 
 /** The event page's working area: the delegate table and the messages sent to those delegates. */
-export function EventWorkspace({ eventId, eventName }: Props) {
+export function EventWorkspace({ eventId, eventName, timezone }: Props) {
   const [messagesVersion, setMessagesVersion] = useState(0);
   return (
     <>
@@ -22,6 +23,7 @@ export function EventWorkspace({ eventId, eventName }: Props) {
         <DelegateTable
           eventId={eventId}
           eventName={eventName}
+          timezone={timezone}
           onMessageSent={() => setMessagesVersion((n) => n + 1)}
         />
       </section>

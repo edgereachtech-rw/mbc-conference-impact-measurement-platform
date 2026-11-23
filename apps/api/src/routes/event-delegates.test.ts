@@ -122,6 +122,31 @@ describe.skipIf(!hasDatabase)('GET /events/:eventId/delegates (admin listing)', 
     expect(res.body.counts).toEqual({ active: 2, pending: 1, cancelled: 1, duplicate: 0, test: 1 });
   });
 
+  it('gives each delegate their latest sign-in, or none (2026-11-23)', async () => {
+    const account = await prisma.userAccount.create({
+      data: {
+        email: `zara-${tag}@example.com`,
+        role: 'delegate',
+        lastSignInAt: new Date('2026-11-23T17:45:00.000Z'),
+      },
+    });
+    accountIds.push(account.id);
+    await prisma.delegate.updateMany({
+      where: { eventId, email: `zara-${tag}@example.com` },
+      data: { userAccountId: account.id, signedUpAt: new Date('2026-11-20T08:00:00.000Z') },
+    });
+    const all = await list('?pageSize=10');
+    const byName = new Map(
+      all.body.delegates.map((d: { name: string; lastSignedInAt: string | null }) => [
+        d.name,
+        d.lastSignedInAt,
+      ]),
+    );
+    // The latest sign-in, not the first one.
+    expect(byName.get('Zara Zed')).toBe('2026-11-23T17:45:00.000Z');
+    expect(byName.get('Adam Able')).toBeNull();
+  });
+
   it('sorts, searches, filters and paginates', async () => {
     const byName = await list('?sort=name&direction=asc');
     expect(byName.body.delegates.map((d: { name: string }) => d.name)).toEqual([

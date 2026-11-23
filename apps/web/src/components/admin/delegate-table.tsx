@@ -22,6 +22,7 @@ import { ParticipationBadge } from '@/components/badges/participation-badge';
 import { apiFetch } from '@/lib/api';
 
 import { batchLabel, useEventBatches } from './use-batches';
+import { formatInstant } from '@/lib/events';
 import { describeError } from '@/lib/imports';
 import type {
   DelegateMessageRecipients,
@@ -72,6 +73,8 @@ interface Props {
   eventName?: string;
   /** Called after a message to delegates was sent, so the page can refresh the history. */
   onMessageSent?: (result: DelegateMessageSendResult) => void;
+  /** The event's zone, for "Last signed in" (2026-11-23). */
+  timezone?: string;
 }
 
 /**
@@ -80,7 +83,12 @@ interface Props {
  * hand (decision 2026-11-12), and selection by checkbox to email the chosen delegates (E2-14).
  * Everything is read from and written through admin-only routes; the table decides nothing itself.
  */
-export function DelegateTable({ eventId, eventName = 'this event', onMessageSent }: Props) {
+export function DelegateTable({
+  eventId,
+  eventName = 'this event',
+  onMessageSent,
+  timezone = 'Africa/Lagos',
+}: Props) {
   const [q, setQ] = useState('');
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<Filter>('');
@@ -592,7 +600,7 @@ export function DelegateTable({ eventId, eventName = 'this event', onMessageSent
                   Status
                 </th>
                 <th scope="col" className="hidden px-4 py-2 lg:table-cell">
-                  Signed in
+                  Last signed in
                 </th>
                 <th scope="col" className="hidden px-4 py-2 xl:table-cell">
                   Source id
@@ -691,8 +699,8 @@ export function DelegateTable({ eventId, eventName = 'this event', onMessageSent
                     )}
                   </td>
                   <td className="hidden px-4 py-3 text-corp-text lg:table-cell">
-                    {d.signedUpAt ? (
-                      new Date(d.signedUpAt).toLocaleDateString()
+                    {(d.lastSignedInAt ?? d.signedUpAt) ? (
+                      formatInstant(d.lastSignedInAt ?? d.signedUpAt, timezone)
                     ) : (
                       <span className="text-corp-muted">Not yet</span>
                     )}

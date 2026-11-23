@@ -54,6 +54,8 @@ export const delegateListItemSchema = z.object({
   /** The batch the delegate comes with (2026-11-19); null when they attend every day. */
   batch: z.object({ id: z.uuid(), name: z.string() }).nullable().optional(),
   signedUpAt: z.string().nullable(),
+  /** The person's most recent sign-in to the platform (2026-11-23); null when never. */
+  lastSignedInAt: z.string().nullable().optional(),
   importedAt: z.string().nullable(),
   createdAt: z.string(),
 });

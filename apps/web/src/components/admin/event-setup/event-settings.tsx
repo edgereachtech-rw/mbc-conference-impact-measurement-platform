@@ -226,7 +226,7 @@ export function EventSettings({ initialEvent }: EventSettingsProps) {
                 path={`/events/${event.id}/delegates/register`}
                 label="Delegate list"
               />
-              <EventWorkspace eventId={event.id} eventName={event.name} />
+              <EventWorkspace eventId={event.id} eventName={event.name} timezone={event.timezone} />
             </div>
           ) : null}
           {tab === 'attendance' ? (
