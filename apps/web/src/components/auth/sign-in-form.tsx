@@ -21,6 +21,13 @@ interface SignInFormProps {
 type Stage = 'email' | 'sent';
 
 /**
+ * A second request for the same address within this time is not sent (2026-11-23): the first
+ * email is usually still on its way, and the server stops sending to an address after a few
+ * requests in 15 minutes, which locked out delegates who tapped the button again while waiting.
+ */
+export const RESEND_WAIT_MS = 2 * 60_000;
+
+/**
  * Passwordless sign-in (E3-3, E3-4): request a link, then either click it or type the code.
  * The confirmation never reveals whether the address is registered.
  */
@@ -40,6 +47,9 @@ export function SignInForm({ next, supportEmail, initialEmail }: SignInFormProps
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // When each address last had a link sent from this page, and whether the latest attempt was held.
+  const [sentAt, setSentAt] = useState<Record<string, number>>({});
+  const [held, setHeld] = useState(false);
 
   async function requestLink(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -49,10 +59,20 @@ export function SignInForm({ next, supportEmail, initialEmail }: SignInFormProps
       setError(parsed.error.issues[0]?.message ?? 'Enter a valid email address');
       return;
     }
+    const last = sentAt[parsed.data.email];
+    if (last !== undefined && Date.now() - last < RESEND_WAIT_MS) {
+      // Not sent again: the link already on its way is the one to use.
+      setEmail(parsed.data.email);
+      setHeld(true);
+      setStage('sent');
+      return;
+    }
     setBusy(true);
     try {
       await apiFetch('/auth/magic-link', { method: 'POST', body: JSON.stringify(parsed.data) });
+      setSentAt((prev) => ({ ...prev, [parsed.data.email]: Date.now() }));
       setEmail(parsed.data.email);
+      setHeld(false);
       setStage('sent');
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'We could not send the link. Please try again.');
@@ -97,10 +117,23 @@ export function SignInForm({ next, supportEmail, initialEmail }: SignInFormProps
           <MailCheckIcon className="mt-0.5 size-6 shrink-0 text-success" aria-hidden="true" />
           <div className="space-y-1">
             <p className="font-medium text-brand-primary">Check your email</p>
+            {held ? (
+              <p className="text-sm font-medium text-brand-text">
+                We did not send another email: a link to this address was sent less than two minutes
+                ago. Please use that one.
+              </p>
+            ) : null}
             <p className="text-sm text-brand-muted">
               If <span className="font-medium text-brand-text">{email}</span> is registered for the
               conference, a sign-in link and a 6-digit code are on their way. The link works once
-              and expires in a few minutes; check your spam folder if nothing arrives.
+              and expires after a few minutes.
+            </p>
+            <p className="text-sm text-brand-muted">
+              The email can take a minute or two to arrive; check your spam or junk folder too.{' '}
+              <strong className="font-medium text-brand-text">
+                Please do not ask for another link while you wait.
+              </strong>{' '}
+              After a few requests, no more emails are sent to this address for 15 minutes.
             </p>
           </div>
         </div>
@@ -138,6 +171,7 @@ export function SignInForm({ next, supportEmail, initialEmail }: SignInFormProps
               setStage('email');
               setCode('');
               setError(null);
+              setHeld(false);
             }}
           >
             Use a different email

@@ -52,6 +52,37 @@ describe('SignInForm', () => {
     ).toBeGreaterThan(0);
   });
 
+  it('asks people to wait and does not send a second link to the same address straight away', async () => {
+    const calls = stubFetch([
+      { status: 202, body: { ok: true, message: 'sent' } },
+      { status: 202, body: { ok: true, message: 'sent' } },
+    ]);
+    const user = userEvent.setup();
+    render(<SignInForm supportEmail="help@example.com" />);
+    await user.type(screen.getByLabelText(/email address/i), 'grace@example.com');
+    await user.click(screen.getByRole('button', { name: /email me a sign-in link/i }));
+    expect(
+      await screen.findByText(/please do not ask for another link while you wait/i),
+    ).toBeTruthy();
+    expect(screen.queryByText(/we did not send another email/i)).toBeNull();
+
+    // Back and again with the same address: held, nothing sent.
+    await user.click(screen.getByRole('button', { name: /use a different email/i }));
+    await user.click(screen.getByRole('button', { name: /email me a sign-in link/i }));
+    expect(await screen.findByText(/we did not send another email/i)).toBeTruthy();
+    expect(calls).toHaveLength(1);
+
+    // A different address is sent as usual.
+    await user.click(screen.getByRole('button', { name: /use a different email/i }));
+    const input = screen.getByLabelText(/email address/i);
+    await user.clear(input);
+    await user.type(input, 'ada@example.com');
+    await user.click(screen.getByRole('button', { name: /email me a sign-in link/i }));
+    await screen.findByText(/please do not ask for another link/i);
+    expect(calls).toHaveLength(2);
+    expect(screen.queryByText(/we did not send another email/i)).toBeNull();
+  });
+
   it('rejects an invalid email before calling the API', async () => {
     const calls = stubFetch([]);
     const user = userEvent.setup();
