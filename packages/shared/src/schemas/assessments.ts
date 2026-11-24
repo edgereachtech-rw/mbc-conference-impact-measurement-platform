@@ -700,6 +700,27 @@ export function answerIssue(
   }
 }
 
+/**
+ * Whether two answers are the same answer (2026-11-24). Compared by meaning: object keys in any
+ * order. PostgreSQL stores a JSON answer with its keys reordered ({"other": …, "selected": …}),
+ * while the form sends {"selected": …, "other": …}; comparing the raw text called an unchanged
+ * multiple-choice answer "changed" and refused the next section with nothing shown on screen.
+ */
+export function sameAnswer(a: unknown, b: unknown): boolean {
+  return canonicalJson(a) === canonicalJson(b);
+}
+
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .filter(([, v]) => v !== undefined)
+      .sort(([x], [y]) => (x < y ? -1 : x > y ? 1 : 0));
+    return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonicalJson(v)}`).join(',')}}`;
+  }
+  return JSON.stringify(value) ?? 'null';
+}
+
 /** True when the value counts as "not answered" (so required checks and validation skip it). */
 export function isBlankAnswer(value: unknown): boolean {
   if (value === undefined || value === null) return true;

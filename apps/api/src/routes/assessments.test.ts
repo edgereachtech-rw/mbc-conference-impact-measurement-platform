@@ -810,24 +810,38 @@ describe.skipIf(!hasDatabase)('assessment questions and answers', () => {
     expect(opened.status, opened.text).toBe(200);
     now = new Date('2026-11-18T12:00:00.000Z');
     const me = `/me/events/${eventId}/assessments/during_conference`;
-    const listed = await call(
-      'get',
-      `/me/events/${eventId}/assessments`,
-      undefined,
-      cookies.delegate,
-    );
-    const during = listed.body.assessments.find(
-      (a: { stage: string }) => a.stage === 'during_conference',
-    );
-    const section = during.sections[0];
+    const listMine = async () =>
+      (
+        await call('get', `/me/events/${eventId}/assessments`, undefined, cookies.delegate)
+      ).body.assessments.find((a: { stage: string }) => a.stage === 'during_conference');
+    const section = (await listMine()).sections[0];
     expect(section.title).toBe('About the day');
-    type Q = { id: string; prompt: string; sectionId: string | null };
+    // A multiple-choice answer in the first section (2026-11-24): stored by PostgreSQL with its
+    // keys reordered, it must still count as unchanged when the next section is submitted.
+    const choice = await call('post', `${stageUrl}/questions`, {
+      prompt: 'Which parts did you attend?',
+      type: 'multiple_choice',
+      sectionId: section.id,
+      options: [
+        { value: 'morning', label: 'Morning' },
+        { value: 'afternoon', label: 'Afternoon' },
+      ],
+    });
+    expect(choice.status, choice.text).toBe(201);
+    const during = await listMine();
+    type Q = { id: string; prompt: string; sectionId: string | null; type: string };
     const sectionQs: Q[] = during.questions.filter((q: Q) => q.sectionId === section.id);
     const general: Q[] = during.questions.filter((q: Q) => !q.sectionId);
-    expect(sectionQs.length).toBeGreaterThanOrEqual(1);
+    expect(sectionQs.length).toBeGreaterThanOrEqual(2);
     expect(general.length).toBeGreaterThanOrEqual(1);
-    const inSection = sectionQs[0]!;
-    const sectionAnswers = Object.fromEntries(sectionQs.map((q) => [q.id, true]));
+    const inSection = sectionQs.find((q) => q.type === 'yes_no')!;
+    // The form's key order: selected, then other.
+    const sectionAnswers = Object.fromEntries(
+      sectionQs.map((q) => [
+        q.id,
+        q.type === 'multiple_choice' ? { selected: ['morning'], other: null } : true,
+      ]),
+    );
     const generalAnswers = Object.fromEntries(general.map((q, i) => [q.id, i % 2 === 0]));
 
     expect(
@@ -923,7 +937,10 @@ describe.skipIf(!hasDatabase)('assessment questions and answers', () => {
       ),
     ).toEqual([
       ['Questions', general.map((q, i) => [q.prompt, i % 2 === 0 ? 'Yes' : 'No'])],
-      ['About the day', sectionQs.map((q) => [q.prompt, 'Yes'])],
+      [
+        'About the day',
+        sectionQs.map((q) => [q.prompt, q.type === 'multiple_choice' ? 'Morning' : 'Yes']),
+      ],
     ]);
     expect(
       detail.body.response.sections.every((x: { submittedAt: string | null }) => x.submittedAt),

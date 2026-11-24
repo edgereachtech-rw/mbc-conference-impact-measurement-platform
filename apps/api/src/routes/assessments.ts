@@ -14,6 +14,7 @@ import {
   PREFER_NOT_TO_ANSWER,
   sectionMirrorSchema,
   isBlankAnswer,
+  sameAnswer,
   isKnowledgeQuestion,
   parseConfirmation,
   sectionMarkOf,
@@ -2226,10 +2227,8 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
         const knowledgeLocked = question.isKnowledge && previous.correct !== null;
         if (!sectionLocked && !knowledgeLocked) continue;
         const incoming = answers[questionId];
-        if (
-          !isBlankAnswer(incoming) &&
-          JSON.stringify(incoming) !== JSON.stringify(previous.value)
-        ) {
+        // Compared by meaning (2026-11-24): the stored JSON has its keys in another order.
+        if (!isBlankAnswer(incoming) && !sameAnswer(incoming, previous.value)) {
           problems[questionId] = sectionLocked
             ? 'This section is already submitted; its answers cannot be changed.'
             : 'You have already answered this question; it cannot be changed.';
