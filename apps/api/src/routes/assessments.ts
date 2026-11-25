@@ -1,4 +1,6 @@
 import {
+  AI_SUMMARY_TITLE,
+  type AiSummaryView,
   planTitleOf,
   waveLabel,
   askedQuestionIds,
@@ -54,7 +56,10 @@ import {
 import { Router, type NextFunction, type Request, type Response } from 'express';
 import type { z } from 'zod';
 
+import type { AiClient } from '../ai/client.js';
+import { figuresForSummary, writeSummary } from '../ai/prompts.js';
 import { builtinKindsIn, createBuiltinBlock, mirrorSectionInto } from '../assessments/blocks.js';
+import { requireAi, type aiRateLimiter } from './ai.js';
 import { planStatusFor, referenceAnswersFor } from '../assessments/references.js';
 import type { AuthConfig } from '../auth/config.js';
 import { clientOf, principalOf, type createAuthMiddleware } from '../auth/middleware.js';
@@ -76,6 +81,9 @@ interface Deps {
   config: AuthConfig;
   middleware: ReturnType<typeof createAuthMiddleware>;
   now?: () => Date;
+  /** The writing assistant (2026-11-25), or null when it is not set up. */
+  ai?: () => AiClient | null;
+  aiLimit?: ReturnType<typeof aiRateLimiter>;
 }
 
 const QUESTION_INCLUDE = {
@@ -563,6 +571,20 @@ const SOMETHING_SUBMITTED = {
   OR: [{ submittedAt: { not: null } }, { sections: { some: {} } }],
 } satisfies Prisma.AssessmentResponseWhereInput;
 
+/** A saved summary as the rows of the spreadsheet's Summary sheet (2026-11-25). */
+export function aiSummaryRows(summary: AiSummaryView): string[][] {
+  return [
+    [AI_SUMMARY_TITLE],
+    [summary.overview],
+    [''],
+    ...summary.findings.map((f) => [`• ${f}`]),
+    [''],
+    [
+      `Written ${summary.generatedAt.slice(0, 16).replace('T', ' ')} UTC from ${summary.basedOn} submitted response${summary.basedOn === 1 ? '' : 's'}, using the figures only. Check it against the figures before sharing.`,
+    ],
+  ];
+}
+
 export function waveOf(req: { query: Record<string, unknown> }): number {
   const raw = req.query.wave;
   if (raw === undefined || raw === null || raw === '') return 1;
@@ -573,7 +595,14 @@ export function waveOf(req: { query: Record<string, unknown> }): number {
   return wave;
 }
 
-export function assessmentRouter({ prisma, config, middleware, now }: Deps): Router {
+export function assessmentRouter({
+  prisma,
+  config,
+  middleware,
+  now,
+  ai = () => null,
+  aiLimit,
+}: Deps): Router {
   const router = Router();
   const clock = now ?? (() => new Date());
   const guard = middleware.requireRole(...EVENT_SETUP_ROLES);
@@ -612,6 +641,24 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
       throw new HttpError(409, 'event_archived', 'An archived event cannot be changed.');
     }
     return config;
+  }
+
+  /** The saved AI summary of a stage for one scope (2026-11-25), or null. */
+  async function aiSummaryOf(
+    stageConfigId: string,
+    scope: Awaited<ReturnType<typeof batchScopeOf>>,
+  ): Promise<AiSummaryView | null> {
+    const row = await prisma().aiSummary.findUnique({
+      where: { stageConfigId_scopeKey: { stageConfigId, scopeKey: scope?.id ?? 'all' } },
+    });
+    if (!row) return null;
+    return {
+      overview: row.overview,
+      findings: Array.isArray(row.findings) ? row.findings.map(String) : [],
+      basedOn: row.basedOn,
+      generatedAt: row.generatedAt.toISOString(),
+      batchId: row.batchId,
+    };
   }
 
   const stageFromReq = (req: Request, forWrite: boolean) =>
@@ -690,6 +737,7 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
       event.eventType,
     );
     const { blocks, meta } = assessmentDocument({
+      aiSummary: await aiSummaryOf(stage.id, scope),
       organiser: organiserName(),
       batch: scope?.name ?? null,
       batchOrder: scope
@@ -1403,6 +1451,100 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
     });
   });
 
+  // A written summary of the results (2026-11-25), saved per batch scope and printed in the
+  // exports of the same scope. Decision 2026-11-25: no delegate data leaves the platform, so it
+  // is written from the figures of the summary above (counts, averages, option shares) and the
+  // admins' own wording of the questions; never a name, an email or a typed answer.
+  router.get('/events/:eventId/assessments/:stage/ai-summary', guard, async (req, res) => {
+    requireAdmin(res);
+    const stage = await stageFromReq(req, false);
+    const scope = await batchScopeOf(prisma(), stage.eventId, req.query.batch);
+    res.json({ enabled: ai() !== null, summary: await aiSummaryOf(stage.id, scope) });
+  });
+
+  router.post('/events/:eventId/assessments/:stage/ai-summary', guard, async (req, res) => {
+    const principal = requireAdmin(res);
+    const stage = await stageFromReq(req, false);
+    const scope = await batchScopeOf(prisma(), stage.eventId, req.query.batch);
+    const client = requireAi(ai);
+    aiLimit?.(principal.userId);
+    const statuses = await figureStatusesFor(stage.eventId);
+    const reportScope = scope
+      ? {
+          delegateIds: (
+            await prisma().delegate.findMany({
+              where: {
+                eventId: stage.eventId,
+                batchId: scope.id,
+                registrationStatus: { in: [...statuses] },
+              },
+              select: { id: true },
+            })
+          ).map((d) => d.id),
+        }
+      : undefined;
+    const figures = await stageSummaryFor(prisma(), stage, statuses, reportScope);
+    if (figures.submitted === 0) {
+      throw new HttpError(
+        409,
+        'nothing_to_summarise',
+        'No response has been submitted yet, so there is nothing to summarise.',
+      );
+    }
+    const event = await prisma().event.findUniqueOrThrow({
+      where: { id: stage.eventId },
+      select: { eventType: true },
+    });
+    const title = stageTitleOf(
+      {
+        stage: stage.stage,
+        title: stage.title,
+        waveLabel: waveLabel(stage.stage, stage.wave, stage.dueAfterDays),
+      },
+      event.eventType,
+    );
+    const written = await writeSummary(
+      client,
+      figuresForSummary(title, figures, scope?.name ?? null),
+    );
+    const data = {
+      overview: written.overview,
+      findings: written.findings,
+      basedOn: figures.submitted,
+      model: client.model,
+      createdByUserId: principal.userId,
+      generatedAt: clock(),
+    };
+    const scopeKey = scope?.id ?? 'all';
+    await prisma().aiSummary.upsert({
+      where: { stageConfigId_scopeKey: { stageConfigId: stage.id, scopeKey } },
+      create: {
+        eventId: stage.eventId,
+        stageConfigId: stage.id,
+        batchId: scope?.id ?? null,
+        scopeKey,
+        ...data,
+      },
+      update: data,
+    });
+    await audit(prisma(), {
+      action: 'assessment.ai_summary_written',
+      entityType: 'assessment_stage_config',
+      entityId: stage.id,
+      eventId: stage.eventId,
+      actorUserId: principal.userId,
+      newValue: {
+        stage: stage.stage,
+        wave: stage.wave,
+        batch: scope?.name ?? null,
+        basedOn: figures.submitted,
+        model: client.model,
+      },
+      ...clientOf(res),
+    });
+    res.json({ enabled: true, summary: await aiSummaryOf(stage.id, scope) });
+  });
+
   // Delegates the stage applies to who have not submitted it, for reminders (E5-9).
   router.get('/events/:eventId/assessments/:stage/non-completers', guard, async (req, res) => {
     requireAdmin(res);
@@ -1705,11 +1847,15 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
     res.setHeader('Content-Type', format === 'xlsx' ? MEDIA_TYPES.xlsx : 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${name}.${format}"`);
     if (format === 'xlsx') {
+      const written = await aiSummaryOf(stage.id, scope);
       res.send(
-        await toXlsx([{ name: 'Responses', header, rows }], {
-          title: `${stage.stage} responses`,
-          organiser: organiserName(),
-        }),
+        await toXlsx(
+          [
+            { name: 'Responses', header, rows },
+            ...(written ? [{ name: 'Summary', rows: aiSummaryRows(written) }] : []),
+          ],
+          { title: `${stage.stage} responses`, organiser: organiserName() },
+        ),
       );
       return;
     }

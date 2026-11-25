@@ -75,6 +75,9 @@ x-app-env: &app-env
   # Names the network a TLS terminator or load balancer reaches the container from, so
   # X-Forwarded-* is honoured only from there. "false" trusts nobody.
   TRUST_PROXY: ${TRUST_PROXY:-uniquelocal}
+  # The admin console's writing assistant (2026-11-25); an empty key switches it off.
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5-mini}
   SENTRY_DSN: ${SENTRY_DSN:-}
   SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
   SENTRY_RELEASE: ${IMAGE_TAG:-local}

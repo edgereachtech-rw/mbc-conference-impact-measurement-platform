@@ -580,6 +580,8 @@ model Event {
   reportApprovals         EventReportApproval[]
   supportRequests         SupportRequest[]
 
+  aiSummaries AiSummary[]
+
   @@map("event")
 }
 
@@ -1177,6 +1179,7 @@ model AssessmentStageConfig {
   responses   AssessmentResponse[]
   sections    AssessmentSection[]
   invitations AssessmentInvitation[]
+  aiSummaries AiSummary[]
 
   @@unique([eventId, stage, wave])
   @@map("assessment_stage_config")
@@ -1219,9 +1222,10 @@ model EventBatch {
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  event     Event      @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  eventDate EventDate  @relation(fields: [eventDateId], references: [id], onDelete: Restrict)
-  delegates Delegate[]
+  event       Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  eventDate   EventDate   @relation(fields: [eventDateId], references: [id], onDelete: Restrict)
+  delegates   Delegate[]
+  aiSummaries AiSummary[]
 
   @@unique([eventId, name])
   @@index([eventId, eventDateId])
@@ -1934,4 +1938,32 @@ model SupportRequest {
   @@index([eventId, kind])
   @@index([delegateId])
   @@map("support_request")
+}
+
+/// A written reading of one assessment's results (2026-11-25), by the writing assistant from the
+/// figures only (no delegate data leaves the platform). One per stage and batch scope; writing a
+/// new one replaces it. Exports of the same scope print it, marked as written by AI.
+model AiSummary {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventId         String   @map("event_id") @db.Uuid
+  stageConfigId   String   @map("stage_config_id") @db.Uuid
+  /// The batch it covers; null for every delegate.
+  batchId         String?  @map("batch_id") @db.Uuid
+  /// batchId, or "all": one summary per scope (a unique index cannot rely on nulls).
+  scopeKey        String   @map("scope_key")
+  overview        String
+  findings        Json
+  /// Submitted responses the figures covered.
+  basedOn         Int      @map("based_on")
+  model           String
+  createdByUserId String   @map("created_by_user_id") @db.Uuid
+  generatedAt     DateTime @map("generated_at") @db.Timestamptz(3)
+
+  event       Event                 @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  stageConfig AssessmentStageConfig @relation(fields: [stageConfigId], references: [id], onDelete: Cascade)
+  batch       EventBatch?           @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  @@unique([stageConfigId, scopeKey])
+  @@index([eventId])
+  @@map("ai_summary")
 }

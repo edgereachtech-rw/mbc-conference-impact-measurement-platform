@@ -325,7 +325,7 @@ export function DelegateFormDialog({ eventId, mode, onClose, onSaved }: Props) {
           <Loader2Icon className="size-4 animate-spin" aria-hidden="true" /> Loading the delegate…
         </p>
       ) : null}
-      <form id={`${id}-form`} onSubmit={(e) => void submit(e)} className="grid gap-3">
+      <form id={`${id}-form`} data-no-ai onSubmit={(e) => void submit(e)} className="grid gap-3">
         {text('name', 'Full name', true)}
         <div className="space-y-1">
           <label htmlFor={`${id}-email`} className={label}>

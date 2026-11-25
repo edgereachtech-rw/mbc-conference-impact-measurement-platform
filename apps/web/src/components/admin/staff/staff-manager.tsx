@@ -187,6 +187,7 @@ export function StaffManager({ currentUserId, timezone }: Props) {
           </p>
         ) : null}
         <form
+          data-no-ai
           onSubmit={(e) => void add(e)}
           className="mt-3 grid gap-3 md:grid-cols-[1fr_auto] md:items-end"
         >
