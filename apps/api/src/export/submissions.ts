@@ -225,7 +225,12 @@ export interface AssessmentDocumentInput {
   invited: number | null;
   responses: ReadonlyArray<{
     delegate: RespondentDelegate;
+    /** When it was submitted, or, for a partly submitted response, its latest section was. */
     submittedAt: Date | null;
+    /** Sections submitted, for a response not yet submitted whole (2026-11-25); else null. */
+    progress?: { done: number; total: number } | null;
+    /** Whether a section (null: the questions outside any) was submitted; all, by default. */
+    sectionShown?: (sectionId: string | null) => boolean;
     answerOf: (
       question: AssessmentQuestionView,
     ) => { value: unknown; correct: boolean | null } | undefined;
@@ -251,6 +256,8 @@ export function assessmentDocument(input: AssessmentDocumentInput): {
   const responses = inBatchOrder(input.responses, input.batchOrder);
   const openBatch = batchHeadings(responses, input.batchOrder, ['submission', 'submissions']);
   const knowledge = input.questions.filter((q) => q.isKnowledge);
+  const partial = responses.filter((r) => r.progress).length;
+  const complete = responses.length - partial;
   const groups = [
     { section: null, questions: input.questions.filter((q) => !q.sectionId) },
     ...input.sections.map((section) => ({
@@ -273,7 +280,9 @@ export function assessmentDocument(input: AssessmentDocumentInput): {
       batch: input.batch,
       eyebrow: 'Assessment submissions',
       title: input.title,
-      lead: 'Every submitted response, delegate by delegate, with each question and its answer.',
+      lead: partial
+        ? 'Every submitted response, delegate by delegate, with each question and its answer. A partly submitted response shows the sections the delegate has submitted.'
+        : 'Every submitted response, delegate by delegate, with each question and its answer.',
       eventName: input.eventName,
       timezone: input.timezone,
       generatedAt: input.generatedAt,
@@ -285,11 +294,12 @@ export function assessmentDocument(input: AssessmentDocumentInput): {
     {
       kind: 'figures',
       items: [
-        { value: String(responses.length), label: 'Submitted responses' },
+        { value: String(complete), label: 'Submitted responses' },
+        ...(partial ? [{ value: String(partial), label: 'Partly submitted' }] : []),
         ...(input.invited !== null
           ? [
               {
-                value: percent(responses.length, input.invited),
+                value: percent(complete, input.invited),
                 label: `Response rate, of ${input.invited} delegates in scope`,
               },
             ]
@@ -315,7 +325,12 @@ export function assessmentDocument(input: AssessmentDocumentInput): {
     blocks.push({
       kind: 'respondent',
       name: r.delegate.name,
-      details: detailsOf(r.delegate, `Submitted ${whenIn(r.submittedAt, input.timezone)}`),
+      details: detailsOf(
+        r.delegate,
+        r.progress
+          ? `Partly submitted: ${r.progress.done} of ${r.progress.total} sections, last on ${whenIn(r.submittedAt, input.timezone)}`
+          : `Submitted ${whenIn(r.submittedAt, input.timezone)}`,
+      ),
     });
     const asked = askedQuestionIds(input.questions, (id) => {
       const q = input.questions.find((x) => x.id === id);
@@ -325,6 +340,8 @@ export function assessmentDocument(input: AssessmentDocumentInput): {
     for (const group of groups) {
       const shown = group.section?.audience;
       if (shown && shown !== 'all' && shown !== r.delegate.attendanceFormat) continue;
+      // A section the delegate has not submitted yet is left out (2026-11-25).
+      if (r.sectionShown && !r.sectionShown(group.section?.id ?? null)) continue;
       const questions = group.questions.filter((q) => asked.has(q.id));
       if (questions.length === 0) continue;
       if (labelled) {

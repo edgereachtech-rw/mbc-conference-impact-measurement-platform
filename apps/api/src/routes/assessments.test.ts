@@ -731,7 +731,7 @@ describe.skipIf(!hasDatabase)('assessment questions and answers', () => {
       .trim()
       .split('\r\n');
     expect(lines[0]).toMatch(
-      /^Name,Email,Organisation,Job title,Department,Batch,Country,Attendance format,Capacity,Submitted at \(UTC\),/,
+      /^Name,Email,Organisation,Job title,Department,Batch,Country,Attendance format,Capacity,Status,Submitted at \(UTC\),/,
     );
     // One knowledge question in the stage (the quiz of the earlier test), answered (a): wrong.
     const knowledgeColumns = lines[0]!.match(/\(correct\?\)/g)?.length ?? 0;
@@ -759,7 +759,7 @@ describe.skipIf(!hasDatabase)('assessment questions and answers', () => {
     expect(lines[0]).toContain('How confident do you feel today?');
     expect(lines).toHaveLength(2); // header + the one submitted response
     expect(lines[1]).toMatch(
-      /^Dee Legate,[^,]+,,,,,,physical,individual,2026-11-07T10:00:00.000Z,5,/,
+      /^Dee Legate,[^,]+,,,,,,physical,individual,Submitted,2026-11-07T10:00:00.000Z,5,/,
     );
     expect(lines[1]).toContain(',Always,'); // the option label, not the code "always"
     expect(lines[1]).toContain(',Certificates issued,'); // the quiz answer as its label
@@ -900,6 +900,30 @@ describe.skipIf(!hasDatabase)('assessment questions and answers', () => {
       }),
     ]);
     const delegateId = listing.body.responses[0].delegateId;
+
+    // The export includes a partly submitted response (2026-11-25): its submitted section's
+    // answers, a status saying how far it got, and nothing from a section still in draft.
+    const draft = await call(
+      'put',
+      me,
+      { answers: { ...sectionAnswers, ...generalAnswers } },
+      cookies.delegate,
+    );
+    expect(draft.status, draft.text).toBe(200);
+    const csv = await call('get', `${stageUrl}/responses.csv`);
+    expect(csv.status, csv.text).toBe(200);
+    const rows = csv.text
+      .replace(/^\uFEFF/, '')
+      .trim()
+      .split('\r\n');
+    expect(rows).toHaveLength(2);
+    const head = rows[0]!.split(',');
+    const cells = rows[1]!.split(',');
+    const cellOf = (heading: string) => cells[head.indexOf(heading)];
+    expect(cellOf('Status')).toBe('Partly submitted (1 of 2 sections)');
+    expect(cellOf('Submitted at (UTC)')).toBe('2026-11-18T12:00:00.000Z');
+    expect(cellOf(`About the day · ${inSection.prompt}`)).toBe('Yes');
+    for (const q of general) expect(cellOf(q.prompt)).toBe('');
 
     // The last section completes the response.
     const done = await call(

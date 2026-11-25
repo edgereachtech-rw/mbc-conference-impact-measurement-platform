@@ -515,6 +515,54 @@ export async function pairedResultsFor(
  * Which wave of a stage a request is about. Only the follow-up stage has more than one, so the
  * parameter is optional and defaults to the first: every URL that worked before still works.
  */
+/**
+ * The part of a response the exports show (2026-11-25). A submitted response is shown whole; one
+ * with only some of its sections submitted is shown too, with the answers of those sections only
+ * (a section still open is a draft, not an answer yet). Sections are counted as the delegate saw
+ * them: a section for the other attendance format is not one they had to submit.
+ */
+export function submittedPartOf(
+  response: {
+    submittedAt: Date | null;
+    sections: ReadonlyArray<{ sectionKey: string; submittedAt: Date }>;
+  },
+  questions: readonly AssessmentQuestionView[],
+  sections: ReadonlyArray<{ id: string; audience: 'all' | 'physical' | 'virtual' }>,
+  attendanceFormat: string,
+) {
+  const audienceOf = new Map(sections.map((x) => [x.id, x.audience]));
+  const keys = new Set<string>();
+  for (const q of questions) {
+    const audience = q.sectionId ? audienceOf.get(q.sectionId) : 'all';
+    if (audience && audience !== 'all' && audience !== attendanceFormat) continue;
+    keys.add(sectionKeyOf(q.sectionId));
+  }
+  const done = new Set(response.sections.map((x) => x.sectionKey).filter((k) => keys.has(k)));
+  const complete = response.submittedAt !== null;
+  const last = response.sections.reduce<Date | null>(
+    (at, x) => (!at || x.submittedAt > at ? x.submittedAt : at),
+    null,
+  );
+  return {
+    complete,
+    done: complete ? keys.size : done.size,
+    total: keys.size,
+    /** When the response was submitted, or its latest section was. */
+    at: response.submittedAt ?? last,
+    shows: (sectionId: string | null) => complete || done.has(sectionKeyOf(sectionId)),
+  };
+}
+
+/** Where a response stands, for the export's status column. */
+export function progressLabel(part: { complete: boolean; done: number; total: number }): string {
+  return part.complete ? 'Submitted' : `Partly submitted (${part.done} of ${part.total} sections)`;
+}
+
+/** Responses with something submitted: the whole response, or at least one section. */
+const SOMETHING_SUBMITTED = {
+  OR: [{ submittedAt: { not: null } }, { sections: { some: {} } }],
+} satisfies Prisma.AssessmentResponseWhereInput;
+
 export function waveOf(req: { query: Record<string, unknown> }): number {
   const raw = req.query.wave;
   if (raw === undefined || raw === null || raw === '') return 1;
@@ -575,6 +623,7 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
    * One assessment's submissions as a designed PDF or Word document (2026-11-21): every
    * submitted response, delegate by delegate, each question as asked with its answer. Counted
    * delegates only (the event's test-delegate choice), and audited like the other exports.
+   * Partly submitted responses are included with their submitted sections (2026-11-25).
    */
   async function sendAssessmentDocument(
     res: Response,
@@ -594,11 +643,12 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
       prisma().assessmentResponse.findMany({
         where: {
           stageConfigId: stage.id,
-          submittedAt: { not: null },
+          ...SOMETHING_SUBMITTED,
           delegate: { registrationStatus: { in: [...statuses] }, ...inBatch(scope) },
         },
         select: {
           submittedAt: true,
+          sections: { select: { sectionKey: true, submittedAt: true } },
           delegate: {
             select: {
               name: true,
@@ -660,10 +710,14 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
       invited: invitations ?? registered,
       responses: responses.map((r) => {
         const byId = new Map(r.answers.map((a) => [a.questionId, a]));
+        const part = submittedPartOf(r, questions, sections, r.delegate.attendanceFormat);
         return {
           delegate: r.delegate,
-          submittedAt: r.submittedAt,
-          answerOf: (q: AssessmentQuestionView) => answerTo(byId, versions.get(q.id), q.id),
+          submittedAt: part.at,
+          progress: part.complete ? null : { done: part.done, total: part.total },
+          sectionShown: part.shows,
+          answerOf: (q: AssessmentQuestionView) =>
+            part.shows(q.sectionId) ? answerTo(byId, versions.get(q.id), q.id) : undefined,
         };
       }),
     });
@@ -678,6 +732,7 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
         wave: stage.wave,
         format,
         rows: responses.length,
+        partial: responses.filter((r) => !r.submittedAt).length,
         batch: scope?.name ?? null,
       },
       ...clientOf(res),
@@ -1518,6 +1573,8 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
   // conference). Knowledge questions add a "correct" column and a total. The download is
   // audited without any of its contents.
   // One row per submitted response, as a spreadsheet (xlsx) or as CSV for a data pipeline.
+  // A partly submitted response has its row too, with the answers of its submitted sections and
+  // a status column saying how far it got (2026-11-25).
   router.get('/events/:eventId/assessments/:stage/responses.:format', guard, async (req, res) => {
     const principal = requireAdmin(res);
     const format = String(req.params.format);
@@ -1533,10 +1590,11 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
       activeQuestions(stage.id),
       activeSections(stage.id),
       prisma().assessmentResponse.findMany({
-        where: { stageConfigId: stage.id, submittedAt: { not: null }, delegate: inBatch(scope) },
+        where: { stageConfigId: stage.id, ...SOMETHING_SUBMITTED, delegate: inBatch(scope) },
         orderBy: { submittedAt: 'asc' },
         select: {
           submittedAt: true,
+          sections: { select: { sectionKey: true, submittedAt: true } },
           delegate: {
             select: {
               name: true,
@@ -1572,6 +1630,7 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
       'Country',
       'Attendance format',
       'Capacity',
+      'Status',
       'Submitted at (UTC)',
       ...questions.map(titled),
       ...knowledge.map((q) => `${titled(q)} (correct?)`),
@@ -1599,8 +1658,10 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
     );
     for (const r of responses) {
       const byId = new Map(r.answers.map((a) => [a.questionId, a]));
-      const answerOf = (q: AssessmentQuestionView) => answerTo(byId, versions.get(q.id), q.id);
       const d = r.delegate;
+      const part = submittedPartOf(r, questions, sections, d.attendanceFormat);
+      const answerOf = (q: AssessmentQuestionView) =>
+        part.shows(q.sectionId) ? answerTo(byId, versions.get(q.id), q.id) : undefined;
       const cells = [
         d.name,
         d.email,
@@ -1611,7 +1672,8 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
         d.country ?? '',
         d.attendanceFormat,
         d.capacity,
-        r.submittedAt?.toISOString() ?? '',
+        progressLabel(part),
+        part.at?.toISOString() ?? '',
         ...questions.map((q) => describeAnswer(q, answerOf(q)?.value)),
         ...knowledge.map((q) => {
           const a = answerOf(q);
@@ -1634,6 +1696,7 @@ export function assessmentRouter({ prisma, config, middleware, now }: Deps): Rou
         stage: stage.stage,
         format,
         rows: responses.length,
+        partial: responses.filter((r) => !r.submittedAt).length,
         questions: questions.length,
       },
       ...clientOf(res),
