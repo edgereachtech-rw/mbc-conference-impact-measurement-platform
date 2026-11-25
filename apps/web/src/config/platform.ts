@@ -53,7 +53,7 @@ export const platform: PlatformConfig = {
     mapUrl: 'https://maps.app.goo.gl/HUMV2msKMtDsB6dk9',
   },
   company: { name: 'M.Bryan Consulting LTD', url: 'https://mbryanconsultinggroup.com/' },
-  contactEmail: 'conference@mbryanconsultinggroup.com',
+  contactEmail: 'support@mbryanconsultinggroup.com',
   social: [
     {
       network: 'facebook',
