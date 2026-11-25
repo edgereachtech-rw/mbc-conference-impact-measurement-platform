@@ -1,4 +1,6 @@
 import {
+  AI_SUMMARY_TITLE,
+  type AiSummaryView,
   actionProgressLabels,
   askedQuestionIds,
   commitmentStatuses,
@@ -205,6 +207,8 @@ const READING_NOTE =
 
 export interface AssessmentDocumentInput {
   organiser: string;
+  /** A saved AI summary of the same scope (2026-11-25), printed after the figures. */
+  aiSummary?: AiSummaryView | null;
   /** The event's batches in order, to group a document of every batch by batch (2026-11-22). */
   batchOrder?: readonly string[];
   /** The one batch it covers (2026-11-22). */
@@ -247,6 +251,30 @@ function assessmentAnswer(q: AssessmentQuestionView, value: unknown): string {
     return `${text} of ${q.scale.max}${label ? ` (${label})` : ''}`;
   }
   return text;
+}
+
+/**
+ * A saved summary as document blocks (2026-11-25): its own heading saying an AI wrote it from
+ * the figures, the overview, the findings as a list, and when and from how many responses.
+ */
+export function aiSummaryBlocks(
+  summary: AiSummaryView | null | undefined,
+  timezone: string,
+): Block[] {
+  if (!summary) return [];
+  return [
+    { kind: 'heading', level: 2, spans: [{ text: AI_SUMMARY_TITLE }] },
+    { kind: 'paragraph', spans: [{ text: summary.overview }] },
+    ...summary.findings.map((f): Block => ({ kind: 'bullet', spans: [{ text: f }] })),
+    {
+      kind: 'note',
+      spans: [
+        {
+          text: `Written ${whenIn(summary.generatedAt, timezone)} from ${summary.basedOn} submitted response${summary.basedOn === 1 ? '' : 's'}, using the figures only: no names or answers were sent. Check it against the figures before sharing.`,
+        },
+      ],
+    },
+  ];
 }
 
 export function assessmentDocument(input: AssessmentDocumentInput): {
@@ -314,6 +342,7 @@ export function assessmentDocument(input: AssessmentDocumentInput): {
           : [{ value: String(input.questions.length), label: 'Questions asked' }]),
       ],
     },
+    ...aiSummaryBlocks(input.aiSummary, input.timezone),
     { kind: 'paragraph', spans: [{ text: READING_NOTE, italic: true }] },
   ];
   if (responses.length === 0) {

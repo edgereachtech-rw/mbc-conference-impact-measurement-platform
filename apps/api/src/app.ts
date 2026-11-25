@@ -14,6 +14,9 @@ import { pathOnly, requestId } from './lib/request-id.js';
 import { captureException } from './lib/sentry.js';
 import { createMailer, mailConfigFromEnv, type MailConfig } from './mail/index.js';
 import type { Mailer } from './mail/mailer.js';
+import type { AiClient } from './ai/client.js';
+import { OpenAiClient } from './ai/client.js';
+import { aiConfigFromEnv } from './ai/config.js';
 import { apiRouter } from './routes/index.js';
 
 export interface AppOptions {
@@ -46,6 +49,20 @@ export interface AppOptions {
   production?: boolean;
   /** Clock override for expiry tests. */
   now?: () => Date;
+  /** The writing assistant; tests pass a fake. Defaults to OpenAI when OPENAI_API_KEY is set. */
+  ai?: () => AiClient | null;
+}
+
+/** OpenAI when configured, read once on first use; null keeps the assistant off. */
+function defaultAi(): () => AiClient | null {
+  let client: AiClient | null | undefined;
+  return () => {
+    if (client === undefined) {
+      const config = aiConfigFromEnv();
+      client = config ? new OpenAiClient(config) : null;
+    }
+    return client;
+  };
 }
 
 async function defaultDatabaseCheck(): Promise<void> {
@@ -175,6 +192,7 @@ export function createApp(options: AppOptions = {}) {
       now: options.now,
       accountStatusHooks: options.accountStatusHooks,
       allowedOrigins: options.allowedOrigins ?? authConfig.allowedOrigins,
+      ai: options.ai ?? defaultAi(),
     }),
   );
 

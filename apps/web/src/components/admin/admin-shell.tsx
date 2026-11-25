@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import type { ReactNode } from 'react';
 
+import { WordingAssistant } from '@/components/admin/ai/wording-assistant';
 import { ConsoleShell, type ConsoleNavItem } from '@/components/console/shell';
 
 const NAV: ConsoleNavItem[] = [
@@ -40,6 +41,7 @@ export function AdminShell({ displayName, role, children }: AdminShellProps) {
       user={{ name: displayName, detail: role }}
     >
       {children}
+      <WordingAssistant />
     </ConsoleShell>
   );
 }

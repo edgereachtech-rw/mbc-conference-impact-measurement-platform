@@ -40,6 +40,12 @@ export function DownloadBatchProvider({
 /** The chosen batch's id, or '' for every delegate. */
 export const useDownloadBatch = () => useContext(Context).batch;
 
+/** The chosen batch's name, or null for every delegate (2026-11-25). */
+export function useDownloadBatchName(): string | null {
+  const { batch, batches } = useContext(Context);
+  return batches.find((b) => b.id === batch)?.name ?? null;
+}
+
 /** A download address narrowed to the chosen batch. */
 export function withBatch(url: string, batch: string): string {
   if (!batch) return url;

@@ -10,6 +10,8 @@ import { cors } from '../lib/cors.js';
 import type { Logger } from '../lib/logger.js';
 import type { MailConfig } from '../mail/config.js';
 import type { Mailer } from '../mail/mailer.js';
+import type { AiClient } from '../ai/client.js';
+import { aiRateLimiter, aiRouter } from './ai.js';
 import { assessmentRouter } from './assessments.js';
 import { attendanceRouter } from './attendance.js';
 import { authRouter } from './auth.js';
@@ -52,6 +54,8 @@ export interface ApiDeps {
   accountStatusHooks?: AccountStatusHooks;
   /** Extra origins allowed to make state-changing requests (dev servers). */
   allowedOrigins?: readonly string[];
+  /** The writing assistant (2026-11-25), or null when it is not set up. */
+  ai?: () => AiClient | null;
 }
 
 /** Everything under /api/v1: origin check, session loading, then the resource routers. */
@@ -72,8 +76,18 @@ export function apiRouter(deps: ApiDeps): Router {
   // Setup first: its fixed path /events/code-preview must win over /events/:eventId below.
   router.use(eventSetupRouter({ prisma: deps.prisma, middleware, now: deps.now }));
   router.use(eventRouter({ prisma: deps.prisma, middleware }));
+  const ai = deps.ai ?? (() => null);
+  const aiLimit = aiRateLimiter(deps.now);
+  router.use(aiRouter({ ai, middleware, limit: aiLimit }));
   router.use(
-    assessmentRouter({ prisma: deps.prisma, config: deps.config, middleware, now: deps.now }),
+    assessmentRouter({
+      prisma: deps.prisma,
+      config: deps.config,
+      middleware,
+      now: deps.now,
+      ai,
+      aiLimit,
+    }),
   );
   router.use(eventDelegateRouter({ prisma: deps.prisma, middleware }));
   router.use(

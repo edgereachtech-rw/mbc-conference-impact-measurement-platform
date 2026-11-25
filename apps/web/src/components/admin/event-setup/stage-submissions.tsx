@@ -11,12 +11,14 @@ import {
 import { DownloadIcon, EyeIcon, Loader2Icon, MailIcon } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
+import { AiSummaryPanel } from '@/components/admin/ai/ai-summary-panel';
 import { MessageComposer } from '@/components/admin/message-composer';
 import { Dialog } from '@/components/console/dialog';
 import { consoleButton, Panel, StatePanel, StatTile, StatusPill } from '@/components/console/page';
 import {
   DownloadBatchPicker,
   useDownloadBatch,
+  useDownloadBatchName,
   withBatch,
 } from '@/components/admin/download-batch';
 import { apiFetch, apiUrl } from '@/lib/api';
@@ -73,6 +75,7 @@ export function StageSubmissions({
   /** Every call names the round (2026-11-21); round 1 keeps the plain addresses. */
   const roundQuery = wave !== 1 ? `?wave=${wave}` : '';
   const batch = useDownloadBatch();
+  const batchName = useDownloadBatchName();
 
   useEffect(() => {
     let cancelled = false;
@@ -244,6 +247,15 @@ export function StageSubmissions({
       ) : null}
 
       <DownloadBatchPicker />
+      <AiSummaryPanel
+        base={base}
+        roundQuery={roundQuery}
+        batch={batch}
+        batchName={batchName}
+        submitted={summary.submitted}
+        timezone={timezone}
+        readOnly={readOnly}
+      />
       <div className="flex flex-wrap items-center gap-2">
         {summary.submitted > 0 ? (
           <>

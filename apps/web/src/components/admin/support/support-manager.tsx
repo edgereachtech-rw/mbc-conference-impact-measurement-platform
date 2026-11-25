@@ -317,7 +317,8 @@ function ActionDialog({
         </>
       }
     >
-      <div className="space-y-4">
+      {/* A note about one delegate's request: the writing assistant stays away (2026-11-25). */}
+      <div className="space-y-4" data-no-ai>
         <div className="space-y-1">
           <label htmlFor={`${id}-action`} className="text-sm font-semibold text-corp-ink">
             Action taken
