@@ -10,6 +10,14 @@ import type { MailConfig } from '../mail/config.js';
 import type { Mailer } from '../mail/mailer.js';
 import { renderMagicLink } from '../mail/templates/index.js';
 import type { AuthConfig } from './config.js';
+import {
+  defaultLinkRules,
+  effectiveLink,
+  linkRulesFor,
+  NEVER_EXPIRES_MS,
+  type EventLinkSettings,
+  type LinkRules,
+} from './link-rules.js';
 import { isRetiredRole, type Principal } from './policies.js';
 import { AttemptLedger } from './rate-limit.js';
 import {
@@ -34,6 +42,8 @@ interface EligibleDelegate {
   attendanceFormat: 'physical' | 'virtual';
   userAccountId: string | null;
   signedUpAt: Date | null;
+  /** The event's sign-in link rules (2026-11-25). */
+  event: EventLinkSettings;
 }
 
 interface EligibleIdentity {
@@ -163,6 +173,13 @@ export class AuthService {
       return;
     }
 
+    // The events' link rules (2026-11-25); staff always get the platform's.
+    const rules =
+      account && account.role !== 'delegate'
+        ? defaultLinkRules(config.magicLinkTtlMs)
+        : linkRulesFor(config.magicLinkTtlMs, identity?.delegates.map((d) => d.event) ?? []);
+    const expiresAt = now.getTime() + (rules.ttlMs ?? NEVER_EXPIRES_MS);
+
     const rawToken = generateToken();
     const tokenHash = hashToken(rawToken);
     const code = generateCode();
@@ -173,7 +190,10 @@ export class AuthService {
         purpose: account ? 'signin' : 'invite_accept',
         tokenHash,
         codeHash: hashCode(code, tokenHash),
-        expiresAt: new Date(now.getTime() + config.magicLinkTtlMs),
+        expiresAt: new Date(expiresAt),
+        reusable: rules.reusable,
+        // On the service clock, which the expiry and the rules re-check use too.
+        createdAt: now,
         targetPath: input.next ?? null,
       },
     });
@@ -189,12 +209,13 @@ export class AuthService {
     if (config.logSignInLinks) {
       // Emergency switch (2026-11-23): written past the scrubbing logger on purpose, so the link
       // and code can be read with `docker compose logs api` while email is not delivered.
-      writeSignInLink({ email, signInUrl, code, expiresAt: now.getTime() + config.magicLinkTtlMs });
+      writeSignInLink({ email, signInUrl, code, expiresAt });
     }
     const rendered = renderMagicLink(branding, {
       recipientName: linkedDelegate?.name,
       signInUrl,
-      expiresInMinutes: Math.round(config.magicLinkTtlMs / 60_000),
+      expiresInMinutes: rules.ttlMs === null ? null : Math.round(rules.ttlMs / 60_000),
+      reusable: rules.reusable,
       code,
     });
 
@@ -262,8 +283,11 @@ export class AuthService {
     };
 
     if (!token) return fail('unknown');
-    if (token.usedAt) return fail('replayed');
-    if (token.expiresAt <= now) return fail('expired');
+    // The link as the event's rules stand now (2026-11-25): switching a rule off cuts short the
+    // long or reusable links already sent.
+    const link = effectiveLink(token, await this.currentLinkRules(token));
+    if (token.usedAt && !link.reusable) return fail('replayed');
+    if (link.expiresAt <= now) return fail('expired');
     if ('code' in input) {
       if (!token.codeHash || token.attempts >= MAX_CODE_ATTEMPTS) return fail('code_locked');
       if (!hashesEqual(hashCode(input.code, token.tokenHash), token.codeHash)) {
@@ -279,13 +303,16 @@ export class AuthService {
     const sessionExpiresAt = new Date(now.getTime() + config.sessionTtlMs);
 
     const result = await this.prisma.$transaction(async (tx) => {
-      // Single use: the claim fails if another request used the token meanwhile.
-      const claimed = await tx.signInToken.updateMany({
-        where: { id: token.id, usedAt: null },
-        data: { usedAt: now },
-      });
-      if (claimed.count !== 1)
-        throw new HttpError(401, 'invalid_token', 'This sign-in link has already been used.');
+      // Single use: the claim fails if another request used the token meanwhile. A reusable
+      // link (an event's rule, 2026-11-25) is not claimed, so it keeps working.
+      if (!link.reusable) {
+        const claimed = await tx.signInToken.updateMany({
+          where: { id: token.id, usedAt: null },
+          data: { usedAt: now },
+        });
+        if (claimed.count !== 1)
+          throw new HttpError(401, 'invalid_token', 'This sign-in link has already been used.');
+      }
 
       let account = token.userAccountId
         ? await tx.userAccount.findUnique({ where: { id: token.userAccountId } })
@@ -430,6 +457,20 @@ export class AuthService {
    * The identity whose *current* address this is, with its eligible registrations, or null. A
    * historical or provisional address, or an identity without an eligible registration, is null.
    */
+  /** The link rules that apply to a token's address now; staff always get the platform's. */
+  private async currentLinkRules(token: {
+    email: string;
+    userAccountId: string | null;
+  }): Promise<LinkRules> {
+    const config = this.deps.config;
+    const account = token.userAccountId
+      ? await this.prisma.userAccount.findUnique({ where: { id: token.userAccountId } })
+      : await this.prisma.userAccount.findUnique({ where: { email: token.email } });
+    if (account && account.role !== 'delegate') return defaultLinkRules(config.magicLinkTtlMs);
+    const identity = await this.eligibleIdentity(this.prisma, token.email);
+    return linkRulesFor(config.magicLinkTtlMs, identity?.delegates.map((d) => d.event) ?? []);
+  }
+
   private async eligibleIdentity(
     db: IdentityReader,
     email: string,
@@ -455,6 +496,7 @@ export class AuthService {
                 attendanceFormat: true,
                 userAccountId: true,
                 signedUpAt: true,
+                event: { select: { signInLinkTtlMinutes: true, signInLinkReusable: true } },
               },
             },
           },
@@ -486,6 +528,7 @@ export class AuthService {
             attendanceFormat: true,
             userAccountId: true,
             signedUpAt: true,
+            event: { select: { signInLinkTtlMinutes: true, signInLinkReusable: true } },
           },
         },
       },

@@ -482,4 +482,30 @@ describe.skipIf(!hasDatabase)('event setup (E1 brief)', () => {
       (await call('post', `/events/${id}/status`, { status: 'draft' })).body.event.status,
     ).toBe('draft');
   });
+
+  it('saves the event’s sign-in link rules, within bounds (2026-11-25)', async () => {
+    const res = await call('post', '/events', {
+      ...profile,
+      name: `Link Rules ${tag}`,
+      dates: ['2026-11-12'],
+    });
+    expect(res.status, res.text).toBe(201);
+    const id = res.body.event.id;
+    eventIds.push(id);
+    const url = `/events/${id}`;
+    expect(res.body.event).toMatchObject({ signInLinkTtlMinutes: null, signInLinkReusable: false });
+    const set = await call('patch', url, { signInLinkTtlMinutes: 0, signInLinkReusable: true });
+    expect(set.status, set.text).toBe(200);
+    expect(set.body.event).toMatchObject({ signInLinkTtlMinutes: 0, signInLinkReusable: true });
+    expect((await call('patch', url, { signInLinkTtlMinutes: -1 })).status).toBe(422);
+    expect((await call('patch', url, { signInLinkTtlMinutes: 1.5 })).status).toBe(422);
+    const back = await call('patch', url, {
+      signInLinkTtlMinutes: null,
+      signInLinkReusable: false,
+    });
+    expect(back.body.event).toMatchObject({
+      signInLinkTtlMinutes: null,
+      signInLinkReusable: false,
+    });
+  });
 });

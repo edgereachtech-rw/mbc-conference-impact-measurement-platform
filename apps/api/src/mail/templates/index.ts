@@ -106,9 +106,12 @@ export function renderInvitation(
 
 export interface MagicLinkInput {
   recipientName?: string;
-  /** Single-use, absolute sign-in link. */
+  /** Absolute sign-in link; single use unless the event lets it be reused. */
   signInUrl: string;
-  expiresInMinutes: number;
+  /** null: the link does not expire (an event's rule, 2026-11-25). */
+  expiresInMinutes: number | null;
+  /** The link can be used more than once (an event's rule, 2026-11-25). */
+  reusable?: boolean;
   /** Optional one-time code shown as an alternative to the link. */
   code?: string;
 }
@@ -116,20 +119,29 @@ export interface MagicLinkInput {
 export function renderMagicLink(branding: EmailBranding, input: MagicLinkInput): RenderedEmail {
   const paragraphs = [
     input.recipientName ? `Hello ${input.recipientName},` : 'Hello,',
-    `Here is your sign-in link for the ${branding.eventName}. It works once and only on this email address.`,
+    input.reusable
+      ? `Here is your sign-in link for the ${branding.eventName}. You can use it more than once, and only on this email address.`
+      : `Here is your sign-in link for the ${branding.eventName}. It works once and only on this email address.`,
   ];
+  const lasts =
+    input.expiresInMinutes === null
+      ? 'This link does not expire.'
+      : `This link expires in ${describeDuration(input.expiresInMinutes)}.`;
   if (input.code) {
     paragraphs.push(`Prefer to type? Enter this one-time code on the sign-in page: ${input.code}`);
   }
   return renderLayout(branding, {
     subject: `Sign in to ${branding.eventName}`,
-    preheader: `Your sign-in link expires in ${describeDuration(input.expiresInMinutes)}.`,
+    preheader:
+      input.expiresInMinutes === null
+        ? 'Your sign-in link.'
+        : `Your sign-in link expires in ${describeDuration(input.expiresInMinutes)}.`,
     eyebrow: 'Sign in',
     title: 'Your sign-in link',
     paragraphs,
     button: { label: 'Sign in', url: input.signInUrl },
     notes: [
-      `This link expires in ${describeDuration(input.expiresInMinutes)}.`,
+      lasts,
       'If you did not request it, no action is needed: nobody can sign in without this email.',
     ],
   });

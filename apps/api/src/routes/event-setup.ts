@@ -98,6 +98,8 @@ export function eventDetailOf(event: EventRow): EventDetail {
     additionalInfo: event.additionalInfo,
     status: event.status,
     countTestDelegates: event.countTestDelegates,
+    signInLinkTtlMinutes: event.signInLinkTtlMinutes,
+    signInLinkReusable: event.signInLinkReusable,
     transferPlanVisibility: event.transferPlanVisibility,
     transferPlanShownFrom: event.transferPlanShownFrom?.toISOString() ?? null,
     transferPlanMode: event.transferPlanMode,

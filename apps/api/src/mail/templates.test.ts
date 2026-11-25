@@ -111,6 +111,17 @@ describe('email templates', () => {
     ).toThrow(/absolute/);
   });
 
+  it('says when an event lets a link last or be reused (2026-11-25)', () => {
+    const text = renderMagicLink(branding, {
+      signInUrl: 'https://x.example/a',
+      expiresInMinutes: null,
+      reusable: true,
+    }).text;
+    expect(text).toContain('This link does not expire.');
+    expect(text).toContain('You can use it more than once');
+    expect(text).not.toContain('It works once');
+  });
+
   it('formats expiry windows for humans', () => {
     expect(
       renderMagicLink(branding, { signInUrl: 'https://x.example/a', expiresInMinutes: 1 }).text,

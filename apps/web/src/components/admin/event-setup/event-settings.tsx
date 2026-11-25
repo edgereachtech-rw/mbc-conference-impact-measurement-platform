@@ -22,6 +22,7 @@ import { TransferPlansManager } from '@/components/admin/transfer-plans/transfer
 import { consoleButton } from '@/components/console/page';
 import { apiFetch } from '@/lib/api';
 import { TabStrip, useTabState } from '@/components/console/tabs';
+import { SignInLinkSetting } from './sign-in-link-setting';
 import { TestDelegatesSetting } from './test-delegates-setting';
 import { TransferPlanModeSetting } from './transfer-plan-mode-setting';
 import { TransferPlanVisibilitySetting } from './transfer-plan-visibility-setting';
@@ -222,6 +223,7 @@ export function EventSettings({ initialEvent }: EventSettingsProps) {
             <div className="space-y-8">
               <OnboardingSender eventId={event.id} timezone={event.timezone} />
               <TestDelegatesSetting event={event} onSaved={saved} />
+              <SignInLinkSetting event={event} onSaved={saved} />
               <DocumentDownloads
                 path={`/events/${event.id}/delegates/register`}
                 label="Delegate list"

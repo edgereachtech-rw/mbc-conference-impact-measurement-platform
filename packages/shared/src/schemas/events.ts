@@ -215,6 +215,23 @@ export function transferPlanVisible(
   return event.transferPlanShownFrom !== null && new Date(event.transferPlanShownFrom) <= at;
 }
 
+/** Longest sign-in link lifetime an event may set, in minutes (one year). */
+export const signInLinkMaxTtlMinutes = 60 * 24 * 365;
+
+/**
+ * Sign-in link lifetimes offered in the event settings (2026-11-25), in minutes. null keeps the
+ * platform's setting; 0 means the link does not expire.
+ */
+export const signInLinkTtlChoices: ReadonlyArray<{ minutes: number | null; label: string }> = [
+  { minutes: null, label: 'Platform setting' },
+  { minutes: 60, label: '1 hour' },
+  { minutes: 24 * 60, label: '24 hours' },
+  { minutes: 3 * 24 * 60, label: '3 days' },
+  { minutes: 7 * 24 * 60, label: '7 days' },
+  { minutes: 30 * 24 * 60, label: '30 days' },
+  { minutes: 0, label: 'Does not expire' },
+];
+
 export const eventPatchSchema = eventProfileFieldsSchema
   .partial()
   .extend({
@@ -224,6 +241,15 @@ export const eventPatchSchema = eventProfileFieldsSchema
      * whether a test delegate may sign in.
      */
     countTestDelegates: z.boolean().optional(),
+    /** Sign-in link rules for this event's delegates (2026-11-25); see signInLinkTtlChoices. */
+    signInLinkTtlMinutes: z
+      .number()
+      .int()
+      .min(0)
+      .max(signInLinkMaxTtlMinutes)
+      .nullable()
+      .optional(),
+    signInLinkReusable: z.boolean().optional(),
     transferPlanVisibility: z.enum(transferPlanVisibilities).optional(),
     /** The instant Transfer Planning becomes visible when scheduled (ISO 8601 with offset). */
     transferPlanShownFrom: z.iso.datetime({ offset: true }).nullable().optional(),
@@ -538,6 +564,9 @@ export const eventDetailSchema = z.object({
   status: z.enum(eventStatuses),
   /** Whether test delegates count in reports and figures; see eventPatchSchema. */
   countTestDelegates: z.boolean(),
+  /** Sign-in link rules (2026-11-25): null = platform setting, 0 = does not expire. */
+  signInLinkTtlMinutes: z.number().int().nullable().optional(),
+  signInLinkReusable: z.boolean().optional(),
   /** Whether delegates see Transfer Planning (2026-11-08); see transferPlanVisible. */
   transferPlanVisibility: z.enum(transferPlanVisibilities),
   transferPlanShownFrom: z.string().nullable(),

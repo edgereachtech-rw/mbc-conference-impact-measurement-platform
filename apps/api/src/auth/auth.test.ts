@@ -227,6 +227,77 @@ describe.skipIf(!hasDatabase)('passwordless sign-in (E3-2..5)', () => {
     expect(right.status).toBe(200);
   });
 
+  it('follows the event’s link rules, re-checked when the link is used (2026-11-25)', async () => {
+    const relaxed = await createTestEvent(prisma);
+    await prisma.event.update({
+      where: { id: relaxed.id },
+      data: { signInLinkTtlMinutes: 0, signInLinkReusable: true },
+    });
+    try {
+      const email = `lasting-${unique()}@example.com`;
+      await createRegisteredIdentity(prisma, relaxed.id, email);
+      const agent = request(app());
+      await requestLink(agent, email);
+      expect(mailer.sent.at(-1)?.text).toContain('This link does not expire.');
+      expect(mailer.sent.at(-1)?.text).toContain('You can use it more than once');
+      const token = linkTokenFrom(mailer);
+      const code = codeFrom(mailer);
+
+      // A month later, twice by link and once by code.
+      now = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+      const verify = (body: object) =>
+        agent.post('/api/v1/auth/verify').set('Origin', ORIGIN).send(body);
+      expect((await verify({ token })).status).toBe(200);
+      expect((await verify({ token })).status).toBe(200);
+      expect((await verify({ email, code })).status).toBe(200);
+
+      // Switched back: the same link stops working at once.
+      await prisma.event.update({
+        where: { id: relaxed.id },
+        data: { signInLinkTtlMinutes: null, signInLinkReusable: false },
+      });
+      const stopped = await verify({ token });
+      expect(stopped.status).toBe(401);
+      expect(stopped.body.error.code).toBe('invalid_token');
+    } finally {
+      await prisma.event.delete({ where: { id: relaxed.id } });
+    }
+  });
+
+  it('keeps a longer link single-use unless reuse is on, and never relaxes staff links', async () => {
+    const longer = await createTestEvent(prisma);
+    await prisma.event.update({
+      where: { id: longer.id },
+      data: { signInLinkTtlMinutes: 3 * 24 * 60 },
+    });
+    try {
+      const email = `three-days-${unique()}@example.com`;
+      await createRegisteredIdentity(prisma, longer.id, email);
+      const agent = request(app());
+      await requestLink(agent, email);
+      expect(mailer.sent.at(-1)?.text).toContain('This link expires in 3 days.');
+      const token = linkTokenFrom(mailer);
+      now = new Date(now.getTime() + 2 * 24 * 60 * 60 * 1000);
+      const verify = () => agent.post('/api/v1/auth/verify').set('Origin', ORIGIN).send({ token });
+      expect((await verify()).status).toBe(200);
+      expect((await verify()).status).toBe(401); // used once
+
+      // Staff: the platform's 15 minutes, single use.
+      const staffEmail = `staff-${unique()}@example.com`;
+      await prisma.userAccount.create({ data: { email: staffEmail, role: 'admin' } });
+      await requestLink(agent, staffEmail);
+      const staffToken = await prisma.signInToken.findFirstOrThrow({
+        where: { email: staffEmail },
+        orderBy: { createdAt: 'desc' },
+      });
+      expect(staffToken.reusable).toBe(false);
+      expect(staffToken.expiresAt.getTime() - now.getTime()).toBe(config.magicLinkTtlMs);
+      await prisma.userAccount.delete({ where: { email: staffEmail } });
+    } finally {
+      await prisma.event.delete({ where: { id: longer.id } });
+    }
+  });
+
   it('rejects expired and malformed tokens', async () => {
     const email = `late-${unique()}@example.com`;
     await registeredDelegate(email);

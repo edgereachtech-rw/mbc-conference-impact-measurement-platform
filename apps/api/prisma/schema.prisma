@@ -529,6 +529,13 @@ model Event {
   /// Whether registrations with status `test` count in this event's reports, dashboards and
   /// summaries. Off by default; never affects whether a test delegate may sign in.
   countTestDelegates     Boolean                @default(false) @map("count_test_delegates")
+  /// How long a sign-in link and code sent to this event's delegates last (2026-11-25): null
+  /// keeps the platform's MAGIC_LINK_TTL_MINUTES, 0 means it does not expire. Where a delegate
+  /// is registered for several events, the most lenient applies. Never applies to staff.
+  signInLinkTtlMinutes   Int?                   @map("sign_in_link_ttl_minutes")
+  /// Whether such a link can be used more than once (2026-11-25). Re-checked when it is used,
+  /// so switching it off stops the links already sent.
+  signInLinkReusable     Boolean                @default(false) @map("sign_in_link_reusable")
   /// Whether delegates see Transfer Planning (2026-11-08): shown, hidden, or shown from
   /// transferPlanShownFrom. Hidden means no tab, no next step, no reminders and no status step
   /// in the follow-ups; the plans and their data stay and come back when shown again.
@@ -1255,46 +1262,46 @@ model AssessmentSection {
 /// the same question_key and version + 1 and retires this one; answers keep pointing at the version
 /// they answered (CLAUDE.md: questions are data, versioned; responses store the question version).
 model AssessmentQuestion {
-  id                   String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  stageConfigId        String             @map("stage_config_id") @db.Uuid
-  eventId              String             @map("event_id") @db.Uuid
-  questionKey          String             @default(dbgenerated("gen_random_uuid()")) @map("question_key") @db.Uuid
+  id                     String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  stageConfigId          String             @map("stage_config_id") @db.Uuid
+  eventId                String             @map("event_id") @db.Uuid
+  questionKey            String             @default(dbgenerated("gen_random_uuid()")) @map("question_key") @db.Uuid
   /// Optional section the question is shown under; null means the first, untitled group.
-  sectionId            String?            @map("section_id") @db.Uuid
-  version              Int                @default(1)
-  order                Int
-  prompt               String
-  helpText             String?            @map("help_text")
-  type                 QuestionType
-  required             Boolean            @default(true)
-  area                 String?
-  options              Json?
-  scale                Json?
+  sectionId              String?            @map("section_id") @db.Uuid
+  version                Int                @default(1)
+  order                  Int
+  prompt                 String
+  helpText               String?            @map("help_text")
+  type                   QuestionType
+  required               Boolean            @default(true)
+  area                   String?
+  options                Json?
+  scale                  Json?
   /// A text question's word limit (decision 2026-11-19); null means the character limit alone.
-  maxWords             Int?               @map("max_words")
+  maxWords               Int?               @map("max_words")
   /// The question_key this question repeats from another stage (mirrored sections); answers to
   /// the two are paired per delegate in reports. Wording and options stay locked.
-  sourceQuestionKey    String?            @map("source_question_key") @db.Uuid
+  sourceQuestionKey      String?            @map("source_question_key") @db.Uuid
   /// A built-in block question (readiness); see builtinBlocks in @mbc/shared.
-  builtin              String?
+  builtin                String?
   /// Same-stage question that controls whether this question is shown, by selected answer values.
   conditionalQuestionKey String?            @map("conditional_question_key") @db.Uuid
-  conditionalValues     String[]             @default([]) @map("conditional_values")
+  conditionalValues      String[]           @default([]) @map("conditional_values")
   /// An earlier question of this event (its question_key) that this one relates to: the delegate's
   /// own answer to it can be shown here, and can decide whether this question is asked at all
   /// (requirement 10.5). A key, not an id, so it survives the versioning of the earlier question.
-  referenceQuestionKey String?            @map("reference_question_key") @db.Uuid
+  referenceQuestionKey   String?            @map("reference_question_key") @db.Uuid
   /// Show the delegate's answer to referenceQuestionKey above this question.
-  showReferenceAnswer  Boolean            @default(false) @map("show_reference_answer")
+  showReferenceAnswer    Boolean            @default(false) @map("show_reference_answer")
   /// Whether this question is asked at all, judged on the reference answer.
-  visibleWhen          QuestionVisibility @default(always) @map("visible_when")
+  visibleWhen            QuestionVisibility @default(always) @map("visible_when")
   /// Offer "I prefer not to answer" beside the question.
-  allowDecline         Boolean            @default(false) @map("allow_decline")
+  allowDecline           Boolean            @default(false) @map("allow_decline")
   /// How the answer feeds the Support page (2026-11-09): a request, a barrier, or nothing.
-  supportFlag          SupportFlag        @default(none) @map("support_flag")
-  retiredAt            DateTime?          @map("retired_at") @db.Timestamptz(3)
-  createdAt            DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt            DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
+  supportFlag            SupportFlag        @default(none) @map("support_flag")
+  retiredAt              DateTime?          @map("retired_at") @db.Timestamptz(3)
+  createdAt              DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt              DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   stage   AssessmentStageConfig @relation(fields: [stageConfigId], references: [id], onDelete: Cascade)
   event   Event                 @relation(fields: [eventId], references: [id], onDelete: Cascade)
@@ -1443,16 +1450,16 @@ model ParticipationCategory {
 // ------------------------------------------------------------------ accounts and delegates (E2, E3)
 
 model UserAccount {
-  id           String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id                       String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   /// Stored lower-cased and trimmed; a unique index on lower(email) in the migration enforces it.
-  email        String     @unique
-  role         UserRole
-  status       UserStatus @default(active)
-  lastSignInAt DateTime?  @map("last_sign_in_at") @db.Timestamptz(3)
+  email                    String     @unique
+  role                     UserRole
+  status                   UserStatus @default(active)
+  lastSignInAt             DateTime?  @map("last_sign_in_at") @db.Timestamptz(3)
   /// When the delegate closed the dashboard's "How this works" note (2026-11-19); null until then.
-  dashboardNoteDismissedAt DateTime? @map("dashboard_note_dismissed_at") @db.Timestamptz(3)
-  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt    DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+  dashboardNoteDismissedAt DateTime?  @map("dashboard_note_dismissed_at") @db.Timestamptz(3)
+  createdAt                DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt                DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   delegates    Delegate[]
   authSessions AuthSession[]
@@ -1810,6 +1817,8 @@ model SignInToken {
   usedAt        DateTime?     @map("used_at") @db.Timestamptz(3)
   /// Failed verification attempts against this token (code guessing).
   attempts      Int           @default(0)
+  /// Issued under an event's "can be used more than once" rule (2026-11-25).
+  reusable      Boolean       @default(false)
   /// Relative path to return to after sign-in (deep links, E3-5).
   targetPath    String?       @map("target_path")
   createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
