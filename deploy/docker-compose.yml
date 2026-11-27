@@ -254,31 +254,6 @@ services:
   # To route the platform's own mail here, point the SMTP settings at it. MAIL_TRANSPORT stays
   # "smtp", the only transport the API accepts in production:
   #   SMTP_HOST=mailpit  SMTP_PORT=1025  SMTP_USER / SMTP_PASSWORD matching MAILPIT_SMTP_AUTH
-  mailpit:
-    image: axllent/mailpit:v1.32.0
-    restart: unless-stopped
-    ports:
-      - '${MAILPIT_UI_PUBLISH:-8025}:8025'
-      - '${MAILPIT_SMTP_PUBLISH:-1025}:1025'
-    environment:
-      TZ: ${EVENT_TIMEZONE:-Africa/Lagos}
-      # "user:password", comma-separated for several accounts. Empty leaves the inbox open to
-      # anyone who reaches the port.
-      MP_UI_AUTH: ${MAILPIT_UI_AUTH:-}
-      MP_SMTP_AUTH: ${MAILPIT_SMTP_AUTH:-}
-      # Nothing inside the Docker network speaks TLS, and Mailpit refuses SMTP credentials over a
-      # plain connection unless this says otherwise.
-      MP_SMTP_AUTH_ALLOW_INSECURE: 'true'
-      # Survive restarts, and cap how much is kept.
-      MP_DATABASE: /data/mailpit.db
-      MP_MAX_MESSAGES: ${MAILPIT_MAX_MESSAGES:-5000}
-    volumes:
-      - mailpitdata:/data
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-    logging: *default-logging
 
 volumes:
   pgdata:
